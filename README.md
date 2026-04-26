@@ -15,7 +15,8 @@ Node.js + TypeScript service that listens for GitLab Note Hook `/review` command
 
 - Node.js 22+
 - pnpm 10+
-- GitHub Copilot access for the machine running the worker
+- GitHub Copilot access for the machine running the worker (an active Copilot subscription or organization entitlement with Copilot CLI enabled)
+- Docker + Docker Compose (only when running the packaged container image)
 
 ## Setup
 
@@ -25,13 +26,13 @@ Node.js + TypeScript service that listens for GitLab Note Hook `/review` command
    pnpm install
    ```
 
-2. (optionally) Copy `.env.example` into `.env` and fill in your shared worker configuration:
+2. (optionally) Copy `.env.example` into `.env` (or `.env.docker` if using `docker compose`) and fill in your shared worker configuration:
 
    ```bash
    copy .env.example .env
    ```
 
-3. Ensure Copilot is authenticated for the runtime user. The SDK uses the Copilot CLI runtime under the hood.
+3. Ensure Copilot is authenticated for the runtime user. The SDK uses the Copilot CLI runtime under the hood. For local runs an interactive `copilot` login is fine; for Docker or other non-interactive runs, provide `GH_TOKEN` or `GITHUB_TOKEN` with a fine-grained GitHub PAT that has the **Copilot Requests** permission.
 
 4. Start the service:
 
@@ -45,7 +46,7 @@ Node.js + TypeScript service that listens for GitLab Note Hook `/review` command
    ```
    
 6. In GitLab Project, 
-   1. create access token (group, project or user access token) that allows api writes and repo read.
+   1. create a bot token (group, project, or user access token) with `api` scope; if it maps to a project member or bot user, make that identity at least `Reporter`.
    2. add webhook pointing to https://your-public-url/webhooks/gitlab/note.
    
 7. Register a tenant locally with the CLI.
@@ -59,6 +60,37 @@ Node.js + TypeScript service that listens for GitLab Note Hook `/review` command
    ```bash
    curl http://localhost:3000/healthz
    ```
+
+## Running with Docker
+
+The repository includes a multi-stage `Dockerfile` and a `docker-compose.yml` that build the worker, install the GitHub Copilot CLI, and run the compiled service on port `3000`.
+
+1. Copy `.env.example` to `.env.docker`.
+2. Fill in any worker settings you want to override and uncomment exactly one of `GH_TOKEN` or `GITHUB_TOKEN` with a fine-grained GitHub personal access token that has the **Copilot Requests** permission.
+3. Build and start the container:
+
+   ```bash
+   docker compose up --build -d
+   ```
+
+4. Register at least one tenant in the container-backed SQLite database:
+
+   ```bash
+   docker compose run --rm worker node dist/cli.js tenant add --base-url https://gitlab.example.com --project-id 123 --api-token glpat-xxxxxxxx --webhook-secret replace-me --bot-user-id 999 --bot-username review-bot
+   ```
+
+5. Confirm the container is healthy:
+
+   ```bash
+   curl http://localhost:3000/healthz
+   ```
+
+The compose setup mounts:
+
+- `./data` into `/app/data` for the SQLite database and Copilot session logs
+- `./tmp` into `/app/tmp` for hydrated review workspaces
+
+Keep tenant records in the SQLite database by using the CLI command above; tenant configuration is not provided through environment variables.
 
 ## Running locally
 
@@ -101,15 +133,16 @@ Use one of:
 - a project access token
 - a group access token
 
-The token needs permission to:
+This worker uses the GitLab API to read merge requests, notes, discussions, versions, raw files, and repository archives, and it also creates discussions, replies, edits bot-authored notes, resolves discussions, and authenticates `git fetch` over HTTPS during workspace hydration.
 
-- read merge requests, discussions, notes, versions, and repository contents
-- create discussions
-- reply to discussions
-- edit bot-authored notes
-- resolve bot-authored discussions
+From the GitLab token docs:
 
-In practice, **API scope** on a bot-style token is the simplest starting point.
+- `read_repository` and `read_api` are read-only scopes
+- `api` grants read/write API access, and for personal access tokens also covers Git-over-HTTP access used by the worker's `git fetch`
+
+Use **`api` scope** for this worker.
+
+For project membership, GitLab's permissions docs say project members can leave comments starting at **Guest**, but repository/code access starts at **Reporter**. Because this worker needs both repository access and merge request discussion writes, the bot user or token-backed account should be **Reporter or higher** in the target project.
 
 ### 3. Find the project ID
 
@@ -227,6 +260,33 @@ After the worker is running, verify the path in this order:
 6. new or updated bot discussions appear on the merge request
 
 ## Configuration
+
+### Container environment variables
+
+The Docker image reads the same application variables as a local run. All worker settings have image defaults, but Copilot authentication still needs to be supplied explicitly.
+
+| Variable | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `PORT` | No | `3000` | HTTP port exposed by the worker |
+| `HOST` | No | `0.0.0.0` | Bind address inside the container |
+| `LOG_LEVEL` | No | `info` | One of `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` |
+| `DATABASE_PATH` | No | `./data/review-worker.sqlite` | SQLite database path; keep this under `/app/data` if you want it persisted by compose |
+| `COPILOT_LOG_DIR` | No | `./data/copilot-session-logs` | Directory where per-run Copilot traces are written |
+| `WORKSPACE_ROOT` | No | `./tmp/review-workspaces` | Scratch directory for hydrated repositories |
+| `MAX_JOB_RETRIES` | No | `3` | Retry attempts for failed review jobs |
+| `RETRY_BACKOFF_MS` | No | `5000` | Delay between retries in milliseconds |
+| `COPILOT_TIMEOUT_MS` | No | `180000` | Copilot review timeout in milliseconds |
+| `COPILOT_MODEL` | No | unset | Optional model override passed to the Copilot SDK |
+| `COPILOT_CLI_PATH` | No | `/usr/local/bin/copilot` in the image | The packaged image sets this automatically to the installed Copilot CLI |
+
+For Copilot CLI authentication inside the image, set exactly one of these variables:
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `GH_TOKEN` | Yes, unless `GITHUB_TOKEN` is set instead | Preferred GitHub personal access token for the Copilot CLI |
+| `GITHUB_TOKEN` | Yes, unless `GH_TOKEN` is set instead | Fallback GitHub personal access token name recognized by the Copilot CLI |
+
+The GitHub token used for `GH_TOKEN` or `GITHUB_TOKEN` should be a **fine-grained PAT** with the **Copilot Requests** permission. The token owner also needs an active GitHub Copilot entitlement, and if Copilot access comes from an organization or enterprise, Copilot CLI must be allowed by that org or enterprise policy.
 
 `pnpm cli tenant add` accepts these fields:
 

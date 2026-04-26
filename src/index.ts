@@ -95,7 +95,11 @@ async function main(): Promise<void> {
     port: config.port
   });
 
-  logger.info({ host: config.host, port: config.port }, "gitlab review worker listening");
+  logger.info("Gitlab review worker listening.");
+  logger.info(
+    { host: config.host, port: config.port },
+    `Point your GitLab webhooks to http://${config.host}:${config.port}/webhooks/gitlab/note`
+  );
 }
 
 main().catch((error) => {

@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.local
+.env.*.local
+.copilot
+node_modules
+dist
+data
+tmp
+coverage
+.pnpm-store
+npm-debug.log*
+pnpm-debug.log*
+!.env.example
