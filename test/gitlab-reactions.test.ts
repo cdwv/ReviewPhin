@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitLabClient } from "../src/gitlab/client.js";
@@ -223,8 +225,8 @@ describe("GitLab reactions", () => {
           notes: [],
           discussions: [],
           workspace: {
-            rootPath: "H:\\workspace",
-            cleanupRoot: "H:\\cleanup",
+            rootPath: join("tmp", "workspace"),
+            cleanupRoot: join("tmp", "cleanup"),
             strategy: "targeted-files",
             instructionFiles: []
           },

@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { HydratedMergeRequestContext } from "../src/gitlab/types.js";
@@ -311,8 +313,8 @@ function createHydratedContext(): HydratedMergeRequestContext {
       }
     ],
     workspace: {
-      rootPath: "H:\\tmp\\workspace",
-      cleanupRoot: "H:\\tmp\\cleanup",
+      rootPath: join("tmp", "workspace"),
+      cleanupRoot: join("tmp", "cleanup"),
       strategy: "archive",
       instructionFiles: []
     },

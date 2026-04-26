@@ -11,7 +11,7 @@ describe("CopilotRunLog", () => {
   it("writes prompt, events, response, and error details to disk", async () => {
     const logDir = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-logs-"));
     const context = {
-      workspacePath: "H:\\workspace\\review",
+      workspacePath: join("workspace", "review"),
       mergeRequest: {
         iid: 7
       },

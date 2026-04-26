@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { ReviewWorker } from "../src/jobs/review-worker.js";
@@ -153,8 +155,8 @@ describe("ReviewWorker cleanup", () => {
           notes: [],
           discussions: [],
           workspace: {
-            rootPath: "H:\\workspace",
-            cleanupRoot: "H:\\cleanup",
+            rootPath: join("tmp", "workspace"),
+            cleanupRoot: join("tmp", "cleanup"),
             strategy: "git",
             instructionFiles: []
           },

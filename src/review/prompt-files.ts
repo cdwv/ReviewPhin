@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 type PromptFileName = "main.md" | "context-analyst.md" | "review-author.md";
 
@@ -18,10 +19,9 @@ export function loadReviewPromptFile(name: PromptFileName): string {
 }
 
 function resolvePromptPath(name: PromptFileName): string {
-  const candidates = [
-    resolve(process.cwd(), "prompts", "review", name),
-    resolve(process.cwd(), "..", "prompts", "review", name)
-  ];
+  const candidates = getProjectRootCandidates().map((projectRoot) =>
+    join(projectRoot, "prompts", "review", name)
+  );
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
@@ -30,4 +30,9 @@ function resolvePromptPath(name: PromptFileName): string {
   }
 
   throw new Error(`Review prompt file not found: ${name}`);
+}
+
+function getProjectRootCandidates(): string[] {
+  const moduleRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  return Array.from(new Set([resolve(process.cwd()), moduleRoot]));
 }
