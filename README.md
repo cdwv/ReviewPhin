@@ -33,19 +33,28 @@ Node.js + TypeScript service that listens for GitLab Note Hook `/review` command
 
 3. Ensure Copilot is authenticated for the runtime user. The SDK uses the Copilot CLI runtime under the hood.
 
-4. Register a tenant locally with the CLI.
-
-   ```bash
-   pnpm cli tenant add --base-url https://gitlab.example.com --project-id 123 --api-token glpat-xxxxxxxx --webhook-secret replace-me --bot-user-id 999 --bot-username review-bot
-   ```
-
-5. Start the service:
+4. Start the service:
 
    ```bash
    pnpm dev
    ```
 
-6. Confirm the worker is up:
+5.  For non-local GitLab installations you will need to expose the server to the internet, e.g. with cloudlfare:
+   ```
+   cloudflared tunnel --url http://localhost:3000
+   ```
+   
+6. In GitLab Project, 
+   1. create access token (group, project or user access token) that allows api writes and repo read.
+   2. add webhook pointing to https://your-public-url/webhooks/gitlab/note.
+   
+7. Register a tenant locally with the CLI.
+
+   ```bash
+   pnpm cli tenant add --base-url https://gitlab.example.com --project-id 123 --api-token glpat-xxxxxxxx --webhook-secret replace-me --bot-user-id 999 --bot-username review-bot
+   ```
+
+8. Confirm the worker is up:
 
    ```bash
    curl http://localhost:3000/healthz
