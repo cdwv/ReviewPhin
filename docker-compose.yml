@@ -20,7 +20,6 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: ${PORT:-3000}
-      COPILOT_CLI_PATH: /usr/local/bin/copilot
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:
