@@ -25,7 +25,7 @@ Node.js + TypeScript service that listens for GitLab Note Hook `/review` command
    pnpm install
    ```
 
-2. Copy `.env.example` into `.env` and fill in your shared worker configuration:
+2. (optionally) Copy `.env.example` into `.env` and fill in your shared worker configuration:
 
    ```bash
    copy .env.example .env
