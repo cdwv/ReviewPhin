@@ -32,7 +32,7 @@ Node.js + TypeScript service that listens for GitLab Note Hook `/review` command
    copy .env.example .env
    ```
 
-3. Ensure Copilot is authenticated for the runtime user. The SDK uses the Copilot CLI runtime under the hood. For local runs an interactive `copilot` login is fine; for Docker or other non-interactive runs, provide `GH_TOKEN` or `GITHUB_TOKEN` with a fine-grained GitHub PAT that has the **Copilot Requests** permission.
+3. Ensure Copilot is authenticated for the runtime user. The SDK uses the Copilot CLI runtime under the hood. For local runs an interactive `copilot` login is fine; for Docker or other non-interactive runs, `COPILOT_GITHUB_TOKEN` (or `GH_TOKEN` or `GITHUB_TOKEN`) with a fine-grained GitHub PAT that has the **Copilot Requests** permission.
 
 4. Start the service:
 
@@ -66,7 +66,7 @@ Node.js + TypeScript service that listens for GitLab Note Hook `/review` command
 The repository includes a multi-stage `Dockerfile` and a `docker-compose.yml` that build the worker, install the GitHub Copilot CLI, and run the compiled service on port `3000`.
 
 1. Copy `.env.example` to `.env.docker`.
-2. Fill in any worker settings you want to override and uncomment exactly one of `GH_TOKEN` or `GITHUB_TOKEN` with a fine-grained GitHub personal access token that has the **Copilot Requests** permission.
+2. Fill in any worker settings you want to override and uncomment `COPILOT_GITHUB_TOKEN` with a fine-grained GitHub personal access token that has the **Copilot Requests** permission.
 3. Build and start the container:
 
    ```bash
@@ -283,10 +283,11 @@ For Copilot CLI authentication inside the image, set exactly one of these variab
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `GH_TOKEN` | Yes, unless `GITHUB_TOKEN` is set instead | Preferred GitHub personal access token for the Copilot CLI |
-| `GITHUB_TOKEN` | Yes, unless `GH_TOKEN` is set instead | Fallback GitHub personal access token name recognized by the Copilot CLI |
+| `GH_TOKEN` | Yes, unless any other variant is set | Preferred GitHub personal access token for the Copilot CLI |
+| `GITHUB_TOKEN` | Yes, unless any other variant is set | Preferred GitHub personal access token for the Copilot CLI |
+| `COPILOT_GITHUB_TOKEN` | Yes, unless any other variant is set | Fallback GitHub personal access token name recognized by the Copilot CLI |
 
-The GitHub token used for `GH_TOKEN` or `GITHUB_TOKEN` should be a **fine-grained PAT** with the **Copilot Requests** permission. The token owner also needs an active GitHub Copilot entitlement, and if Copilot access comes from an organization or enterprise, Copilot CLI must be allowed by that org or enterprise policy.
+The GitHub token used for `GH_TOKEN`, `GITHUB_TOKEN` or `COPILOT_GITHUB_TOKEN` should be a **fine-grained PAT** with the **Copilot Requests** permission. The token owner also needs an active GitHub Copilot entitlement, and if Copilot access comes from an organization or enterprise, Copilot CLI must be allowed by that org or enterprise policy.
 
 `pnpm cli tenant add` accepts these fields:
 
