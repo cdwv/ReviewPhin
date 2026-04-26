@@ -1,0 +1,131 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import type { AssistantMessageEvent, SessionEvent } from "@github/copilot-sdk";
+
+import type { ReviewContext } from "./types.js";
+
+interface CopilotRunLogOptions {
+  logDir: string;
+  context: ReviewContext;
+  prompt: string;
+  model?: string | undefined;
+}
+
+interface SerializedError {
+  message: string;
+  name?: string | undefined;
+  stack?: string | undefined;
+}
+
+interface CopilotRunLogRecord {
+  startedAt: string;
+  finishedAt: string | null;
+  sessionId: string | null;
+  metadata: {
+    reviewRunId: string | null;
+    jobId: string | null;
+    tenantId: string | null;
+    mergeRequestIid: number;
+    workspacePath: string;
+    requestedModel: string | null;
+  };
+  prompt: string;
+  response:
+    | {
+        messageId: string;
+        requestId: string | null;
+        content: string;
+      }
+    | null;
+  error: SerializedError | null;
+  events: SessionEvent[];
+}
+
+export class CopilotRunLog {
+  private readonly logDir: string;
+  private readonly fileName: string;
+  private readonly record: CopilotRunLogRecord;
+
+  public constructor(options: CopilotRunLogOptions) {
+    this.logDir = options.logDir;
+    this.fileName = buildLogFileName(options.context);
+    this.record = {
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      sessionId: null,
+      metadata: {
+        reviewRunId: options.context.logging?.reviewRunId ?? null,
+        jobId: options.context.logging?.jobId ?? null,
+        tenantId: options.context.logging?.tenantId ?? null,
+        mergeRequestIid: options.context.mergeRequest.iid,
+        workspacePath: options.context.workspacePath,
+        requestedModel: options.model ?? null
+      },
+      prompt: options.prompt,
+      response: null,
+      error: null,
+      events: []
+    };
+  }
+
+  public get path(): string {
+    return join(this.logDir, this.fileName);
+  }
+
+  public setSessionId(sessionId: string): void {
+    this.record.sessionId = sessionId;
+  }
+
+  public appendEvent(event: SessionEvent): void {
+    this.record.events.push(event);
+  }
+
+  public setResponse(response: AssistantMessageEvent | undefined): void {
+    if (!response) {
+      return;
+    }
+
+    this.record.response = {
+      messageId: response.data.messageId,
+      requestId: response.data.requestId ?? null,
+      content: response.data.content
+    };
+  }
+
+  public setError(error: unknown): void {
+    this.record.error = serializeError(error);
+  }
+
+  public async flush(): Promise<string> {
+    this.record.finishedAt = new Date().toISOString();
+    await mkdir(this.logDir, { recursive: true });
+    await writeFile(this.path, JSON.stringify(this.record, null, 2), "utf8");
+    return this.path;
+  }
+}
+
+function buildLogFileName(context: ReviewContext): string {
+  const startedAt = new Date().toISOString().replace(/[:.]/g, "-");
+  const key = context.logging?.reviewRunId ?? randomUUID();
+  return `${startedAt}-${sanitizeFileName(key)}.json`;
+}
+
+function sanitizeFileName(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function serializeError(error: unknown): SerializedError {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      name: error.name,
+      stack: error.stack
+    };
+  }
+
+  return {
+    message: String(error)
+  };
+}

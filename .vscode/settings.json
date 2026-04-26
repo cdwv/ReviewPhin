@@ -1,0 +1,11 @@
+{
+  "sqltools.connections": [
+    {
+      "previewLimit": 50,
+      "driver": "SQLite",
+      "name": "gl-cp-rev",
+      "database": "${workspaceFolder:gitlab-agentic-webhooks}/data/review-worker.sqlite"
+    }
+  ],
+  "sqltools.useNodeRuntime": true
+}
