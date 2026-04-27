@@ -1,46 +1,60 @@
 import { isBotUser } from "../gitlab/bot-user.js";
 import type { GitLabClient } from "../gitlab/client.js";
-import type { GitLabNoteHookPayload } from "../gitlab/types.js";
-import { containsReviewCommand, extractReviewCommandInstruction } from "../gitlab/webhook.js";
+import type { GitLabDiscussion, TriggerNoteReference, GitLabNoteHookPayload } from "../gitlab/types.js";
+import { containsBotMention, extractBotMentionInstruction } from "../gitlab/webhook.js";
 import type { TenantRecord } from "../storage/types.js";
-import type { ProviderThreadContext, ReviewTriggerContext } from "./types.js";
+import { isReviewSummaryNoteBody } from "./summary.js";
+import type { ProviderThreadContext, ReviewTriggerContext, WebhookReviewTrigger } from "./types.js";
 
-export async function isFollowUpInstructionWebhook(input: {
+export async function classifyWebhookTrigger(input: {
   payload: GitLabNoteHookPayload;
   tenant: TenantRecord;
   client: Pick<GitLabClient, "listMergeRequestDiscussions">;
-}): Promise<boolean> {
+}): Promise<WebhookReviewTrigger | null> {
   const { payload, tenant, client } = input;
   if (payload.object_attributes.system) {
-    return false;
+    return null;
   }
 
   if (!payload.user || isBotUser(payload.user, tenant)) {
-    return false;
+    return null;
   }
 
   const discussions = await client.listMergeRequestDiscussions(tenant.projectId, payload.merge_request.iid);
-  return discussions.some((discussion) => {
-    const rootNote = discussion.notes[0];
-    if (!rootNote || !isBotUser(rootNote.author, tenant)) {
-      return false;
+  const note = locateTriggerNoteReference(discussions, payload.object_attributes.id);
+  if (note.kind === "discussion-note") {
+    const discussion = discussions.find((entry) => entry.id === note.discussionId) ?? null;
+    const rootNote = discussion?.notes[0];
+    if (rootNote && isBotUser(rootNote.author, tenant) && !isReviewSummaryNoteBody(rootNote.body)) {
+      return {
+        kind: "follow-up-comment",
+        note
+      };
     }
+  }
 
-    return discussion.notes.some((note) => note.id === payload.object_attributes.id);
-  });
+  if (!containsBotMention(payload.object_attributes.note, tenant.botUsername)) {
+    return null;
+  }
+
+  return {
+    kind: "direct-mention",
+    note
+  };
 }
 
 export function buildReviewTriggerContext(input: {
   payload: GitLabNoteHookPayload;
+  tenant: TenantRecord;
   priorThreads: ProviderThreadContext[];
 }): ReviewTriggerContext {
   const targetThread =
     input.priorThreads.find((thread) => thread.humanReplies.some((reply) => reply.noteId === input.payload.object_attributes.id)) ??
     null;
-  const kind = containsReviewCommand(input.payload.object_attributes.note) ? "review-command" : "follow-up-comment";
+  const kind = targetThread ? "follow-up-comment" : "direct-mention";
   const instruction =
-    kind === "review-command"
-      ? extractReviewCommandInstruction(input.payload.object_attributes.note)
+    kind === "direct-mention"
+      ? extractBotMentionInstruction(input.payload.object_attributes.note, input.tenant.botUsername)
       : input.payload.object_attributes.note.trim();
 
   return {
@@ -52,5 +66,29 @@ export function buildReviewTriggerContext(input: {
     targetThreadId: targetThread?.threadId ?? null,
     targetDiscussionId: targetThread?.discussionId ?? null,
     targetThreadTitle: targetThread?.title ?? null
+  };
+}
+
+export function locateTriggerNoteReference(
+  discussions: GitLabDiscussion[],
+  noteId: number
+): TriggerNoteReference {
+  for (const discussion of discussions) {
+    if (!discussion.notes.some((note) => note.id === noteId)) {
+      continue;
+    }
+
+    if (!discussion.individual_note) {
+      return {
+        kind: "discussion-note",
+        discussionId: discussion.id,
+        noteId
+      };
+    }
+  }
+
+  return {
+    kind: "merge-request-note",
+    noteId
   };
 }

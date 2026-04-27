@@ -35,7 +35,7 @@ async function main(): Promise<void> {
     logger,
     model: config.copilotModel,
     cliPath: config.copilotCliPath,
-    logDir: config.copilotLogDir,
+    runLogDir: config.runLogDir,
     timeoutMs: config.copilotTimeoutMs
   });
 
@@ -58,6 +58,7 @@ async function main(): Promise<void> {
     reviewProvider,
     reconciler,
     logger,
+    runLogDir: config.runLogDir,
     maxJobRetries: config.maxJobRetries,
     retryBackoffMs: config.retryBackoffMs
   });

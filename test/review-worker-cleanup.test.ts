@@ -40,7 +40,7 @@ const payload: GitLabNoteHookPayload = {
   },
   object_attributes: {
     id: 55,
-    note: "/review",
+    note: "@review-bot review",
     noteable_type: "MergeRequest"
   },
   user: {
@@ -199,10 +199,12 @@ describe("ReviewWorker cleanup", () => {
           updated: 0,
           replied: 0,
           resolved: 0,
-          kept: 0
+          kept: 0,
+          summaryNoteAction: "created" as const
         }))
       } as never,
       logger: createLogger("silent"),
+      runLogDir: join("tmp", "run-logs"),
       maxJobRetries: 3,
       retryBackoffMs: 5000
     });

@@ -23,8 +23,20 @@ export function buildDiffPosition(
     return null;
   }
 
-  const change = changes.find((candidate) => candidate.new_path === anchor.path || candidate.old_path === anchor.path);
+  const change = changes.find(
+    (candidate) =>
+      candidate.new_path === anchor.path ||
+      candidate.old_path === anchor.path ||
+      (anchor.oldPath !== undefined && anchor.oldPath !== null
+        ? candidate.new_path === anchor.oldPath || candidate.old_path === anchor.oldPath
+        : false)
+  );
   if (!change) {
+    return null;
+  }
+
+  const targetLine = findDiffLineForAnchor(change.diff, anchor);
+  if (!targetLine) {
     return null;
   }
 
@@ -37,17 +49,95 @@ export function buildDiffPosition(
     new_path: change.new_path
   };
 
-  if (anchor.side === "new") {
-    if (change.deleted_file) {
-      return null;
-    }
+  if (targetLine.oldLine !== null) {
+    position.old_line = targetLine.oldLine;
+  }
 
-    position.new_line = anchor.startLine;
-  } else {
-    position.old_line = anchor.startLine;
+  if (targetLine.newLine !== null) {
+    position.new_line = targetLine.newLine;
   }
 
   return position;
+}
+
+interface DiffLineReference {
+  kind: "new" | "old" | "context";
+  oldLine: number | null;
+  newLine: number | null;
+}
+
+function findDiffLineForAnchor(diff: string | undefined, anchor: LineAnchorLike): DiffLineReference | null {
+  const matches = collectDiffLineReferences(diff).filter((line) => lineOverlapsAnchor(line, anchor));
+  if (matches.length === 0) {
+    return null;
+  }
+
+  return matches.find((line) => line.kind === anchor.side) ?? matches[0] ?? null;
+}
+
+function collectDiffLineReferences(diff: string | undefined): DiffLineReference[] {
+  if (!diff) {
+    return [];
+  }
+
+  let oldLine = 0;
+  let newLine = 0;
+  let inHunk = false;
+  const lines: DiffLineReference[] = [];
+
+  for (const rawLine of diff.replace(/\r\n/g, "\n").split("\n")) {
+    const hunk = rawLine.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    const oldStart = hunk?.[1];
+    const newStart = hunk?.[2];
+    if (oldStart && newStart) {
+      oldLine = Number.parseInt(oldStart, 10);
+      newLine = Number.parseInt(newStart, 10);
+      inHunk = true;
+      continue;
+    }
+
+    if (!inHunk || rawLine.startsWith("\\ ")) {
+      continue;
+    }
+
+    const prefix = rawLine[0];
+    if (prefix === " ") {
+      lines.push({
+        kind: "context",
+        oldLine,
+        newLine
+      });
+      oldLine += 1;
+      newLine += 1;
+      continue;
+    }
+
+    if (prefix === "-") {
+      lines.push({
+        kind: "old",
+        oldLine,
+        newLine: null
+      });
+      oldLine += 1;
+      continue;
+    }
+
+    if (prefix === "+") {
+      lines.push({
+        kind: "new",
+        oldLine: null,
+        newLine
+      });
+      newLine += 1;
+    }
+  }
+
+  return lines;
+}
+
+function lineOverlapsAnchor(line: DiffLineReference, anchor: LineAnchorLike): boolean {
+  const candidate = anchor.side === "new" ? line.newLine : line.oldLine;
+  return candidate !== null && candidate >= anchor.startLine && candidate <= anchor.endLine;
 }
 
 export function renderSuggestionMarkdown(
@@ -62,11 +152,21 @@ export function renderSuggestionMarkdown(
     return null;
   }
 
-  if (suggestion.startLine !== suggestion.endLine || anchor.startLine !== anchor.endLine) {
+  if (anchor.startLine < suggestion.startLine || anchor.startLine > suggestion.endLine) {
     return null;
   }
 
-  return ["```suggestion", suggestion.replacement.replace(/\r\n/g, "\n").trimEnd(), "```"].join("\n");
+  const linesAbove = anchor.startLine - suggestion.startLine;
+  const linesBelow = suggestion.endLine - anchor.startLine;
+  if (linesAbove > 100 || linesBelow > 100) {
+    return null;
+  }
+
+  return [
+    `\`\`\`suggestion:-${linesAbove}+${linesBelow}`,
+    suggestion.replacement.replace(/\r\n/g, "\n").trimEnd(),
+    "```"
+  ].join("\n");
 }
 
 export function appendSuggestion(body: string, suggestionMarkdown: string | null): string {

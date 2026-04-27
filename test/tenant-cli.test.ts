@@ -88,4 +88,26 @@ describe("tenant CLI", () => {
     const logger = createLogger("silent");
     logger.info({ tenantId: tenant?.id }, "tenant resolved");
   });
+
+  it("requires bot username when adding a tenant", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+
+    await expect(
+      runCli([
+        "tenant",
+        "add",
+        "--database-path",
+        databasePath,
+        "--base-url",
+        "https://gitlab.example.com",
+        "--project-id",
+        "123",
+        "--api-token",
+        "glpat-xxxxxxxx",
+        "--webhook-secret",
+        "replace-me"
+      ])
+    ).rejects.toThrow();
+  });
 });

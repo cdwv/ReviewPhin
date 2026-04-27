@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import type { Logger } from "pino";
 
-import { containsReviewCommand, parseGitLabNoteHook } from "./gitlab/webhook.js";
+import { parseGitLabNoteHook } from "./gitlab/webhook.js";
 import type { JobQueue } from "./jobs/job-queue.js";
 import type { ReviewWorker } from "./jobs/review-worker.js";
 import type { TenantRegistry } from "./tenants/tenant-registry.js";
@@ -42,15 +42,15 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
       });
     }
 
-    const hasReviewCommand = containsReviewCommand(payload.object_attributes.note);
-    if (!hasReviewCommand && !(await options.reviewWorker.shouldHandleFollowUpWebhook(payload, tenant))) {
+    const trigger = await options.reviewWorker.classifyWebhookTrigger(payload, tenant);
+    if (!trigger) {
       return reply.code(202).send({
         accepted: false,
-        reason: "no-review-command"
+        reason: "no-trigger"
       });
     }
 
-    const { job, created } = await options.reviewWorker.createReviewJobFromWebhook(payload, tenant);
+    const { job, created } = await options.reviewWorker.createReviewJobFromWebhook(payload, tenant, trigger);
     if (created) {
       options.queue.enqueue(job.id);
     }

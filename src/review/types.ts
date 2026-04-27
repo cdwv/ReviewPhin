@@ -5,7 +5,8 @@ import type {
   GitLabMergeRequest,
   GitLabMergeRequestChange,
   GitLabNote,
-  InstructionFile
+  InstructionFile,
+  TriggerNoteReference
 } from "../gitlab/types.js";
 
 export const reviewAnchorSchema = z
@@ -48,11 +49,22 @@ export const priorDispositionSchema = z.object({
   replyBody: z.string().min(1).optional()
 });
 
+export const reviewMergeReadinessSchema = z.object({
+  status: z.enum(["ready", "needs_attention", "blocked"]),
+  confidence: z.enum(["low", "medium", "high"]),
+  summary: z.string().min(1)
+});
+
+export const reviewOverviewSchema = z.object({
+  summary: z.string().min(1),
+  overallSeverity: z.enum(["low", "medium", "high", "critical"]),
+  overallAssessment: z.string().min(1).optional(),
+  mergeReadiness: reviewMergeReadinessSchema.optional(),
+  highlights: z.array(z.string().min(1)).max(5).optional()
+});
+
 export const reviewResultSchema = z.object({
-  overview: z.object({
-    summary: z.string().min(1),
-    overallSeverity: z.enum(["low", "medium", "high", "critical"])
-  }),
+  overview: reviewOverviewSchema,
   findings: z.array(reviewFindingSchema),
   priorDispositions: z.array(priorDispositionSchema).default([])
 });
@@ -61,6 +73,8 @@ export type ReviewAnchor = z.infer<typeof reviewAnchorSchema>;
 export type ReviewSuggestion = z.infer<typeof reviewSuggestionSchema>;
 export type ReviewFinding = z.infer<typeof reviewFindingSchema>;
 export type PriorDisposition = z.infer<typeof priorDispositionSchema>;
+export type ReviewMergeReadiness = z.infer<typeof reviewMergeReadinessSchema>;
+export type ReviewOverview = z.infer<typeof reviewOverviewSchema>;
 export type ReviewResult = z.infer<typeof reviewResultSchema>;
 
 export interface ProviderThreadContext {
@@ -78,8 +92,10 @@ export interface ProviderThreadContext {
   }>;
 }
 
+export type ReviewTriggerKind = "direct-mention" | "follow-up-comment";
+
 export interface ReviewTriggerContext {
-  kind: "review-command" | "follow-up-comment";
+  kind: ReviewTriggerKind;
   noteId: number;
   authorUsername: string | null;
   body: string;
@@ -87,6 +103,11 @@ export interface ReviewTriggerContext {
   targetThreadId: string | null;
   targetDiscussionId: string | null;
   targetThreadTitle: string | null;
+}
+
+export interface WebhookReviewTrigger {
+  kind: ReviewTriggerKind;
+  note: TriggerNoteReference;
 }
 
 export interface ReviewContext {
@@ -102,5 +123,6 @@ export interface ReviewContext {
     reviewRunId: string;
     jobId: string;
     tenantId: string;
+    runDirectory?: string | undefined;
   };
 }

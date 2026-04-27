@@ -37,7 +37,7 @@ export class TenantRegistry {
       ? projectTenants.filter((tenant) => webhookMatchesGitLabBase(payload, tenant.baseUrl))
       : projectTenants;
 
-    const candidates = (narrowed.length > 0 ? narrowed : projectTenants).slice().sort((left, right) => {
+    const candidates = (narrowed.length > 0 ? narrowed : projectTenants).toSorted((left, right) => {
       return normalizeGitLabBaseUrl(right.baseUrl).length - normalizeGitLabBaseUrl(left.baseUrl).length;
     });
 

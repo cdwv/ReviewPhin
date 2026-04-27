@@ -9,7 +9,7 @@ export const tenantConfigSchema = z.object({
   apiToken: z.string().min(1),
   webhookSecret: z.string().min(1),
   botUserId: z.coerce.number().int().positive().optional(),
-  botUsername: z.string().min(1).optional()
+  botUsername: z.string().min(1)
 });
 
 const envSchema = z.object({
@@ -17,7 +17,8 @@ const envSchema = z.object({
   HOST: z.string().min(1).default("0.0.0.0"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   DATABASE_PATH: z.string().min(1).default("./data/review-worker.sqlite"),
-  COPILOT_LOG_DIR: z.string().min(1).default("./data/copilot-session-logs"),
+  RUN_LOG_DIR: z.string().min(1).optional(),
+  COPILOT_LOG_DIR: z.string().min(1).optional(),
   WORKSPACE_ROOT: z.string().min(1).default("./tmp/review-workspaces"),
   MAX_JOB_RETRIES: z.coerce.number().int().min(0).default(3),
   RETRY_BACKOFF_MS: z.coerce.number().int().min(0).default(5_000),
@@ -33,7 +34,7 @@ export interface AppConfig {
   port: number;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
   databasePath: string;
-  copilotLogDir: string;
+  runLogDir: string;
   workspaceRoot: string;
   maxJobRetries: number;
   retryBackoffMs: number;
@@ -48,6 +49,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     HOST: env.HOST,
     LOG_LEVEL: env.LOG_LEVEL,
     DATABASE_PATH: env.DATABASE_PATH,
+    RUN_LOG_DIR: env.RUN_LOG_DIR,
     COPILOT_LOG_DIR: env.COPILOT_LOG_DIR,
     WORKSPACE_ROOT: env.WORKSPACE_ROOT,
     MAX_JOB_RETRIES: env.MAX_JOB_RETRIES,
@@ -62,7 +64,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: parsedEnv.PORT,
     logLevel: parsedEnv.LOG_LEVEL,
     databasePath: resolve(parsedEnv.DATABASE_PATH),
-    copilotLogDir: resolve(parsedEnv.COPILOT_LOG_DIR),
+    runLogDir: resolve(parsedEnv.RUN_LOG_DIR ?? parsedEnv.COPILOT_LOG_DIR ?? "./data/run-logs"),
     workspaceRoot: resolve(parsedEnv.WORKSPACE_ROOT),
     maxJobRetries: parsedEnv.MAX_JOB_RETRIES,
     retryBackoffMs: parsedEnv.RETRY_BACKOFF_MS,

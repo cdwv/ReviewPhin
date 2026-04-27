@@ -1,15 +1,17 @@
 # GitLab agentic review worker
 
-Node.js + TypeScript service that listens for GitLab Note Hook `/review` commands and follow-up comments on bot-owned discussions, hydrates merge request context into a temporary workspace, runs a Copilot-powered review, and reconciles the result back into GitLab discussions while only mutating bot-owned content.
+Node.js + TypeScript service that listens for GitLab Note Hook comments that explicitly mention the configured bot username and follow-up comments on bot-owned discussions, hydrates merge request context into a temporary workspace, runs a Copilot-powered review, and reconciles the result back into GitLab discussions while only mutating bot-owned content.
 
 ## What it does
 
-- Accepts GitLab **Note Hook** webhooks for merge request comments containing `/review` and human follow-up comments inside bot-owned review discussions
+- Accepts GitLab **Note Hook** webhooks for merge request comments that mention `@<botUsername>` and human follow-up comments inside bot-owned review discussions, including edits to those trigger comments when users refine the instruction in place
+- Treats other merge request comments as background context only; they do not trigger new review passes by themselves
 - Stores tenants, jobs, snapshots, review runs, findings, and discussion mappings in **SQLite**
 - Hydrates merge request metadata, diff versions, changed files, notes, discussions, and project instructions before each run, using `git` checkout first and API fallbacks when needed
 - Uses a provider boundary with a first implementation backed by **`@github/copilot-sdk`**
 - Creates new discussions, updates bot-authored notes, replies in bot-created discussions, and resolves obsolete bot-owned discussions
-- Emits suggestion blocks only when it has a safe single-line diff anchor on the latest merge request version
+- Maintains one bot-authored merge request summary note, updating it on each run with the latest overall assessment and merge readiness
+- Emits GitLab suggestion blocks when it has a safe new-side diff anchor on the latest merge request version, including multi-line suggestions when the replacement range is clear
 
 ## Requirements
 
@@ -46,7 +48,7 @@ Node.js + TypeScript service that listens for GitLab Note Hook `/review` command
    ```
    
 6. In GitLab Project, 
-   1. create a bot token (group, project, or user access token) with `api` scope; if it maps to a project member or bot user, make that identity at least `Reporter`.
+   1. create a bot token (group, project, or user access token) with `api` scope; if it maps to a project member or bot user, make that identity at least `Developer` because the worker resolves merge request discussions.
    2. add webhook pointing to https://your-public-url/webhooks/gitlab/note.
    
 7. Register a tenant locally with the CLI.
@@ -87,7 +89,7 @@ The repository includes a multi-stage `Dockerfile` and a `docker-compose.yml` th
 
 The compose setup mounts:
 
-- `./data` into `/app/data` for the SQLite database and Copilot session logs
+- `./data` into `/app/data` for the SQLite database and per-review run logs
 - `./tmp` into `/app/tmp` for hydrated review workspaces
 
 Keep tenant records in the SQLite database by using the CLI command above; tenant configuration is not provided through environment variables.
@@ -142,7 +144,7 @@ From the GitLab token docs:
 
 Use **`api` scope** for this worker.
 
-For project membership, GitLab's permissions docs say project members can leave comments starting at **Guest**, but repository/code access starts at **Reporter**. Because this worker needs both repository access and merge request discussion writes, the bot user or token-backed account should be **Reporter or higher** in the target project.
+For project membership, GitLab's permissions docs say project members can leave comments starting at **Guest**, repository/code access starts at **Reporter**, and resolving merge request threads requires **Developer** or the merge request author. Because this worker reads repository contents and resolves obsolete merge request discussions during reconciliation, the bot user or token-backed account should be **Developer or higher** in the target project.
 
 ### 3. Find the project ID
 
@@ -155,12 +157,12 @@ curl --header "PRIVATE-TOKEN: <token>" ^
 
 ### 4. Find the bot identity
 
-You should configure at least one of:
+You should configure:
 
-- `botUserId`
 - `botUsername`
+- `botUserId` (optional, but recommended for stricter ownership checks)
 
-`botUserId` is preferred because ownership checks are stricter.
+`botUsername` is required because direct mention triggers match against that username. `botUserId` is still recommended because ownership checks are stricter.
 
 You can fetch the current token identity with:
 
@@ -180,7 +182,7 @@ PORT=3000
 HOST=0.0.0.0
 LOG_LEVEL=debug
 DATABASE_PATH=./data/review-worker.sqlite
-COPILOT_LOG_DIR=./data/copilot-session-logs
+RUN_LOG_DIR=./data/run-logs
 WORKSPACE_ROOT=./tmp/review-workspaces
 MAX_JOB_RETRIES=3
 RETRY_BACKOFF_MS=5000
@@ -231,8 +233,8 @@ Then use the public HTTPS URL from the tunnel in the webhook settings.
 
 1. Push a branch with a code change.
 2. Open or update a merge request.
-3. Add a merge request comment containing `/review`.
-4. Optionally reply inside one of the bot's review discussions with follow-up instructions or wording requests; that also queues a new review pass.
+3. Add a merge request comment containing `@review-bot` (or whatever `botUsername` you configured), for example `@review-bot review this`.
+4. Optionally reply inside one of the bot's review discussions with follow-up instructions or wording requests; those replies also queue a new review pass without requiring another mention.
 
 If everything is configured correctly, the worker will:
 
@@ -254,7 +256,7 @@ After the worker is running, verify the path in this order:
 
 1. `GET /healthz` returns `{"status":"ok"}`
 2. GitLab webhook test delivery reaches `POST /webhooks/gitlab/note`
-3. a merge request comment with `/review` returns HTTP `202`
+3. a merge request comment with `@<botUsername>` returns HTTP `202`
 4. a human reply inside a bot-owned review discussion also returns HTTP `202`
 5. the worker logs show hydration and reconciliation activity
 6. new or updated bot discussions appear on the merge request
@@ -271,7 +273,7 @@ The Docker image reads the same application variables as a local run. All worker
 | `HOST` | No | `0.0.0.0` | Bind address inside the container |
 | `LOG_LEVEL` | No | `info` | One of `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` |
 | `DATABASE_PATH` | No | `./data/review-worker.sqlite` | SQLite database path; keep this under `/app/data` if you want it persisted by compose |
-| `COPILOT_LOG_DIR` | No | `./data/copilot-session-logs` | Directory where per-run Copilot traces are written |
+| `RUN_LOG_DIR` | No | `./data/run-logs` | Root directory for per-review run artifacts, including Copilot traces, GitLab HTTP logs, and worker app logs |
 | `WORKSPACE_ROOT` | No | `./tmp/review-workspaces` | Scratch directory for hydrated repositories |
 | `MAX_JOB_RETRIES` | No | `3` | Retry attempts for failed review jobs |
 | `RETRY_BACKOFF_MS` | No | `5000` | Delay between retries in milliseconds |
@@ -297,11 +299,11 @@ The GitHub token used for `GH_TOKEN`, `GITHUB_TOKEN` or `COPILOT_GITHUB_TOKEN` s
 | `--project-id` | Yes | Numeric GitLab project ID |
 | `--api-token` | Yes | Personal, project, or group token with merge request API access |
 | `--webhook-secret` | Yes | Secret expected in the `X-Gitlab-Token` header |
-| `--bot-user-id` | No | Numeric GitLab bot user ID used for ownership checks |
-| `--bot-username` | No | Bot username fallback used when `botUserId` is unavailable |
+| `--bot-user-id` | No | Numeric GitLab bot user ID used for stricter ownership checks |
+| `--bot-username` | Yes | Bot username used for direct mention matching |
 | `--database-path` | No | Override the SQLite path instead of using `DATABASE_PATH` from `.env` |
 
-`COPILOT_LOG_DIR` controls where per-run Copilot session traces are written. Each trace file includes the generated prompt, streamed Copilot session events, the final assistant response when available, and any thrown error.
+`RUN_LOG_DIR` controls where per-review run artifacts are written. Each `reviewRunId` gets its own directory containing a `copilot` subdirectory with the prompt/session trace, a `gitlab-http.ndjson` file with GitLab request and response logs, and an `app.ndjson` file with worker lifecycle logging. The legacy `COPILOT_LOG_DIR` environment variable is still accepted as a fallback alias.
 
 `COPILOT_TIMEOUT_MS` controls how long the worker waits for Copilot to finish a review turn before treating it as failed. The default is `180000` (3 minutes).
 

@@ -2,14 +2,16 @@ import type { Logger } from "pino";
 
 import { isBotUser } from "../gitlab/bot-user.js";
 import { GitLabClient } from "../gitlab/client.js";
-import type { GitLabNoteHookPayload } from "../gitlab/types.js";
+import type { GitLabNoteHookPayload, TriggerNoteReference } from "../gitlab/types.js";
 import { parseGitLabNoteHook } from "../gitlab/webhook.js";
 import { extractWebhookHeadSha } from "../gitlab/webhook.js";
 import type { MergeRequestContextHydrator } from "../gitlab/hydrator.js";
 import type { WorkspaceMaterializer } from "../gitlab/workspace.js";
 import { buildProviderThreads, type ReconcileSummary, DiscussionReconciler } from "../reconcile/discussion-reconciler.js";
 import type { ReviewProvider } from "../review/provider.js";
-import { buildReviewTriggerContext, isFollowUpInstructionWebhook } from "../review/trigger.js";
+import { ReviewRunArtifacts } from "../review/run-artifacts.js";
+import { buildReviewTriggerContext, classifyWebhookTrigger, locateTriggerNoteReference } from "../review/trigger.js";
+import type { WebhookReviewTrigger } from "../review/types.js";
 import type { CreateReviewFindingInput, ReviewJobRecord, Storage, TenantRecord } from "../storage/types.js";
 import type { TenantRegistry } from "../tenants/tenant-registry.js";
 import { createReviewJobDedupeKey, createFindingFingerprint, createFindingIdentityKey } from "../utils/ids.js";
@@ -25,6 +27,7 @@ interface ReviewWorkerOptions {
   reviewProvider: ReviewProvider;
   reconciler: DiscussionReconciler;
   logger: Logger;
+  runLogDir: string;
   maxJobRetries: number;
   retryBackoffMs: number;
 }
@@ -37,6 +40,7 @@ export class ReviewWorker {
   private readonly reviewProvider: ReviewProvider;
   private readonly reconciler: DiscussionReconciler;
   private readonly logger: Logger;
+  private readonly runLogDir: string;
   private readonly maxJobRetries: number;
   private readonly retryBackoffMs: number;
 
@@ -48,11 +52,16 @@ export class ReviewWorker {
     this.reviewProvider = options.reviewProvider;
     this.reconciler = options.reconciler;
     this.logger = options.logger;
+    this.runLogDir = options.runLogDir;
     this.maxJobRetries = options.maxJobRetries;
     this.retryBackoffMs = options.retryBackoffMs;
   }
 
-  public async createReviewJobFromWebhook(payload: GitLabNoteHookPayload, tenant: TenantRecord): Promise<{
+  public async createReviewJobFromWebhook(
+    payload: GitLabNoteHookPayload,
+    tenant: TenantRecord,
+    trigger: WebhookReviewTrigger
+  ): Promise<{
     job: ReviewJobRecord;
     created: boolean;
   }> {
@@ -64,7 +73,9 @@ export class ReviewWorker {
         projectId: tenant.projectId,
         mergeRequestIid: payload.merge_request.iid,
         noteId: payload.object_attributes.id,
-        headSha
+        noteAction: payload.object_attributes.action,
+        noteUpdatedAt: payload.object_attributes.updated_at,
+        noteBody: payload.object_attributes.note
       }),
       projectId: tenant.projectId,
       mergeRequestIid: payload.merge_request.iid,
@@ -79,7 +90,7 @@ export class ReviewWorker {
         client,
         tenant,
         createdJob.job.mergeRequestIid,
-        createdJob.job.noteId,
+        trigger.note,
         REVIEW_STARTED_REACTION,
         createdJob.job.id
       );
@@ -88,9 +99,12 @@ export class ReviewWorker {
     return createdJob;
   }
 
-  public async shouldHandleFollowUpWebhook(payload: GitLabNoteHookPayload, tenant: TenantRecord): Promise<boolean> {
+  public async classifyWebhookTrigger(
+    payload: GitLabNoteHookPayload,
+    tenant: TenantRecord
+  ): Promise<WebhookReviewTrigger | null> {
     const client = this.createGitLabClient(tenant, `webhook-note-${payload.object_attributes.id}`);
-    return isFollowUpInstructionWebhook({
+    return classifyWebhookTrigger({
       payload,
       tenant,
       client
@@ -112,18 +126,33 @@ export class ReviewWorker {
     await this.storage.markJobInProgress(job.id);
 
     let reviewRunId: string | null = null;
+    let runArtifacts: ReviewRunArtifacts | null = null;
     let workspaceToCleanup: Awaited<ReturnType<MergeRequestContextHydrator["hydrate"]>>["workspace"] | null = null;
 
     try {
-      const client = this.createGitLabClient(tenant, job.id);
-      await this.ensureTriggerNoteReaction(
-        client,
-        tenant,
-        job.mergeRequestIid,
-        job.noteId,
-        REVIEW_STARTED_REACTION,
-        job.id
-      );
+      const reviewRun = await this.storage.createReviewRun({
+        reviewJobId: job.id,
+        tenantId: tenant.id,
+        provider: this.reviewProvider.name,
+        model: this.reviewProvider.name === "copilot-sdk" ? null : null
+      });
+      reviewRunId = reviewRun.id;
+      runArtifacts = new ReviewRunArtifacts(this.runLogDir, reviewRun.id);
+      await runArtifacts.initialize();
+
+      await this.logRunEvent(runArtifacts, "info", "review run started", {
+        jobId: job.id,
+        tenantId: tenant.id,
+        mergeRequestIid: job.mergeRequestIid
+      });
+
+      const client = this.createGitLabClient(tenant, job.id, reviewRun.id, runArtifacts);
+      const parsedPayload = parseGitLabNoteHook(JSON.parse(job.payloadJson));
+
+      await this.logRunEvent(runArtifacts, "info", "hydrating merge request context", {
+        jobId: job.id,
+        mergeRequestIid: job.mergeRequestIid
+      });
 
       const context = await this.hydrator.hydrate({
         tenant,
@@ -138,17 +167,25 @@ export class ReviewWorker {
         discussions: context.discussions,
         mappings
       });
+      await this.ensureTriggerNoteReaction(
+        client,
+        tenant,
+        job.mergeRequestIid,
+        locateTriggerNoteReference(context.discussions, job.noteId),
+        REVIEW_STARTED_REACTION,
+        job.id
+      );
       const trigger = buildReviewTriggerContext({
-        payload: parseGitLabNoteHook(JSON.parse(job.payloadJson)),
+        payload: parsedPayload,
+        tenant,
         priorThreads
       });
-      const reviewRun = await this.storage.createReviewRun({
-        reviewJobId: job.id,
-        tenantId: tenant.id,
-        provider: this.reviewProvider.name,
-        model: this.reviewProvider.name === "copilot-sdk" ? null : null
+
+      await this.logRunEvent(runArtifacts, "info", "starting Copilot review", {
+        reviewRunId: reviewRun.id,
+        workspacePath: context.workspace.rootPath,
+        changedFiles: context.changes.length
       });
-      reviewRunId = reviewRun.id;
 
       const reviewResult = await this.reviewProvider.review({
         workspacePath: context.workspace.rootPath,
@@ -161,7 +198,8 @@ export class ReviewWorker {
         logging: {
           reviewRunId: reviewRun.id,
           jobId: job.id,
-          tenantId: tenant.id
+          tenantId: tenant.id,
+          runDirectory: runArtifacts.runDirectory
         },
         priorThreads
       });
@@ -210,12 +248,17 @@ export class ReviewWorker {
         client
       });
 
+      await this.logRunEvent(runArtifacts, "info", "reconciled review result into GitLab", {
+        reviewRunId: reviewRun.id,
+        summary: reconcileSummary
+      });
+
       await this.storage.markJobCompleted(job.id);
       await this.ensureTriggerNoteReaction(
         client,
         tenant,
         job.mergeRequestIid,
-        job.noteId,
+        locateTriggerNoteReference(context.discussions, job.noteId),
         REVIEW_COMPLETED_REACTION,
         job.id
       );
@@ -230,6 +273,14 @@ export class ReviewWorker {
     } catch (error) {
       if (reviewRunId) {
         await this.storage.failReviewRun(reviewRunId, getErrorMessage(error));
+      }
+
+      if (runArtifacts) {
+        await this.logRunEvent(runArtifacts, "error", "review job failed", {
+          jobId: job.id,
+          reviewRunId,
+          error: serializeError(error)
+        });
       }
 
       const nextRetryCount = job.retryCount + 1;
@@ -253,6 +304,13 @@ export class ReviewWorker {
         try {
           await this.workspaceMaterializer.cleanup(workspaceToCleanup);
         } catch (error) {
+          if (runArtifacts) {
+            await this.logRunEvent(runArtifacts, "warn", "workspace cleanup failed after review completion", {
+              jobId: job.id,
+              cleanupRoot: workspaceToCleanup.cleanupRoot,
+              error: serializeError(error)
+            });
+          }
           this.logger.warn(
             {
               err: error,
@@ -266,11 +324,27 @@ export class ReviewWorker {
     }
   }
 
-  private createGitLabClient(tenant: TenantRecord, jobId: string): GitLabClient {
+  private createGitLabClient(
+    tenant: TenantRecord,
+    jobId: string,
+    reviewRunId?: string,
+    runArtifacts?: ReviewRunArtifacts
+  ): GitLabClient {
     return new GitLabClient({
       baseUrl: tenant.baseUrl,
       apiToken: tenant.apiToken,
-      logger: this.logger.child({ tenantId: tenant.id, jobId })
+      logger: this.logger.child({
+        tenantId: tenant.id,
+        jobId,
+        ...(reviewRunId ? { reviewRunId } : {})
+      }),
+      ...(runArtifacts
+        ? {
+            requestLogger: {
+              log: (entry) => runArtifacts.appendGitLabHttpLog(entry)
+            }
+          }
+        : {})
     });
   }
 
@@ -278,18 +352,18 @@ export class ReviewWorker {
     client: GitLabClient,
     tenant: TenantRecord,
     mergeRequestIid: number,
-    noteId: number,
+    note: TriggerNoteReference,
     reactionName: string,
     jobId: string
   ): Promise<void> {
     try {
-      const existing = await client.listMergeRequestNoteAwardEmojis(tenant.projectId, mergeRequestIid, noteId);
+      const existing = await client.listTriggerNoteAwardEmojis(tenant.projectId, mergeRequestIid, note);
       const hasReaction = existing.some((award) => award.name === reactionName && isBotUser(award.user, tenant));
       if (hasReaction) {
         return;
       }
 
-      await client.createMergeRequestNoteAwardEmoji(tenant.projectId, mergeRequestIid, noteId, reactionName);
+      await client.createTriggerNoteAwardEmoji(tenant.projectId, mergeRequestIid, note, reactionName);
     } catch (error) {
       this.logger.warn(
         {
@@ -297,11 +371,30 @@ export class ReviewWorker {
           tenantId: tenant.id,
           jobId,
           mergeRequestIid,
-          noteId,
+          note,
           reactionName
         },
         "failed to synchronize review reaction"
       );
+    }
+  }
+
+  private async logRunEvent(
+    runArtifacts: ReviewRunArtifacts,
+    level: "debug" | "info" | "warn" | "error",
+    message: string,
+    data: Record<string, unknown>
+  ): Promise<void> {
+    this.logger[level](data, message);
+    try {
+      await runArtifacts.appendAppLog({
+        timestamp: new Date().toISOString(),
+        level,
+        message,
+        data
+      });
+    } catch (error) {
+      this.logger.warn({ err: error, message }, "failed to persist run app log");
     }
   }
 }
@@ -312,4 +405,18 @@ function getErrorMessage(error: unknown): string {
   }
 
   return String(error);
+}
+
+function serializeError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    };
+  }
+
+  return {
+    message: String(error)
+  };
 }

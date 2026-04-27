@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
+
 import type { Logger } from "pino";
 
+import type { GitLabHttpLogEntry } from "../review/run-artifacts.js";
 import type {
   GitLabAwardEmoji,
   GitLabDiscussion,
@@ -9,7 +12,8 @@ import type {
   GitLabProject,
   GitLabMergeRequestVersion,
   GitLabNote,
-  GitLabRepositoryTreeItem
+  GitLabRepositoryTreeItem,
+  TriggerNoteReference
 } from "./types.js";
 import { buildGitLabApiUrl, normalizeGitLabBaseUrl } from "./url.js";
 
@@ -17,6 +21,9 @@ interface GitLabClientOptions {
   baseUrl: string;
   apiToken: string;
   logger: Logger;
+  requestLogger?: {
+    log(entry: GitLabHttpLogEntry): Promise<void>;
+  } | undefined;
 }
 
 export class GitLabApiError extends Error {
@@ -37,11 +44,13 @@ export class GitLabClient {
   private readonly baseUrl: string;
   private readonly apiToken: string;
   private readonly logger: Logger;
+  private readonly requestLogger: GitLabClientOptions["requestLogger"];
 
   public constructor(options: GitLabClientOptions) {
     this.baseUrl = normalizeGitLabBaseUrl(options.baseUrl);
     this.apiToken = options.apiToken;
     this.logger = options.logger.child({ gitlabBaseUrl: this.baseUrl });
+    this.requestLogger = options.requestLogger;
   }
 
   public async getMergeRequest(projectId: number, mergeRequestIid: number): Promise<GitLabMergeRequest> {
@@ -110,6 +119,17 @@ export class GitLabClient {
     );
   }
 
+  public async listMergeRequestDiscussionNoteAwardEmojis(
+    projectId: number,
+    mergeRequestIid: number,
+    discussionId: string,
+    noteId: number
+  ): Promise<GitLabAwardEmoji[]> {
+    return this.requestPaginated<GitLabAwardEmoji>(
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${encodeURIComponent(discussionId)}/notes/${noteId}/award_emoji`
+    );
+  }
+
   public async createMergeRequestNoteAwardEmoji(
     projectId: number,
     mergeRequestIid: number,
@@ -121,6 +141,47 @@ export class GitLabClient {
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes/${noteId}/award_emoji`,
       { name }
     );
+  }
+
+  public async createMergeRequestDiscussionNoteAwardEmoji(
+    projectId: number,
+    mergeRequestIid: number,
+    discussionId: string,
+    noteId: number,
+    name: string
+  ): Promise<GitLabAwardEmoji> {
+    return this.requestForm<GitLabAwardEmoji>(
+      "POST",
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${encodeURIComponent(discussionId)}/notes/${noteId}/award_emoji`,
+      { name }
+    );
+  }
+
+  public async listTriggerNoteAwardEmojis(
+    projectId: number,
+    mergeRequestIid: number,
+    note: TriggerNoteReference
+  ): Promise<GitLabAwardEmoji[]> {
+    return note.kind === "discussion-note"
+      ? this.listMergeRequestDiscussionNoteAwardEmojis(projectId, mergeRequestIid, note.discussionId, note.noteId)
+      : this.listMergeRequestNoteAwardEmojis(projectId, mergeRequestIid, note.noteId);
+  }
+
+  public async createTriggerNoteAwardEmoji(
+    projectId: number,
+    mergeRequestIid: number,
+    note: TriggerNoteReference,
+    name: string
+  ): Promise<GitLabAwardEmoji> {
+    return note.kind === "discussion-note"
+      ? this.createMergeRequestDiscussionNoteAwardEmoji(
+          projectId,
+          mergeRequestIid,
+          note.discussionId,
+          note.noteId,
+          name
+        )
+      : this.createMergeRequestNoteAwardEmoji(projectId, mergeRequestIid, note.noteId, name);
   }
 
   public async createMergeRequestDiscussion(
@@ -137,6 +198,27 @@ export class GitLabClient {
       "POST",
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions`,
       payload
+    );
+  }
+
+  public async createMergeRequestNote(projectId: number, mergeRequestIid: number, body: string): Promise<GitLabNote> {
+    return this.requestForm<GitLabNote>(
+      "POST",
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes`,
+      { body }
+    );
+  }
+
+  public async updateMergeRequestNote(
+    projectId: number,
+    mergeRequestIid: number,
+    noteId: number,
+    body: string
+  ): Promise<GitLabNote> {
+    return this.requestForm<GitLabNote>(
+      "PUT",
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes/${noteId}`,
+      { body }
     );
   }
 
@@ -209,6 +291,22 @@ export class GitLabClient {
       `/projects/${encodeURIComponent(String(projectId))}/repository/files/${encodeURIComponent(filePath)}/raw`,
       { ref }
     );
+    const requestId = randomUUID();
+    const startedAt = Date.now();
+    await this.logGitLabRequest({
+      timestamp: new Date().toISOString(),
+      requestId,
+      phase: "request",
+      method: "GET",
+      path: `/projects/${encodeURIComponent(String(projectId))}/repository/files/${encodeURIComponent(filePath)}/raw`,
+      requestUrl: requestUrl.toString(),
+      request: {
+        query: { ref },
+        headers: {
+          accept: "*/*"
+        }
+      }
+    });
     const response = await fetch(
       requestUrl,
       {
@@ -219,8 +317,22 @@ export class GitLabClient {
       }
     );
 
+    const responseBody = await response.text();
     if (!response.ok) {
-      const responseBody = await response.text();
+      await this.logGitLabRequest({
+        timestamp: new Date().toISOString(),
+        requestId,
+        phase: "error",
+        method: "GET",
+        path: `/projects/${encodeURIComponent(String(projectId))}/repository/files/${encodeURIComponent(filePath)}/raw`,
+        requestUrl: requestUrl.toString(),
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        response: {
+          headers: summarizeHeaders(response.headers),
+          body: truncateForLog(responseBody)
+        }
+      });
       throw new GitLabApiError(
         `GitLab raw file request failed for ${filePath} with ${response.status}`,
         response.status,
@@ -229,7 +341,21 @@ export class GitLabClient {
       );
     }
 
-    return response.text();
+    await this.logGitLabRequest({
+      timestamp: new Date().toISOString(),
+      requestId,
+      phase: "response",
+      method: "GET",
+      path: `/projects/${encodeURIComponent(String(projectId))}/repository/files/${encodeURIComponent(filePath)}/raw`,
+      requestUrl: requestUrl.toString(),
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      response: {
+        headers: summarizeHeaders(response.headers),
+        body: truncateForLog(responseBody)
+      }
+    });
+    return responseBody;
   }
 
   public buildGitAuthEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -249,13 +375,43 @@ export class GitLabClient {
     query?: Record<string, string | number | undefined>
   ): Promise<T> {
     const requestUrl = this.buildUrl(path, query);
+    const requestId = randomUUID();
+    const startedAt = Date.now();
+    await this.logGitLabRequest({
+      timestamp: new Date().toISOString(),
+      requestId,
+      phase: "request",
+      method,
+      path,
+      requestUrl: requestUrl.toString(),
+      request: {
+        query,
+        headers: {
+          accept: "application/json"
+        }
+      }
+    });
     const response = await fetch(requestUrl, {
       method,
       headers: this.buildHeaders()
     });
 
+    const responseBody = await response.text();
     if (!response.ok) {
-      const responseBody = await response.text();
+      await this.logGitLabRequest({
+        timestamp: new Date().toISOString(),
+        requestId,
+        phase: "error",
+        method,
+        path,
+        requestUrl: requestUrl.toString(),
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        response: {
+          headers: summarizeHeaders(response.headers),
+          body: truncateForLog(responseBody)
+        }
+      });
       throw new GitLabApiError(
         `GitLab API request failed for ${method} ${path} with ${response.status}`,
         response.status,
@@ -264,7 +420,22 @@ export class GitLabClient {
       );
     }
 
-    return response.json() as Promise<T>;
+    await this.logGitLabRequest({
+      timestamp: new Date().toISOString(),
+      requestId,
+      phase: "response",
+      method,
+      path,
+      requestUrl: requestUrl.toString(),
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      response: {
+        headers: summarizeHeaders(response.headers),
+        body: truncateForLog(responseBody)
+      }
+    });
+
+    return JSON.parse(responseBody) as T;
   }
 
   private async requestBuffer(
@@ -273,6 +444,22 @@ export class GitLabClient {
     query?: Record<string, string | number | undefined>
   ): Promise<Buffer> {
     const requestUrl = this.buildUrl(path, query);
+    const requestId = randomUUID();
+    const startedAt = Date.now();
+    await this.logGitLabRequest({
+      timestamp: new Date().toISOString(),
+      requestId,
+      phase: "request",
+      method,
+      path,
+      requestUrl: requestUrl.toString(),
+      request: {
+        query,
+        headers: {
+          accept: "application/octet-stream, application/x-gzip, */*"
+        }
+      }
+    });
     const response = await fetch(requestUrl, {
       method,
       headers: this.buildHeaders({
@@ -282,6 +469,20 @@ export class GitLabClient {
 
     if (!response.ok) {
       const responseBody = await response.text();
+      await this.logGitLabRequest({
+        timestamp: new Date().toISOString(),
+        requestId,
+        phase: "error",
+        method,
+        path,
+        requestUrl: requestUrl.toString(),
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        response: {
+          headers: summarizeHeaders(response.headers),
+          body: truncateForLog(responseBody)
+        }
+      });
       throw new GitLabApiError(
         `GitLab archive request failed for ${path} with ${response.status}`,
         response.status,
@@ -291,6 +492,23 @@ export class GitLabClient {
     }
 
     const arrayBuffer = await response.arrayBuffer();
+    await this.logGitLabRequest({
+      timestamp: new Date().toISOString(),
+      requestId,
+      phase: "response",
+      method,
+      path,
+      requestUrl: requestUrl.toString(),
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      response: {
+        headers: summarizeHeaders(response.headers),
+        body: {
+          kind: "binary",
+          size: arrayBuffer.byteLength
+        }
+      }
+    });
     return Buffer.from(arrayBuffer);
   }
 
@@ -303,6 +521,23 @@ export class GitLabClient {
     appendFormValue(body, payload);
 
     const requestUrl = this.buildUrl(path);
+    const requestId = randomUUID();
+    const startedAt = Date.now();
+    await this.logGitLabRequest({
+      timestamp: new Date().toISOString(),
+      requestId,
+      phase: "request",
+      method,
+      path,
+      requestUrl: requestUrl.toString(),
+      request: {
+        headers: {
+          accept: "application/json",
+          "content-type": "application/x-www-form-urlencoded"
+        },
+        body: payload
+      }
+    });
     const response = await fetch(requestUrl, {
       method,
       headers: this.buildHeaders({
@@ -311,8 +546,25 @@ export class GitLabClient {
       body
     });
 
+    const responseBody = await response.text();
     if (!response.ok) {
-      const responseBody = await response.text();
+      await this.logGitLabRequest({
+        timestamp: new Date().toISOString(),
+        requestId,
+        phase: "error",
+        method,
+        path,
+        requestUrl: requestUrl.toString(),
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        request: {
+          body: payload
+        },
+        response: {
+          headers: summarizeHeaders(response.headers),
+          body: truncateForLog(responseBody)
+        }
+      });
       throw new GitLabApiError(
         `GitLab form request failed for ${method} ${path} with ${response.status}`,
         response.status,
@@ -321,7 +573,22 @@ export class GitLabClient {
       );
     }
 
-    return response.json() as Promise<T>;
+    await this.logGitLabRequest({
+      timestamp: new Date().toISOString(),
+      requestId,
+      phase: "response",
+      method,
+      path,
+      requestUrl: requestUrl.toString(),
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      response: {
+        headers: summarizeHeaders(response.headers),
+        body: truncateForLog(responseBody)
+      }
+    });
+
+    return JSON.parse(responseBody) as T;
   }
 
   private async requestPaginated<T>(
@@ -337,6 +604,26 @@ export class GitLabClient {
         page,
         per_page: 100
       });
+      const requestId = randomUUID();
+      const startedAt = Date.now();
+      await this.logGitLabRequest({
+        timestamp: new Date().toISOString(),
+        requestId,
+        phase: "request",
+        method: "GET",
+        path,
+        requestUrl: requestUrl.toString(),
+        request: {
+          query: {
+            ...query,
+            page,
+            per_page: 100
+          },
+          headers: {
+            accept: "application/json"
+          }
+        }
+      });
       const response = await fetch(
         requestUrl,
         {
@@ -345,8 +632,22 @@ export class GitLabClient {
         }
       );
 
+      const responseBody = await response.text();
       if (!response.ok) {
-        const responseBody = await response.text();
+        await this.logGitLabRequest({
+          timestamp: new Date().toISOString(),
+          requestId,
+          phase: "error",
+          method: "GET",
+          path,
+          requestUrl: requestUrl.toString(),
+          status: response.status,
+          durationMs: Date.now() - startedAt,
+          response: {
+            headers: summarizeHeaders(response.headers),
+            body: truncateForLog(responseBody)
+          }
+        });
         throw new GitLabApiError(
           `GitLab paginated request failed for ${path} with ${response.status}`,
           response.status,
@@ -355,7 +656,22 @@ export class GitLabClient {
         );
       }
 
-      const pageItems = (await response.json()) as T[];
+      await this.logGitLabRequest({
+        timestamp: new Date().toISOString(),
+        requestId,
+        phase: "response",
+        method: "GET",
+        path,
+        requestUrl: requestUrl.toString(),
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        response: {
+          headers: summarizeHeaders(response.headers),
+          body: truncateForLog(responseBody)
+        }
+      });
+
+      const pageItems = JSON.parse(responseBody) as T[];
       items.push(...pageItems);
 
       const nextPage = response.headers.get("x-next-page");
@@ -380,6 +696,18 @@ export class GitLabClient {
       accept: "application/json",
       ...additional
     });
+  }
+
+  private async logGitLabRequest(entry: GitLabHttpLogEntry): Promise<void> {
+    if (!this.requestLogger) {
+      return;
+    }
+
+    try {
+      await this.requestLogger.log(entry);
+    } catch (error) {
+      this.logger.warn({ err: error, requestId: entry.requestId, path: entry.path }, "failed to persist GitLab request log");
+    }
   }
 }
 
@@ -416,4 +744,29 @@ function appendUnknownFormValue(params: URLSearchParams, value: unknown, key: st
   }
 
   appendFormValue(params, value as Record<string, unknown>, key);
+}
+
+function summarizeHeaders(headers: Headers): Record<string, string> {
+  const summary: Record<string, string> = {};
+  for (const [key, value] of headers.entries()) {
+    if (key.toLowerCase() === "set-cookie") {
+      continue;
+    }
+
+    summary[key] = value;
+  }
+
+  return summary;
+}
+
+function truncateForLog(value: unknown, maxLength = 20_000): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength)}…[truncated ${value.length - maxLength} chars]`;
 }

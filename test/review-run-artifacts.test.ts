@@ -1,0 +1,48 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import { ReviewRunArtifacts } from "../src/review/run-artifacts.js";
+
+describe("ReviewRunArtifacts", () => {
+  it("writes app and GitLab HTTP logs into the review run directory", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-run-logs-"));
+    const artifacts = new ReviewRunArtifacts(rootDir, "run_123");
+
+    await artifacts.initialize();
+    await artifacts.appendAppLog({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      message: "started",
+      data: {
+        jobId: "job_123"
+      }
+    });
+    await artifacts.appendGitLabHttpLog({
+      timestamp: new Date().toISOString(),
+      requestId: "req_1",
+      phase: "response",
+      method: "POST",
+      path: "/projects/1/merge_requests/2/discussions",
+      requestUrl: "https://gitlab.example.com/api/v4/projects/1/merge_requests/2/discussions",
+      status: 400,
+      response: {
+        body: "{\"message\":\"position is invalid\"}"
+      }
+    });
+
+    expect(JSON.parse((await readFile(artifacts.appLogPath, "utf8")).trim())).toMatchObject({
+      message: "started",
+      data: {
+        jobId: "job_123"
+      }
+    });
+    expect(JSON.parse((await readFile(artifacts.gitLabHttpLogPath, "utf8")).trim())).toMatchObject({
+      requestId: "req_1",
+      status: 400
+    });
+    expect(artifacts.copilotDirectory).toBe(join(rootDir, "run_123", "copilot"));
+  });
+});
