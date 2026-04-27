@@ -18,7 +18,7 @@ interface SerializedError {
   stack?: string | undefined;
 }
 
-interface CopilotRunLogRecord {
+export interface CopilotRunLogRecord {
   startedAt: string;
   finishedAt: string | null;
   sessionId: string | null;

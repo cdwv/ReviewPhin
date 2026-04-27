@@ -20,6 +20,16 @@ describe("CopilotRunLog", () => {
       discussions: [],
       instructionFiles: [],
       priorThreads: [],
+      scope: {
+        mode: "first-pass-full",
+        scopeSummary: "Initial review scope",
+        widenScopeHints: [],
+        allChangedFiles: [],
+        omittedChangedFiles: [],
+        targetThread: null,
+        previousReview: null,
+        deltaSincePreviousReview: null
+      },
       logging: {
         reviewRunId: "run_123",
         jobId: "job_123",

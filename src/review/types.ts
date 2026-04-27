@@ -76,6 +76,23 @@ export type PriorDisposition = z.infer<typeof priorDispositionSchema>;
 export type ReviewMergeReadiness = z.infer<typeof reviewMergeReadinessSchema>;
 export type ReviewOverview = z.infer<typeof reviewOverviewSchema>;
 export type ReviewResult = z.infer<typeof reviewResultSchema>;
+export type ReviewMode = "first-pass-full" | "incremental-rereview" | "follow-up-thread";
+
+export interface ReviewChangeSummary {
+  path: string;
+  oldPath: string | null;
+  newFile: boolean;
+  renamedFile: boolean;
+  deletedFile: boolean;
+  reason?: string | undefined;
+}
+
+export interface PreviousReviewFindingSummary {
+  title: string;
+  severity: ReviewFinding["severity"];
+  category: ReviewFinding["category"];
+  anchor: ReviewAnchor | null;
+}
 
 export interface ProviderThreadContext {
   threadId: string;
@@ -110,6 +127,32 @@ export interface WebhookReviewTrigger {
   note: TriggerNoteReference;
 }
 
+export interface PreviousReviewContext {
+  reviewRunId: string;
+  reviewedAt: string;
+  headSha: string;
+  overviewSummary: string | null;
+  mergeReadiness: ReviewMergeReadiness | null;
+  findings: PreviousReviewFindingSummary[];
+}
+
+export interface ReviewDeltaContext {
+  previousReviewRunId: string;
+  previousHeadSha: string;
+  changedFiles: ReviewChangeSummary[];
+}
+
+export interface ReviewScopeContext {
+  mode: ReviewMode;
+  scopeSummary: string;
+  widenScopeHints: string[];
+  allChangedFiles: ReviewChangeSummary[];
+  omittedChangedFiles: ReviewChangeSummary[];
+  targetThread: ProviderThreadContext | null;
+  previousReview: PreviousReviewContext | null;
+  deltaSincePreviousReview: ReviewDeltaContext | null;
+}
+
 export interface ReviewContext {
   workspacePath: string;
   mergeRequest: GitLabMergeRequest;
@@ -119,6 +162,7 @@ export interface ReviewContext {
   instructionFiles: InstructionFile[];
   trigger: ReviewTriggerContext;
   priorThreads: ProviderThreadContext[];
+  scope: ReviewScopeContext;
   logging?: {
     reviewRunId: string;
     jobId: string;

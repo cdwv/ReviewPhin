@@ -5,6 +5,34 @@ import { truncate } from "../utils/text.js";
 
 export function buildReviewPrompt(context: ReviewContext): string {
   const compactContext = {
+    reviewMode: context.scope.mode,
+    reviewScope: {
+      summary: context.scope.scopeSummary,
+      totalChangedFiles: context.scope.allChangedFiles.length,
+      includedChangedFiles: context.changes.length,
+      omittedChangedFiles: context.scope.omittedChangedFiles.slice(0, 25),
+      widenScopeHints: context.scope.widenScopeHints,
+      targetThread: context.scope.targetThread
+        ? {
+            threadId: context.scope.targetThread.threadId,
+            discussionId: context.scope.targetThread.discussionId,
+            title: context.scope.targetThread.title,
+            anchor: context.scope.targetThread.anchor,
+            resolved: context.scope.targetThread.resolved
+          }
+        : null,
+      previousReview: context.scope.previousReview
+        ? {
+            reviewRunId: context.scope.previousReview.reviewRunId,
+            reviewedAt: context.scope.previousReview.reviewedAt,
+            headSha: context.scope.previousReview.headSha,
+            overviewSummary: context.scope.previousReview.overviewSummary,
+            mergeReadiness: context.scope.previousReview.mergeReadiness,
+            findings: context.scope.previousReview.findings
+          }
+        : null,
+      deltaSincePreviousReview: context.scope.deltaSincePreviousReview
+    },
     reviewTrigger: {
       kind: context.trigger.kind,
       noteId: context.trigger.noteId,
@@ -32,6 +60,7 @@ export function buildReviewPrompt(context: ReviewContext): string {
       deletedFile: change.deleted_file,
       diff: truncate(change.diff ?? "", 6_000)
     })),
+    additionalChangedFiles: context.scope.omittedChangedFiles.slice(0, 40),
     mergeRequestNotes: context.notes.filter((note) => !isReviewSummaryNoteBody(note.body)).slice(0, 50).map((note) => ({
       id: note.id,
       author: note.author.username,
@@ -57,6 +86,8 @@ export function buildReviewPrompt(context: ReviewContext): string {
 
   return [
     loadReviewPromptFile("main.md"),
+    "",
+    loadReviewPromptFile(getModePromptFile(context)),
     "",
     "JSON schema:",
      JSON.stringify(
@@ -114,4 +145,15 @@ export function buildReviewPrompt(context: ReviewContext): string {
     "Context:",
     JSON.stringify(compactContext, null, 2)
   ].join("\n");
+}
+
+function getModePromptFile(context: ReviewContext): "first-pass-full.md" | "incremental-rereview.md" | "follow-up-thread.md" {
+  switch (context.scope.mode) {
+    case "incremental-rereview":
+      return "incremental-rereview.md";
+    case "follow-up-thread":
+      return "follow-up-thread.md";
+    default:
+      return "first-pass-full.md";
+  }
 }
