@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 
 import { isBotUser } from "../gitlab/bot-user.js";
 import { appendSuggestion, buildDiffPosition, renderSuggestionMarkdown } from "../gitlab/positions.js";
-import type { GitLabClient } from "../gitlab/client.js";
+import { GitLabApiError, type GitLabClient } from "../gitlab/client.js";
 import type {
   GitLabDiscussion,
   GitLabDiffPosition,
@@ -13,6 +13,7 @@ import type {
 import type { Storage, DiscussionMappingRecord, TenantRecord } from "../storage/types.js";
 import { createFindingFingerprint, createFindingIdentityKey } from "../utils/ids.js";
 import { firstNonEmptyLine } from "../utils/text.js";
+import { buildReviewSummaryNote, findLatestReviewSummaryNote, isReviewSummaryNoteBody } from "../review/summary.js";
 import type {
   PriorDisposition,
   ProviderThreadContext,
@@ -44,12 +45,15 @@ export interface ReconcileSummary {
   replied: number;
   resolved: number;
   kept: number;
+  summaryNoteAction: "created" | "updated" | null;
 }
 
 interface DiscussionReconcilerOptions {
   storage: Storage;
   logger: Logger;
 }
+
+type ThreadReconcileAction = "created" | "updated" | "replied" | "resolved" | "kept";
 
 export class DiscussionReconciler {
   private readonly storage: Storage;
@@ -84,7 +88,8 @@ export class DiscussionReconciler {
       updated: 0,
       replied: 0,
       resolved: 0,
-      kept: 0
+      kept: 0,
+      summaryNoteAction: null
     };
 
     const referencedThreadIds = new Set<string>();
@@ -223,6 +228,8 @@ export class DiscussionReconciler {
       }
     }
 
+    summary.summaryNoteAction = await this.syncSummaryNote(input);
+
     return summary;
   }
 
@@ -234,7 +241,7 @@ export class DiscussionReconciler {
     thread: KnownThread;
     finding: ReviewFinding;
     disposition: PriorDisposition | undefined;
-  }): Promise<keyof ReconcileSummary> {
+  }): Promise<ThreadReconcileAction> {
     const body = renderFindingBody(input.finding);
     const identityKey = createFindingIdentityKey({
       title: input.finding.title,
@@ -340,12 +347,16 @@ export class DiscussionReconciler {
     const position = input.finding.anchor
       ? buildDiffPosition(input.finding.anchor, input.context.changes, input.context.latestVersion)
       : null;
-
-    const discussion = await input.client.createMergeRequestDiscussion(
-      input.tenant.projectId,
-      input.context.mergeRequest.iid,
-      position ? { body, position } : { body }
-    );
+    const createdThread = await this.createDiscussion({
+      client: input.client,
+      projectId: input.tenant.projectId,
+      mergeRequestIid: input.context.mergeRequest.iid,
+      reviewRunId: input.reviewRunId,
+      finding: input.finding,
+      body,
+      position
+    });
+    const { discussion, position: persistedPosition } = createdThread;
 
     const note = discussion.notes[0];
     if (!note) {
@@ -379,7 +390,7 @@ export class DiscussionReconciler {
       gitlabDiscussionId: discussion.id,
       gitlabNoteId: note.id,
       anchorJson: input.finding.anchor ? JSON.stringify(input.finding.anchor) : null,
-      positionJson: position ? JSON.stringify(position) : null,
+      positionJson: persistedPosition ? JSON.stringify(persistedPosition) : null,
       botDiscussion: true,
       botNote: true,
       noteAuthorId: note.author.id,
@@ -387,6 +398,59 @@ export class DiscussionReconciler {
       status: note.resolved ? "resolved" : "open",
       lastReviewRunId: input.reviewRunId
     });
+  }
+
+  private async createDiscussion(input: {
+    client: GitLabClient;
+    projectId: number;
+    mergeRequestIid: number;
+    reviewRunId: string;
+    finding: ReviewFinding;
+    body: string;
+    position: GitLabDiffPosition | null;
+  }): Promise<{ discussion: GitLabDiscussion; position: GitLabDiffPosition | null }> {
+    if (!input.position) {
+      return {
+        discussion: await input.client.createMergeRequestDiscussion(input.projectId, input.mergeRequestIid, {
+          body: input.body
+        }),
+        position: null
+      };
+    }
+
+    try {
+      return {
+        discussion: await input.client.createMergeRequestDiscussion(input.projectId, input.mergeRequestIid, {
+          body: input.body,
+          position: input.position
+        }),
+        position: input.position
+      };
+    } catch (error) {
+      if (!isInvalidDiffPositionError(error)) {
+        throw error;
+      }
+
+      this.logger.warn(
+        {
+          err: error,
+          reviewRunId: input.reviewRunId,
+          projectId: input.projectId,
+          mergeRequestIid: input.mergeRequestIid,
+          findingTitle: input.finding.title,
+          anchor: input.finding.anchor,
+          position: input.position
+        },
+        "GitLab rejected diff note position; retrying as an overview thread"
+      );
+
+      return {
+        discussion: await input.client.createMergeRequestDiscussion(input.projectId, input.mergeRequestIid, {
+          body: input.body
+        }),
+        position: null
+      };
+    }
   }
 
   private async persistThreadState(input: {
@@ -432,6 +496,41 @@ export class DiscussionReconciler {
       lastReviewRunId: input.reviewRunId
     });
   }
+
+  private async syncSummaryNote(input: {
+    tenant: TenantRecord;
+    context: HydratedMergeRequestContext;
+    reviewRunId: string;
+    reviewResult: ReviewResult;
+    client: GitLabClient;
+  }): Promise<ReconcileSummary["summaryNoteAction"]> {
+    const body = buildReviewSummaryNote({
+      context: input.context,
+      reviewResult: input.reviewResult
+    });
+    const existingNote = findLatestReviewSummaryNote(input.context.notes, (note) => isBotUser(note.author, input.tenant));
+
+    if (existingNote) {
+      await input.client.updateMergeRequestNote(
+        input.tenant.projectId,
+        input.context.mergeRequest.iid,
+        existingNote.id,
+        body
+      );
+      return "updated";
+    }
+
+    await input.client.createMergeRequestNote(input.tenant.projectId, input.context.mergeRequest.iid, body);
+    return "created";
+  }
+}
+
+function isInvalidDiffPositionError(error: unknown): error is GitLabApiError {
+  return (
+    error instanceof GitLabApiError &&
+    error.status === 400 &&
+    /\bline_code\b|\bvalid line code\b|\bposition\b[\s\S]*\b(?:invalid|incomplete)\b/i.test(error.responseBody)
+  );
 }
 
 export function buildProviderThreads(input: {
@@ -471,6 +570,9 @@ function buildKnownThreads(input: {
     const mapping = mappingByDiscussionId.get(discussion.id) ?? null;
     const botOwnedDiscussion = isBotUser(rootNote.author, input.tenant);
     if (!botOwnedDiscussion) {
+      continue;
+    }
+    if (isReviewSummaryNoteBody(rootNote.body)) {
       continue;
     }
 

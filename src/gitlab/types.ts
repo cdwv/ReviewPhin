@@ -74,6 +74,17 @@ export interface GitLabAwardEmoji {
   created_at: string;
 }
 
+export type TriggerNoteReference =
+  | {
+      kind: "merge-request-note";
+      noteId: number;
+    }
+  | {
+      kind: "discussion-note";
+      discussionId: string;
+      noteId: number;
+    };
+
 export interface GitLabDiscussion {
   id: string;
   individual_note: boolean;

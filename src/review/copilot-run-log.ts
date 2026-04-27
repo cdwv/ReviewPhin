@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -45,12 +44,10 @@ interface CopilotRunLogRecord {
 
 export class CopilotRunLog {
   private readonly logDir: string;
-  private readonly fileName: string;
   private readonly record: CopilotRunLogRecord;
 
   public constructor(options: CopilotRunLogOptions) {
     this.logDir = options.logDir;
-    this.fileName = buildLogFileName(options.context);
     this.record = {
       startedAt: new Date().toISOString(),
       finishedAt: null,
@@ -71,7 +68,7 @@ export class CopilotRunLog {
   }
 
   public get path(): string {
-    return join(this.logDir, this.fileName);
+    return join(this.logDir, "session.json");
   }
 
   public setSessionId(sessionId: string): void {
@@ -104,16 +101,6 @@ export class CopilotRunLog {
     await writeFile(this.path, JSON.stringify(this.record, null, 2), "utf8");
     return this.path;
   }
-}
-
-function buildLogFileName(context: ReviewContext): string {
-  const startedAt = new Date().toISOString().replace(/[:.]/g, "-");
-  const key = context.logging?.reviewRunId ?? randomUUID();
-  return `${startedAt}-${sanitizeFileName(key)}.json`;
-}
-
-function sanitizeFileName(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
 function serializeError(error: unknown): SerializedError {

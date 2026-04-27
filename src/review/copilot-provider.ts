@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import {
   CopilotClient,
   type AssistantMessageEvent,
@@ -17,7 +19,7 @@ interface CopilotReviewProviderOptions {
   logger: Logger;
   model?: string | undefined;
   cliPath?: string | undefined;
-  logDir: string;
+  runLogDir: string;
   timeoutMs: number;
 }
 
@@ -27,21 +29,21 @@ export class CopilotReviewProvider implements ReviewProvider {
   private readonly logger: Logger;
   private readonly model: string | undefined;
   private readonly cliPath: string | undefined;
-  private readonly logDir: string;
+  private readonly runLogDir: string;
   private readonly timeoutMs: number;
 
   public constructor(options: CopilotReviewProviderOptions) {
     this.logger = options.logger;
     this.model = options.model;
     this.cliPath = options.cliPath;
-    this.logDir = options.logDir;
+    this.runLogDir = options.runLogDir;
     this.timeoutMs = options.timeoutMs;
   }
 
   public async review(context: ReviewContext): Promise<ReviewResult> {
     const prompt = buildReviewPrompt(context);
     const runLog = new CopilotRunLog({
-      logDir: this.logDir,
+      logDir: join(context.logging?.runDirectory ?? this.runLogDir, "copilot"),
       context,
       prompt,
       model: this.model

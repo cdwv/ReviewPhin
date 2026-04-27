@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app.js";
 import { createLogger } from "../src/logger.js";
+import type { WebhookReviewTrigger } from "../src/review/types.js";
 
 const tenant = {
   id: "tenant_1",
@@ -53,11 +54,18 @@ function createPayload(note: string) {
 
 describe("GitLab webhook route", () => {
   const logger = createLogger("silent");
+  const trigger = {
+    kind: "direct-mention" as const,
+    note: {
+      kind: "merge-request-note" as const,
+      noteId: 55
+    }
+  };
   const tenantRegistry = {
     resolveWebhookTenant: vi.fn(async () => tenant)
   };
   const reviewWorker = {
-    shouldHandleFollowUpWebhook: vi.fn(async () => false),
+    classifyWebhookTrigger: vi.fn(async (): Promise<WebhookReviewTrigger | null> => null),
     createReviewJobFromWebhook: vi.fn(async () => ({
       job: { id: "job_1" },
       created: true
@@ -78,7 +86,7 @@ describe("GitLab webhook route", () => {
     const app = await appPromise;
     await app.close();
     tenantRegistry.resolveWebhookTenant.mockClear();
-    reviewWorker.shouldHandleFollowUpWebhook.mockClear();
+    reviewWorker.classifyWebhookTrigger.mockClear();
     reviewWorker.createReviewJobFromWebhook.mockClear();
     queue.enqueue.mockClear();
     appPromise = createApp({
@@ -89,8 +97,9 @@ describe("GitLab webhook route", () => {
     });
   });
 
-  it("queues a review job for /review comments", async () => {
+  it("queues a review job for direct mention comments", async () => {
     const app = await appPromise;
+    reviewWorker.classifyWebhookTrigger.mockResolvedValueOnce(trigger);
 
     const response = await app.inject({
       method: "POST",
@@ -98,7 +107,7 @@ describe("GitLab webhook route", () => {
       headers: {
         "x-gitlab-token": "secret"
       },
-      payload: createPayload("please /review this")
+      payload: createPayload("@review-bot please review this")
     });
 
     expect(response.statusCode).toBe(202);
@@ -113,7 +122,14 @@ describe("GitLab webhook route", () => {
 
   it("queues a review job for follow-up comments in bot-owned threads", async () => {
     const app = await appPromise;
-    reviewWorker.shouldHandleFollowUpWebhook.mockResolvedValueOnce(true);
+    reviewWorker.classifyWebhookTrigger.mockResolvedValueOnce({
+      kind: "follow-up-comment",
+      note: {
+        kind: "discussion-note",
+        discussionId: "disc_1",
+        noteId: 55
+      }
+    });
 
     const response = await app.inject({
       method: "POST",
@@ -130,7 +146,7 @@ describe("GitLab webhook route", () => {
       jobId: "job_1",
       deduplicated: false
     });
-    expect(reviewWorker.shouldHandleFollowUpWebhook).toHaveBeenCalledTimes(1);
+    expect(reviewWorker.classifyWebhookTrigger).toHaveBeenCalledTimes(1);
     expect(reviewWorker.createReviewJobFromWebhook).toHaveBeenCalledTimes(1);
     expect(queue.enqueue).toHaveBeenCalledWith("job_1");
   });
@@ -150,9 +166,9 @@ describe("GitLab webhook route", () => {
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual({
       accepted: false,
-      reason: "no-review-command"
+      reason: "no-trigger"
     });
-    expect(reviewWorker.shouldHandleFollowUpWebhook).toHaveBeenCalledTimes(1);
+    expect(reviewWorker.classifyWebhookTrigger).toHaveBeenCalledTimes(1);
     expect(reviewWorker.createReviewJobFromWebhook).not.toHaveBeenCalled();
     expect(queue.enqueue).not.toHaveBeenCalled();
   });

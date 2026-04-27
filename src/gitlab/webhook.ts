@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { GitLabNoteHookPayload } from "./types.js";
 import { urlMatchesGitLabBase } from "./url.js";
 
+const GITLAB_USERNAME_TRAILING_CHAR_PATTERN = "[A-Za-z0-9_.-]";
+
 const noteHookSchema = z.object({
   object_kind: z.literal("note"),
   event_type: z.string().optional(),
@@ -57,24 +59,28 @@ const noteHookSchema = z.object({
     .optional()
 });
 
-const reviewCommandPattern = /(^|\s)\/review(?:\s|$)/i;
-
 export function parseGitLabNoteHook(payload: unknown): GitLabNoteHookPayload {
   return noteHookSchema.parse(payload);
 }
 
-export function containsReviewCommand(noteBody: string): boolean {
-  return reviewCommandPattern.test(noteBody);
+export function containsBotMention(noteBody: string, botUsername: string | null): boolean {
+  if (!botUsername) {
+    return false;
+  }
+
+  return buildBotMentionPattern(botUsername).test(noteBody);
 }
 
-export function extractReviewCommandInstruction(noteBody: string): string | null {
-  const match = noteBody.match(/\/review\b([\s\S]*)/i);
-  const suffix = match?.[1];
-  if (!suffix) {
+export function extractBotMentionInstruction(noteBody: string, botUsername: string | null): string | null {
+  if (!botUsername) {
     return null;
   }
 
-  const instruction = suffix.trim();
+  const instruction = noteBody
+    .replace(buildBotMentionPattern(botUsername, "ig"), "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+
   return instruction.length > 0 ? instruction : null;
 }
 
@@ -102,4 +108,12 @@ export function extractWebhookHeadSha(payload: GitLabNoteHookPayload): string {
       throw new Error("GitLab note hook payload did not include a merge request head SHA");
     })()
   );
+}
+
+function buildBotMentionPattern(botUsername: string, flags = "i"): RegExp {
+  return new RegExp(`(^|[^\\w])@${escapeRegExp(botUsername)}(?!${GITLAB_USERNAME_TRAILING_CHAR_PATTERN})`, flags);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

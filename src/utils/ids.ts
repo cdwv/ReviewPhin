@@ -18,7 +18,9 @@ export function createReviewJobDedupeKey(input: {
   projectId: number;
   mergeRequestIid: number;
   noteId: number;
-  headSha: string;
+  noteAction?: "create" | "update" | undefined;
+  noteUpdatedAt?: string | undefined;
+  noteBody?: string | undefined;
 }): string {
   return sha256(
     [
@@ -26,7 +28,8 @@ export function createReviewJobDedupeKey(input: {
       input.projectId,
       input.mergeRequestIid,
       input.noteId,
-      input.headSha
+      input.noteAction ?? "create",
+      resolveReviewJobNoteRevision(input)
     ].join("::")
   );
 }
@@ -67,4 +70,20 @@ export function createFindingFingerprint(input: {
 
 function normalizeForKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function resolveReviewJobNoteRevision(input: {
+  noteAction?: "create" | "update" | undefined;
+  noteUpdatedAt?: string | undefined;
+  noteBody?: string | undefined;
+}): string {
+  if (input.noteAction !== "update") {
+    return "initial";
+  }
+
+  if (input.noteUpdatedAt && input.noteUpdatedAt.length > 0) {
+    return `updated-at:${input.noteUpdatedAt}`;
+  }
+
+  return `body:${sha256(input.noteBody ?? "")}`;
 }

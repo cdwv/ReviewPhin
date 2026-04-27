@@ -62,6 +62,7 @@ describe("CopilotRunLog", () => {
     const logPath = await runLog.flush();
     const written = JSON.parse(await readFile(logPath, "utf8"));
 
+    expect(logPath).toBe(join(logDir, "session.json"));
     expect(written.sessionId).toBe("session_123");
     expect(written.metadata.reviewRunId).toBe("run_123");
     expect(written.prompt).toBe("Return JSON only.");

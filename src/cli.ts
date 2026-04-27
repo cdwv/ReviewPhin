@@ -120,12 +120,12 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
 
 function printHelp(): void {
   process.stdout.write(
-    [
-      "Usage:",
-      "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> [--bot-user-id <id>] [--bot-username <name>] [--database-path <path>]",
-      "  pnpm cli tenant list [--database-path <path>]"
-    ].join("\n") + "\n"
-  );
+      [
+        "Usage:",
+      "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> --bot-username <name> [--bot-user-id <id>] [--database-path <path>]",
+        "  pnpm cli tenant list [--database-path <path>]"
+      ].join("\n") + "\n"
+    );
 }
 
 async function main(): Promise<void> {

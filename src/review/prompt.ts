@@ -1,5 +1,6 @@
 import type { ReviewContext } from "./types.js";
 import { loadReviewPromptFile } from "./prompt-files.js";
+import { isReviewSummaryNoteBody } from "./summary.js";
 import { truncate } from "../utils/text.js";
 
 export function buildReviewPrompt(context: ReviewContext): string {
@@ -31,7 +32,7 @@ export function buildReviewPrompt(context: ReviewContext): string {
       deletedFile: change.deleted_file,
       diff: truncate(change.diff ?? "", 6_000)
     })),
-    mergeRequestNotes: context.notes.slice(0, 50).map((note) => ({
+    mergeRequestNotes: context.notes.filter((note) => !isReviewSummaryNoteBody(note.body)).slice(0, 50).map((note) => ({
       id: note.id,
       author: note.author.username,
       body: truncate(note.body, 1_500),
@@ -58,13 +59,20 @@ export function buildReviewPrompt(context: ReviewContext): string {
     loadReviewPromptFile("main.md"),
     "",
     "JSON schema:",
-    JSON.stringify(
-      {
-        overview: {
-          summary: "string",
-          overallSeverity: "low | medium | high | critical"
-        },
-        findings: [
+     JSON.stringify(
+        {
+          overview: {
+            summary: "string",
+            overallSeverity: "low | medium | high | critical",
+            overallAssessment: "string",
+            mergeReadiness: {
+              status: "ready | needs_attention | blocked",
+              confidence: "low | medium | high",
+              summary: "string"
+            },
+            highlights: ["optional string"]
+          },
+          findings: [
           {
             priorThreadId: "optional string",
             title: "string",
@@ -95,9 +103,13 @@ export function buildReviewPrompt(context: ReviewContext): string {
           }
         ]
       },
-      null,
-      2
-    ),
+       null,
+       2
+     ),
+    "",
+    "Suggestion guidance:",
+    "- Prefer `suggestion` when you can provide a concrete, low-risk code replacement.",
+    "- Suggestions must target exact new-side diff lines and the replacement text must be raw code only.",
     "",
     "Context:",
     JSON.stringify(compactContext, null, 2)

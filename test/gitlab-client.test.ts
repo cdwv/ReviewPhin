@@ -62,4 +62,56 @@ describe("GitLabClient headers", () => {
     const content = await client.getRawFile(1085, "README.md", "abc123");
     expect(content).toBe("file-content");
   });
+
+  it("emits request and response records to the GitLab request logger", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ id: "disc_1", individual_note: false, notes: [] }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json"
+        }
+      })
+    );
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const requestLogger = {
+      log: vi.fn(async () => {})
+    };
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent"),
+      requestLogger
+    });
+
+    await client.createMergeRequestDiscussion(1085, 7, {
+      body: "Test body"
+    });
+
+    expect(requestLogger.log).toHaveBeenCalledTimes(2);
+    expect(requestLogger.log).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        phase: "request",
+        method: "POST",
+        path: "/projects/1085/merge_requests/7/discussions",
+        request: expect.objectContaining({
+          body: {
+            body: "Test body"
+          }
+        })
+      })
+    );
+    expect(requestLogger.log).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        phase: "response",
+        status: 200,
+        response: expect.objectContaining({
+          body: expect.stringContaining("\"disc_1\"")
+        })
+      })
+    );
+  });
 });
