@@ -260,7 +260,8 @@ export class DiscussionReconciler {
     const shouldReply =
       input.disposition?.action === "reply" ||
       Boolean(input.finding.replyInDiscussion) ||
-      !input.thread.latestBotNote;
+      !input.thread.latestBotNote ||
+      input.thread.resolved;
 
     if (input.thread.mapping?.findingFingerprint === fingerprint && !shouldReply) {
       await this.persistThreadState({

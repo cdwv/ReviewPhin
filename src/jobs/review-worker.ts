@@ -8,10 +8,12 @@ import { extractWebhookHeadSha } from "../gitlab/webhook.js";
 import type { MergeRequestContextHydrator } from "../gitlab/hydrator.js";
 import type { WorkspaceMaterializer } from "../gitlab/workspace.js";
 import { buildProviderThreads, type ReconcileSummary, DiscussionReconciler } from "../reconcile/discussion-reconciler.js";
+import { readCopilotRunMetrics } from "../review/copilot-run-metrics.js";
 import type { ReviewProvider } from "../review/provider.js";
 import { ReviewRunArtifacts } from "../review/run-artifacts.js";
+import { buildScopedReviewContext } from "../review/review-scope.js";
 import { buildReviewTriggerContext, classifyWebhookTrigger, locateTriggerNoteReference } from "../review/trigger.js";
-import type { WebhookReviewTrigger } from "../review/types.js";
+import type { ReviewContext, WebhookReviewTrigger } from "../review/types.js";
 import type { CreateReviewFindingInput, ReviewJobRecord, Storage, TenantRecord } from "../storage/types.js";
 import type { TenantRegistry } from "../tenants/tenant-registry.js";
 import { createReviewJobDedupeKey, createFindingFingerprint, createFindingIdentityKey } from "../utils/ids.js";
@@ -128,6 +130,7 @@ export class ReviewWorker {
     let reviewRunId: string | null = null;
     let runArtifacts: ReviewRunArtifacts | null = null;
     let workspaceToCleanup: Awaited<ReturnType<MergeRequestContextHydrator["hydrate"]>>["workspace"] | null = null;
+    let providerContext: ReviewContext | null = null;
 
     try {
       const reviewRun = await this.storage.createReviewRun({
@@ -180,14 +183,12 @@ export class ReviewWorker {
         tenant,
         priorThreads
       });
-
-      await this.logRunEvent(runArtifacts, "info", "starting Copilot review", {
-        reviewRunId: reviewRun.id,
-        workspacePath: context.workspace.rootPath,
-        changedFiles: context.changes.length
-      });
-
-      const reviewResult = await this.reviewProvider.review({
+      const previousReview = await this.storage.getLatestCompletedReviewForMergeRequest(
+        tenant.id,
+        context.mergeRequest.iid,
+        job.id
+      );
+      providerContext = buildScopedReviewContext({
         workspacePath: context.workspace.rootPath,
         mergeRequest: context.mergeRequest,
         changes: context.changes,
@@ -195,14 +196,33 @@ export class ReviewWorker {
         discussions: context.discussions,
         instructionFiles: context.workspace.instructionFiles,
         trigger,
+        priorThreads,
+        previousReview: previousReview
+          ? {
+              reviewRunId: previousReview.reviewRunId,
+              finishedAt: previousReview.finishedAt,
+              headSha: previousReview.headSha,
+              resultJson: previousReview.resultJson,
+              changesJson: previousReview.snapshot.changesJson
+            }
+          : null,
         logging: {
           reviewRunId: reviewRun.id,
           jobId: job.id,
           tenantId: tenant.id,
           runDirectory: runArtifacts.runDirectory
-        },
-        priorThreads
+        }
       });
+
+      await this.logRunEvent(runArtifacts, "info", "starting Copilot review", {
+        reviewRunId: reviewRun.id,
+        workspacePath: context.workspace.rootPath,
+        changedFiles: context.changes.length,
+        promptMode: providerContext.scope.mode,
+        promptContextChangedFiles: providerContext.changes.length
+      });
+
+      const reviewResult = await this.reviewProvider.review(providerContext);
 
       await this.storage.completeReviewRun(reviewRun.id, JSON.stringify(reviewResult));
       await this.storage.replaceReviewFindings(
@@ -300,6 +320,10 @@ export class ReviewWorker {
       await this.storage.markJobFailed(job.id, nextRetryCount, getErrorMessage(error));
       throw error;
     } finally {
+      if (reviewRunId && runArtifacts && providerContext) {
+        await this.persistReviewRunMetrics(reviewRunId, providerContext, runArtifacts);
+      }
+
       if (workspaceToCleanup) {
         try {
           await this.workspaceMaterializer.cleanup(workspaceToCleanup);
@@ -395,6 +419,45 @@ export class ReviewWorker {
       });
     } catch (error) {
       this.logger.warn({ err: error, message }, "failed to persist run app log");
+    }
+  }
+
+  private async persistReviewRunMetrics(
+    reviewRunId: string,
+    context: ReviewContext,
+    runArtifacts: ReviewRunArtifacts
+  ): Promise<void> {
+    try {
+      const metrics = await readCopilotRunMetrics(runArtifacts.copilotSessionLogPath);
+      if (!metrics) {
+        return;
+      }
+
+      await this.storage.upsertReviewRunMetrics({
+        reviewRunId,
+        triggerKind: context.trigger.kind,
+        promptMode: context.scope.mode,
+        promptChars: metrics.promptChars,
+        promptContextChangedFiles: context.changes.length,
+        promptContextPriorThreads: context.priorThreads.length,
+        promptContextNotes: context.notes.length,
+        assistantTurns: metrics.assistantTurns,
+        assistantCalls: metrics.assistantCalls,
+        toolExecutions: metrics.toolExecutions,
+        viewToolCalls: metrics.viewToolCalls,
+        globToolCalls: metrics.globToolCalls,
+        inputTokens: metrics.inputTokens,
+        outputTokens: metrics.outputTokens,
+        cacheReadTokens: metrics.cacheReadTokens,
+        cacheWriteTokens: metrics.cacheWriteTokens,
+        reasoningTokens: metrics.reasoningTokens,
+        apiDurationMs: metrics.apiDurationMs,
+        premiumRequests: metrics.premiumRequests,
+        repeatedViewReads: metrics.repeatedViewReads,
+        repeatedViewPathsJson: JSON.stringify(metrics.repeatedViewPaths)
+      });
+    } catch (error) {
+      this.logger.warn({ err: error, reviewRunId }, "failed to persist review run metrics");
     }
   }
 }

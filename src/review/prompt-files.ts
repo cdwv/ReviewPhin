@@ -2,7 +2,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-type PromptFileName = "main.md" | "context-analyst.md" | "review-author.md";
+type PromptFileName =
+  | "main.md"
+  | "context-analyst.md"
+  | "review-author.md"
+  | "first-pass-full.md"
+  | "incremental-rereview.md"
+  | "follow-up-thread.md";
 
 const promptCache = new Map<PromptFileName, string>();
 

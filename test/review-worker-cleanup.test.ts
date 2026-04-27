@@ -117,6 +117,7 @@ describe("ReviewWorker cleanup", () => {
         startedAt: new Date().toISOString(),
         finishedAt: null
       })),
+      getLatestCompletedReviewForMergeRequest: vi.fn(async () => null),
       completeReviewRun: vi.fn(async () => {}),
       replaceReviewFindings: vi.fn(async () => {}),
       markJobCompleted: vi.fn(async () => {}),

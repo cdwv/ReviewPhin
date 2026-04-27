@@ -223,6 +223,118 @@ describe("Discussion reconciler", () => {
     expect(updateDiscussionNote).not.toHaveBeenCalled();
   });
 
+  it("replies instead of updating when the prior bot-owned thread is already resolved", async () => {
+    const storage = {
+      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_1", ...input }))
+    };
+
+    const reconciler = new DiscussionReconciler({
+      storage: storage as never,
+      logger
+    });
+
+    const replyToDiscussion = vi.fn(async () => ({
+      id: 13,
+      body: "**Old finding**\n\nUpdated after resolution",
+      author: { id: 999, username: "review-bot", name: "Review Bot" },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      system: false,
+      resolved: true
+    }));
+    const createMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+      id: 92,
+      body,
+      author: { id: 999, username: "review-bot", name: "Review Bot" },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      system: false
+    }));
+    const updateMergeRequestNote = vi.fn();
+    const updateDiscussionNote = vi.fn();
+
+    const context = createHydratedContext();
+    const mappings = [
+      {
+        id: "map_1",
+        tenantId: tenant.id,
+        projectId: tenant.projectId,
+        mergeRequestIid: 7,
+        identityKey: "identity",
+        findingFingerprint: "old",
+        title: "Old finding",
+        severity: "medium",
+        category: "bug",
+        body: "**Old finding**\n\nOld body",
+        gitlabDiscussionId: "disc_1",
+        gitlabNoteId: 10,
+        anchorJson: null,
+        positionJson: null,
+        botDiscussion: true,
+        botNote: true,
+        noteAuthorId: 999,
+        noteAuthorUsername: "review-bot",
+        status: "resolved" as const,
+        lastReviewRunId: "run_old",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    ];
+
+    const summary = await reconciler.reconcile({
+      tenant,
+      context: createHydratedContext({
+        discussions: [
+          {
+            id: "disc_1",
+            individual_note: false,
+            notes: [
+              {
+                id: 10,
+                body: "**Old finding**\n\nOld body",
+                author: { id: 999, username: "review-bot", name: "Review Bot" },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                system: false,
+                resolved: true
+              }
+            ]
+          }
+        ]
+      }),
+      mappings,
+      reviewRunId: "run_1",
+      reviewResult: {
+        overview: {
+          summary: "Handled resolved thread",
+          overallSeverity: "medium"
+        },
+        findings: [
+          {
+            priorThreadId: "map_1",
+            title: "Old finding",
+            body: "Updated after resolution",
+            severity: "medium",
+            category: "bug"
+          }
+        ],
+        priorDispositions: []
+      },
+      client: {
+        createMergeRequestNote,
+        replyToDiscussion,
+        updateMergeRequestNote,
+        updateDiscussionNote,
+        createMergeRequestDiscussion: vi.fn(),
+        resolveDiscussion: vi.fn()
+      } as never
+    });
+
+    expect(summary.replied).toBe(1);
+    expect(replyToDiscussion).toHaveBeenCalledTimes(1);
+    expect(updateDiscussionNote).not.toHaveBeenCalled();
+  });
+
   it("updates the existing merge request review summary note instead of creating a new one", async () => {
     const storage = {
       upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_1", ...input }))
@@ -654,6 +766,7 @@ function createHydratedContext(overrides?: {
   notes?: HydratedMergeRequestContext["notes"];
   changes?: HydratedMergeRequestContext["changes"];
   latestVersion?: HydratedMergeRequestContext["latestVersion"];
+  discussions?: HydratedMergeRequestContext["discussions"];
 }): HydratedMergeRequestContext {
   return {
     tenant: {
@@ -703,7 +816,7 @@ function createHydratedContext(overrides?: {
     latestVersion: overrides?.latestVersion ?? null,
     changes: overrides?.changes ?? [],
     notes: overrides?.notes ?? [],
-    discussions: [
+    discussions: overrides?.discussions ?? [
       {
         id: "disc_1",
         individual_note: false,

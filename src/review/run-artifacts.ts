@@ -51,6 +51,10 @@ export class ReviewRunArtifacts {
     return join(this.runDirectory, "gitlab-http.ndjson");
   }
 
+  public get copilotSessionLogPath(): string {
+    return join(this.copilotDirectory, "session.json");
+  }
+
   public async initialize(): Promise<void> {
     await mkdir(this.copilotDirectory, { recursive: true });
   }

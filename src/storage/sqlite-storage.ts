@@ -11,10 +11,13 @@ import type {
   CreateReviewRunInput,
   DiscussionMappingRecord,
   MergeRequestSnapshotRecord,
+  PreviousCompletedReviewRecord,
   ReviewFindingRecord,
+  ReviewRunMetricsRecord,
   ReviewJobRecord,
   ReviewRunRecord,
   TenantRecord,
+  UpsertReviewRunMetricsInput,
   UpsertDiscussionMappingInput
 } from "./types.js";
 import type { Storage } from "./types.js";
@@ -122,6 +125,34 @@ export class SqliteStorage implements Storage {
         suggestion_json TEXT,
         raw_json TEXT NOT NULL,
         created_at TEXT NOT NULL,
+        FOREIGN KEY (review_run_id) REFERENCES review_runs(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS review_run_metrics (
+        id TEXT PRIMARY KEY,
+        review_run_id TEXT NOT NULL UNIQUE,
+        trigger_kind TEXT,
+        prompt_mode TEXT,
+        prompt_chars INTEGER NOT NULL,
+        prompt_context_changed_files INTEGER NOT NULL,
+        prompt_context_prior_threads INTEGER NOT NULL,
+        prompt_context_notes INTEGER NOT NULL,
+        assistant_turns INTEGER NOT NULL,
+        assistant_calls INTEGER NOT NULL,
+        tool_executions INTEGER NOT NULL,
+        view_tool_calls INTEGER NOT NULL,
+        glob_tool_calls INTEGER NOT NULL,
+        input_tokens INTEGER NOT NULL,
+        output_tokens INTEGER NOT NULL,
+        cache_read_tokens INTEGER NOT NULL,
+        cache_write_tokens INTEGER NOT NULL,
+        reasoning_tokens INTEGER NOT NULL,
+        api_duration_ms INTEGER NOT NULL,
+        premium_requests INTEGER NOT NULL,
+        repeated_view_reads INTEGER NOT NULL,
+        repeated_view_paths_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
         FOREIGN KEY (review_run_id) REFERENCES review_runs(id)
       );
 
@@ -426,6 +457,47 @@ export class SqliteStorage implements Storage {
     };
   }
 
+  public async getLatestCompletedReviewForMergeRequest(
+    tenantId: string,
+    mergeRequestIid: number,
+    currentReviewJobId: string
+  ): Promise<PreviousCompletedReviewRecord | null> {
+    const row = this.getDb()
+      .prepare(`
+        SELECT
+          s.*,
+          r.id AS review_run_id,
+          r.finished_at AS review_run_finished_at,
+          r.result_json AS review_run_result_json,
+          j.id AS review_job_id,
+          j.head_sha AS review_job_head_sha
+        FROM merge_request_snapshots s
+        INNER JOIN review_jobs j ON j.id = s.review_job_id
+        INNER JOIN review_runs r ON r.review_job_id = j.id
+        WHERE s.tenant_id = ?
+          AND s.merge_request_iid = ?
+          AND s.review_job_id != ?
+          AND r.status = 'completed'
+          AND r.result_json IS NOT NULL
+        ORDER BY COALESCE(r.finished_at, r.started_at) DESC, s.created_at DESC
+        LIMIT 1
+      `)
+      .get(tenantId, mergeRequestIid, currentReviewJobId) as Row | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      reviewRunId: asString(row.review_run_id),
+      reviewJobId: asString(row.review_job_id),
+      finishedAt: asString(row.review_run_finished_at),
+      headSha: asString(row.review_job_head_sha),
+      resultJson: asString(row.review_run_result_json),
+      snapshot: mapMergeRequestSnapshotRow(row)
+    };
+  }
+
   public async completeReviewRun(reviewRunId: string, resultJson: string): Promise<void> {
     this.getDb()
       .prepare(
@@ -438,6 +510,103 @@ export class SqliteStorage implements Storage {
     this.getDb()
       .prepare("UPDATE review_runs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?")
       .run(error, new Date().toISOString(), reviewRunId);
+  }
+
+  public async upsertReviewRunMetrics(input: UpsertReviewRunMetricsInput): Promise<ReviewRunMetricsRecord> {
+    const database = this.getDb();
+    const existing = database.prepare("SELECT * FROM review_run_metrics WHERE review_run_id = ?").get(input.reviewRunId) as
+      | Row
+      | undefined;
+    const id = existing ? asString(existing.id) : createId("metrics");
+    const now = new Date().toISOString();
+
+    database
+      .prepare(`
+        INSERT INTO review_run_metrics (
+          id,
+          review_run_id,
+          trigger_kind,
+          prompt_mode,
+          prompt_chars,
+          prompt_context_changed_files,
+          prompt_context_prior_threads,
+          prompt_context_notes,
+          assistant_turns,
+          assistant_calls,
+          tool_executions,
+          view_tool_calls,
+          glob_tool_calls,
+          input_tokens,
+          output_tokens,
+          cache_read_tokens,
+          cache_write_tokens,
+          reasoning_tokens,
+          api_duration_ms,
+          premium_requests,
+          repeated_view_reads,
+          repeated_view_paths_json,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(review_run_id) DO UPDATE SET
+          trigger_kind = excluded.trigger_kind,
+          prompt_mode = excluded.prompt_mode,
+          prompt_chars = excluded.prompt_chars,
+          prompt_context_changed_files = excluded.prompt_context_changed_files,
+          prompt_context_prior_threads = excluded.prompt_context_prior_threads,
+          prompt_context_notes = excluded.prompt_context_notes,
+          assistant_turns = excluded.assistant_turns,
+          assistant_calls = excluded.assistant_calls,
+          tool_executions = excluded.tool_executions,
+          view_tool_calls = excluded.view_tool_calls,
+          glob_tool_calls = excluded.glob_tool_calls,
+          input_tokens = excluded.input_tokens,
+          output_tokens = excluded.output_tokens,
+          cache_read_tokens = excluded.cache_read_tokens,
+          cache_write_tokens = excluded.cache_write_tokens,
+          reasoning_tokens = excluded.reasoning_tokens,
+          api_duration_ms = excluded.api_duration_ms,
+          premium_requests = excluded.premium_requests,
+          repeated_view_reads = excluded.repeated_view_reads,
+          repeated_view_paths_json = excluded.repeated_view_paths_json,
+          updated_at = excluded.updated_at
+      `)
+      .run(
+        id,
+        input.reviewRunId,
+        input.triggerKind,
+        input.promptMode,
+        input.promptChars,
+        input.promptContextChangedFiles,
+        input.promptContextPriorThreads,
+        input.promptContextNotes,
+        input.assistantTurns,
+        input.assistantCalls,
+        input.toolExecutions,
+        input.viewToolCalls,
+        input.globToolCalls,
+        input.inputTokens,
+        input.outputTokens,
+        input.cacheReadTokens,
+        input.cacheWriteTokens,
+        input.reasoningTokens,
+        input.apiDurationMs,
+        input.premiumRequests,
+        input.repeatedViewReads,
+        input.repeatedViewPathsJson,
+        existing ? asString(existing.created_at) : now,
+        now
+      );
+
+    const row = database.prepare("SELECT * FROM review_run_metrics WHERE review_run_id = ?").get(input.reviewRunId) as
+      | Row
+      | undefined;
+    if (!row) {
+      throw new Error(`Failed to persist metrics for review run ${input.reviewRunId}`);
+    }
+
+    return mapReviewRunMetricsRow(row);
   }
 
   public async replaceReviewFindings(reviewRunId: string, findings: CreateReviewFindingInput[]): Promise<void> {
@@ -664,6 +833,53 @@ function mapDiscussionMappingRow(row: Row): DiscussionMappingRecord {
     noteAuthorUsername: asNullableString(row.note_author_username),
     status: asString(row.status) as DiscussionMappingRecord["status"],
     lastReviewRunId: asNullableString(row.last_review_run_id),
+    createdAt: asString(row.created_at),
+    updatedAt: asString(row.updated_at)
+  };
+}
+
+function mapMergeRequestSnapshotRow(row: Row): MergeRequestSnapshotRecord {
+  return {
+    id: asString(row.id),
+    reviewJobId: asString(row.review_job_id),
+    tenantId: asString(row.tenant_id),
+    mergeRequestIid: asNumber(row.merge_request_iid),
+    headSha: asString(row.head_sha),
+    mergeRequestJson: asString(row.merge_request_json),
+    versionsJson: asString(row.versions_json),
+    changesJson: asString(row.changes_json),
+    notesJson: asString(row.notes_json),
+    discussionsJson: asString(row.discussions_json),
+    instructionsJson: asString(row.instructions_json),
+    workspaceStrategy: asString(row.workspace_strategy),
+    createdAt: asString(row.created_at)
+  };
+}
+
+function mapReviewRunMetricsRow(row: Row): ReviewRunMetricsRecord {
+  return {
+    id: asString(row.id),
+    reviewRunId: asString(row.review_run_id),
+    triggerKind: asNullableString(row.trigger_kind),
+    promptMode: asNullableString(row.prompt_mode),
+    promptChars: asNumber(row.prompt_chars),
+    promptContextChangedFiles: asNumber(row.prompt_context_changed_files),
+    promptContextPriorThreads: asNumber(row.prompt_context_prior_threads),
+    promptContextNotes: asNumber(row.prompt_context_notes),
+    assistantTurns: asNumber(row.assistant_turns),
+    assistantCalls: asNumber(row.assistant_calls),
+    toolExecutions: asNumber(row.tool_executions),
+    viewToolCalls: asNumber(row.view_tool_calls),
+    globToolCalls: asNumber(row.glob_tool_calls),
+    inputTokens: asNumber(row.input_tokens),
+    outputTokens: asNumber(row.output_tokens),
+    cacheReadTokens: asNumber(row.cache_read_tokens),
+    cacheWriteTokens: asNumber(row.cache_write_tokens),
+    reasoningTokens: asNumber(row.reasoning_tokens),
+    apiDurationMs: asNumber(row.api_duration_ms),
+    premiumRequests: asNumber(row.premium_requests),
+    repeatedViewReads: asNumber(row.repeated_view_reads),
+    repeatedViewPathsJson: asString(row.repeated_view_paths_json),
     createdAt: asString(row.created_at),
     updatedAt: asString(row.updated_at)
   };
