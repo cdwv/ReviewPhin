@@ -7,6 +7,11 @@ export interface RepeatedViewPathMetric {
   count: number;
 }
 
+export interface PremiumRequestsByModelMetric {
+  model: string;
+  premiumRequests: number;
+}
+
 export interface CopilotRunMetricsSummary {
   promptChars: number;
   assistantTurns: number;
@@ -21,6 +26,7 @@ export interface CopilotRunMetricsSummary {
   reasoningTokens: number;
   apiDurationMs: number;
   premiumRequests: number;
+  premiumRequestsByModel: PremiumRequestsByModelMetric[];
   repeatedViewReads: number;
   repeatedViewPaths: RepeatedViewPathMetric[];
 }
@@ -34,7 +40,9 @@ export async function readCopilotRunMetrics(logPath: string): Promise<CopilotRun
   }
 }
 
-export function summarizeCopilotRunLog(record: Pick<CopilotRunLogRecord, "prompt" | "events">): CopilotRunMetricsSummary {
+export function summarizeCopilotRunLog(
+  record: Pick<CopilotRunLogRecord, "prompt" | "events" | "metadata">
+): CopilotRunMetricsSummary {
   const assistantUsages = record.events.filter((event) => event.type === "assistant.usage");
   const assistantTurns = record.events.filter((event) => event.type === "assistant.turn_start").length;
   const toolExecutions = record.events.filter((event) => event.type === "tool.execution_start");
@@ -70,9 +78,40 @@ export function summarizeCopilotRunLog(record: Pick<CopilotRunLogRecord, "prompt
     reasoningTokens: sumUsageMetric(assistantUsages, "reasoningTokens"),
     apiDurationMs: sumUsageMetric(assistantUsages, "duration"),
     premiumRequests: sumUsageMetric(assistantUsages, "cost"),
+    premiumRequestsByModel: summarizePremiumRequestsByModel(assistantUsages, record.metadata.requestedModel),
     repeatedViewReads: repeatedViewPaths.reduce((total, entry) => total + (entry.count - 1), 0),
     repeatedViewPaths
   };
+}
+
+function summarizePremiumRequestsByModel(
+  usages: Array<{ data?: { model?: string | null; cost?: number | undefined } }>,
+  fallbackModel: string | null
+): PremiumRequestsByModelMetric[] {
+  const totals = new Map<string, number>();
+
+  for (const usage of usages) {
+    const premiumRequests = typeof usage.data?.cost === "number" ? usage.data.cost : 0;
+    if (premiumRequests <= 0) {
+      continue;
+    }
+
+    const model = normalizeModel(usage.data?.model) ?? normalizeModel(fallbackModel) ?? "unknown";
+    totals.set(model, (totals.get(model) ?? 0) + premiumRequests);
+  }
+
+  return [...totals.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([model, premiumRequests]) => ({ model, premiumRequests }));
+}
+
+function normalizeModel(model: string | null | undefined): string | null {
+  if (typeof model !== "string") {
+    return null;
+  }
+
+  const normalizedModel = model.trim();
+  return normalizedModel.length > 0 ? normalizedModel : null;
 }
 
 function sumUsageMetric(

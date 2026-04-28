@@ -300,7 +300,7 @@ After the worker is running, verify the path in this order:
 
 ### Container environment variables
 
-The Docker image reads the same application variables as a local run. All worker settings have image defaults, but Copilot authentication still needs to be supplied explicitly.
+The Docker image reads the same application variables as a local run. All worker settings have image defaults.
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
@@ -313,10 +313,12 @@ The Docker image reads the same application variables as a local run. All worker
 | `MAX_JOB_RETRIES` | No | `3` | Retry attempts for failed review jobs |
 | `RETRY_BACKOFF_MS` | No | `5000` | Delay between retries in milliseconds |
 | `COPILOT_TIMEOUT_MS` | No | `180000` | Copilot review timeout in milliseconds |
-| `COPILOT_MODEL` | No | unset | Optional model override passed to the Copilot SDK |
+| `COPILOT_MODEL` | No | unset | Model name passed to the Copilot CLI. Required when using a custom provider. |
 | `COPILOT_CLI_PATH` | No | `/usr/local/bin/copilot` in the image | The packaged image sets this automatically to the installed Copilot CLI |
 
-For Copilot CLI authentication inside the image, set exactly one of these variables:
+#### GitHub Copilot authentication (default mode)
+
+When using GitHub-hosted models, set exactly one of these variables:
 
 | Variable | Required | Description |
 | --- | --- | --- |
@@ -325,6 +327,41 @@ For Copilot CLI authentication inside the image, set exactly one of these variab
 | `COPILOT_GITHUB_TOKEN` | Yes, unless any other variant is set | Fallback GitHub personal access token name recognized by the Copilot CLI |
 
 The GitHub token used for `GH_TOKEN`, `GITHUB_TOKEN` or `COPILOT_GITHUB_TOKEN` should be a **fine-grained PAT** with the **Copilot Requests** permission. The token owner also needs an active GitHub Copilot entitlement, and if Copilot access comes from an organization or enterprise, Copilot CLI must be allowed by that org or enterprise policy.
+
+#### Custom provider / BYOK mode (e.g. vLLM, Ollama, Azure OpenAI)
+
+Setting `COPILOT_PROVIDER_BASE_URL` activates BYOK (Bring Your Own Key) mode. In this mode GitHub authentication is **not** required; the Copilot CLI routes all inference requests to your own endpoint instead. `COPILOT_MODEL` is required and must match the model name exposed by the provider.
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `COPILOT_PROVIDER_BASE_URL` | **Yes** (to activate BYOK) | OpenAI-compatible API endpoint, e.g. `http://vllm-host:8000/v1` |
+| `COPILOT_MODEL` | **Yes** | Model name as the provider knows it, e.g. `meta-llama/Llama-3.1-8B-Instruct` |
+| `COPILOT_PROVIDER_TYPE` | No | `openai` (default), `azure`, or `anthropic` |
+| `COPILOT_PROVIDER_API_KEY` | No | API key; not required for local providers like Ollama or vLLM without auth |
+| `COPILOT_PROVIDER_BEARER_TOKEN` | No | Bearer token; takes precedence over `COPILOT_PROVIDER_API_KEY` |
+| `COPILOT_PROVIDER_WIRE_API` | No | `completions` (default) or `responses` |
+| `COPILOT_PROVIDER_MODEL_ID` | No | Well-known base model ID used for internal capability and token-limit lookup when the wire model name differs (e.g. a fine-tune or Azure deployment name) |
+| `COPILOT_PROVIDER_WIRE_MODEL` | No | Exact model identifier sent to the provider API; defaults to `COPILOT_MODEL` |
+| `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` | No | Override max prompt tokens for the model |
+| `COPILOT_PROVIDER_MAX_OUTPUT_TOKENS` | No | Override max output tokens for the model |
+
+**vLLM example** (no auth required when vLLM runs without an API key):
+
+```env
+COPILOT_PROVIDER_BASE_URL=http://vllm-host:8000/v1
+COPILOT_MODEL=meta-llama/Llama-3.1-8B-Instruct
+```
+
+**Azure OpenAI example** (must use `type=azure` for `*.openai.azure.com` endpoints):
+
+```env
+COPILOT_PROVIDER_TYPE=azure
+COPILOT_PROVIDER_BASE_URL=https://my-resource.openai.azure.com
+COPILOT_PROVIDER_API_KEY=your-key-here
+COPILOT_PROVIDER_MODEL_ID=gpt-4
+COPILOT_PROVIDER_WIRE_MODEL=my-gpt4-deployment
+COPILOT_MODEL=my-gpt4-deployment
+```
 
 `pnpm cli tenant add` accepts these fields:
 

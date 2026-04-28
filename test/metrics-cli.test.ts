@@ -16,6 +16,7 @@ describe("metrics CLI", () => {
     const runLogDir = join(workspace, "run-logs");
 
     await writeSessionLog(runLogDir, "run_001", {
+      model: "gpt-5.4",
       premiumRequests: 1,
       inputTokens: 100,
       outputTokens: 10,
@@ -23,6 +24,7 @@ describe("metrics CLI", () => {
       durationMs: 1000
     });
     await writeSessionLog(runLogDir, "run_002", {
+      model: "claude-sonnet-4",
       premiumRequests: 2,
       inputTokens: 200,
       outputTokens: 20,
@@ -30,6 +32,7 @@ describe("metrics CLI", () => {
       durationMs: 2000
     });
     await writeSessionLog(runLogDir, "run_003", {
+      model: "gpt-5.4",
       premiumRequests: 3,
       inputTokens: 300,
       outputTokens: 30,
@@ -64,6 +67,9 @@ describe("metrics CLI", () => {
     expect(lines).toContain("p25 1.5 150 15 5 1500");
     expect(lines).toContain("p75 2.5 250 25 7 2500");
     expect(lines).toContain("p90 2.8 280 28 7.6 2800");
+    expect(lines).toContain("model runs premiumRequests min max avg p25 p50 p75 p90");
+    expect(lines).toContain("gpt-5.4 2 4 1 3 2 1.5 2 2.5 2.8");
+    expect(lines).toContain("claude-sonnet-4 1 2 2 2 2 2 2 2 2");
   });
 });
 
@@ -71,6 +77,7 @@ async function writeSessionLog(
   runLogDir: string,
   runName: string,
   metrics: {
+    model: string;
     premiumRequests: number;
     inputTokens: number;
     outputTokens: number;
@@ -97,7 +104,7 @@ async function writeSessionLog(
       type: "assistant.usage",
       ephemeral: false,
       data: {
-        model: "gpt-5.4",
+        model: metrics.model,
         inputTokens: metrics.inputTokens,
         outputTokens: metrics.outputTokens,
         cacheReadTokens: 0,
@@ -135,7 +142,7 @@ async function writeSessionLog(
           tenantId: null,
           mergeRequestIid: 1,
           workspacePath: String.raw`H:\repo`,
-          requestedModel: "gpt-5.4"
+          requestedModel: metrics.model
         },
         prompt: `Prompt for ${runName}`,
         response: null,

@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { loadConfig, tenantConfigSchema } from "./config.js";
 import { loadLocalEnvFile } from "./env.js";
-import { readCopilotRunMetrics } from "./review/copilot-run-metrics.js";
+import { readCopilotRunMetrics, type PremiumRequestsByModelMetric } from "./review/copilot-run-metrics.js";
 import { SqliteStorage } from "./storage/sqlite-storage.js";
 
 interface ParsedCliArgs {
@@ -17,6 +17,7 @@ interface ParsedCliArgs {
 interface RunMetricsRow {
   readonly run: string;
   readonly premiumRequests: number;
+  readonly premiumRequestsByModel: PremiumRequestsByModelMetric[];
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly toolCalls: number;
@@ -30,6 +31,19 @@ interface SummaryMetricsRow {
   readonly outputTokens: number;
   readonly toolCalls: number;
   readonly durationMs: number;
+}
+
+interface ModelPremiumRequestsStatsRow {
+  readonly model: string;
+  readonly runs: number;
+  readonly premiumRequests: number;
+  readonly min: number;
+  readonly max: number;
+  readonly avg: number;
+  readonly p25: number;
+  readonly p50: number;
+  readonly p75: number;
+  readonly p90: number;
 }
 
 const tenantAddSchema = tenantConfigSchema.extend({
@@ -111,8 +125,13 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       return 0;
     }
 
+    const modelPremiumRequestsRows = buildModelPremiumRequestsStatsRows(runRows);
     process.stdout.write(
-      [formatRunMetricsTable(runRows), formatSummaryMetricsTable(buildSummaryMetricsRows(runRows))].join("\n\n") + "\n"
+      [
+        formatRunMetricsTable(runRows),
+        formatSummaryMetricsTable(buildSummaryMetricsRows(runRows)),
+        ...(modelPremiumRequestsRows.length > 0 ? [formatModelPremiumRequestsStatsTable(modelPremiumRequestsRows)] : [])
+      ].join("\n\n") + "\n"
     );
     return 0;
   }
@@ -182,6 +201,7 @@ async function loadRunMetricsRows(runLogDir: string): Promise<RunMetricsRow[]> {
       rows.push({
         run: entry.name,
         premiumRequests: metrics.premiumRequests,
+        premiumRequestsByModel: metrics.premiumRequestsByModel,
         inputTokens: metrics.inputTokens,
         outputTokens: metrics.outputTokens,
         toolCalls: metrics.toolExecutions,
@@ -193,6 +213,36 @@ async function loadRunMetricsRows(runLogDir: string): Promise<RunMetricsRow[]> {
   } catch {
     return [];
   }
+}
+
+function buildModelPremiumRequestsStatsRows(rows: RunMetricsRow[]): ModelPremiumRequestsStatsRow[] {
+  const statsByModel = new Map<string, number[]>();
+
+  for (const row of rows) {
+    for (const metric of row.premiumRequestsByModel) {
+      const current = statsByModel.get(metric.model) ?? [];
+      current.push(metric.premiumRequests);
+      statsByModel.set(metric.model, current);
+    }
+  }
+
+  return [...statsByModel.entries()]
+    .sort(
+      (left, right) =>
+        sum(left[1]) - sum(right[1]) === 0 ? left[0].localeCompare(right[0]) : sum(right[1]) - sum(left[1])
+    )
+    .map(([model, premiumRequests]) => ({
+      model,
+      runs: premiumRequests.length,
+      premiumRequests: sum(premiumRequests),
+      min: minimum(premiumRequests),
+      max: maximum(premiumRequests),
+      avg: average(premiumRequests),
+      p25: percentile(premiumRequests, 25),
+      p50: percentile(premiumRequests, 50),
+      p75: percentile(premiumRequests, 75),
+      p90: percentile(premiumRequests, 90)
+    }));
 }
 
 function buildSummaryMetricsRows(rows: RunMetricsRow[]): SummaryMetricsRow[] {
@@ -254,6 +304,21 @@ function formatSummaryMetricsTable(rows: SummaryMetricsRow[]): string {
   ]));
 }
 
+function formatModelPremiumRequestsStatsTable(rows: ModelPremiumRequestsStatsRow[]): string {
+  return formatTable(["model", "runs", "premiumRequests", "min", "max", "avg", "p25", "p50", "p75", "p90"], rows.map((row) => [
+    row.model,
+    row.runs,
+    row.premiumRequests,
+    row.min,
+    row.max,
+    row.avg,
+    row.p25,
+    row.p50,
+    row.p75,
+    row.p90
+  ]));
+}
+
 function formatTable(headers: string[], rows: Array<Array<string | number>>): string {
   const widths = headers.map((header, columnIndex) => {
     const values = rows.map((row) => formatCellValue(row[columnIndex] ?? ""));
@@ -295,6 +360,10 @@ function maximum(values: number[]): number {
 
 function average(values: number[]): number {
   return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0);
 }
 
 function percentile(values: number[], percentileRank: number): number {
