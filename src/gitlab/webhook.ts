@@ -41,6 +41,7 @@ const noteHookSchema = z.object({
     note: z.string(),
     noteable_type: z.literal("MergeRequest"),
     action: z.enum(["create", "update"]).optional(),
+    draft: z.boolean().optional(),
     author_id: z.number().int().positive().optional(),
     noteable_id: z.number().int().positive().nullable().optional(),
     system: z.boolean().optional(),

@@ -380,6 +380,10 @@ export class ReviewWorker {
     reactionName: string,
     jobId: string
   ): Promise<void> {
+    if (note.kind === "discussion-note") {
+      return;
+    }
+
     try {
       const existing = await client.listTriggerNoteAwardEmojis(tenant.projectId, mergeRequestIid, note);
       const hasReaction = existing.some((award) => award.name === reactionName && isBotUser(award.user, tenant));

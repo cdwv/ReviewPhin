@@ -18,6 +18,8 @@ When a previous bot-owned thread is obsolete, include a `priorDispositions` entr
 
 When a human replied inside a bot-owned thread and the bot should answer, include a `priorDispositions` entry with action `reply` and `replyBody`.
 
+Do not say that a prior thread is resolved, closed, or no longer needed unless you also include the matching `priorDispositions` entry with action `resolve` for that thread.
+
 When you can express a safe, concrete fix directly from the visible diff and nearby code, include a `suggestion` with replacement text instead of only describing the change. Prefer suggestions for small-to-medium self-contained fixes on the new side of the diff.
 
 Anchor each finding to the most specific valid diff line that demonstrates the issue. Do not anchor a whole function or block if the starting line is only unchanged context.

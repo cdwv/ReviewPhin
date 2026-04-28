@@ -195,6 +195,47 @@ describe("review trigger helpers", () => {
     expect(trigger).toBeNull();
   });
 
+  it("ignores draft merge request notes until they are submitted", async () => {
+    const trigger = await classifyWebhookTrigger({
+      tenant,
+      payload: {
+        object_kind: "note",
+        project: {
+          id: 123,
+          web_url: "https://gitlab.example.com/group/project"
+        },
+        repository: {
+          homepage: "https://gitlab.example.com/group/project"
+        },
+        merge_request: {
+          iid: 7,
+          title: "Add worker",
+          description: "Adds the worker",
+          source_branch: "feature",
+          target_branch: "main"
+        },
+        object_attributes: {
+          id: 59,
+          note: "@review-bot please review this",
+          noteable_type: "MergeRequest",
+          draft: true
+        },
+        user: {
+          id: 42,
+          username: "developer",
+          name: "Dev User"
+        }
+      },
+      client: {
+        listMergeRequestDiscussions: async () => {
+          throw new Error("draft notes should not fetch discussions");
+        }
+      }
+    });
+
+    expect(trigger).toBeNull();
+  });
+
   it("does not treat longer usernames with the bot prefix as direct mentions", async () => {
     const trigger = await classifyWebhookTrigger({
       tenant,

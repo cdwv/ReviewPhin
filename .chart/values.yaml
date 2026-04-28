@@ -1,0 +1,36 @@
+releaseOverride: ""
+
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent
+  secrets: []
+
+replicaCount: 1
+
+application:
+  envSecret: ""
+  additionalLabels: {}
+  additionalAnnotations: {}
+  resources: {}
+
+service:
+  type: ClusterIP
+  port: 3000
+  targetPort: 3000
+
+probes:
+  path: /healthz
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+persistence:
+  enabled: true
+  existingClaim: ""
+  size: ""
+  accessMode: ReadWriteOnce
+  storageClassName: ""
+  dataSubPath: data
+  tmpSubPath: tmp
