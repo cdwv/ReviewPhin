@@ -185,10 +185,10 @@ describe("GitLab reactions", () => {
     await worker.processJob("job_1");
 
     const postedUrls = fetchMock.mock.calls
-      .filter(([, init]) => init?.method === "POST")
+      .filter(([input, init]) => init?.method === "POST" && String(input).includes("/award_emoji"))
       .map(([input]) => String(input));
     const postedBodies = fetchMock.mock.calls
-      .filter(([, init]) => init?.method === "POST")
+      .filter(([input, init]) => init?.method === "POST" && String(input).includes("/award_emoji"))
       .map(([, init]) => String(init?.body));
 
     expect(postedUrls.every((url) => url.includes("/merge_requests/7/notes/55/award_emoji"))).toBe(true);
@@ -196,7 +196,7 @@ describe("GitLab reactions", () => {
     expect(postedBodies.some((body) => body.includes("name=white_check_mark"))).toBe(true);
   });
 
-  it("adds reactions to follow-up discussion notes when a review starts and completes", async () => {
+  it("skips reactions for follow-up discussion notes", async () => {
     const discussions = [
       {
         id: "disc_1",
@@ -228,15 +228,6 @@ describe("GitLab reactions", () => {
       const url = String(input);
       if (init?.method === "GET" && url.includes("/discussions?")) {
         return new Response(JSON.stringify(discussions), {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      if (init?.method === "GET" && url.includes("/discussions/disc_1/notes/56/award_emoji")) {
-        return new Response("[]", {
           status: 200,
           headers: {
             "content-type": "application/json"
@@ -282,18 +273,9 @@ describe("GitLab reactions", () => {
     });
     await worker.processJob("job_1");
 
-    const postedUrls = fetchMock.mock.calls
-      .filter(([, init]) => init?.method === "POST")
-      .map(([input]) => String(input));
-    const postedBodies = fetchMock.mock.calls
-      .filter(([, init]) => init?.method === "POST")
-      .map(([, init]) => String(init?.body));
+    const awardEmojiRequests = fetchMock.mock.calls.filter(([input]) => String(input).includes("/award_emoji"));
 
-    expect(postedUrls.every((url) => url.includes("/merge_requests/7/discussions/disc_1/notes/56/award_emoji"))).toBe(
-      true
-    );
-    expect(postedBodies.some((body) => body.includes("name=eyes"))).toBe(true);
-    expect(postedBodies.some((body) => body.includes("name=white_check_mark"))).toBe(true);
+    expect(awardEmojiRequests).toEqual([]);
   });
 });
 

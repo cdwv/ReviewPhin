@@ -1,0 +1,18 @@
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "gitlab-agentic-webhooks.pvcName" . }}
+  labels:
+    {{- include "gitlab-agentic-webhooks.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  accessModes:
+    - {{ required "persistence.accessMode is required when creating a PVC" .Values.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ required "persistence.size is required when creating a PVC" .Values.persistence.size }}
+  {{- with .Values.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}

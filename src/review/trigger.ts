@@ -12,6 +12,10 @@ export async function classifyWebhookTrigger(input: {
   client: Pick<GitLabClient, "listMergeRequestDiscussions">;
 }): Promise<WebhookReviewTrigger | null> {
   const { payload, tenant, client } = input;
+  if (payload.object_attributes.draft) {
+    return null;
+  }
+
   if (payload.object_attributes.system) {
     return null;
   }

@@ -94,6 +94,41 @@ The compose setup mounts:
 
 Keep tenant records in the SQLite database by using the CLI command above; tenant configuration is not provided through environment variables.
 
+## GitLab CI + Helm deployment
+
+The repository now includes:
+
+- `.gitlab-ci.yml` for test coverage on merge requests and `main`, plus OCI image build and deployment from `main`
+- `.chart/` with the Helm chart used by the deployment job
+
+The chart intentionally keeps cluster-specific settings out of `values.yaml`. The GitLab deployment job passes them with `helm upgrade --set ...`.
+
+### What the chart deploys
+
+- one `Deployment` for the Node.js worker
+- one `Service` on port `3000`
+- one `PersistentVolumeClaim`, mounted into `/app/data` and `/app/tmp`
+- no ingress resource
+
+### GitLab CI variables
+
+The pipeline now assumes sensible defaults for the deployment settings and only needs overrides when your cluster differs:
+
+- `KUBE_NAMESPACE` (optional; defaults to `${CI_PROJECT_NAME}-${CI_PROJECT_ID}`)
+- `KUBECTL_CONTEXT` (optional, only if the runner must switch kube context explicitly)
+- `HELM_CPU_REQUEST` (optional; defaults to `250m`)
+- `HELM_CPU_LIMIT` (optional; defaults to `500m`)
+- `HELM_MEMORY_REQUEST` (optional; defaults to `512Mi`)
+- `HELM_MEMORY_LIMIT` (optional; defaults to `1Gi`)
+- `HELM_PVC_SIZE` (optional; defaults to `10Gi`)
+- `HELM_PVC_STORAGE_CLASS` (optional if your cluster default is acceptable)
+
+GitLab exposes `CI_ENVIRONMENT_URL` automatically from the environment definition. For `production`, the pipeline sets it to `https://reviewphin.codewave.pl`.
+
+App-shaped defaults such as replica count, service type/port, probe path, and PVC access mode now live in `.chart/values.yaml` instead of being passed from CI.
+
+Application secrets are expected to be managed by the internal `generic-secrets` template include. The deployment consumes the generated `${CI_ENVIRONMENT_SLUG}-env-secrets` secret as container environment variables.
+
 ## Running locally
 
 For a normal local run:

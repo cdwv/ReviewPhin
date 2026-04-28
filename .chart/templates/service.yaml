@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gitlab-agentic-webhooks.fullname" . }}
+  labels:
+    {{- include "gitlab-agentic-webhooks.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "gitlab-agentic-webhooks.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: worker

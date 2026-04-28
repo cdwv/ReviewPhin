@@ -132,6 +132,7 @@ export interface GitLabNoteHookPayload {
     note: string;
     noteable_type: "MergeRequest";
     action?: "create" | "update" | undefined;
+    draft?: boolean | undefined;
     author_id?: number | undefined;
     noteable_id?: number | null | undefined;
     system?: boolean | undefined;

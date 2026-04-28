@@ -1,0 +1,133 @@
+include:
+  - project: 'devops/ci-templates'
+    ref: main
+    file: '/common/build-oci-image.yml'
+  - project: 'devops/ci-templates'
+    ref: main
+    file: 'k8s/helm-templates.yaml'
+  - project: 'devops/ci-templates'
+    ref: main
+    file: '/k8s/generic-secrets.yaml'
+  - project: 'devops/ci-templates'
+    ref: main
+    file: '/k8s/ensure-namespace.yaml'
+
+stages:
+  - test
+  - build
+  - deployment
+
+test:
+  stage: test
+  image: node:22-bookworm-slim
+  needs: []
+  interruptible: true
+  variables:
+    PNPM_STORE_DIR: .pnpm-store
+  cache:
+    key:
+      files:
+        - pnpm-lock.yaml
+      prefix: pnpm
+    paths:
+      - .pnpm-store/
+    policy: pull-push
+  before_script:
+    - corepack enable
+    - pnpm config set store-dir $PNPM_STORE_DIR
+    - pnpm install --frozen-lockfile
+  script:
+    - pnpm test --coverage
+    - |
+      node --input-type=commonjs <<'EOF'
+      const fs = require("node:fs");
+      const summary = JSON.parse(
+        fs.readFileSync("coverage/coverage-summary.json", "utf8")
+      );
+
+      console.log(`Overall coverage: ${summary.total.lines.pct}%`);
+      EOF
+  coverage: '/Overall coverage:\s+(\d+(?:\.\d+)?)%/'
+  artifacts:
+    when: always
+    paths:
+      - coverage/
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+build_image:
+  extends: .build-image
+  stage: build
+  dependencies: []
+  variables:
+    DOCKERFILE: ./Dockerfile
+    IMAGE_TAG: ${CI_REGISTRY_IMAGE}:main
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+.deployment:
+  image: registry.dev.cdwv.pl/docker/k8s-deployment-toolset:K1.21_H3.6
+  stage: deployment
+  variables:
+    HELM_RELEASE_NAME: ${CI_PROJECT_NAME}-${CI_ENVIRONMENT_SLUG}
+    IMAGE_TAG: main
+    HELM_IMAGE_PULL_POLICY: "Always"
+    HELM_CPU_REQUEST: "250m"
+    HELM_CPU_LIMIT: "500m"
+    HELM_MEMORY_REQUEST: "512Mi"
+    HELM_MEMORY_LIMIT: "1Gi"
+    HELM_PVC_SIZE: "10Gi"
+    HELM_PVC_STORAGE_CLASS: "ssd-reliable"
+    KUBECTL_CONTEXT: "devops/gitlab-agent-manager:cdwv-blacha-gitlab-agent-906"
+  before_script:
+    - export KUBE_NAMESPACE="${KUBE_NAMESPACE:-$CI_PROJECT_NAME-$CI_PROJECT_ID}"
+    - |
+      if [ -n "${KUBECTL_CONTEXT}" ]; then
+        kubectl config use-context "${KUBECTL_CONTEXT}"
+      fi
+    - kubectl config set-context --current --namespace="${KUBE_NAMESPACE}"
+  script:
+    - !reference [ .ensure_namespace ]
+    - !reference [ .create_registry_secret ]
+    - !reference [ .create_app_secret ]
+    - |
+      helm upgrade --install \
+            --wait \
+            --set-string releaseOverride="${CI_ENVIRONMENT_SLUG}" \
+            --set-string image.repository="${CI_REGISTRY_IMAGE}" \
+            --set-string image.tag="${IMAGE_TAG}" \
+            --set-string image.pullPolicy="${HELM_IMAGE_PULL_POLICY}" \
+            --set-string image.secrets[0].name="gitlab-registry-${CI_PROJECT_PATH_SLUG}" \
+            --set-string application.envSecret="${CI_ENVIRONMENT_SLUG}-env-secrets" \
+            --set "application.additionalLabels.ciJobId=job-$CI_JOB_ID" \
+            --set "application.additionalAnnotations.app\.gitlab\.com/env=${CI_ENVIRONMENT_SLUG}" \
+            --set "application.additionalAnnotations.app\.gitlab\.com/app=${CI_PROJECT_PATH_SLUG}" \
+            --set-string application.resources.requests.cpu="${HELM_CPU_REQUEST}" \
+            --set-string application.resources.requests.memory="${HELM_MEMORY_REQUEST}" \
+            --set-string application.resources.limits.cpu="${HELM_CPU_LIMIT}" \
+            --set-string application.resources.limits.memory="${HELM_MEMORY_LIMIT}" \
+            --set-string persistence.size="${HELM_PVC_SIZE}" \
+            ${HELM_PVC_STORAGE_CLASS:+--set-string persistence.storageClassName="${HELM_PVC_STORAGE_CLASS}"} \
+            --namespace="${KUBE_NAMESPACE}" \
+            --version="${CI_PIPELINE_ID}-${CI_JOB_ID}" \
+            ${HELM_TIMEOUT:+--timeout $HELM_TIMEOUT} \
+            ${HELM_DRY_RUN:+--dry-run} \
+            ${HELM_RELEASE_NAME} .chart/
+
+deploy_production:
+  extends: .deployment
+  needs:
+    - build_image
+    - test
+  environment:
+    name: production
+    url: https://reviewphin.codewave.pl
+    action: start
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
