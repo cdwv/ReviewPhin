@@ -1,10 +1,10 @@
 # GitLab agentic review worker
 
-Node.js + TypeScript service that listens for GitLab Note Hook comments that explicitly mention the configured bot username and follow-up comments on bot-owned discussions, hydrates merge request context into a temporary workspace, runs a Copilot-powered review, and reconciles the result back into GitLab discussions while only mutating bot-owned content.
+Node.js + TypeScript service that listens for GitLab Note Hook comments that explicitly mention the configured bot username, follow-up comments on bot-owned discussions, and replies on the bot-owned review summary note, hydrates merge request context into a temporary workspace, runs a Copilot-powered review, and reconciles the result back into GitLab discussions while only mutating bot-owned content.
 
 ## What it does
 
-- Accepts GitLab **Note Hook** webhooks for merge request comments that mention `@<botUsername>` and human follow-up comments inside bot-owned review discussions, including edits to those trigger comments when users refine the instruction in place
+- Accepts GitLab **Note Hook** webhooks for merge request comments that mention `@<botUsername>`, human follow-up comments inside bot-owned review discussions, and replies on the bot-owned review summary note, including edits to those trigger comments when users refine the instruction in place
 - Treats other merge request comments as background context only; they do not trigger new review passes by themselves
 - Stores tenants, jobs, snapshots, review runs, findings, and discussion mappings in **SQLite**
 - Hydrates merge request metadata, diff versions, changed files, notes, discussions, and project instructions before each run, using `git` checkout first and API fallbacks when needed
@@ -12,6 +12,7 @@ Node.js + TypeScript service that listens for GitLab Note Hook comments that exp
 - Creates new discussions, updates bot-authored notes, replies in bot-created discussions, and resolves obsolete bot-owned discussions
 - Maintains one bot-authored merge request summary note, updating it on each run with the latest overall assessment and merge readiness
 - Emits GitLab suggestion blocks when it has a safe new-side diff anchor on the latest merge request version, including multi-line suggestions when the replacement range is clear
+- Keeps optional per-project memory in the GitLab project wiki page `Reviewphin memory`, so durable user-provided conventions and policies can be reused in later reviews
 
 ## Requirements
 
@@ -222,6 +223,7 @@ WORKSPACE_ROOT=./tmp/review-workspaces
 MAX_JOB_RETRIES=3
 RETRY_BACKOFF_MS=5000
 COPILOT_TIMEOUT_MS=180000
+REVIEWPHIN_MEMORY_ENABLED=true
 COPILOT_MODEL=gpt-5.4
 ```
 
@@ -313,6 +315,9 @@ The Docker image reads the same application variables as a local run. All worker
 | `MAX_JOB_RETRIES` | No | `3` | Retry attempts for failed review jobs |
 | `RETRY_BACKOFF_MS` | No | `5000` | Delay between retries in milliseconds |
 | `COPILOT_TIMEOUT_MS` | No | `180000` | Copilot review timeout in milliseconds |
+| `REVIEWPHIN_MEMORY_ENABLED` | No | `true` | Enables per-project wiki-backed memory on the `Reviewphin memory` page; set to `false` to disable all reads and writes |
+| `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS` | No | `5000` | Character budget used for injected project memory and for triggering memory coalescing |
+| `REVIEWPHIN_TEXT_GENERATION_MODEL` | No | `auto` | Dedicated Copilot model used for memory coalescing passes |
 | `COPILOT_MODEL` | No | unset | Model name passed to the Copilot CLI. Required when using a custom provider. |
 | `COPILOT_CLI_PATH` | No | `/usr/local/bin/copilot` in the image | The packaged image sets this automatically to the installed Copilot CLI |
 
@@ -378,6 +383,17 @@ COPILOT_MODEL=my-gpt4-deployment
 `RUN_LOG_DIR` controls where per-review run artifacts are written. Each `reviewRunId` gets its own directory containing a `copilot` subdirectory with the prompt/session trace, a `gitlab-http.ndjson` file with GitLab request and response logs, and an `app.ndjson` file with worker lifecycle logging. The legacy `COPILOT_LOG_DIR` environment variable is still accepted as a fallback alias.
 
 `COPILOT_TIMEOUT_MS` controls how long the worker waits for Copilot to finish a review turn before treating it as failed. The default is `180000` (3 minutes).
+
+#### Per-project memory
+
+When `REVIEWPHIN_MEMORY_ENABLED=true`, the worker reads and writes a dedicated project wiki page named `Reviewphin memory`.
+
+- The page is machine-managed in a structured Markdown format.
+- Its contents are loaded into every review as durable project context, using the `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS` budget.
+- The model may update it when a user comment clearly communicates long-term guidance such as team policy, stable convention, or "for future reference" knowledge.
+- If the wiki is disabled or temporarily unavailable, the review still runs and simply skips project memory for that pass.
+- When the managed memory grows close to the configured character budget, Reviewphin runs a dedicated coalescing pass with `REVIEWPHIN_TEXT_GENERATION_MODEL` to merge duplicates and shrink the stored memory before saving.
+- One-off review remarks, temporary incidents, and merge-request-specific instructions should not be stored there.
 
 `baseUrl` may include a path prefix for self-hosted installs behind a reverse proxy, but it should point to the GitLab instance root, not directly to `/api/v4`. The worker normalizes `/api/v4` away if you include it by mistake.
 

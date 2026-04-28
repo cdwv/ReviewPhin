@@ -1,4 +1,5 @@
 import type { GitLabDiscussion, GitLabMergeRequest, GitLabMergeRequestChange, GitLabNote, InstructionFile } from "../gitlab/types.js";
+import type { ProjectMemoryContext, ProjectMemoryWriteTarget } from "../memory/types.js";
 import { reviewResultSchema } from "./types.js";
 import type {
   PreviousReviewContext,
@@ -27,6 +28,8 @@ interface BuildScopedReviewContextInput {
   notes: GitLabNote[];
   discussions: GitLabDiscussion[];
   instructionFiles: InstructionFile[];
+  projectMemory?: ProjectMemoryContext | undefined;
+  projectMemoryWriteTarget?: ProjectMemoryWriteTarget | null | undefined;
   trigger: ReviewTriggerContext;
   priorThreads: ProviderThreadContext[];
   previousReview: PreviousReviewSource | null;
@@ -155,6 +158,8 @@ export function buildScopedReviewContext(input: BuildScopedReviewContextInput): 
     notes: selectedNotes,
     discussions: selectedDiscussions,
     instructionFiles: input.instructionFiles,
+    projectMemory: input.projectMemory ?? { enabled: false, page: null, entries: [] },
+    projectMemoryWriteTarget: input.projectMemoryWriteTarget ?? null,
     trigger: input.trigger,
     priorThreads: selectedThreads,
     scope,
@@ -387,7 +392,11 @@ function buildScope(input: {
       ? `Focus on the target bot-owned thread${input.targetThread ? ` "${input.targetThread.title}"` : ""} and the ${selectedChangeCount} directly related changed file(s).`
       : input.mode === "incremental-rereview"
         ? [
-            input.trigger.instruction ? "Repeated direct mention requested a new review pass." : "Repeated direct mention requested another review pass.",
+            input.trigger.kind === "summary-follow-up"
+              ? "A reply on the bot-owned summary note requested another review pass."
+              : input.trigger.instruction
+                ? "Repeated direct mention requested a new review pass."
+                : "Repeated direct mention requested another review pass.",
             input.previousReview
               ? `Start from review run ${input.previousReview.reviewRunId} at head ${input.previousReview.headSha}.`
               : "No previous review head was available; widen scope as needed.",

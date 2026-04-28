@@ -181,6 +181,7 @@ export class ReviewWorker {
       const trigger = buildReviewTriggerContext({
         payload: parsedPayload,
         tenant,
+        discussions: context.discussions,
         priorThreads
       });
       const previousReview = await this.storage.getLatestCompletedReviewForMergeRequest(
@@ -195,6 +196,14 @@ export class ReviewWorker {
         notes: context.notes,
         discussions: context.discussions,
         instructionFiles: context.workspace.instructionFiles,
+        projectMemory: context.projectMemory,
+        projectMemoryWriteTarget: context.projectMemory.enabled
+          ? {
+              baseUrl: tenant.baseUrl,
+              projectId: tenant.projectId,
+              apiToken: tenant.apiToken
+            }
+          : null,
         trigger,
         priorThreads,
         previousReview: previousReview

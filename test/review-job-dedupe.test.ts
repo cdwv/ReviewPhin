@@ -5,6 +5,7 @@ import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
 import type { CreateReviewJobInput } from "../src/storage/types.js";
 import { createReviewJobDedupeKey } from "../src/utils/ids.js";
+import { tmpPath } from "./test-paths.js";
 
 const tenant = {
   id: "tenant_1",
@@ -86,7 +87,7 @@ describe("review job dedupe", () => {
       reviewProvider: {} as never,
       reconciler: {} as never,
       logger: createLogger("silent"),
-      runLogDir: "H:\\dev\\gitlab-agentic-webhooks\\tmp\\run-logs",
+      runLogDir: tmpPath("run-logs"),
       maxJobRetries: 3,
       retryBackoffMs: 1000
     });

@@ -361,6 +361,11 @@ function createWorker(input: { payload: GitLabNoteHookPayload; discussions: GitL
           strategy: "targeted-files",
           instructionFiles: []
         },
+        projectMemory: {
+          enabled: true,
+          page: null,
+          entries: []
+        },
         snapshot: {
           id: "snapshot_1",
           reviewJobId: "job_1",
@@ -373,6 +378,7 @@ function createWorker(input: { payload: GitLabNoteHookPayload; discussions: GitL
           notesJson: "[]",
           discussionsJson: "[]",
           instructionsJson: "[]",
+          projectMemoryJson: null,
           workspaceStrategy: "targeted-files",
           createdAt: new Date().toISOString()
         }

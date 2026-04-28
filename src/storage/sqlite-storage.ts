@@ -88,6 +88,7 @@ export class SqliteStorage implements Storage {
         notes_json TEXT NOT NULL,
         discussions_json TEXT NOT NULL,
         instructions_json TEXT NOT NULL,
+        project_memory_json TEXT,
         workspace_strategy TEXT NOT NULL,
         created_at TEXT NOT NULL,
         FOREIGN KEY (review_job_id) REFERENCES review_jobs(id),
@@ -184,6 +185,7 @@ export class SqliteStorage implements Storage {
         UNIQUE(tenant_id, merge_request_iid, gitlab_discussion_id)
       );
     `);
+    ensureColumn(this.db, "merge_request_snapshots", "project_memory_json", "TEXT");
   }
 
   public async upsertTenant(tenant: TenantConfig): Promise<TenantRecord> {
@@ -383,10 +385,11 @@ export class SqliteStorage implements Storage {
           notes_json,
           discussions_json,
           instructions_json,
+          project_memory_json,
           workspace_strategy,
           created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         snapshotId,
@@ -400,6 +403,7 @@ export class SqliteStorage implements Storage {
         input.notesJson,
         input.discussionsJson,
         input.instructionsJson,
+        input.projectMemoryJson,
         input.workspaceStrategy,
         now
       );
@@ -416,6 +420,7 @@ export class SqliteStorage implements Storage {
       notesJson: input.notesJson,
       discussionsJson: input.discussionsJson,
       instructionsJson: input.instructionsJson,
+      projectMemoryJson: input.projectMemoryJson,
       workspaceStrategy: input.workspaceStrategy,
       createdAt: now
     };
@@ -851,6 +856,7 @@ function mapMergeRequestSnapshotRow(row: Row): MergeRequestSnapshotRecord {
     notesJson: asString(row.notes_json),
     discussionsJson: asString(row.discussions_json),
     instructionsJson: asString(row.instructions_json),
+    projectMemoryJson: asNullableString(row.project_memory_json),
     workspaceStrategy: asString(row.workspace_strategy),
     createdAt: asString(row.created_at)
   };
@@ -923,6 +929,14 @@ function asNullableNumber(value: unknown): number | null {
 
 function asBoolean(value: unknown): boolean {
   return asNumber(value) === 1;
+}
+
+function ensureColumn(database: DatabaseSync, tableName: string, columnName: string, definition: string): void {
+  const columns = database.prepare(`PRAGMA table_info(${tableName})`).all() as Row[];
+  const hasColumn = columns.some((column) => asString(column.name) === columnName);
+  if (!hasColumn) {
+    database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
 }
 
 function _mapReviewRunRow(row: Row): ReviewRunRecord {

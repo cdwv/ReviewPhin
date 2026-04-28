@@ -2,18 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-type PromptFileName =
-  | "main.md"
-  | "context-analyst.md"
-  | "review-author.md"
-  | "first-pass-full.md"
-  | "incremental-rereview.md"
-  | "follow-up-thread.md"
-  | "summary-follow-up.md";
+type PromptFileName = "coalesce.md";
 
 const promptCache = new Map<PromptFileName, string>();
 
-export function loadReviewPromptFile(name: PromptFileName): string {
+export function loadProjectMemoryPromptFile(name: PromptFileName): string {
   const cached = promptCache.get(name);
   if (cached) {
     return cached;
@@ -27,7 +20,7 @@ export function loadReviewPromptFile(name: PromptFileName): string {
 
 function resolvePromptPath(name: PromptFileName): string {
   const candidates = getProjectRootCandidates().map((projectRoot) =>
-    join(projectRoot, "prompts", "review", name)
+    join(projectRoot, "prompts", "memory", name)
   );
 
   for (const candidate of candidates) {
@@ -36,7 +29,7 @@ function resolvePromptPath(name: PromptFileName): string {
     }
   }
 
-  throw new Error(`Review prompt file not found: ${name}`);
+  throw new Error(`Project memory prompt file not found: ${name}`);
 }
 
 function getProjectRootCandidates(): string[] {

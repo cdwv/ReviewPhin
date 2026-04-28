@@ -54,6 +54,7 @@ export interface MergeRequestSnapshotRecord {
   notesJson: string;
   discussionsJson: string;
   instructionsJson: string;
+  projectMemoryJson: string | null;
   workspaceStrategy: string;
   createdAt: string;
 }
@@ -69,6 +70,7 @@ export interface CreateMergeRequestSnapshotInput {
   notesJson: string;
   discussionsJson: string;
   instructionsJson: string;
+  projectMemoryJson: string | null;
   workspaceStrategy: string;
 }
 

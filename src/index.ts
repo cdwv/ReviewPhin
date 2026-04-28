@@ -34,9 +34,11 @@ async function main(): Promise<void> {
   const reviewProvider = new CopilotReviewProvider({
     logger,
     model: config.copilotModel,
+    textGenerationModel: config.textGenerationModel,
     cliPath: config.copilotCliPath,
     runLogDir: config.runLogDir,
-    timeoutMs: config.copilotTimeoutMs
+    timeoutMs: config.copilotTimeoutMs,
+    maxPromptMemoryChars: config.maxPromptMemoryChars
   });
 
   const reconciler = new DiscussionReconciler({
@@ -47,6 +49,7 @@ async function main(): Promise<void> {
   const hydrator = new MergeRequestContextHydrator({
     storage,
     workspaceMaterializer,
+    memoryEnabled: config.memoryEnabled,
     logger
   });
 

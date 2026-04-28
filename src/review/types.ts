@@ -8,6 +8,7 @@ import type {
   InstructionFile,
   TriggerNoteReference
 } from "../gitlab/types.js";
+import type { ProjectMemoryContext, ProjectMemoryWriteTarget } from "../memory/types.js";
 
 export const reviewAnchorSchema = z
   .object({
@@ -109,7 +110,7 @@ export interface ProviderThreadContext {
   }>;
 }
 
-export type ReviewTriggerKind = "direct-mention" | "follow-up-comment";
+export type ReviewTriggerKind = "direct-mention" | "follow-up-comment" | "summary-follow-up";
 
 export interface ReviewTriggerContext {
   kind: ReviewTriggerKind;
@@ -160,6 +161,8 @@ export interface ReviewContext {
   notes: GitLabNote[];
   discussions: GitLabDiscussion[];
   instructionFiles: InstructionFile[];
+  projectMemory: ProjectMemoryContext;
+  projectMemoryWriteTarget: ProjectMemoryWriteTarget | null;
   trigger: ReviewTriggerContext;
   priorThreads: ProviderThreadContext[];
   scope: ReviewScopeContext;

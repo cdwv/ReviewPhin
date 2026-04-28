@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../src/cli.js";
+import { repoPath } from "./test-paths.js";
 
 describe("metrics CLI", () => {
   afterEach(() => {
@@ -87,6 +88,7 @@ async function writeSessionLog(
 ): Promise<void> {
   const copilotDir = join(runLogDir, runName, "copilot");
   await mkdir(copilotDir, { recursive: true });
+  const workspacePath = repoPath();
 
   const events = [
     {
@@ -123,7 +125,7 @@ async function writeSessionLog(
       data: {
         toolName: "view",
         arguments: {
-          path: String.raw`H:\repo\src\file-${index + 1}.ts`
+          path: repoPath("src", `file-${index + 1}.ts`)
         }
       }
     }))
@@ -141,7 +143,7 @@ async function writeSessionLog(
           jobId: null,
           tenantId: null,
           mergeRequestIid: 1,
-          workspacePath: String.raw`H:\repo`,
+          workspacePath,
           requestedModel: metrics.model
         },
         prompt: `Prompt for ${runName}`,

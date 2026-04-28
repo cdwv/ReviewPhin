@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildScopedReviewContext } from "../src/review/review-scope.js";
 import type { ProviderThreadContext } from "../src/review/types.js";
+import { repoPath } from "./test-paths.js";
 
 const mergeRequest = {
   id: 1,
@@ -22,7 +23,7 @@ const mergeRequest = {
 describe("buildScopedReviewContext", () => {
   it("uses incremental re-review mode when a previous completed review exists", () => {
     const scoped = buildScopedReviewContext({
-      workspacePath: "H:\\repo",
+      workspacePath: repoPath(),
       mergeRequest,
       changes: [
         createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old"),
@@ -88,9 +89,48 @@ describe("buildScopedReviewContext", () => {
     expect(scoped.scope.deltaSincePreviousReview?.changedFiles).toHaveLength(1);
   });
 
+  it("routes summary follow-up triggers through incremental re-review when a previous review exists", () => {
+    const scoped = buildScopedReviewContext({
+      workspacePath: repoPath(),
+      mergeRequest,
+      changes: [createChange("src\\delta.ts", "@@ -1 +1 @@\n-old\n+new")],
+      notes: [],
+      discussions: [],
+      instructionFiles: [],
+      trigger: {
+        kind: "summary-follow-up",
+        noteId: 90,
+        authorUsername: "developer",
+        body: "For future reference, prefer tasteful dolphin jokes in the overall assessment when they fit.",
+        instruction: "For future reference, prefer tasteful dolphin jokes in the overall assessment when they fit.",
+        targetThreadId: null,
+        targetDiscussionId: null,
+        targetThreadTitle: null
+      },
+      priorThreads: [],
+      previousReview: {
+        reviewRunId: "run_prev",
+        finishedAt: "2026-04-27T12:00:00.000Z",
+        headSha: "prevhead",
+        resultJson: JSON.stringify({
+          overview: {
+            summary: "Prior pass",
+            overallSeverity: "low"
+          },
+          findings: [],
+          priorDispositions: []
+        }),
+        changesJson: JSON.stringify([])
+      }
+    });
+
+    expect(scoped.scope.mode).toBe("incremental-rereview");
+    expect(scoped.scope.scopeSummary).toContain("summary note requested another review pass");
+  });
+
   it("keeps current MR diffs for incremental re-reviews when there is no delta", () => {
     const scoped = buildScopedReviewContext({
-      workspacePath: "H:\\repo",
+      workspacePath: repoPath(),
       mergeRequest,
       changes: [
         createChange("src\\same-head-a.ts", "@@ -1 +1 @@\n-old-a\n+new-a"),
@@ -141,7 +181,7 @@ describe("buildScopedReviewContext", () => {
     const targetThread = createThread("map_target", "disc_target", "Target finding", "src\\target.ts", false);
     const otherThread = createThread("map_other", "disc_other", "Other finding", "src\\other.ts", false);
     const scoped = buildScopedReviewContext({
-      workspacePath: "H:\\repo",
+      workspacePath: repoPath(),
       mergeRequest,
       changes: [
         createChange("src\\target.ts", "@@ -1 +1 @@\n-old\n+new"),
@@ -185,7 +225,7 @@ describe("buildScopedReviewContext", () => {
   it("keeps follow-up reviews pinned to focused files even when the target file is no longer in MR changes", () => {
     const targetThread = createThread("map_target", "disc_target", "Target finding", "src\\target.ts", false);
     const scoped = buildScopedReviewContext({
-      workspacePath: "H:\\repo",
+      workspacePath: repoPath(),
       mergeRequest,
       changes: [createChange("src\\other.ts", "@@ -1 +1 @@\n-old\n+new")],
       notes: [createNote(1, "General MR note")],
@@ -220,7 +260,7 @@ describe("buildScopedReviewContext", () => {
 
   it("keeps first-pass direct mentions bounded for large merge requests", () => {
     const scoped = buildScopedReviewContext({
-      workspacePath: "H:\\repo",
+      workspacePath: repoPath(),
       mergeRequest,
       changes: Array.from({ length: 16 }, (_, index) =>
         createChange(`src\\feature-${index + 1}.ts`, `@@ -1 +1 @@\n-old-${index}\n+new-${index}`)
@@ -249,7 +289,7 @@ describe("buildScopedReviewContext", () => {
 
   it("allows an explicit full rescan override even when previous review data exists", () => {
     const scoped = buildScopedReviewContext({
-      workspacePath: "H:\\repo",
+      workspacePath: repoPath(),
       mergeRequest,
       changes: [createChange("src\\delta.ts", "@@ -1 +1 @@\n-old\n+new")],
       notes: [],
