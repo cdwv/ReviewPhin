@@ -63,6 +63,70 @@ describe("GitLabClient headers", () => {
     expect(content).toBe("file-content");
   });
 
+  it("fetches project wiki pages with the with_content query parameter when requested", async () => {
+    const fetchMock = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      expect(String(input)).toBe("https://gitlab.example.com/api/v4/projects/1085/wikis?with_content=1&page=1&per_page=100");
+      expect(new Headers(init?.headers).get("accept")).toBe("application/json");
+
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: {
+          "x-next-page": "",
+          "content-type": "application/json"
+        }
+      });
+    });
+
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent")
+    });
+
+    expect(await client.listProjectWikiPages(1085, { withContent: true })).toEqual([]);
+  });
+
+  it("updates project wiki pages using form-encoded content", async () => {
+    const fetchMock = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      expect(String(input)).toBe("https://gitlab.example.com/api/v4/projects/1085/wikis/Reviewphin-memory");
+      expect(new Headers(init?.headers).get("content-type")).toBe("application/x-www-form-urlencoded");
+      const body = String(init?.body);
+      expect(body).toContain("title=Reviewphin+memory");
+      expect(body).toContain("content=hello+world");
+
+      return new Response(
+        JSON.stringify({
+          title: "Reviewphin memory",
+          slug: "Reviewphin-memory",
+          format: "markdown",
+          content: "hello world"
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    });
+
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent")
+    });
+
+    const page = await client.updateProjectWikiPage(1085, "Reviewphin-memory", {
+      title: "Reviewphin memory",
+      content: "hello world"
+    });
+    expect(page.slug).toBe("Reviewphin-memory");
+  });
+
   it("emits request and response records to the GitLab request logger", async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ id: "disc_1", individual_note: false, notes: [] }), {

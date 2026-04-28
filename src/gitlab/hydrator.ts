@@ -1,6 +1,8 @@
 import type { Logger } from "pino";
 
 import type { Storage, TenantRecord, ReviewJobRecord } from "../storage/types.js";
+import { loadProjectMemory } from "../memory/project-memory.js";
+import type { ProjectMemoryContext } from "../memory/types.js";
 import type { GitLabClient } from "./client.js";
 import type { HydratedMergeRequestContext } from "./types.js";
 import { WorkspaceMaterializer } from "./workspace.js";
@@ -8,17 +10,20 @@ import { WorkspaceMaterializer } from "./workspace.js";
 interface MergeRequestContextHydratorOptions {
   storage: Storage;
   workspaceMaterializer: WorkspaceMaterializer;
+  memoryEnabled: boolean;
   logger: Logger;
 }
 
 export class MergeRequestContextHydrator {
   private readonly storage: Storage;
   private readonly workspaceMaterializer: WorkspaceMaterializer;
+  private readonly memoryEnabled: boolean;
   private readonly logger: Logger;
 
   public constructor(options: MergeRequestContextHydratorOptions) {
     this.storage = options.storage;
     this.workspaceMaterializer = options.workspaceMaterializer;
+    this.memoryEnabled = options.memoryEnabled;
     this.logger = options.logger;
   }
 
@@ -43,14 +48,21 @@ export class MergeRequestContextHydrator {
           (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
         )[0] ?? null;
 
-      const workspace = await this.workspaceMaterializer.materialize({
+    const [workspace, projectMemory] = await Promise.all([
+      this.workspaceMaterializer.materialize({
         client,
         jobId: job.id,
         projectId: tenant.projectId,
         mergeRequestIid: job.mergeRequestIid,
         headSha: job.headSha,
         changes
-      });
+      }),
+      this.loadProjectMemorySafely({
+        client,
+        tenant,
+        job
+      })
+    ]);
 
     const snapshot = await this.storage.createMergeRequestSnapshot({
       reviewJobId: job.id,
@@ -63,6 +75,7 @@ export class MergeRequestContextHydrator {
       notesJson: JSON.stringify(notes),
       discussionsJson: JSON.stringify(discussions),
       instructionsJson: JSON.stringify(workspace.instructionFiles),
+      projectMemoryJson: JSON.stringify(projectMemory),
       workspaceStrategy: workspace.strategy
     });
 
@@ -89,7 +102,33 @@ export class MergeRequestContextHydrator {
       notes,
       discussions,
       workspace,
+      projectMemory,
       snapshot
     };
+  }
+
+  private async loadProjectMemorySafely(input: {
+    client: GitLabClient;
+    tenant: TenantRecord;
+    job: ReviewJobRecord;
+  }): Promise<ProjectMemoryContext> {
+    try {
+      return await loadProjectMemory(input.client, input.tenant.projectId, this.memoryEnabled);
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          tenantId: input.tenant.id,
+          jobId: input.job.id,
+          projectId: input.tenant.projectId
+        },
+        "project memory unavailable; continuing review without wiki-backed memory"
+      );
+      return {
+        enabled: false,
+        page: null,
+        entries: []
+      };
+    }
   }
 }

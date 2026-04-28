@@ -161,6 +161,11 @@ describe("ReviewWorker cleanup", () => {
             strategy: "git",
             instructionFiles: []
           },
+          projectMemory: {
+            enabled: true,
+            page: null,
+            entries: []
+          },
           snapshot: {
             id: "snapshot_1",
             reviewJobId: "job_1",
@@ -173,6 +178,7 @@ describe("ReviewWorker cleanup", () => {
             notesJson: "[]",
             discussionsJson: "[]",
             instructionsJson: "[]",
+            projectMemoryJson: null,
             workspaceStrategy: "git",
             createdAt: new Date().toISOString()
           }

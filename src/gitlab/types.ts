@@ -1,4 +1,5 @@
 import type { MergeRequestSnapshotRecord, ReviewJobRecord, TenantRecord } from "../storage/types.js";
+import type { ProjectMemoryContext } from "../memory/types.js";
 
 export interface GitLabUser {
   id: number;
@@ -106,6 +107,14 @@ export interface GitLabProject {
   http_url_to_repo: string;
 }
 
+export interface GitLabWikiPage {
+  content?: string | undefined;
+  format: string;
+  slug: string;
+  title: string;
+  encoding?: string | undefined;
+}
+
 export interface GitLabNoteHookPayload {
   object_kind: "note";
   event_type?: string | undefined;
@@ -166,5 +175,6 @@ export interface HydratedMergeRequestContext {
   notes: GitLabNote[];
   discussions: GitLabDiscussion[];
   workspace: MaterializedWorkspace;
+  projectMemory: ProjectMemoryContext;
   snapshot: MergeRequestSnapshotRecord;
 }

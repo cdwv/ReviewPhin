@@ -35,6 +35,13 @@ export async function classifyWebhookTrigger(input: {
         note
       };
     }
+
+    if (rootNote && isBotUser(rootNote.author, tenant) && isReviewSummaryNoteBody(rootNote.body)) {
+      return {
+        kind: "summary-follow-up",
+        note
+      };
+    }
   }
 
   if (!containsBotMention(payload.object_attributes.note, tenant.botUsername)) {
@@ -50,12 +57,19 @@ export async function classifyWebhookTrigger(input: {
 export function buildReviewTriggerContext(input: {
   payload: GitLabNoteHookPayload;
   tenant: TenantRecord;
+  discussions: GitLabDiscussion[];
   priorThreads: ProviderThreadContext[];
 }): ReviewTriggerContext {
+  const note = locateTriggerNoteReference(input.discussions, input.payload.object_attributes.id);
   const targetThread =
     input.priorThreads.find((thread) => thread.humanReplies.some((reply) => reply.noteId === input.payload.object_attributes.id)) ??
     null;
-  const kind = targetThread ? "follow-up-comment" : "direct-mention";
+  const kind =
+    targetThread !== null
+      ? "follow-up-comment"
+      : note.kind === "discussion-note" && isSummaryDiscussionReply(input.discussions, note.discussionId, input.tenant)
+        ? "summary-follow-up"
+        : "direct-mention";
   const instruction =
     kind === "direct-mention"
       ? extractBotMentionInstruction(input.payload.object_attributes.note, input.tenant.botUsername)
@@ -71,6 +85,16 @@ export function buildReviewTriggerContext(input: {
     targetDiscussionId: targetThread?.discussionId ?? null,
     targetThreadTitle: targetThread?.title ?? null
   };
+}
+
+function isSummaryDiscussionReply(
+  discussions: GitLabDiscussion[],
+  discussionId: string,
+  tenant: TenantRecord
+): boolean {
+  const discussion = discussions.find((entry) => entry.id === discussionId) ?? null;
+  const rootNote = discussion?.notes[0];
+  return Boolean(rootNote && isBotUser(rootNote.author, tenant) && isReviewSummaryNoteBody(rootNote.body));
 }
 
 export function locateTriggerNoteReference(

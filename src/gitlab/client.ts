@@ -13,6 +13,7 @@ import type {
   GitLabMergeRequestVersion,
   GitLabNote,
   GitLabRepositoryTreeItem,
+  GitLabWikiPage,
   TriggerNoteReference
 } from "./types.js";
 import { buildGitLabApiUrl, normalizeGitLabBaseUrl } from "./url.js";
@@ -62,6 +63,55 @@ export class GitLabClient {
 
   public async getProject(projectId: number): Promise<GitLabProject> {
     return this.requestJson<GitLabProject>("GET", `/projects/${encodeURIComponent(String(projectId))}`);
+  }
+
+  public async listProjectWikiPages(
+    projectId: number,
+    options: {
+      withContent?: boolean | undefined;
+    } = {}
+  ): Promise<GitLabWikiPage[]> {
+    return this.requestPaginated<GitLabWikiPage>(`/projects/${encodeURIComponent(String(projectId))}/wikis`, {
+      with_content: options.withContent ? 1 : undefined
+    });
+  }
+
+  public async getProjectWikiPage(projectId: number, slug: string): Promise<GitLabWikiPage> {
+    return this.requestJson<GitLabWikiPage>(
+      "GET",
+      `/projects/${encodeURIComponent(String(projectId))}/wikis/${encodeURIComponent(slug)}`
+    );
+  }
+
+  public async createProjectWikiPage(
+    projectId: number,
+    input: {
+      title: string;
+      content: string;
+      format?: string | undefined;
+    }
+  ): Promise<GitLabWikiPage> {
+    return this.requestForm<GitLabWikiPage>("POST", `/projects/${encodeURIComponent(String(projectId))}/wikis`, {
+      title: input.title,
+      content: input.content,
+      ...(input.format ? { format: input.format } : {})
+    });
+  }
+
+  public async updateProjectWikiPage(
+    projectId: number,
+    slug: string,
+    input: {
+      title?: string | undefined;
+      content?: string | undefined;
+      format?: string | undefined;
+    }
+  ): Promise<GitLabWikiPage> {
+    return this.requestForm<GitLabWikiPage>(
+      "PUT",
+      `/projects/${encodeURIComponent(String(projectId))}/wikis/${encodeURIComponent(slug)}`,
+      input
+    );
   }
 
   public async listMergeRequestVersions(

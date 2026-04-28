@@ -132,7 +132,7 @@ describe("review trigger helpers", () => {
     });
   });
 
-  it("does not treat replies on the review summary note as follow-up instructions", async () => {
+  it("treats replies on the review summary note as explicit summary follow-up triggers", async () => {
     const trigger = await classifyWebhookTrigger({
       tenant,
       payload: {
@@ -192,7 +192,14 @@ describe("review trigger helpers", () => {
       }
     });
 
-    expect(trigger).toBeNull();
+    expect(trigger).toEqual({
+      kind: "summary-follow-up",
+      note: {
+        kind: "discussion-note",
+        discussionId: "disc_summary",
+        noteId: 58
+      }
+    });
   });
 
   it("ignores draft merge request notes until they are submitted", async () => {
@@ -323,6 +330,32 @@ describe("review trigger helpers", () => {
         }
       },
       tenant,
+      discussions: [
+        {
+          id: "disc_1",
+          individual_note: false,
+          notes: [
+            {
+              id: 10,
+              type: "DiscussionNote",
+              body: "**Old finding**\n\nOriginal wording",
+              author: { id: 999, username: "review-bot", name: "Review Bot" },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false
+            },
+            {
+              id: 55,
+              type: "DiscussionNote",
+              body: "Please make this more human.",
+              author: { id: 42, username: "developer", name: "Dev User" },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false
+            }
+          ]
+        }
+      ],
       priorThreads
     });
 
@@ -363,12 +396,77 @@ describe("review trigger helpers", () => {
         }
       },
       tenant,
+      discussions: [],
       priorThreads
     });
 
     expect(reviewCommandTrigger).toMatchObject({
       kind: "direct-mention",
       instruction: "please make the descriptions more human",
+      targetThreadId: null
+    });
+
+    const summaryTrigger = buildReviewTriggerContext({
+      payload: {
+        object_kind: "note",
+        project: {
+          id: 123,
+          web_url: "https://gitlab.example.com/group/project"
+        },
+        repository: {
+          homepage: "https://gitlab.example.com/group/project"
+        },
+        merge_request: {
+          iid: 7,
+          title: "Add worker",
+          description: "Adds the worker",
+          source_branch: "feature",
+          target_branch: "main"
+        },
+        object_attributes: {
+          id: 58,
+          note: "In the future, please remember to throw in some dolphin related joke when it fits into the overall assessment.",
+          noteable_type: "MergeRequest"
+        },
+        user: {
+          id: 42,
+          username: "developer",
+          name: "Dev User"
+        }
+      },
+      tenant,
+      discussions: [
+        {
+          id: "disc_summary",
+          individual_note: false,
+          notes: [
+            {
+              id: 20,
+              type: "DiscussionNote",
+              body: `${REVIEW_SUMMARY_NOTE_MARKER}\n\n## Review summary`,
+              author: { id: 999, username: "review-bot", name: "Review Bot" },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false
+            },
+            {
+              id: 58,
+              type: "DiscussionNote",
+              body: "In the future, please remember to throw in some dolphin related joke when it fits into the overall assessment.",
+              author: { id: 42, username: "developer", name: "Dev User" },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false
+            }
+          ]
+        }
+      ],
+      priorThreads
+    });
+
+    expect(summaryTrigger).toMatchObject({
+      kind: "summary-follow-up",
+      instruction: "In the future, please remember to throw in some dolphin related joke when it fits into the overall assessment.",
       targetThreadId: null
     });
   });

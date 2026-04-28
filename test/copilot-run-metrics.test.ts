@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import { summarizeCopilotRunLog } from "../src/review/copilot-run-metrics.js";
+import { repoPath } from "./test-paths.js";
 
 describe("Copilot run metrics", () => {
   it("summarizes assistant usage and repeated view reads", () => {
+    const workspacePath = repoPath();
+    const alphaPath = repoPath("src", "alpha.ts");
+    const betaPath = repoPath("src", "beta.ts");
     const metrics = summarizeCopilotRunLog({
       metadata: {
+        reviewRunId: "run_1",
+        jobId: "job_1",
+        tenantId: "tenant_1",
+        mergeRequestIid: 7,
+        workspacePath,
         requestedModel: "gpt-5.4"
       },
       prompt: "Review this merge request.",
@@ -69,7 +78,7 @@ describe("Copilot run metrics", () => {
           data: {
             toolName: "view",
             arguments: {
-              path: "H:\\repo\\src\\alpha.ts"
+              path: alphaPath
             }
           }
         },
@@ -82,7 +91,7 @@ describe("Copilot run metrics", () => {
           data: {
             toolName: "view",
             arguments: {
-              path: "H:\\repo\\src\\alpha.ts"
+              path: alphaPath
             }
           }
         },
@@ -95,7 +104,7 @@ describe("Copilot run metrics", () => {
           data: {
             toolName: "view",
             arguments: {
-              path: "H:\\repo\\src\\beta.ts"
+              path: betaPath
             }
           }
         },
@@ -141,7 +150,7 @@ describe("Copilot run metrics", () => {
     expect(metrics.repeatedViewReads).toBe(1);
     expect(metrics.repeatedViewPaths).toEqual([
       {
-        path: "H:\\repo\\src\\alpha.ts",
+        path: alphaPath,
         count: 2
       }
     ]);

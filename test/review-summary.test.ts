@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildReviewSummaryNote } from "../src/review/summary.js";
+import { tmpPath } from "./test-paths.js";
 
 describe("review summary note", () => {
   it("wraps the suggested fixes prompt in a fenced md block and escapes embedded fences", () => {
@@ -64,10 +65,15 @@ describe("review summary note", () => {
         notes: [],
         discussions: [],
         workspace: {
-          rootPath: "H:\\dev\\gitlab-agentic-webhooks\\tmp\\review-workspaces\\run_1",
-          cleanupRoot: "H:\\dev\\gitlab-agentic-webhooks\\tmp\\review-workspaces\\run_1",
+          rootPath: tmpPath("review-workspaces", "run_1"),
+          cleanupRoot: tmpPath("review-workspaces", "run_1"),
           strategy: "git",
           instructionFiles: []
+        },
+        projectMemory: {
+          enabled: true,
+          page: null,
+          entries: []
         },
         snapshot: {
           id: "snapshot_1",
@@ -78,12 +84,13 @@ describe("review summary note", () => {
           mergeRequestJson: "{}",
           versionsJson: "[]",
           changesJson: "[]",
-          notesJson: "[]",
-          discussionsJson: "[]",
-          instructionsJson: "[]",
-          workspaceStrategy: "git",
-          createdAt: timestamp
-        }
+           notesJson: "[]",
+           discussionsJson: "[]",
+           instructionsJson: "[]",
+           projectMemoryJson: null,
+           workspaceStrategy: "git",
+           createdAt: timestamp
+         }
       },
       reviewResult: {
         overview: {

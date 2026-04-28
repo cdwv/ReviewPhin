@@ -23,6 +23,9 @@ const envSchema = z.object({
   MAX_JOB_RETRIES: z.coerce.number().int().min(0).default(3),
   RETRY_BACKOFF_MS: z.coerce.number().int().min(0).default(5_000),
   COPILOT_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
+  REVIEWPHIN_MEMORY_ENABLED: z.enum(["true", "false"]).default("true"),
+  REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS: z.coerce.number().int().positive().default(5_000),
+  REVIEWPHIN_TEXT_GENERATION_MODEL: z.string().min(1).default("auto"),
   COPILOT_MODEL: z.string().min(1).optional(),
   COPILOT_CLI_PATH: z.string().min(1).optional()
 });
@@ -39,6 +42,9 @@ export interface AppConfig {
   maxJobRetries: number;
   retryBackoffMs: number;
   copilotTimeoutMs: number;
+  memoryEnabled: boolean;
+  maxPromptMemoryChars: number;
+  textGenerationModel: string;
   copilotModel?: string | undefined;
   copilotCliPath?: string | undefined;
 }
@@ -55,6 +61,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     MAX_JOB_RETRIES: env.MAX_JOB_RETRIES,
     RETRY_BACKOFF_MS: env.RETRY_BACKOFF_MS,
     COPILOT_TIMEOUT_MS: env.COPILOT_TIMEOUT_MS,
+    REVIEWPHIN_MEMORY_ENABLED: env.REVIEWPHIN_MEMORY_ENABLED?.toLowerCase(),
+    REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS: env.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,
+    REVIEWPHIN_TEXT_GENERATION_MODEL: env.REVIEWPHIN_TEXT_GENERATION_MODEL,
     COPILOT_MODEL: env.COPILOT_MODEL,
     COPILOT_CLI_PATH: env.COPILOT_CLI_PATH
   });
@@ -69,6 +78,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     maxJobRetries: parsedEnv.MAX_JOB_RETRIES,
     retryBackoffMs: parsedEnv.RETRY_BACKOFF_MS,
     copilotTimeoutMs: parsedEnv.COPILOT_TIMEOUT_MS,
+    memoryEnabled: parsedEnv.REVIEWPHIN_MEMORY_ENABLED === "true",
+    maxPromptMemoryChars: parsedEnv.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,
+    textGenerationModel: parsedEnv.REVIEWPHIN_TEXT_GENERATION_MODEL,
     copilotModel: parsedEnv.COPILOT_MODEL,
     copilotCliPath: parsedEnv.COPILOT_CLI_PATH
   };

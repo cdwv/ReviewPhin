@@ -3,7 +3,15 @@ import { loadReviewPromptFile } from "./prompt-files.js";
 import { isReviewSummaryNoteBody } from "./summary.js";
 import { truncate } from "../utils/text.js";
 
-export function buildReviewPrompt(context: ReviewContext): string {
+const DEFAULT_MAX_PROMPT_MEMORY_CHARS = 5_000;
+
+export function buildReviewPrompt(
+  context: ReviewContext,
+  options: {
+    maxPromptMemoryChars?: number | undefined;
+  } = {}
+): string {
+  const maxPromptMemoryChars = options.maxPromptMemoryChars ?? DEFAULT_MAX_PROMPT_MEMORY_CHARS;
   const compactContext = {
     reviewMode: context.scope.mode,
     reviewScope: {
@@ -51,6 +59,7 @@ export function buildReviewPrompt(context: ReviewContext): string {
       sourceBranch: context.mergeRequest.source_branch,
       targetBranch: context.mergeRequest.target_branch
     },
+    projectMemory: buildPromptProjectMemory(context, maxPromptMemoryChars),
     instructionFiles: context.instructionFiles.map((file) => file.path),
     changedFiles: context.changes.map((change) => ({
       oldPath: change.old_path,
@@ -88,6 +97,7 @@ export function buildReviewPrompt(context: ReviewContext): string {
     loadReviewPromptFile("main.md"),
     "",
     loadReviewPromptFile(getModePromptFile(context)),
+    ...buildTriggerPromptSection(context),
     "",
     "JSON schema:",
      JSON.stringify(
@@ -147,6 +157,59 @@ export function buildReviewPrompt(context: ReviewContext): string {
   ].join("\n");
 }
 
+function buildPromptProjectMemory(
+  context: ReviewContext,
+  maxPromptMemoryChars: number
+):
+  | {
+      enabled: false;
+    }
+  | {
+      enabled: true;
+      pageTitle: string | null;
+      pageSlug: string | null;
+      totalEntryCount: number;
+      includedEntryCount: number;
+      omittedEntryCount: number;
+      entries: string[];
+    } {
+  if (!context.projectMemory.enabled) {
+    return {
+      enabled: false
+    };
+  }
+
+  const entries: string[] = [];
+  let remainingChars = maxPromptMemoryChars;
+
+  for (const entry of context.projectMemory.entries) {
+    if (remainingChars <= 0) {
+      break;
+    }
+
+    if (entry.text.length > remainingChars) {
+      break;
+    }
+
+    if (!entry.text.trim()) {
+      continue;
+    }
+
+    entries.push(entry.text);
+    remainingChars -= entry.text.length;
+  }
+
+  return {
+    enabled: true,
+    pageTitle: context.projectMemory.page?.title ?? null,
+    pageSlug: context.projectMemory.page?.slug ?? null,
+    totalEntryCount: context.projectMemory.entries.length,
+    includedEntryCount: entries.length,
+    omittedEntryCount: Math.max(0, context.projectMemory.entries.length - entries.length),
+    entries
+  };
+}
+
 function getModePromptFile(context: ReviewContext): "first-pass-full.md" | "incremental-rereview.md" | "follow-up-thread.md" {
   switch (context.scope.mode) {
     case "incremental-rereview":
@@ -156,4 +219,13 @@ function getModePromptFile(context: ReviewContext): "first-pass-full.md" | "incr
     default:
       return "first-pass-full.md";
   }
+}
+
+function buildTriggerPromptSection(context: ReviewContext): string[] {
+  const promptFile = getTriggerPromptFile(context.trigger.kind);
+  return promptFile ? ["", loadReviewPromptFile(promptFile)] : [];
+}
+
+function getTriggerPromptFile(context: ReviewContext["trigger"]["kind"]): "summary-follow-up.md" | null {
+  return context === "summary-follow-up" ? "summary-follow-up.md" : null;
 }
