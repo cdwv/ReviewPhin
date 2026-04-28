@@ -5,6 +5,9 @@ import { summarizeCopilotRunLog } from "../src/review/copilot-run-metrics.js";
 describe("Copilot run metrics", () => {
   it("summarizes assistant usage and repeated view reads", () => {
     const metrics = summarizeCopilotRunLog({
+      metadata: {
+        requestedModel: "gpt-5.4"
+      },
       prompt: "Review this merge request.",
       events: [
         {
@@ -47,7 +50,7 @@ describe("Copilot run metrics", () => {
           type: "assistant.usage",
           ephemeral: false,
           data: {
-            model: "gpt-5.4",
+            model: "claude-sonnet-4",
             inputTokens: 120,
             outputTokens: 14,
             cacheReadTokens: 60,
@@ -125,6 +128,16 @@ describe("Copilot run metrics", () => {
     expect(metrics.reasoningTokens).toBe(10);
     expect(metrics.apiDurationMs).toBe(4_000);
     expect(metrics.premiumRequests).toBe(2);
+    expect(metrics.premiumRequestsByModel).toEqual([
+      {
+        model: "claude-sonnet-4",
+        premiumRequests: 1
+      },
+      {
+        model: "gpt-5.4",
+        premiumRequests: 1
+      }
+    ]);
     expect(metrics.repeatedViewReads).toBe(1);
     expect(metrics.repeatedViewPaths).toEqual([
       {

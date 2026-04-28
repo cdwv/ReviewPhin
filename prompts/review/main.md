@@ -16,7 +16,13 @@ When a previous bot-owned thread should continue, set `priorThreadId` on the fin
 
 When a previous bot-owned thread is obsolete, include a `priorDispositions` entry with action `resolve`.
 
+If a human reply, newer code, or your own re-evaluation shows the original concern is no longer valid, prefer resolving that prior thread instead of defending or restating it.
+
 When a human replied inside a bot-owned thread and the bot should answer, include a `priorDispositions` entry with action `reply` and `replyBody`.
+
+When a human has already replied in a bot-owned thread, prefer answering with a new reply instead of silently editing the original bot note.
+
+Only prefer revising the original bot finding text when the human is explicitly asking for clarification, wording changes, or corrections to that original message. In that case, still include a `priorDispositions` entry with action `reply` and a `replyBody` that tells the user the original note was edited, so they do not miss the update.
 
 Do not say that a prior thread is resolved, closed, or no longer needed unless you also include the matching `priorDispositions` entry with action `resolve` for that thread.
 
