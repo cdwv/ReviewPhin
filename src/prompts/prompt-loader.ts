@@ -2,26 +2,22 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-type PromptFileName = "coalesce.md";
+const promptCache = new Map<string, string>();
 
-const promptCache = new Map<PromptFileName, string>();
-
-export function loadProjectMemoryPromptFile(name: PromptFileName): string {
-  const cached = promptCache.get(name);
+export function loadPromptContent(file: string): string {
+  const cached = promptCache.get(file);
   if (cached) {
     return cached;
   }
 
-  const path = resolvePromptPath(name);
+  const path = resolvePromptPath(file);
   const content = readFileSync(path, "utf8").trim();
-  promptCache.set(name, content);
+  promptCache.set(file, content);
   return content;
 }
 
-function resolvePromptPath(name: PromptFileName): string {
-  const candidates = getProjectRootCandidates().map((projectRoot) =>
-    join(projectRoot, "prompts", "memory", name)
-  );
+function resolvePromptPath(file: string): string {
+  const candidates = getProjectRootCandidates().map((projectRoot) => join(projectRoot, "prompts", ...file.split("/")));
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
@@ -29,7 +25,7 @@ function resolvePromptPath(name: PromptFileName): string {
     }
   }
 
-  throw new Error(`Project memory prompt file not found: ${name}`);
+  throw new Error(`Prompt file not found: ${file}`);
 }
 
 function getProjectRootCandidates(): string[] {
