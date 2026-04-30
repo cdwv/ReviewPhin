@@ -13,9 +13,9 @@ import { GitLabClient } from "../gitlab/client.js";
 import { ProjectMemoryTextCoalescer } from "../memory/coalescer.js";
 import { projectMemoryToolInputSchema } from "../memory/types.js";
 import { getProjectMemoryContentLength, updateProjectMemory } from "../memory/project-memory.js";
+import { renderPrompt } from "../prompts/instruction-renderer.js";
 import { CopilotRunLog } from "./copilot-run-log.js";
-import { loadReviewPromptFile } from "./prompt-files.js";
-import { buildReviewPrompt } from "./prompt.js";
+import { buildReviewPrompt } from "../prompts/prompt-builders.js";
 import type { ReviewProvider } from "./provider.js";
 import type { ReviewContext, ReviewResult } from "./types.js";
 import { reviewResultSchema } from "./types.js";
@@ -157,7 +157,7 @@ export class CopilotReviewProvider implements ReviewProvider {
             displayName: "Context Analyst",
             description: "Gathers evidence from diffs, instructions, and nearby code",
             tools: [...readOnlyTools],
-            prompt: loadReviewPromptFile("context-analyst.md"),
+            prompt: renderPrompt("subagent.context-analyst", {}),
             infer: true
           },
           {
@@ -165,7 +165,7 @@ export class CopilotReviewProvider implements ReviewProvider {
             displayName: "Review Author",
             description: "Produces GitLab-ready review findings and thread dispositions",
             tools: reviewAuthorTools,
-            prompt: loadReviewPromptFile("review-author.md"),
+            prompt: renderPrompt("subagent.review-author", {}),
             infer: true
           }
         ],

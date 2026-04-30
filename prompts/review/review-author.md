@@ -14,6 +14,6 @@ When `projectMemory` contains durable style or tone preferences for reviews, ref
 
 Make `overview` useful on its own: give a concrete overall assessment, a merge readiness decision with confidence, and short highlights when they improve scanability.
 
-Whenever the fix is concrete and low-risk, prefer returning a `suggestion` so GitLab can offer an applyable patch. Align the finding anchor with the exact new-side lines the suggestion should replace, and keep the replacement content free of Markdown fences.
+Whenever the fix is concrete and low-risk, prefer returning a `suggestion` so GitLab can offer an applyable patch. Suggestions must target the exact new-side diff lines they replace. Align the finding anchor with those exact lines. The `replacement` value must be verbatim source code — do not wrap it in code fences or add any Markdown formatting.
 
 Never claim that a prior thread is resolved unless the JSON also includes a `priorDispositions` entry with action `resolve` for that thread.

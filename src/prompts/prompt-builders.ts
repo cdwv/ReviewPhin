@@ -1,18 +1,56 @@
-import type { ReviewContext } from "./types.js";
-import { loadReviewPromptFile } from "./prompt-files.js";
-import { isReviewSummaryNoteBody } from "./summary.js";
+import { renderPrompt, type PromptTemplateId } from "./instruction-renderer.js";
+import { isReviewSummaryNoteBody } from "../review/summary.js";
+import type { ReviewContext } from "../review/types.js";
 import { truncate } from "../utils/text.js";
+import type { ProjectMemoryCoalesceInput } from "../memory/types.js";
 
 const DEFAULT_MAX_PROMPT_MEMORY_CHARS = 5_000;
+
+export function buildProjectMemoryCoalescePrompt(input: ProjectMemoryCoalesceInput): string {
+  return renderPrompt("memory.coalesce", input);
+}
 
 export function buildReviewPrompt(
   context: ReviewContext,
   options: {
-    maxPromptMemoryChars?: number | undefined;
+    maxPromptMemoryChars?: number;
   } = {}
 ): string {
   const maxPromptMemoryChars = options.maxPromptMemoryChars ?? DEFAULT_MAX_PROMPT_MEMORY_CHARS;
-  const compactContext = {
+  return [
+    renderPrompt(getPromptTemplateId(context), {}),
+    "",
+    "JSON schema:",
+    JSON.stringify(reviewResponseSchema, null, 2),
+    "",
+    "Context:",
+    JSON.stringify(buildCompactReviewContext(context, maxPromptMemoryChars), null, 2)
+  ].join("\n");
+}
+
+function getPromptTemplateId(
+  context: ReviewContext
+): Extract<PromptTemplateId, `review.${string}`> {
+  if (context.scope.mode === "follow-up-thread") {
+    return "review.follow-up-thread";
+  }
+
+  if (context.scope.mode === "incremental-rereview") {
+    return context.trigger.kind === "summary-follow-up"
+      ? "review.incremental-rereview.summary-follow-up"
+      : "review.incremental-rereview";
+  }
+
+  return context.trigger.kind === "summary-follow-up"
+    ? "review.first-pass-full.summary-follow-up"
+    : "review.first-pass-full";
+}
+
+function buildCompactReviewContext(
+  context: ReviewContext,
+  maxPromptMemoryChars: number
+) {
+  return {
     reviewMode: context.scope.mode,
     reviewScope: {
       summary: context.scope.scopeSummary,
@@ -70,13 +108,16 @@ export function buildReviewPrompt(
       diff: truncate(change.diff ?? "", 6_000)
     })),
     additionalChangedFiles: context.scope.omittedChangedFiles.slice(0, 40),
-    mergeRequestNotes: context.notes.filter((note) => !isReviewSummaryNoteBody(note.body)).slice(0, 50).map((note) => ({
-      id: note.id,
-      author: note.author.username,
-      body: truncate(note.body, 1_500),
-      resolvable: note.resolvable ?? false,
-      resolved: note.resolved ?? false
-    })),
+    mergeRequestNotes: context.notes
+      .filter((note) => !isReviewSummaryNoteBody(note.body))
+      .slice(0, 50)
+      .map((note) => ({
+        id: note.id,
+        author: note.author.username,
+        body: truncate(note.body, 1_500),
+        resolvable: note.resolvable ?? false,
+        resolved: note.resolved ?? false
+      })),
     priorThreads: context.priorThreads.map((thread) => ({
       threadId: thread.threadId,
       discussionId: thread.discussionId,
@@ -92,69 +133,6 @@ export function buildReviewPrompt(
       }))
     }))
   };
-
-  return [
-    loadReviewPromptFile("main.md"),
-    "",
-    loadReviewPromptFile(getModePromptFile(context)),
-    ...buildTriggerPromptSection(context),
-    "",
-    "JSON schema:",
-     JSON.stringify(
-        {
-          overview: {
-            summary: "string",
-            overallSeverity: "low | medium | high | critical",
-            overallAssessment: "string",
-            mergeReadiness: {
-              status: "ready | needs_attention | blocked",
-              confidence: "low | medium | high",
-              summary: "string"
-            },
-            highlights: ["optional string"]
-          },
-          findings: [
-          {
-            priorThreadId: "optional string",
-            title: "string",
-            body: "string",
-            severity: "low | medium | high | critical",
-            category: "bug | correctness | security | performance | maintainability",
-            confidence: "optional low | medium | high",
-            anchor: {
-              path: "string",
-              oldPath: "optional string",
-              startLine: 1,
-              endLine: 1,
-              side: "new | old"
-            },
-            suggestion: {
-              replacement: "string",
-              startLine: 1,
-              endLine: 1
-            },
-            replyInDiscussion: false
-          }
-        ],
-        priorDispositions: [
-          {
-            threadId: "string",
-            action: "keep | update | resolve | reply",
-            replyBody: "optional string"
-          }
-        ]
-      },
-       null,
-       2
-     ),
-    "",
-    "Suggestion guidance:",
-    "- Prefer `suggestion` when you can provide a concrete, low-risk code replacement.",
-    "- Suggestions must target exact new-side diff lines and the replacement text must be raw code only.",
-    "",
-    "Context:",
-    JSON.stringify(compactContext, null, 2)
-  ].join("\n");
 }
 
 function buildPromptProjectMemory(
@@ -210,22 +188,46 @@ function buildPromptProjectMemory(
   };
 }
 
-function getModePromptFile(context: ReviewContext): "first-pass-full.md" | "incremental-rereview.md" | "follow-up-thread.md" {
-  switch (context.scope.mode) {
-    case "incremental-rereview":
-      return "incremental-rereview.md";
-    case "follow-up-thread":
-      return "follow-up-thread.md";
-    default:
-      return "first-pass-full.md";
-  }
-}
-
-function buildTriggerPromptSection(context: ReviewContext): string[] {
-  const promptFile = getTriggerPromptFile(context.trigger.kind);
-  return promptFile ? ["", loadReviewPromptFile(promptFile)] : [];
-}
-
-function getTriggerPromptFile(context: ReviewContext["trigger"]["kind"]): "summary-follow-up.md" | null {
-  return context === "summary-follow-up" ? "summary-follow-up.md" : null;
-}
+const reviewResponseSchema = {
+  overview: {
+    summary: "string",
+    overallSeverity: "low | medium | high | critical",
+    overallAssessment: "string",
+    mergeReadiness: {
+      status: "ready | needs_attention | blocked",
+      confidence: "low | medium | high",
+      summary: "string"
+    },
+    highlights: ["optional string"]
+  },
+  findings: [
+    {
+      priorThreadId: "optional string",
+      title: "string",
+      body: "string",
+      severity: "low | medium | high | critical",
+      category: "bug | correctness | security | performance | maintainability",
+      confidence: "optional low | medium | high",
+      anchor: {
+        path: "string",
+        oldPath: "optional string",
+        startLine: 1,
+        endLine: 1,
+        side: "new | old"
+      },
+      suggestion: {
+        replacement: "string",
+        startLine: 1,
+        endLine: 1
+      },
+      replyInDiscussion: false
+    }
+  ],
+  priorDispositions: [
+    {
+      threadId: "string",
+      action: "keep | update | resolve | reply",
+      replyBody: "optional string"
+    }
+  ]
+};

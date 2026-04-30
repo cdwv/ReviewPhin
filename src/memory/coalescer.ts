@@ -1,8 +1,8 @@
 import { CopilotClient, type AssistantMessageEvent, type PermissionHandler } from "@github/copilot-sdk";
 import type { Logger } from "pino";
 
-import { loadProjectMemoryPromptFile } from "./prompt-files.js";
 import type { ProjectMemoryCoalesceInput, ProjectMemoryEntry } from "./types.js";
+import { buildProjectMemoryCoalescePrompt } from "../prompts/prompt-builders.js";
 
 interface ProjectMemoryCoalescerOptions {
   logger: Logger;
@@ -60,14 +60,6 @@ export class ProjectMemoryTextCoalescer {
       await client.stop();
     }
   }
-}
-
-function buildProjectMemoryCoalescePrompt(input: ProjectMemoryCoalesceInput): string {
-  return loadProjectMemoryPromptFile("coalesce.md")
-    .replaceAll("{{reason}}", input.reason)
-    .replaceAll("{{maxChars}}", String(input.maxChars))
-    .replaceAll("{{targetChars}}", String(input.targetChars))
-    .replace("{{entriesJson}}", JSON.stringify(input.entries.map((entry) => entry.text), null, 2));
 }
 
 function parseCoalescedEntries(response: AssistantMessageEvent | undefined): ProjectMemoryEntry[] {

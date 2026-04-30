@@ -146,6 +146,43 @@ Useful commands:
 - `pnpm build` - compile TypeScript
 - `pnpm test` - run tests
 
+## Prompt fragments and registration
+
+Prompt instructions are split into small markdown fragments under `prompts/` and then registered into concrete prompt combinations in code.
+
+### Source files
+
+- `prompts/review/*.md` contains reusable review instruction fragments such as the shared base prompt, mode-specific overlays, and subagent prompts.
+- `prompts/memory/*.md` contains memory-specific prompts such as project memory coalescing.
+
+### Prompt modules
+
+- `src/prompts/prompt-loader.ts` loads raw prompt files from `prompts/` and caches their trimmed content.
+- `src/prompts/instruction-types.ts` contains the generic type utilities used by the prompt system.
+- `src/prompts/instruction-helpers.ts` contains generic helpers for defining fragments, defining templates, building static combinations, and rendering registered prompts.
+- `src/prompts/instruction-registry.ts` is the source of truth for registered fragments and named prompt combinations.
+- `src/prompts/instruction-renderer.ts` exposes the public `renderPrompt(...)` function used by the rest of the app.
+- `src/prompts/prompt-builders.ts` builds domain-specific prompts on top of registered instruction combinations, for example by appending review JSON schema and serialized review context.
+
+### How registration works
+
+1. A prompt fragment is registered in `src/prompts/instruction-registry.ts` with `definePromptFragment(...)`.
+2. If the fragment needs parameter substitution, its registration provides a small render function that maps typed params into the raw markdown content.
+3. A practical prompt combination is then registered with a stable id such as `review.first-pass-full` or `subagent.review-author`.
+4. The rest of the application renders only registered combinations through `renderPrompt(...)`; application code does not load raw prompt files directly. This makes it much easier to trace instructions we have and dedup their instructions.
+
+### Current review flow
+
+- `src/prompts/instruction-registry.ts` registers the instruction-only combinations for first-pass review, incremental re-review, follow-up thread review, summary follow-up overlays, review subagents, and memory coalescing.
+- `src/prompts/prompt-builders.ts` selects the correct review combination for a `ReviewContext`, renders it, and appends the review response schema plus compact serialized context.
+- `src/review/copilot-provider.ts` uses the same registry for subagent prompts, so review prompt selection and subagent prompt selection both come from the same registered source.
+
+### Adding a new prompt
+
+1. Add the markdown fragment under `prompts/review/` or `prompts/memory/`.
+2. Register the fragment and a named template in `src/prompts/instruction-registry.ts`.
+3. If the prompt needs domain payload beyond static instructions, wire that in `src/prompts/prompt-builders.ts` or another domain-specific builder instead of expanding the registry.
+
 ## Add a test GitLab server and project
 
 The worker treats each GitLab target as a **tenant** keyed by:

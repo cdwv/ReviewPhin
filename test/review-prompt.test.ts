@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { buildReviewPrompt } from "../src/review/prompt.js";
+import { renderPrompt } from "../src/prompts/instruction-renderer.js";
+import { buildReviewPrompt } from "../src/prompts/prompt-builders.js";
 import type { ReviewContext } from "../src/review/types.js";
 import { repoPath } from "./test-paths.js";
 
@@ -43,6 +44,33 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain("The latest user instruction came from a reply to the bot's merge request summary note.");
     expect(prompt).toContain('"kind": "summary-follow-up"');
   });
+
+  it("uses the incremental summary-follow-up registered combination", () => {
+    const prompt = buildReviewPrompt(createContext(null, "summary-follow-up", "incremental-rereview"));
+
+    expect(prompt).toContain("This merge request has already been reviewed before.");
+    expect(prompt).toContain("The latest user instruction came from a reply to the bot's merge request summary note.");
+  });
+
+  it("uses the follow-up-thread registered combination without the summary overlay", () => {
+    const prompt = buildReviewPrompt(createContext(null, "follow-up-comment", "follow-up-thread"));
+
+    expect(prompt).toContain("This is a focused follow-up on an existing bot-owned discussion thread.");
+    expect(prompt).not.toContain("The latest user instruction came from a reply to the bot's merge request summary note.");
+  });
+
+  it("renders registered standalone prompts and parameterized templates", () => {
+    expect(renderPrompt("subagent.context-analyst", {})).toContain("You are a read-only context analyst.");
+    expect(renderPrompt("subagent.review-author", {})).toContain("You are a review author.");
+    expect(
+      renderPrompt("memory.coalesce", {
+        entries: [{ text: "Keep pnpm usage consistent." }],
+        maxChars: 100,
+        targetChars: 80,
+        reason: "prompt-budget"
+      })
+    ).toContain("Reason for compression: prompt-budget");
+  });
 });
 
 function createContext(
@@ -52,7 +80,8 @@ function createContext(
     { text: "Team policy is to prefer pnpm scripts for local development." },
     { text: "For future reference, we generally avoid snapshot tests for API responses." }
   ],
-  triggerKind: ReviewContext["trigger"]["kind"] = "direct-mention"
+  triggerKind: ReviewContext["trigger"]["kind"] = "direct-mention",
+  mode: ReviewContext["scope"]["mode"] = "first-pass-full"
 ): ReviewContext {
   return {
     workspacePath: repoPath(),
@@ -107,7 +136,7 @@ function createContext(
     },
     priorThreads: [],
     scope: {
-      mode: "first-pass-full",
+      mode,
       scopeSummary: "Full review",
       widenScopeHints: [],
       allChangedFiles: [],
