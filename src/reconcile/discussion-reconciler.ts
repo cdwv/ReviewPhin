@@ -7,10 +7,9 @@ import type {
   GitLabDiscussion,
   GitLabDiffPosition,
   GitLabNote,
-  GitLabUser,
   HydratedMergeRequestContext
 } from "../gitlab/types.js";
-import type { Storage, DiscussionMappingRecord, TenantRecord } from "../storage/types.js";
+import type { Storage, DiscussionMappingRecord, ReviewFindingStatus, TenantRecord } from "../storage/types.js";
 import { createFindingFingerprint, createFindingIdentityKey } from "../utils/ids.js";
 import { firstNonEmptyLine } from "../utils/text.js";
 import { buildReviewSummaryNote, findLatestReviewSummaryNote, isReviewSummaryNoteBody } from "../review/summary.js";
@@ -176,7 +175,8 @@ export class DiscussionReconciler {
           severity: thread.mapping?.severity ?? "medium",
           category: thread.mapping?.category ?? "correctness",
           position: thread.discussion.notes[0]?.position ?? null,
-          status: "resolved"
+          discussionStatus: "resolved",
+          findingStatus: disposition.resolution ?? "resolved"
         });
         summary.resolved += 1;
       } else if (disposition.action === "reply" && disposition.replyBody) {
@@ -222,13 +222,23 @@ export class DiscussionReconciler {
           severity: thread.mapping?.severity ?? "medium",
           category: thread.mapping?.category ?? "correctness",
           position: note.position ?? thread.discussion.notes[0]?.position ?? null,
-          status: thread.resolved ? "resolved" : "open"
+          discussionStatus: thread.resolved ? "resolved" : "open",
+          findingStatus: thread.resolved ? "resolved" : "open"
         });
         summary.replied += 1;
       }
     }
 
-    summary.summaryNoteAction = await this.syncSummaryNote(input);
+    const summaryResolvedFindingIdentityKeys = collectSummaryResolvedFindingIdentityKeys({
+      reviewResult: input.reviewResult,
+      threadById,
+      referencedThreadIds
+    });
+
+    summary.summaryNoteAction = await this.syncSummaryNote({
+      ...input,
+      summaryResolvedFindingIdentityKeys
+    });
 
     return summary;
   }
@@ -277,7 +287,8 @@ export class DiscussionReconciler {
         severity: input.finding.severity,
         category: input.finding.category,
         position: input.thread.discussion.notes[0]?.position ?? null,
-        status: input.thread.resolved ? "resolved" : "open"
+        discussionStatus: input.thread.resolved ? "resolved" : "open",
+        findingStatus: "open"
       });
       return "kept";
     }
@@ -302,7 +313,8 @@ export class DiscussionReconciler {
         severity: input.finding.severity,
         category: input.finding.category,
         position: note.position ?? input.thread.discussion.notes[0]?.position ?? null,
-        status: input.thread.resolved ? "resolved" : "open"
+        discussionStatus: input.thread.resolved ? "resolved" : "open",
+        findingStatus: "open"
       });
       return "replied";
     }
@@ -332,7 +344,8 @@ export class DiscussionReconciler {
       severity: input.finding.severity,
       category: input.finding.category,
       position: updatedNote.position ?? input.thread.discussion.notes[0]?.position ?? null,
-      status: input.thread.resolved ? "resolved" : "open"
+      discussionStatus: input.thread.resolved ? "resolved" : "open",
+      findingStatus: "open"
     });
     return "updated";
   }
@@ -399,6 +412,23 @@ export class DiscussionReconciler {
       status: note.resolved ? "resolved" : "open",
       lastReviewRunId: input.reviewRunId
     });
+    const updatedFinding = await this.storage.updateReviewFindingStatus(
+      input.tenant.id,
+      input.context.mergeRequest.iid,
+      identityKey,
+      "open"
+    );
+    if (!updatedFinding) {
+      this.logger.warn(
+        {
+          tenantId: input.tenant.id,
+          mergeRequestIid: input.context.mergeRequest.iid,
+          identityKey,
+          findingStatus: "open"
+        },
+        "failed to update persisted review finding status"
+      );
+    }
   }
 
   private async createDiscussion(input: {
@@ -467,7 +497,8 @@ export class DiscussionReconciler {
     severity: string;
     category: string;
     position: GitLabDiffPosition | null;
-    status: "open" | "resolved";
+    discussionStatus: "open" | "resolved";
+    findingStatus: ReviewFindingStatus;
   }): Promise<void> {
     const rootNote = input.thread.discussion.notes[0];
     if (!rootNote || !input.note) {
@@ -493,9 +524,27 @@ export class DiscussionReconciler {
       botNote: isBotUser(input.note.author, input.tenant),
       noteAuthorId: input.note.author.id,
       noteAuthorUsername: input.note.author.username,
-      status: input.status,
+      status: input.discussionStatus,
       lastReviewRunId: input.reviewRunId
     });
+
+    const updatedFinding = await this.storage.updateReviewFindingStatus(
+      input.tenant.id,
+      input.context.mergeRequest.iid,
+      input.identityKey,
+      input.findingStatus
+    );
+    if (!updatedFinding) {
+      this.logger.warn(
+        {
+          tenantId: input.tenant.id,
+          mergeRequestIid: input.context.mergeRequest.iid,
+          identityKey: input.identityKey,
+          findingStatus: input.findingStatus
+        },
+        "failed to update persisted review finding status"
+      );
+    }
   }
 
   private async syncSummaryNote(input: {
@@ -504,10 +553,35 @@ export class DiscussionReconciler {
     reviewRunId: string;
     reviewResult: ReviewResult;
     client: GitLabClient;
+    summaryResolvedFindingIdentityKeys: ReadonlySet<string>;
   }): Promise<ReconcileSummary["summaryNoteAction"]> {
+    const activePersistedFindings =
+      (
+        await this.storage.listLatestReviewFindings(input.tenant.id, input.context.mergeRequest.iid)
+      )
+        .filter(
+          (finding) =>
+            finding.status === "open" && !input.summaryResolvedFindingIdentityKeys.has(finding.identityKey)
+        )
+        .map((finding) => ({
+          title: finding.title,
+          body: finding.body,
+          severity: finding.severity as ReviewResult["findings"][number]["severity"],
+          category: finding.category as ReviewResult["findings"][number]["category"]
+        }));
+    const activeFindings =
+      activePersistedFindings.length > 0
+        ? activePersistedFindings
+        : input.reviewResult.findings.map((finding) => ({
+            title: finding.title,
+            body: finding.body,
+            severity: finding.severity,
+            category: finding.category
+          }));
     const body = buildReviewSummaryNote({
       context: input.context,
-      reviewResult: input.reviewResult
+      reviewResult: input.reviewResult,
+      activeFindings
     });
     const existingNote = findLatestReviewSummaryNote(input.context.notes, (note) => isBotUser(note.author, input.tenant));
 
@@ -648,4 +722,41 @@ function extractAnchorFromNote(note: GitLabNote | null): ReviewAnchor | null {
 
 function stripTitleDecoration(value: string): string {
   return value.replace(/^[#*\s`]+/, "").replace(/[*\s`]+$/, "");
+}
+
+function collectSummaryResolvedFindingIdentityKeys(input: {
+  reviewResult: ReviewResult;
+  threadById: ReadonlyMap<string, KnownThread>;
+  referencedThreadIds: ReadonlySet<string>;
+}): Set<string> {
+  const identityKeys = new Set<string>();
+
+  for (const disposition of input.reviewResult.priorDispositions) {
+    if (disposition.action !== "resolve" || input.referencedThreadIds.has(disposition.threadId)) {
+      continue;
+    }
+
+    const thread = input.threadById.get(disposition.threadId);
+    if (!thread) {
+      continue;
+    }
+
+    identityKeys.add(resolveThreadIdentityKey(thread));
+  }
+
+  return identityKeys;
+}
+
+function resolveThreadIdentityKey(thread: KnownThread): string {
+  return (
+    thread.mapping?.identityKey ??
+    createFindingIdentityKey({
+      title: thread.title,
+      category: thread.mapping?.category ?? "correctness",
+      path: thread.anchor?.path,
+      startLine: thread.anchor?.startLine,
+      endLine: thread.anchor?.endLine,
+      side: thread.anchor?.side
+    })
+  );
 }

@@ -1,4 +1,5 @@
 import type { TenantConfig } from "../config.js";
+import type { ReviewAnchor, ReviewSuggestion } from "../review/types.js";
 
 export interface TenantRecord {
   id: string;
@@ -156,38 +157,33 @@ export interface PreviousCompletedReviewRecord {
   snapshot: MergeRequestSnapshotRecord;
 }
 
-export interface ReviewFindingRecord {
-  id: string;
-  reviewRunId: string;
-  identityKey: string;
-  fingerprint: string;
-  severity: string;
-  category: string;
-  title: string;
-  body: string;
-  filePath: string | null;
-  startLine: number | null;
-  endLine: number | null;
-  side: string | null;
-  suggestionJson: string | null;
-  rawJson: string;
-  createdAt: string;
-}
+export type ReviewFindingStatus = "open" | "resolved" | "dismissed";
 
 export interface CreateReviewFindingInput {
   reviewRunId: string;
   identityKey: string;
-  fingerprint: string;
   severity: string;
   category: string;
   title: string;
   body: string;
-  filePath: string | null;
-  startLine: number | null;
-  endLine: number | null;
-  side: string | null;
+  anchorJson: string | null;
   suggestionJson: string | null;
-  rawJson: string;
+  status: ReviewFindingStatus;
+}
+
+export interface PriorReviewFindingRecord {
+  findingId: string;
+  identityKey: string;
+  status: ReviewFindingStatus;
+  title: string;
+  body: string;
+  severity: string;
+  category: string;
+  anchor: ReviewAnchor | null;
+  suggestion: ReviewSuggestion | null;
+  reviewRunId: string;
+  reviewedAt: string;
+  headSha: string;
 }
 
 export type DiscussionMappingStatus = "open" | "resolved";
@@ -264,6 +260,18 @@ export interface Storage {
   failReviewRun(reviewRunId: string, error: string): Promise<void>;
   upsertReviewRunMetrics(input: UpsertReviewRunMetricsInput): Promise<ReviewRunMetricsRecord>;
   replaceReviewFindings(reviewRunId: string, findings: CreateReviewFindingInput[]): Promise<void>;
+  listPriorReviewFindings(
+    tenantId: string,
+    mergeRequestIid: number,
+    currentReviewJobId: string
+  ): Promise<PriorReviewFindingRecord[]>;
+  listLatestReviewFindings(tenantId: string, mergeRequestIid: number): Promise<PriorReviewFindingRecord[]>;
+  updateReviewFindingStatus(
+    tenantId: string,
+    mergeRequestIid: number,
+    identityKey: string,
+    status: ReviewFindingStatus
+  ): Promise<boolean>;
   listDiscussionMappings(tenantId: string, mergeRequestIid: number): Promise<DiscussionMappingRecord[]>;
   upsertDiscussionMapping(input: UpsertDiscussionMappingInput): Promise<DiscussionMappingRecord>;
 }

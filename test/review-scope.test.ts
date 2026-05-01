@@ -89,6 +89,70 @@ describe("buildScopedReviewContext", () => {
     expect(scoped.scope.deltaSincePreviousReview?.changedFiles).toHaveLength(1);
   });
 
+  it("keeps open prior findings in incremental focus even without live unresolved threads", () => {
+    const scoped = buildScopedReviewContext({
+      workspacePath: repoPath(),
+      mergeRequest,
+      changes: [
+        createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old"),
+        createChange("src\\delta.ts", "@@ -1 +1 @@\n-old\n+new")
+      ],
+      notes: [],
+      discussions: [],
+      instructionFiles: [],
+      trigger: {
+        kind: "direct-mention",
+        noteId: 57,
+        authorUsername: "developer",
+        body: "@review-bot review again",
+        instruction: "review again",
+        targetThreadId: null,
+        targetDiscussionId: null,
+        targetThreadTitle: null
+      },
+      priorThreads: [],
+      priorFindings: [
+        {
+          findingId: "finding_1",
+          identityKey: "identity_existing",
+          status: "open",
+          title: "Existing finding",
+          body: "Original body",
+          severity: "medium",
+          category: "correctness",
+          anchor: {
+            path: "src\\existing.ts",
+            startLine: 1,
+            endLine: 1,
+            side: "new"
+          },
+          suggestion: null,
+          reviewRunId: "run_prev",
+          reviewedAt: "2026-04-27T12:00:00.000Z",
+          headSha: "prevhead"
+        }
+      ],
+      previousReview: {
+        reviewRunId: "run_prev",
+        finishedAt: "2026-04-27T12:00:00.000Z",
+        headSha: "prevhead",
+        resultJson: JSON.stringify({
+          overview: {
+            summary: "Needs work",
+            overallSeverity: "medium"
+          },
+          findings: [],
+          priorDispositions: []
+        }),
+        changesJson: JSON.stringify([createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old")])
+      }
+    });
+
+    expect(scoped.changes.map((change) => change.new_path)).toEqual(["src\\existing.ts", "src\\delta.ts"]);
+    expect(scoped.scope.priorFindings).toHaveLength(1);
+    expect(scoped.scope.priorFindings[0]?.status).toBe("open");
+  });
+
   it("routes summary follow-up triggers through incremental re-review when a previous review exists", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),

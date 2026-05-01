@@ -196,6 +196,145 @@ describe("GitLab reactions", () => {
     expect(postedBodies.some((body) => body.includes("name=white_check_mark"))).toBe(true);
   });
 
+  it("adds a friendly failure reaction to direct mention trigger notes on terminal failure", async () => {
+    const fetchMock = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "GET" && url.includes("/discussions?")) {
+        return new Response("[]", {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        });
+      }
+
+      if (init?.method === "GET" && url.includes("/notes/55/award_emoji")) {
+        return new Response("[]", {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        });
+      }
+
+      const body = String(init?.body);
+      const reactionName = body.includes("sweat_smile") ? "sweat_smile" : "eyes";
+      return new Response(
+        JSON.stringify({
+          id: reactionName === "eyes" ? 1 : 2,
+          name: reactionName,
+          user: {
+            id: 999,
+            username: "review-bot",
+            name: "Review Bot"
+          },
+          created_at: new Date().toISOString()
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const worker = createWorker({
+      payload: directMentionPayload,
+      discussions: [],
+      jobRetryCount: 3,
+      reviewError: new Error("final failure")
+    });
+
+    await worker.createReviewJobFromWebhook(directMentionPayload, tenant, {
+      kind: "direct-mention",
+      note: {
+        kind: "merge-request-note",
+        noteId: 55
+      }
+    });
+
+    await expect(worker.processJob("job_1")).rejects.toThrow("final failure");
+
+    const postedBodies = fetchMock.mock.calls
+      .filter(([input, init]) => init?.method === "POST" && String(input).includes("/award_emoji"))
+      .map(([, init]) => String(init?.body));
+
+    expect(postedBodies.some((body) => body.includes("name=eyes"))).toBe(true);
+    expect(postedBodies.some((body) => body.includes("name=sweat_smile"))).toBe(true);
+    expect(postedBodies.some((body) => body.includes("name=white_check_mark"))).toBe(false);
+  });
+
+  it("does not add the failure reaction while retries remain", async () => {
+    const fetchMock = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "GET" && url.includes("/discussions?")) {
+        return new Response("[]", {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        });
+      }
+
+      if (init?.method === "GET" && url.includes("/notes/55/award_emoji")) {
+        return new Response("[]", {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          id: 1,
+          name: "eyes",
+          user: {
+            id: 999,
+            username: "review-bot",
+            name: "Review Bot"
+          },
+          created_at: new Date().toISOString()
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const worker = createWorker({
+      payload: directMentionPayload,
+      discussions: [],
+      jobRetryCount: 0,
+      reviewError: new Error("retryable failure")
+    });
+
+    await worker.createReviewJobFromWebhook(directMentionPayload, tenant, {
+      kind: "direct-mention",
+      note: {
+        kind: "merge-request-note",
+        noteId: 55
+      }
+    });
+
+    await expect(worker.processJob("job_1")).resolves.toEqual({
+      requeueAfterMs: 5000
+    });
+
+    const postedBodies = fetchMock.mock.calls
+      .filter(([input, init]) => init?.method === "POST" && String(input).includes("/award_emoji"))
+      .map(([, init]) => String(init?.body));
+
+    expect(postedBodies.some((body) => body.includes("name=eyes"))).toBe(true);
+    expect(postedBodies.some((body) => body.includes("name=sweat_smile"))).toBe(false);
+  });
+
   it("skips reactions for follow-up discussion notes", async () => {
     const discussions = [
       {
@@ -279,7 +418,12 @@ describe("GitLab reactions", () => {
   });
 });
 
-function createWorker(input: { payload: GitLabNoteHookPayload; discussions: GitLabDiscussion[] }): ReviewWorker {
+function createWorker(input: {
+  payload: GitLabNoteHookPayload;
+  discussions: GitLabDiscussion[];
+  jobRetryCount?: number;
+  reviewError?: Error;
+}): ReviewWorker {
   const job = {
     id: "job_1",
     tenantId: tenant.id,
@@ -290,7 +434,7 @@ function createWorker(input: { payload: GitLabNoteHookPayload; discussions: GitL
     headSha: "abc123",
     status: "queued" as const,
     payloadJson: JSON.stringify(input.payload),
-    retryCount: 0,
+    retryCount: input.jobRetryCount ?? 0,
     lastError: null,
     enqueuedAt: new Date().toISOString(),
     startedAt: null,
@@ -318,6 +462,7 @@ function createWorker(input: { payload: GitLabNoteHookPayload; discussions: GitL
       finishedAt: null
     })),
     getLatestCompletedReviewForMergeRequest: vi.fn(async () => null),
+    listPriorReviewFindings: vi.fn(async () => []),
     completeReviewRun: vi.fn(async () => {}),
     replaceReviewFindings: vi.fn(async () => {}),
     markJobCompleted: vi.fn(async () => {}),
@@ -389,14 +534,20 @@ function createWorker(input: { payload: GitLabNoteHookPayload; discussions: GitL
     } as never,
     reviewProvider: {
       name: "copilot-sdk",
-      review: vi.fn(async () => ({
-        overview: {
-          summary: "Done",
-          overallSeverity: "low" as const
-        },
-        findings: [],
-        priorDispositions: []
-      }))
+      review: vi.fn(async () => {
+        if (input.reviewError) {
+          throw input.reviewError;
+        }
+
+        return {
+          overview: {
+            summary: "Done",
+            overallSeverity: "low" as const
+          },
+          findings: [],
+          priorDispositions: []
+        };
+      })
     },
     reconciler: {
       reconcile: vi.fn(async () => ({

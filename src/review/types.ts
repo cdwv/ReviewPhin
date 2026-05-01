@@ -9,6 +9,7 @@ import type {
   TriggerNoteReference
 } from "../gitlab/types.js";
 import type { ProjectMemoryContext, ProjectMemoryWriteTarget } from "../memory/types.js";
+import type { ReviewFindingStatus } from "../storage/types.js";
 
 export const reviewAnchorSchema = z
   .object({
@@ -47,7 +48,8 @@ export const reviewFindingSchema = z.object({
 export const priorDispositionSchema = z.object({
   threadId: z.string().min(1),
   action: z.enum(["keep", "update", "resolve", "reply"]),
-  replyBody: z.string().min(1).optional()
+  replyBody: z.string().min(1).optional(),
+  resolution: z.enum(["resolved", "dismissed"]).optional()
 });
 
 export const reviewMergeReadinessSchema = z.object({
@@ -88,11 +90,19 @@ export interface ReviewChangeSummary {
   reason?: string | undefined;
 }
 
-export interface PreviousReviewFindingSummary {
+export interface PriorReviewFindingContext {
+  findingId: string;
+  identityKey: string;
+  status: ReviewFindingStatus;
   title: string;
+  body: string;
   severity: ReviewFinding["severity"];
   category: ReviewFinding["category"];
   anchor: ReviewAnchor | null;
+  suggestion: ReviewSuggestion | null;
+  reviewRunId: string;
+  reviewedAt: string;
+  headSha: string;
 }
 
 export interface ProviderThreadContext {
@@ -134,7 +144,6 @@ export interface PreviousReviewContext {
   headSha: string;
   overviewSummary: string | null;
   mergeReadiness: ReviewMergeReadiness | null;
-  findings: PreviousReviewFindingSummary[];
 }
 
 export interface ReviewDeltaContext {
@@ -151,6 +160,7 @@ export interface ReviewScopeContext {
   omittedChangedFiles: ReviewChangeSummary[];
   targetThread: ProviderThreadContext | null;
   previousReview: PreviousReviewContext | null;
+  priorFindings: PriorReviewFindingContext[];
   deltaSincePreviousReview: ReviewDeltaContext | null;
 }
 
