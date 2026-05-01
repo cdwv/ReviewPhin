@@ -103,6 +103,7 @@ test:
     paths:
       - coverage/
     reports:
+      junit: coverage/junit.xml
       coverage_report:
         coverage_format: cobertura
         path: coverage/cobertura-coverage.xml
@@ -118,6 +119,11 @@ build_image:
     DOCKERFILE: ./Dockerfile
     IMAGE_TAG: ${CI_REGISTRY_IMAGE}:main
   rules:
+    - if: $CI_MERGE_REQUEST_IID
+      when: manual
+      allow_failure: true
+      variables:
+        IMAGE_TAG: ${CI_REGISTRY_IMAGE}:mr-${CI_MERGE_REQUEST_IID}
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 deploy_production:
@@ -130,5 +136,10 @@ deploy_production:
     url: https://reviewphin.codewave.pl
     action: start
   rules:
+    - if: $CI_MERGE_REQUEST_IID
+      when: manual
+      allow_failure: true
+      variables:
+        IMAGE_TAG: mr-${CI_MERGE_REQUEST_IID}
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 

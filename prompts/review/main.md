@@ -6,6 +6,10 @@ Use the available read-only file inspection tools to inspect changed files, inst
 
 Only report actionable findings that should become GitLab review discussions. Do not restate neutral summaries as findings.
 
+Check the edited scope for concrete, actionable unused code introduced or left behind by the patch, such as unused locals, helper functions, imports, parameters, or computed values. Do not speculate about repository-wide dead code you cannot verify from the diff or inspected context.
+
+For standalone unused-code cleanup findings, follow instruction precedence from lowest to highest: these instructions, `projectMemory`, merge-request-level user comments, then the current `reviewTrigger`. If the same evidence shows a separate correctness, security, or performance issue, assess that independently.
+
 `reviewTrigger` is the latest explicit user request. Follow its instruction when it is compatible with the code and review evidence.
 
 Use `overview` to summarize the merge request overall, assess merge readiness with a confidence level, and optionally include a few concise highlights that would help a human reviewer scan the result quickly.
@@ -15,6 +19,14 @@ When continuing an existing bot-owned thread, set `priorThreadId` on the finding
 When a previous bot-owned thread is obsolete or should receive a direct answer, include the matching `priorDispositions` entry with action `resolve` or `reply`.
 
 If a human reply, newer code, or your own re-evaluation shows the original concern is no longer valid, prefer resolving that prior thread instead of defending or restating it.
+
+`reviewScope.priorFindings` contains durable prior finding history with status values such as `open`, `resolved`, and `dismissed`. Treat `open` items as still active unless the latest code or discussion clearly shows otherwise.
+
+For the current merge request, treat `resolved` and `dismissed` prior findings as inactive by default. Do not re-raise them unless the latest code or discussion introduces materially new evidence that the earlier resolution no longer applies.
+
+When you use `priorDispositions` with action `resolve`, also set `resolution` to:
+- `resolved` when the issue was real but is now fixed or otherwise addressed
+- `dismissed` when the concern should be closed as not applicable, acceptable for this case, or otherwise not an issue here
 
 If `reviewTrigger.targetThreadId` is set and the user is explicitly asking to refine, reword, or correct an existing bot comment, prefer revising that thread's finding text instead of adding a separate thread.
 

@@ -73,10 +73,23 @@ function buildCompactReviewContext(
             reviewedAt: context.scope.previousReview.reviewedAt,
             headSha: context.scope.previousReview.headSha,
             overviewSummary: context.scope.previousReview.overviewSummary,
-            mergeReadiness: context.scope.previousReview.mergeReadiness,
-            findings: context.scope.previousReview.findings
+            mergeReadiness: context.scope.previousReview.mergeReadiness
           }
         : null,
+      priorFindings: context.scope.priorFindings.slice(0, 25).map((finding) => ({
+        findingId: finding.findingId,
+        identityKey: finding.identityKey,
+        status: finding.status,
+        title: finding.title,
+        body: truncate(finding.body, 1_500),
+        severity: finding.severity,
+        category: finding.category,
+        anchor: finding.anchor,
+        suggestion: finding.suggestion,
+        reviewRunId: finding.reviewRunId,
+        reviewedAt: finding.reviewedAt,
+        headSha: finding.headSha
+      })),
       deltaSincePreviousReview: context.scope.deltaSincePreviousReview
     },
     reviewTrigger: {
@@ -227,7 +240,8 @@ const reviewResponseSchema = {
     {
       threadId: "string",
       action: "keep | update | resolve | reply",
-      replyBody: "optional string"
+      replyBody: "optional string",
+      resolution: "optional resolved | dismissed"
     }
   ]
 };

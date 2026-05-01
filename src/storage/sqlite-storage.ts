@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type { TenantConfig } from "../config.js";
+import type { ReviewAnchor, ReviewSuggestion } from "../review/types.js";
 import { createId, createTenantKey } from "../utils/ids.js";
 import type {
   CreateMergeRequestSnapshotInput,
@@ -12,7 +13,8 @@ import type {
   DiscussionMappingRecord,
   MergeRequestSnapshotRecord,
   PreviousCompletedReviewRecord,
-  ReviewFindingRecord,
+  PriorReviewFindingRecord,
+  ReviewFindingStatus,
   ReviewRunMetricsRecord,
   ReviewJobRecord,
   ReviewRunRecord,
@@ -114,17 +116,13 @@ export class SqliteStorage implements Storage {
         id TEXT PRIMARY KEY,
         review_run_id TEXT NOT NULL,
         identity_key TEXT NOT NULL,
-        fingerprint TEXT NOT NULL,
         severity TEXT NOT NULL,
         category TEXT NOT NULL,
         title TEXT NOT NULL,
         body TEXT NOT NULL,
-        file_path TEXT,
-        start_line INTEGER,
-        end_line INTEGER,
-        side TEXT,
+        anchor_json TEXT,
         suggestion_json TEXT,
-        raw_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
         created_at TEXT NOT NULL,
         FOREIGN KEY (review_run_id) REFERENCES review_runs(id)
       );
@@ -186,6 +184,12 @@ export class SqliteStorage implements Storage {
       );
     `);
     ensureColumn(this.db, "merge_request_snapshots", "project_memory_json", "TEXT");
+    normalizeReviewFindingsTable(this.db);
+    dedupeReviewFindingsTable(this.db);
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS review_findings_review_run_identity_key_idx
+      ON review_findings (review_run_id, identity_key);
+    `);
   }
 
   public async upsertTenant(tenant: TenantConfig): Promise<TenantRecord> {
@@ -512,7 +516,9 @@ export class SqliteStorage implements Storage {
   }
 
   public async failReviewRun(reviewRunId: string, error: string): Promise<void> {
-    this.getDb()
+    const database = this.getDb();
+    database.prepare("DELETE FROM review_findings WHERE review_run_id = ?").run(reviewRunId);
+    database
       .prepare("UPDATE review_runs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?")
       .run(error, new Date().toISOString(), reviewRunId);
   }
@@ -623,43 +629,130 @@ export class SqliteStorage implements Storage {
         id,
         review_run_id,
         identity_key,
-        fingerprint,
         severity,
         category,
         title,
         body,
-        file_path,
-        start_line,
-        end_line,
-        side,
+        anchor_json,
         suggestion_json,
-        raw_json,
+        status,
         created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const now = new Date().toISOString();
+    const latestFindingsByIdentity = new Map<string, CreateReviewFindingInput>();
 
     for (const finding of findings) {
+      latestFindingsByIdentity.set(finding.identityKey, finding);
+    }
+
+    for (const finding of latestFindingsByIdentity.values()) {
       insert.run(
         createId("finding"),
         reviewRunId,
         finding.identityKey,
-        finding.fingerprint,
         finding.severity,
         finding.category,
         finding.title,
         finding.body,
-        finding.filePath,
-        finding.startLine,
-        finding.endLine,
-        finding.side,
+        finding.anchorJson,
         finding.suggestionJson,
-        finding.rawJson,
+        finding.status,
         now
       );
     }
+  }
+
+  public async listPriorReviewFindings(
+    tenantId: string,
+    mergeRequestIid: number,
+    currentReviewJobId: string
+  ): Promise<PriorReviewFindingRecord[]> {
+    return this.listReviewFindings(tenantId, mergeRequestIid, currentReviewJobId);
+  }
+
+  public async listLatestReviewFindings(tenantId: string, mergeRequestIid: number): Promise<PriorReviewFindingRecord[]> {
+    return this.listReviewFindings(tenantId, mergeRequestIid);
+  }
+
+  private listReviewFindings(
+    tenantId: string,
+    mergeRequestIid: number,
+    excludeReviewJobId?: string
+  ): PriorReviewFindingRecord[] {
+    const excludeCurrentJobClause = excludeReviewJobId ? "AND j.id != ?" : "";
+    const bindings = excludeReviewJobId
+      ? [tenantId, mergeRequestIid, excludeReviewJobId]
+      : [tenantId, mergeRequestIid];
+    const rows = this.getDb()
+      .prepare(`
+        WITH ranked_findings AS (
+          SELECT
+            rf.*,
+            COALESCE(r.finished_at, r.started_at) AS reviewed_at,
+            j.head_sha AS head_sha,
+            ROW_NUMBER() OVER (
+              PARTITION BY rf.identity_key
+              ORDER BY
+                COALESCE(r.finished_at, r.started_at) DESC,
+                CASE rf.status
+                  WHEN 'dismissed' THEN 0
+                  WHEN 'resolved' THEN 1
+                  ELSE 2
+                END,
+                rf.created_at DESC,
+                rf.id DESC
+            ) AS row_num
+          FROM review_findings rf
+          INNER JOIN review_runs r ON r.id = rf.review_run_id
+          INNER JOIN review_jobs j ON j.id = r.review_job_id
+          WHERE j.tenant_id = ?
+            AND j.merge_request_iid = ?
+            AND r.status = 'completed'
+            ${excludeCurrentJobClause}
+        )
+        SELECT *
+        FROM ranked_findings
+        WHERE row_num = 1
+        ORDER BY
+          CASE status
+            WHEN 'open' THEN 0
+            WHEN 'dismissed' THEN 1
+            ELSE 2
+          END,
+          reviewed_at DESC,
+          created_at DESC
+      `)
+      .all(...bindings) as Row[];
+
+    return rows.map(mapPriorReviewFindingRow);
+  }
+
+  public async updateReviewFindingStatus(
+    tenantId: string,
+    mergeRequestIid: number,
+    identityKey: string,
+    status: ReviewFindingStatus
+  ): Promise<boolean> {
+    const result = this.getDb()
+      .prepare(`
+        UPDATE review_findings
+        SET status = ?
+        WHERE id IN (
+          SELECT rf.id
+          FROM review_findings rf
+          INNER JOIN review_runs r ON r.id = rf.review_run_id
+          INNER JOIN review_jobs j ON j.id = r.review_job_id
+          WHERE j.tenant_id = ?
+            AND j.merge_request_iid = ?
+            AND rf.identity_key = ?
+            AND r.status = 'completed'
+        )
+      `)
+      .run(status, tenantId, mergeRequestIid, identityKey);
+    return result.changes > 0;
   }
 
   public async listDiscussionMappings(
@@ -891,6 +984,23 @@ function mapReviewRunMetricsRow(row: Row): ReviewRunMetricsRecord {
   };
 }
 
+function mapPriorReviewFindingRow(row: Row): PriorReviewFindingRecord {
+  return {
+    findingId: asString(row.id),
+    identityKey: asString(row.identity_key),
+    status: asString(row.status) as ReviewFindingStatus,
+    title: asString(row.title),
+    body: asString(row.body),
+    severity: asString(row.severity),
+    category: asString(row.category),
+    anchor: parseAnchor(row.anchor_json),
+    suggestion: parseSuggestion(row.suggestion_json),
+    reviewRunId: asString(row.review_run_id),
+    reviewedAt: asString(row.reviewed_at),
+    headSha: asString(row.head_sha)
+  };
+}
+
 function asString(value: unknown): string {
   if (typeof value !== "string") {
     throw new Error(`Expected string row value, received ${typeof value}`);
@@ -931,12 +1041,204 @@ function asBoolean(value: unknown): boolean {
   return asNumber(value) === 1;
 }
 
-function ensureColumn(database: DatabaseSync, tableName: string, columnName: string, definition: string): void {
+function ensureColumn(database: DatabaseSync, tableName: string, columnName: string, definition: string): boolean {
   const columns = database.prepare(`PRAGMA table_info(${tableName})`).all() as Row[];
   const hasColumn = columns.some((column) => asString(column.name) === columnName);
   if (!hasColumn) {
     database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+    return true;
   }
+
+  return false;
+}
+
+function normalizeReviewFindingsTable(database: DatabaseSync): void {
+  const columns = database.prepare("PRAGMA table_info(review_findings)").all() as Row[];
+  if (columns.length === 0) {
+    return;
+  }
+
+  const columnNames = new Set(columns.map((column) => asString(column.name)));
+  const statusColumn = columns.find((column) => asString(column.name) === "status");
+  const defaultValue = statusColumn ? asNullableString(statusColumn.dflt_value) : null;
+  const expectedColumns = [
+    "id",
+    "review_run_id",
+    "identity_key",
+    "severity",
+    "category",
+    "title",
+    "body",
+    "anchor_json",
+    "suggestion_json",
+    "status",
+    "created_at"
+  ];
+  const matchesTargetShape =
+    columns.length === expectedColumns.length &&
+    expectedColumns.every((columnName) => columnNames.has(columnName)) &&
+    defaultValue === "'open'";
+
+  if (matchesTargetShape) {
+    database.prepare("UPDATE review_findings SET status = 'resolved' WHERE status IS NULL OR status = ''").run();
+    return;
+  }
+
+  const anchorSelect = columnNames.has("anchor_json")
+    ? "anchor_json"
+    : columnNames.has("file_path") &&
+        columnNames.has("start_line") &&
+        columnNames.has("end_line") &&
+        columnNames.has("side")
+      ? `CASE
+          WHEN file_path IS NOT NULL
+            AND start_line IS NOT NULL
+            AND end_line IS NOT NULL
+            AND side IN ('new', 'old')
+          THEN json_object(
+            'path', file_path,
+            'startLine', start_line,
+            'endLine', end_line,
+            'side', side
+          )
+          ELSE NULL
+        END`
+      : "NULL";
+  const suggestionSelect = columnNames.has("suggestion_json") ? "suggestion_json" : "NULL";
+  const statusSelect = columnNames.has("status")
+    ? "CASE WHEN status IS NULL OR status = '' THEN 'resolved' ELSE status END"
+    : "'resolved'";
+  const createdAtSelect = columnNames.has("created_at") ? "created_at" : "CURRENT_TIMESTAMP";
+
+  database.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+    ALTER TABLE review_findings RENAME TO review_findings_legacy;
+    CREATE TABLE review_findings (
+      id TEXT PRIMARY KEY,
+      review_run_id TEXT NOT NULL,
+      identity_key TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      category TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      anchor_json TEXT,
+      suggestion_json TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (review_run_id) REFERENCES review_runs(id)
+    );
+    INSERT INTO review_findings (
+      id,
+      review_run_id,
+      identity_key,
+      severity,
+      category,
+      title,
+      body,
+      anchor_json,
+      suggestion_json,
+      status,
+      created_at
+    )
+    SELECT
+      id,
+      review_run_id,
+      identity_key,
+      severity,
+      category,
+      title,
+      body,
+      ${anchorSelect},
+      ${suggestionSelect},
+      ${statusSelect},
+      ${createdAtSelect}
+    FROM review_findings_legacy;
+    DROP TABLE review_findings_legacy;
+    COMMIT;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
+function dedupeReviewFindingsTable(database: DatabaseSync): void {
+  const duplicateRow = database
+    .prepare(`
+      SELECT review_run_id, identity_key, COUNT(*) AS duplicate_count
+      FROM review_findings
+      GROUP BY review_run_id, identity_key
+      HAVING COUNT(*) > 1
+      LIMIT 1
+    `)
+    .get() as Row | undefined;
+  if (!duplicateRow) {
+    return;
+  }
+
+  database.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+    ALTER TABLE review_findings RENAME TO review_findings_dedup_source;
+    CREATE TABLE review_findings (
+      id TEXT PRIMARY KEY,
+      review_run_id TEXT NOT NULL,
+      identity_key TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      category TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      anchor_json TEXT,
+      suggestion_json TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (review_run_id) REFERENCES review_runs(id)
+    );
+    INSERT INTO review_findings (
+      id,
+      review_run_id,
+      identity_key,
+      severity,
+      category,
+      title,
+      body,
+      anchor_json,
+      suggestion_json,
+      status,
+      created_at
+    )
+    WITH ranked_duplicates AS (
+      SELECT
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY review_run_id, identity_key
+          ORDER BY
+            CASE status
+              WHEN 'dismissed' THEN 0
+              WHEN 'resolved' THEN 1
+              ELSE 2
+            END,
+            created_at DESC,
+            id DESC
+        ) AS row_num
+      FROM review_findings_dedup_source
+    )
+    SELECT
+      id,
+      review_run_id,
+      identity_key,
+      severity,
+      category,
+      title,
+      body,
+      anchor_json,
+      suggestion_json,
+      status,
+      created_at
+    FROM ranked_duplicates
+    WHERE row_num = 1;
+    DROP TABLE review_findings_dedup_source;
+    COMMIT;
+    PRAGMA foreign_keys = ON;
+  `);
 }
 
 function _mapReviewRunRow(row: Row): ReviewRunRecord {
@@ -954,22 +1256,53 @@ function _mapReviewRunRow(row: Row): ReviewRunRecord {
   };
 }
 
-function _mapReviewFindingRow(row: Row): ReviewFindingRecord {
-  return {
-    id: asString(row.id),
-    reviewRunId: asString(row.review_run_id),
-    identityKey: asString(row.identity_key),
-    fingerprint: asString(row.fingerprint),
-    severity: asString(row.severity),
-    category: asString(row.category),
-    title: asString(row.title),
-    body: asString(row.body),
-    filePath: asNullableString(row.file_path),
-    startLine: asNullableNumber(row.start_line),
-    endLine: asNullableNumber(row.end_line),
-    side: asNullableString(row.side),
-    suggestionJson: asNullableString(row.suggestion_json),
-    rawJson: asString(row.raw_json),
-    createdAt: asString(row.created_at)
-  };
+function parseAnchor(value: unknown): ReviewAnchor | null {
+  const anchorJson = asNullableString(value);
+  if (!anchorJson) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(anchorJson) as ReviewAnchor;
+    if (
+      typeof parsed?.path === "string" &&
+      typeof parsed?.startLine === "number" &&
+      typeof parsed?.endLine === "number" &&
+      (parsed?.side === "new" || parsed?.side === "old")
+    ) {
+      return {
+        path: parsed.path,
+        ...(typeof parsed.oldPath === "string" ? { oldPath: parsed.oldPath } : {}),
+        startLine: parsed.startLine,
+        endLine: parsed.endLine,
+        side: parsed.side
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function parseSuggestion(value: unknown): ReviewSuggestion | null {
+  const suggestionJson = asNullableString(value);
+  if (!suggestionJson) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(suggestionJson) as ReviewSuggestion;
+    if (
+      typeof parsed?.replacement === "string" &&
+      typeof parsed?.startLine === "number" &&
+      typeof parsed?.endLine === "number"
+    ) {
+      return parsed;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }

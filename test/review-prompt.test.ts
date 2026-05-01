@@ -45,11 +45,32 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain('"kind": "summary-follow-up"');
   });
 
+  it("nudges the reviewer to check for actionable unused code in the edited scope", () => {
+    const prompt = buildReviewPrompt(createContext());
+
+    expect(prompt).toContain("unused locals, helper functions, imports, parameters, or computed values");
+    expect(prompt).toContain("instruction precedence from lowest to highest");
+    expect(prompt).toContain("merge-request-level user comments, then the current `reviewTrigger`");
+    expect(renderPrompt("subagent.context-analyst", {})).toContain("unused locals, helper functions, imports, parameters, or assigned values");
+    expect(renderPrompt("subagent.context-analyst", {})).toContain("merge-request-level user comments, then the current request");
+    expect(renderPrompt("subagent.review-author", {})).not.toContain("unused");
+  });
+
   it("uses the incremental summary-follow-up registered combination", () => {
     const prompt = buildReviewPrompt(createContext(null, "summary-follow-up", "incremental-rereview"));
 
     expect(prompt).toContain("This merge request has already been reviewed before.");
     expect(prompt).toContain("The latest user instruction came from a reply to the bot's merge request summary note.");
+  });
+
+  it("includes prior finding history with status and resolve resolution schema", () => {
+    const prompt = buildReviewPrompt(createContext(null, "direct-mention", "incremental-rereview"));
+
+    expect(prompt).toContain('"priorFindings": [');
+    expect(prompt).toContain('"status": "open"');
+    expect(prompt).toContain('"identityKey": "finding:src/api.ts:12"');
+    expect(prompt).toContain("treat `resolved` and `dismissed` prior findings as inactive by default");
+    expect(prompt).toContain('"resolution": "optional resolved | dismissed"');
   });
 
   it("uses the follow-up-thread registered combination without the summary overlay", () => {
@@ -143,6 +164,30 @@ function createContext(
       omittedChangedFiles: [],
       targetThread: null,
       previousReview: null,
+      priorFindings:
+        mode === "incremental-rereview"
+          ? [
+              {
+                findingId: "finding_1",
+                identityKey: "finding:src/api.ts:12",
+                status: "open",
+                title: "Validate request body",
+                body: "The request body is still accepted without schema validation.",
+                severity: "medium",
+                category: "correctness",
+                anchor: {
+                  path: "src/api.ts",
+                  startLine: 12,
+                  endLine: 12,
+                  side: "new"
+                },
+                suggestion: null,
+                reviewRunId: "run_prev",
+                reviewedAt: "2026-04-27T12:00:00.000Z",
+                headSha: "prevhead"
+              }
+            ]
+          : [],
       deltaSincePreviousReview: null
     }
   };

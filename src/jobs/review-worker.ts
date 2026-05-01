@@ -16,10 +16,11 @@ import { buildReviewTriggerContext, classifyWebhookTrigger, locateTriggerNoteRef
 import type { ReviewContext, WebhookReviewTrigger } from "../review/types.js";
 import type { CreateReviewFindingInput, ReviewJobRecord, Storage, TenantRecord } from "../storage/types.js";
 import type { TenantRegistry } from "../tenants/tenant-registry.js";
-import { createReviewJobDedupeKey, createFindingFingerprint, createFindingIdentityKey } from "../utils/ids.js";
+import { createReviewJobDedupeKey, createFindingIdentityKey } from "../utils/ids.js";
 
 const REVIEW_STARTED_REACTION = "eyes";
 const REVIEW_COMPLETED_REACTION = "white_check_mark";
+const REVIEW_FAILED_REACTION = "sweat_smile";
 
 interface ReviewWorkerOptions {
   storage: Storage;
@@ -131,6 +132,8 @@ export class ReviewWorker {
     let runArtifacts: ReviewRunArtifacts | null = null;
     let workspaceToCleanup: Awaited<ReturnType<MergeRequestContextHydrator["hydrate"]>>["workspace"] | null = null;
     let providerContext: ReviewContext | null = null;
+    let client: GitLabClient | null = null;
+    let triggerNote: TriggerNoteReference | null = null;
 
     try {
       const reviewRun = await this.storage.createReviewRun({
@@ -149,7 +152,7 @@ export class ReviewWorker {
         mergeRequestIid: job.mergeRequestIid
       });
 
-      const client = this.createGitLabClient(tenant, job.id, reviewRun.id, runArtifacts);
+      client = this.createGitLabClient(tenant, job.id, reviewRun.id, runArtifacts);
       const parsedPayload = parseGitLabNoteHook(JSON.parse(job.payloadJson));
 
       await this.logRunEvent(runArtifacts, "info", "hydrating merge request context", {
@@ -163,6 +166,7 @@ export class ReviewWorker {
         client
       });
       workspaceToCleanup = context.workspace;
+      triggerNote = locateTriggerNoteReference(context.discussions, job.noteId);
 
       const mappings = await this.storage.listDiscussionMappings(tenant.id, context.mergeRequest.iid);
       const priorThreads = buildProviderThreads({
@@ -174,7 +178,7 @@ export class ReviewWorker {
         client,
         tenant,
         job.mergeRequestIid,
-        locateTriggerNoteReference(context.discussions, job.noteId),
+        triggerNote,
         REVIEW_STARTED_REACTION,
         job.id
       );
@@ -189,6 +193,7 @@ export class ReviewWorker {
         context.mergeRequest.iid,
         job.id
       );
+      const priorFindings = await this.storage.listPriorReviewFindings(tenant.id, context.mergeRequest.iid, job.id);
       providerContext = buildScopedReviewContext({
         workspacePath: context.workspace.rootPath,
         mergeRequest: context.mergeRequest,
@@ -206,6 +211,20 @@ export class ReviewWorker {
           : null,
         trigger,
         priorThreads,
+        priorFindings: priorFindings.map((finding) => ({
+          findingId: finding.findingId,
+          identityKey: finding.identityKey,
+          status: finding.status,
+          title: finding.title,
+          body: finding.body,
+          severity: finding.severity as ReviewContext["scope"]["priorFindings"][number]["severity"],
+          category: finding.category as ReviewContext["scope"]["priorFindings"][number]["category"],
+          anchor: finding.anchor,
+          suggestion: finding.suggestion,
+          reviewRunId: finding.reviewRunId,
+          reviewedAt: finding.reviewedAt,
+          headSha: finding.headSha
+        })),
         previousReview: previousReview
           ? {
               reviewRunId: previousReview.reviewRunId,
@@ -237,7 +256,6 @@ export class ReviewWorker {
       await this.storage.replaceReviewFindings(
         reviewRun.id,
         reviewResult.findings.map((finding): CreateReviewFindingInput => {
-          const body = `**${finding.title.trim()}**\n\n${finding.body.trim()}`;
           const identityKey = createFindingIdentityKey({
             title: finding.title,
             category: finding.category,
@@ -249,21 +267,13 @@ export class ReviewWorker {
           return {
             reviewRunId: reviewRun.id,
             identityKey,
-            fingerprint: createFindingFingerprint({
-              identityKey,
-              body,
-              suggestionReplacement: finding.suggestion?.replacement
-            }),
             severity: finding.severity,
             category: finding.category,
             title: finding.title,
             body: finding.body,
-            filePath: finding.anchor?.path ?? null,
-            startLine: finding.anchor?.startLine ?? null,
-            endLine: finding.anchor?.endLine ?? null,
-            side: finding.anchor?.side ?? null,
+            anchorJson: finding.anchor ? JSON.stringify(finding.anchor) : null,
             suggestionJson: finding.suggestion ? JSON.stringify(finding.suggestion) : null,
-            rawJson: JSON.stringify(finding)
+            status: "open"
           };
         })
       );
@@ -287,7 +297,7 @@ export class ReviewWorker {
         client,
         tenant,
         job.mergeRequestIid,
-        locateTriggerNoteReference(context.discussions, job.noteId),
+        triggerNote,
         REVIEW_COMPLETED_REACTION,
         job.id
       );
@@ -327,6 +337,16 @@ export class ReviewWorker {
       }
 
       await this.storage.markJobFailed(job.id, nextRetryCount, getErrorMessage(error));
+      if (client && triggerNote) {
+        await this.ensureTriggerNoteReaction(
+          client,
+          tenant,
+          job.mergeRequestIid,
+          triggerNote,
+          REVIEW_FAILED_REACTION,
+          job.id
+        );
+      }
       throw error;
     } finally {
       if (reviewRunId && runArtifacts && providerContext) {

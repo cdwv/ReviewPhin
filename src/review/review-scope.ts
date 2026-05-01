@@ -2,6 +2,7 @@ import type { GitLabDiscussion, GitLabMergeRequest, GitLabMergeRequestChange, Gi
 import type { ProjectMemoryContext, ProjectMemoryWriteTarget } from "../memory/types.js";
 import { reviewResultSchema } from "./types.js";
 import type {
+  PriorReviewFindingContext,
   PreviousReviewContext,
   ProviderThreadContext,
   ReviewChangeSummary,
@@ -32,6 +33,7 @@ interface BuildScopedReviewContextInput {
   projectMemoryWriteTarget?: ProjectMemoryWriteTarget | null | undefined;
   trigger: ReviewTriggerContext;
   priorThreads: ProviderThreadContext[];
+  priorFindings?: PriorReviewFindingContext[] | undefined;
   previousReview: PreviousReviewSource | null;
   logging?: ReviewContext["logging"];
 }
@@ -65,6 +67,7 @@ export function buildScopedReviewContext(input: BuildScopedReviewContextInput): 
   const previousReviewChanges = parsePreviousReviewChanges(input.previousReview?.changesJson ?? null);
   const explicitFullRescan = hasExplicitFullRescanInstruction(input.trigger.instruction);
   const mode = determineReviewMode(input.trigger, input.previousReview, explicitFullRescan);
+  const priorFindings = input.priorFindings ?? [];
   const targetThread =
     input.trigger.targetThreadId !== null
       ? input.priorThreads.find((thread) => thread.threadId === input.trigger.targetThreadId) ?? null
@@ -102,7 +105,10 @@ export function buildScopedReviewContext(input: BuildScopedReviewContextInput): 
         focusPaths.add(thread.anchor.oldPath);
       }
     }
-    for (const finding of previousReviewResult?.findings ?? []) {
+    for (const finding of priorFindings) {
+      if (finding.status !== "open") {
+        continue;
+      }
       if (finding.anchor?.path) {
         focusPaths.add(finding.anchor.path);
       }
@@ -144,6 +150,7 @@ export function buildScopedReviewContext(input: BuildScopedReviewContextInput): 
     targetThread,
     previousReview: input.previousReview,
     previousReviewResult,
+    priorFindings,
     selectedChanges,
     allChangedFiles,
     omittedChangedFiles,
@@ -339,11 +346,14 @@ function selectPriorThreads(input: {
     return input.targetThread ? [input.targetThread] : [];
   }
 
-  if (input.priorThreads.length <= THREAD_LIMIT_BY_MODE[input.mode]) {
-    return input.priorThreads.slice();
+  const candidateThreads =
+    input.mode === "incremental-rereview" ? input.priorThreads.filter((thread) => !thread.resolved) : input.priorThreads;
+
+  if (candidateThreads.length <= THREAD_LIMIT_BY_MODE[input.mode]) {
+    return candidateThreads.slice();
   }
 
-  return input.priorThreads
+  return candidateThreads
     .map((thread, index) => ({
       thread,
       index,
@@ -370,6 +380,7 @@ function buildScope(input: {
   targetThread: ProviderThreadContext | null;
   previousReview: PreviousReviewSource | null;
   previousReviewResult: ReviewResult | null;
+  priorFindings: PriorReviewFindingContext[];
   selectedChanges: GitLabMergeRequestChange[];
   allChangedFiles: ReviewChangeSummary[];
   omittedChangedFiles: ReviewChangeSummary[];
@@ -422,6 +433,7 @@ function buildScope(input: {
     omittedChangedFiles: input.omittedChangedFiles,
     targetThread: input.targetThread,
     previousReview,
+    priorFindings: input.priorFindings,
     deltaSincePreviousReview
   };
 }
@@ -439,14 +451,7 @@ function buildPreviousReviewContext(
     reviewedAt: previousReview.finishedAt,
     headSha: previousReview.headSha,
     overviewSummary: result?.overview.overallAssessment ?? result?.overview.summary ?? null,
-    mergeReadiness: result?.overview.mergeReadiness ?? null,
-    findings:
-      result?.findings.slice(0, 8).map((finding) => ({
-        title: finding.title,
-        severity: finding.severity,
-        category: finding.category,
-        anchor: finding.anchor ?? null
-      })) ?? []
+    mergeReadiness: result?.overview.mergeReadiness ?? null
   };
 }
 

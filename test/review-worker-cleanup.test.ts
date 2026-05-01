@@ -118,6 +118,7 @@ describe("ReviewWorker cleanup", () => {
         finishedAt: null
       })),
       getLatestCompletedReviewForMergeRequest: vi.fn(async () => null),
+      listPriorReviewFindings: vi.fn(async () => []),
       completeReviewRun: vi.fn(async () => {}),
       replaceReviewFindings: vi.fn(async () => {}),
       markJobCompleted: vi.fn(async () => {}),

@@ -183,6 +183,7 @@ function createReviewContext(): ReviewContext {
       omittedChangedFiles: [],
       targetThread: null,
       previousReview: null,
+      priorFindings: [],
       deltaSincePreviousReview: null
     },
     logging: {
