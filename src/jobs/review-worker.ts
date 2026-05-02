@@ -20,7 +20,7 @@ import { createReviewJobDedupeKey, createFindingIdentityKey } from "../utils/ids
 
 const REVIEW_STARTED_REACTION = "eyes";
 const REVIEW_COMPLETED_REACTION = "white_check_mark";
-const REVIEW_FAILED_REACTION = "sweat_smile";
+const REVIEW_FAILED_REACTION = "confounded";
 
 interface ReviewWorkerOptions {
   storage: Storage;

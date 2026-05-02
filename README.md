@@ -278,6 +278,14 @@ To inspect what is registered locally:
 pnpm cli tenant list
 ```
 
+To remove a tenant registration you no longer want locally:
+
+```bash
+pnpm cli tenant remove --base-url https://gitlab.example.com --project-id 123
+```
+
+The remove command now prints a deletion summary for tenant-owned database rows plus local review workspaces and run logs, then asks for confirmation before deleting them. Use `--yes` for non-interactive runs.
+
 To add another test project on the same server, run `tenant add` again with a different `projectId`.
 
 To add another GitLab server, run `tenant add` again with a different `baseUrl`.
@@ -416,6 +424,17 @@ COPILOT_MODEL=my-gpt4-deployment
 | `--bot-user-id` | No | Numeric GitLab bot user ID used for stricter ownership checks |
 | `--bot-username` | Yes | Bot username used for direct mention matching |
 | `--database-path` | No | Override the SQLite path instead of using `DATABASE_PATH` from `.env` |
+
+`pnpm cli tenant remove` accepts these fields:
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `--base-url` | Yes | GitLab instance base URL, normalized the same way as tenant registration |
+| `--project-id` | Yes | Numeric GitLab project ID |
+| `--database-path` | No | Override the SQLite path instead of using `DATABASE_PATH` from `.env` |
+| `--workspace-root` | No | Override the workspace scratch root instead of using `WORKSPACE_ROOT` from `.env` when removing tenant-owned hydrated repositories |
+| `--run-log-dir` | No | Override the run log root instead of using `RUN_LOG_DIR` from `.env` when removing tenant-owned review artifacts |
+| `--yes` | No | Skip the interactive confirmation prompt after the deletion summary, for example in scripts or CI |
 
 `RUN_LOG_DIR` controls where per-review run artifacts are written. Each `reviewRunId` gets its own directory containing a `copilot` subdirectory with the prompt/session trace, a `gitlab-http.ndjson` file with GitLab request and response logs, and an `app.ndjson` file with worker lifecycle logging. The legacy `COPILOT_LOG_DIR` environment variable is still accepted as a fallback alias.
 

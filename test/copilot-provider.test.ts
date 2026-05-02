@@ -19,6 +19,7 @@ vi.mock("@github/copilot-sdk", () => ({
   })
 }));
 
+import { CopilotClient } from "@github/copilot-sdk";
 import { CopilotReviewProvider } from "../src/review/copilot-provider.js";
 import type { ReviewContext } from "../src/review/types.js";
 import { repoPath, tmpPath } from "./test-paths.js";
@@ -27,6 +28,7 @@ describe("CopilotReviewProvider", () => {
   beforeEach(() => {
     createSessionMock.mockReset();
     stopMock.mockReset();
+    vi.mocked(CopilotClient).mockClear();
   });
 
   it("keeps the incoming coalesced candidate entries when save-threshold coalescing fails", async () => {
@@ -124,6 +126,97 @@ describe("CopilotReviewProvider", () => {
       "view",
       "update_project_memory"
     ]);
+  });
+
+  it("passes explicit provider config into session creation when configured", async () => {
+    createSessionMock.mockResolvedValue({
+      sessionId: "session_1",
+      on: vi.fn(() => () => {}),
+      sendAndWait: vi.fn(async () => ({
+        data: {
+          content: JSON.stringify({
+            overview: {
+              summary: "Looks good",
+              overallSeverity: "low"
+            },
+            findings: [],
+            priorDispositions: []
+          })
+        }
+      })),
+      disconnect: vi.fn(async () => {})
+    });
+    stopMock.mockResolvedValue(undefined);
+
+    const provider = new CopilotReviewProvider({
+      logger: {
+        warn: vi.fn(),
+        error: vi.fn(),
+        child: vi.fn(() => ({
+          warn: vi.fn(),
+          error: vi.fn()
+        }))
+      } as never,
+      textGenerationModel: "auto",
+      provider: {
+        baseUrl: "http://llm.internal/v1",
+        type: "openai"
+      },
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000
+    });
+
+    await provider.review(createReviewContext());
+
+    const sessionOptions = createSessionMock.mock.calls[0]?.[0];
+    expect(sessionOptions.provider).toEqual({
+      baseUrl: "http://llm.internal/v1",
+      type: "openai"
+    });
+  });
+
+  it("passes explicit sdk log level into the Copilot client when configured", async () => {
+    createSessionMock.mockResolvedValue({
+      sessionId: "session_1",
+      on: vi.fn(() => () => {}),
+      sendAndWait: vi.fn(async () => ({
+        data: {
+          content: JSON.stringify({
+            overview: {
+              summary: "Looks good",
+              overallSeverity: "low"
+            },
+            findings: [],
+            priorDispositions: []
+          })
+        }
+      })),
+      disconnect: vi.fn(async () => {})
+    });
+    stopMock.mockResolvedValue(undefined);
+
+    const provider = new CopilotReviewProvider({
+      logger: {
+        warn: vi.fn(),
+        error: vi.fn(),
+        child: vi.fn(() => ({
+          warn: vi.fn(),
+          error: vi.fn()
+        }))
+      } as never,
+      textGenerationModel: "auto",
+      sdkLogLevel: "debug",
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000
+    });
+
+    await provider.review(createReviewContext());
+
+    expect(CopilotClient).toHaveBeenCalledWith({
+      logLevel: "debug"
+    });
   });
 });
 

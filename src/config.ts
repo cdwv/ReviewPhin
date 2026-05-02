@@ -27,6 +27,9 @@ const envSchema = z.object({
   REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS: z.coerce.number().int().positive().default(5_000),
   REVIEWPHIN_TEXT_GENERATION_MODEL: z.string().min(1).default("auto"),
   COPILOT_MODEL: z.string().min(1).optional(),
+  COPILOT_PROVIDER_BASE_URL: z.string().url().optional(),
+  COPILOT_PROVIDER_TYPE: z.enum(["openai", "azure", "anthropic"]).optional(),
+  COPILOT_SDK_LOG_LEVEL: z.enum(["none", "error", "warning", "info", "debug", "all"]).optional(),
   COPILOT_CLI_PATH: z.string().min(1).optional()
 });
 
@@ -46,6 +49,9 @@ export interface AppConfig {
   maxPromptMemoryChars: number;
   textGenerationModel: string;
   copilotModel?: string | undefined;
+  copilotProviderBaseUrl?: string | undefined;
+  copilotProviderType?: "openai" | "azure" | "anthropic" | undefined;
+  copilotSdkLogLevel?: "none" | "error" | "warning" | "info" | "debug" | "all" | undefined;
   copilotCliPath?: string | undefined;
 }
 
@@ -65,6 +71,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS: env.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,
     REVIEWPHIN_TEXT_GENERATION_MODEL: env.REVIEWPHIN_TEXT_GENERATION_MODEL,
     COPILOT_MODEL: env.COPILOT_MODEL,
+    COPILOT_PROVIDER_BASE_URL: env.COPILOT_PROVIDER_BASE_URL,
+    COPILOT_PROVIDER_TYPE: env.COPILOT_PROVIDER_TYPE,
+    COPILOT_SDK_LOG_LEVEL: env.COPILOT_SDK_LOG_LEVEL,
     COPILOT_CLI_PATH: env.COPILOT_CLI_PATH
   });
 
@@ -82,6 +91,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     maxPromptMemoryChars: parsedEnv.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,
     textGenerationModel: parsedEnv.REVIEWPHIN_TEXT_GENERATION_MODEL,
     copilotModel: parsedEnv.COPILOT_MODEL,
+    copilotProviderBaseUrl: parsedEnv.COPILOT_PROVIDER_BASE_URL,
+    copilotProviderType: parsedEnv.COPILOT_PROVIDER_TYPE,
+    copilotSdkLogLevel: parsedEnv.COPILOT_SDK_LOG_LEVEL,
     copilotCliPath: parsedEnv.COPILOT_CLI_PATH
   };
 }

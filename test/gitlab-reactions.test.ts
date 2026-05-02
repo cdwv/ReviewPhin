@@ -218,7 +218,7 @@ describe("GitLab reactions", () => {
       }
 
       const body = String(init?.body);
-      const reactionName = body.includes("sweat_smile") ? "sweat_smile" : "eyes";
+      const reactionName = body.includes("confounded") ? "confounded" : "eyes";
       return new Response(
         JSON.stringify({
           id: reactionName === "eyes" ? 1 : 2,
@@ -262,7 +262,7 @@ describe("GitLab reactions", () => {
       .map(([, init]) => String(init?.body));
 
     expect(postedBodies.some((body) => body.includes("name=eyes"))).toBe(true);
-    expect(postedBodies.some((body) => body.includes("name=sweat_smile"))).toBe(true);
+    expect(postedBodies.some((body) => body.includes("name=confounded"))).toBe(true);
     expect(postedBodies.some((body) => body.includes("name=white_check_mark"))).toBe(false);
   });
 
@@ -332,7 +332,7 @@ describe("GitLab reactions", () => {
       .map(([, init]) => String(init?.body));
 
     expect(postedBodies.some((body) => body.includes("name=eyes"))).toBe(true);
-    expect(postedBodies.some((body) => body.includes("name=sweat_smile"))).toBe(false);
+    expect(postedBodies.some((body) => body.includes("name=confounded"))).toBe(false);
   });
 
   it("skips reactions for follow-up discussion notes", async () => {

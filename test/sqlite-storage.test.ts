@@ -513,6 +513,181 @@ describe("SqliteStorage review findings", () => {
   });
 });
 
+describe("SqliteStorage tenants", () => {
+  it("deletes a tenant by normalized base URL and project ID", async () => {
+    const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
+    const storage = new SqliteStorage({ databasePath });
+    await storage.initialize();
+
+    await storage.upsertTenant({
+      baseUrl: "https://gitlab.example.com/gitlab/",
+      projectId: 123,
+      apiToken: "token-one",
+      webhookSecret: "secret-one",
+      botUserId: 999,
+      botUsername: "review-bot"
+    });
+    const secondTenant = await storage.upsertTenant({
+      baseUrl: "https://gitlab.example.com",
+      projectId: 456,
+      apiToken: "token-two",
+      webhookSecret: "secret-two",
+      botUserId: 1000,
+      botUsername: "review-bot-2"
+    });
+
+    const deletedTenant = await storage.deleteTenant("https://gitlab.example.com/gitlab", 123);
+    const remainingTenants = await storage.listTenants();
+
+    expect(deletedTenant).toMatchObject({
+      baseUrl: "https://gitlab.example.com/gitlab/",
+      projectId: 123
+    });
+    expect(remainingTenants).toHaveLength(1);
+    expect(remainingTenants[0]).toMatchObject({
+      id: secondTenant.id,
+      baseUrl: "https://gitlab.example.com",
+      projectId: 456
+    });
+  });
+
+  it("deletes dependent review data before removing a tenant", async () => {
+    const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
+    const storage = new SqliteStorage({ databasePath });
+    await storage.initialize();
+
+    const tenant = await storage.upsertTenant({
+      baseUrl: "https://gitlab.example.com/gitlab",
+      projectId: 123,
+      apiToken: "token-one",
+      webhookSecret: "secret-one",
+      botUserId: 999,
+      botUsername: "review-bot"
+    });
+
+    const reviewJob = await storage.createOrGetReviewJob({
+      tenantId: tenant.id,
+      dedupeKey: "delete-tenant-job",
+      projectId: tenant.projectId,
+      mergeRequestIid: 7,
+      noteId: 55,
+      headSha: "head-sha",
+      payloadJson: "{}"
+    });
+    await storage.createMergeRequestSnapshot({
+      reviewJobId: reviewJob.job.id,
+      tenantId: tenant.id,
+      mergeRequestIid: 7,
+      headSha: "head-sha",
+      mergeRequestJson: "{}",
+      versionsJson: "[]",
+      changesJson: "[]",
+      notesJson: "[]",
+      discussionsJson: "[]",
+      instructionsJson: "[]",
+      projectMemoryJson: null,
+      workspaceStrategy: "git"
+    });
+    const reviewRun = await storage.createReviewRun({
+      reviewJobId: reviewJob.job.id,
+      tenantId: tenant.id,
+      provider: "copilot-sdk",
+      model: null
+    });
+    await storage.replaceReviewFindings(reviewRun.id, [
+      {
+        ...createFinding({
+          identityKey: "delete-tenant-finding",
+          title: "Delete tenant finding",
+          body: "The finding should be removed",
+          status: "open"
+        }),
+        reviewRunId: reviewRun.id
+      }
+    ]);
+    await storage.upsertReviewRunMetrics({
+      reviewRunId: reviewRun.id,
+      triggerKind: "note",
+      promptMode: "full",
+      promptChars: 10,
+      promptContextChangedFiles: 1,
+      promptContextPriorThreads: 0,
+      promptContextNotes: 1,
+      assistantTurns: 1,
+      assistantCalls: 1,
+      toolExecutions: 0,
+      viewToolCalls: 0,
+      globToolCalls: 0,
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reasoningTokens: 0,
+      apiDurationMs: 100,
+      premiumRequests: 1,
+      repeatedViewReads: 0,
+      repeatedViewPathsJson: "[]"
+    });
+    await storage.upsertDiscussionMapping({
+      tenantId: tenant.id,
+      projectId: tenant.projectId,
+      mergeRequestIid: 7,
+      identityKey: "delete-tenant-finding",
+      findingFingerprint: "fingerprint-1",
+      title: "Delete tenant finding",
+      severity: "medium",
+      category: "correctness",
+      body: "The finding should be removed",
+      gitlabDiscussionId: "discussion-1",
+      gitlabNoteId: 501,
+      anchorJson: null,
+      positionJson: null,
+      botDiscussion: true,
+      botNote: true,
+      noteAuthorId: 999,
+      noteAuthorUsername: "review-bot",
+      status: "open",
+      lastReviewRunId: reviewRun.id
+    });
+
+    const deletionSummary = await storage.getTenantDeletionSummary(tenant.baseUrl, tenant.projectId);
+    expect(deletionSummary).toMatchObject({
+      reviewJobCount: 1,
+      mergeRequestSnapshotCount: 1,
+      reviewRunCount: 1,
+      reviewFindingCount: 1,
+      reviewRunMetricCount: 1,
+      discussionMappingCount: 1,
+      reviewJobIds: [reviewJob.job.id],
+      reviewRunIds: [reviewRun.id]
+    });
+
+    const deletedSummary = await storage.deleteTenantWithSummary(tenant.baseUrl, tenant.projectId);
+
+    expect(deletedSummary).toMatchObject({
+      tenant: {
+        id: tenant.id
+      },
+      reviewJobIds: [reviewJob.job.id],
+      reviewRunIds: [reviewRun.id]
+    });
+    expect(countRows(databasePath, "tenants")).toBe(0);
+    expect(countRows(databasePath, "review_jobs")).toBe(0);
+    expect(countRows(databasePath, "merge_request_snapshots")).toBe(0);
+    expect(countRows(databasePath, "review_runs")).toBe(0);
+    expect(countRows(databasePath, "review_findings")).toBe(0);
+    expect(countRows(databasePath, "review_run_metrics")).toBe(0);
+    expect(countRows(databasePath, "discussion_mappings")).toBe(0);
+  });
+});
+
+function countRows(databasePath: string, tableName: string): number {
+  const database = new DatabaseSync(databasePath);
+  const row = database.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get() as { count: number };
+  database.close();
+  return row.count;
+}
+
 function readFindingStatuses(databasePath: string, identityKey: string): string[] {
   return readFindingRows(databasePath, identityKey).map((row) => row.status);
 }

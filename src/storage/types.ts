@@ -14,6 +14,18 @@ export interface TenantRecord {
   updatedAt: string;
 }
 
+export interface TenantDeletionSummary {
+  tenant: TenantRecord;
+  reviewJobCount: number;
+  mergeRequestSnapshotCount: number;
+  reviewRunCount: number;
+  reviewFindingCount: number;
+  reviewRunMetricCount: number;
+  discussionMappingCount: number;
+  reviewJobIds: string[];
+  reviewRunIds: string[];
+}
+
 export type ReviewJobStatus = "queued" | "in_progress" | "completed" | "failed";
 
 export interface ReviewJobRecord {
@@ -242,6 +254,9 @@ export interface Storage {
   listTenants(): Promise<TenantRecord[]>;
   listTenantsByProjectId(projectId: number): Promise<TenantRecord[]>;
   getTenantById(tenantId: string): Promise<TenantRecord | null>;
+  getTenantDeletionSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null>;
+  deleteTenantWithSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null>;
+  deleteTenant(baseUrl: string, projectId: number): Promise<TenantRecord | null>;
   createOrGetReviewJob(input: CreateReviewJobInput): Promise<{ job: ReviewJobRecord; created: boolean }>;
   getReviewJobById(jobId: string): Promise<ReviewJobRecord | null>;
   listQueuedReviewJobs(): Promise<ReviewJobRecord[]>;

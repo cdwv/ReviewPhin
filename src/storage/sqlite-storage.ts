@@ -18,6 +18,7 @@ import type {
   ReviewRunMetricsRecord,
   ReviewJobRecord,
   ReviewRunRecord,
+  TenantDeletionSummary,
   TenantRecord,
   UpsertReviewRunMetricsInput,
   UpsertDiscussionMappingInput
@@ -267,6 +268,68 @@ export class SqliteStorage implements Storage {
   public async getTenantById(tenantId: string): Promise<TenantRecord | null> {
     const row = this.getDb().prepare("SELECT * FROM tenants WHERE id = ?").get(tenantId) as Row | undefined;
     return row ? mapTenantRow(row) : null;
+  }
+
+  public async getTenantDeletionSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null> {
+    const database = this.getDb();
+    const tenantKey = createTenantKey(baseUrl, projectId);
+    const row = database
+      .prepare("SELECT * FROM tenants WHERE tenant_key = ?")
+      .get(tenantKey) as Row | undefined;
+    if (!row) {
+      return null;
+    }
+
+    return buildTenantDeletionSummary(database, mapTenantRow(row));
+  }
+
+  public async deleteTenantWithSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null> {
+    const database = this.getDb();
+    database.exec("BEGIN IMMEDIATE");
+
+    try {
+      const summary = getTenantDeletionSummaryFromDb(database, baseUrl, projectId);
+      if (!summary) {
+        database.exec("ROLLBACK");
+        return null;
+      }
+
+      database.prepare("DELETE FROM discussion_mappings WHERE tenant_id = ?").run(summary.tenant.id);
+      database
+        .prepare(
+          `
+            DELETE FROM review_run_metrics
+            WHERE review_run_id IN (
+              SELECT id FROM review_runs WHERE tenant_id = ?
+            )
+          `
+        )
+        .run(summary.tenant.id);
+      database
+        .prepare(
+          `
+            DELETE FROM review_findings
+            WHERE review_run_id IN (
+              SELECT id FROM review_runs WHERE tenant_id = ?
+            )
+          `
+        )
+        .run(summary.tenant.id);
+      database.prepare("DELETE FROM merge_request_snapshots WHERE tenant_id = ?").run(summary.tenant.id);
+      database.prepare("DELETE FROM review_runs WHERE tenant_id = ?").run(summary.tenant.id);
+      database.prepare("DELETE FROM review_jobs WHERE tenant_id = ?").run(summary.tenant.id);
+      database.prepare("DELETE FROM tenants WHERE id = ?").run(summary.tenant.id);
+      database.exec("COMMIT");
+      return summary;
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  public async deleteTenant(baseUrl: string, projectId: number): Promise<TenantRecord | null> {
+    const summary = await this.deleteTenantWithSummary(baseUrl, projectId);
+    return summary?.tenant ?? null;
   }
 
   public async createOrGetReviewJob(
@@ -1239,6 +1302,67 @@ function dedupeReviewFindingsTable(database: DatabaseSync): void {
     COMMIT;
     PRAGMA foreign_keys = ON;
   `);
+}
+
+function buildTenantDeletionSummary(database: DatabaseSync, tenant: TenantRecord): TenantDeletionSummary {
+  const reviewJobIds = database
+    .prepare("SELECT id FROM review_jobs WHERE tenant_id = ? ORDER BY id ASC")
+    .all(tenant.id)
+    .map((row) => asString((row as Row).id));
+  const reviewRunIds = database
+    .prepare("SELECT id FROM review_runs WHERE tenant_id = ? ORDER BY id ASC")
+    .all(tenant.id)
+    .map((row) => asString((row as Row).id));
+
+  return {
+    tenant,
+    reviewJobCount: countRows(database, "review_jobs", tenant.id),
+    mergeRequestSnapshotCount: countRows(database, "merge_request_snapshots", tenant.id),
+    reviewRunCount: countRows(database, "review_runs", tenant.id),
+    reviewFindingCount: countRowsForReviewRuns(database, "review_findings", tenant.id),
+    reviewRunMetricCount: countRowsForReviewRuns(database, "review_run_metrics", tenant.id),
+    discussionMappingCount: countRows(database, "discussion_mappings", tenant.id),
+    reviewJobIds,
+    reviewRunIds
+  };
+}
+
+function getTenantDeletionSummaryFromDb(
+  database: DatabaseSync,
+  baseUrl: string,
+  projectId: number
+): TenantDeletionSummary | null {
+  const tenantKey = createTenantKey(baseUrl, projectId);
+  const row = database
+    .prepare("SELECT * FROM tenants WHERE tenant_key = ?")
+    .get(tenantKey) as Row | undefined;
+  if (!row) {
+    return null;
+  }
+
+  return buildTenantDeletionSummary(database, mapTenantRow(row));
+}
+
+function countRows(database: DatabaseSync, tableName: string, tenantId: string): number {
+  const row = database
+    .prepare(`SELECT COUNT(*) AS count FROM ${tableName} WHERE tenant_id = ?`)
+    .get(tenantId) as Row;
+  return asNumber(row.count);
+}
+
+function countRowsForReviewRuns(database: DatabaseSync, tableName: string, tenantId: string): number {
+  const row = database
+    .prepare(
+      `
+        SELECT COUNT(*) AS count
+        FROM ${tableName}
+        WHERE review_run_id IN (
+          SELECT id FROM review_runs WHERE tenant_id = ?
+        )
+      `
+    )
+    .get(tenantId) as Row;
+  return asNumber(row.count);
 }
 
 function _mapReviewRunRow(row: Row): ReviewRunRecord {

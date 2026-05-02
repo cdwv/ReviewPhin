@@ -1,5 +1,6 @@
-import { readdir } from "node:fs/promises";
+import { access, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 
 import { z } from "zod";
@@ -8,6 +9,7 @@ import { loadConfig, tenantConfigSchema } from "./config.js";
 import { loadLocalEnvFile } from "./env.js";
 import { readCopilotRunMetrics, type PremiumRequestsByModelMetric } from "./review/copilot-run-metrics.js";
 import { SqliteStorage } from "./storage/sqlite-storage.js";
+import type { TenantDeletionSummary } from "./storage/types.js";
 
 interface ParsedCliArgs {
   readonly positionals: string[];
@@ -46,9 +48,25 @@ interface ModelPremiumRequestsStatsRow {
   readonly p90: number;
 }
 
+interface TenantArtifactSummary {
+  readonly workspacePaths: string[];
+  readonly runLogPaths: string[];
+  readonly existingWorkspaceCount: number;
+  readonly existingRunLogCount: number;
+}
+
 const tenantAddSchema = tenantConfigSchema.extend({
   databasePath: z.string().min(1).optional()
 });
+
+const tenantLookupSchema = tenantConfigSchema
+  .pick({
+    baseUrl: true,
+    projectId: true
+  })
+  .extend({
+    databasePath: z.string().min(1).optional()
+  });
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
   loadLocalEnvFile();
@@ -110,6 +128,63 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
         null,
         2
       )}\n`
+    );
+    return 0;
+  }
+
+  if (resource === "tenant" && action === "remove") {
+    const config = loadConfig();
+    const tenant = tenantLookupSchema.parse({
+      baseUrl: options["base-url"],
+      projectId: options["project-id"],
+      databasePath: options["database-path"]
+    });
+    const databasePath = typeof tenant.databasePath === "string" ? resolve(tenant.databasePath) : config.databasePath;
+    const workspaceRoot = typeof options["workspace-root"] === "string" ? resolve(options["workspace-root"]) : config.workspaceRoot;
+    const runLogDir = typeof options["run-log-dir"] === "string" ? resolve(options["run-log-dir"]) : config.runLogDir;
+    const assumeYes = options.yes === true || options.yes === "true";
+
+    const storage = new SqliteStorage({
+      databasePath
+    });
+    await storage.initialize();
+
+    const deletionSummary = await storage.getTenantDeletionSummary(tenant.baseUrl, tenant.projectId);
+    if (!deletionSummary) {
+      process.stdout.write(`Tenant not found for ${tenant.baseUrl} :: ${tenant.projectId}\n`);
+      return 1;
+    }
+
+    const artifactSummary = await collectTenantArtifactSummary(deletionSummary, workspaceRoot, runLogDir);
+    process.stdout.write(formatTenantRemovalSummary(deletionSummary, artifactSummary, databasePath, workspaceRoot, runLogDir));
+
+    if (!assumeYes) {
+      if (!process.stdin.isTTY) {
+        process.stdout.write("Tenant removal requires confirmation. Re-run with --yes in non-interactive mode.\n");
+        return 1;
+      }
+
+      const confirmed = await promptForConfirmation("Continue and remove all tenant data? [y/N] ");
+      if (!confirmed) {
+        process.stdout.write("Tenant removal aborted.\n");
+        return 1;
+      }
+    }
+
+    const deletedSummary = await storage.deleteTenantWithSummary(tenant.baseUrl, tenant.projectId);
+    if (!deletedSummary) {
+      throw new Error(`Tenant ${tenant.baseUrl} :: ${tenant.projectId} disappeared during removal`);
+    }
+
+    await deleteTenantArtifactsForSummary(deletedSummary, workspaceRoot, runLogDir);
+
+    process.stdout.write(
+      [
+        "Tenant removed.",
+        `id: ${deletedSummary.tenant.id}`,
+        `key: ${deletedSummary.tenant.key}`,
+        `project: ${deletedSummary.tenant.baseUrl} :: ${deletedSummary.tenant.projectId}`
+      ].join("\n") + "\n"
     );
     return 0;
   }
@@ -181,9 +256,123 @@ function printHelp(): void {
         "Usage:",
         "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> --bot-username <name> [--bot-user-id <id>] [--database-path <path>]",
         "  pnpm cli tenant list [--database-path <path>]",
+        "  pnpm cli tenant remove --base-url <url> --project-id <id> [--database-path <path>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
         "  pnpm cli metrics sessions [--run-log-dir <path>]"
       ].join("\n") + "\n"
     );
+}
+
+async function collectTenantArtifactSummary(
+  summary: TenantDeletionSummary,
+  workspaceRoot: string,
+  runLogDir: string
+): Promise<TenantArtifactSummary> {
+  const workspacePaths = summary.reviewJobIds.map((reviewJobId) => join(workspaceRoot, reviewJobId));
+  const runLogPaths = summary.reviewRunIds.map((reviewRunId) => join(runLogDir, reviewRunId));
+  const [existingWorkspaceCount, existingRunLogCount] = await Promise.all([
+    countExistingPaths(workspacePaths),
+    countExistingPaths(runLogPaths)
+  ]);
+
+  return {
+    workspacePaths,
+    runLogPaths,
+    existingWorkspaceCount,
+    existingRunLogCount
+  };
+}
+
+async function countExistingPaths(paths: string[]): Promise<number> {
+  const results = await Promise.all(paths.map((path) => pathExists(path)));
+  return results.filter(Boolean).length;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function formatTenantRemovalSummary(
+  summary: TenantDeletionSummary,
+  artifactSummary: TenantArtifactSummary,
+  databasePath: string,
+  workspaceRoot: string,
+  runLogDir: string
+): string {
+  return [
+    `Preparing to remove tenant ${summary.tenant.baseUrl} :: ${summary.tenant.projectId}`,
+    `database: ${databasePath}`,
+    "This will delete:",
+    `- 1 tenant record`,
+    `- ${summary.reviewJobCount} ${pluralize("review job", summary.reviewJobCount)}`,
+    `- ${summary.mergeRequestSnapshotCount} ${pluralize("merge request snapshot", summary.mergeRequestSnapshotCount)}`,
+    `- ${summary.reviewRunCount} ${pluralize("review run", summary.reviewRunCount)}`,
+    `- ${summary.reviewFindingCount} ${pluralize("review finding", summary.reviewFindingCount)}`,
+    `- ${summary.reviewRunMetricCount} ${pluralize("review run metric", summary.reviewRunMetricCount)}`,
+    `- ${summary.discussionMappingCount} ${pluralize("discussion mapping", summary.discussionMappingCount)}`,
+    `- ${artifactSummary.existingWorkspaceCount}/${artifactSummary.workspacePaths.length} workspace ${pluralize("directory", artifactSummary.workspacePaths.length)} under ${workspaceRoot}`,
+    `- ${artifactSummary.existingRunLogCount}/${artifactSummary.runLogPaths.length} run log ${pluralize("directory", artifactSummary.runLogPaths.length)} under ${runLogDir}`,
+    ""
+  ].join("\n");
+}
+
+function pluralize(noun: string, count: number): string {
+  return count === 1 ? noun : `${noun}s`;
+}
+
+async function promptForConfirmation(prompt: string): Promise<boolean> {
+  const readline = createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  try {
+    const answer = (await readline.question(prompt)).trim().toLowerCase();
+    return answer === "y" || answer === "yes";
+  } finally {
+    readline.close();
+  }
+}
+
+async function deleteTenantArtifacts(paths: string[]): Promise<void> {
+  const uniquePaths = [...new Set(paths)];
+  const results = await Promise.allSettled(
+    uniquePaths.map((path) =>
+      rm(path, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 200
+      })
+    )
+  );
+  const failures = results
+    .map((result, index) => ({ result, path: uniquePaths[index] }))
+    .filter((entry): entry is { result: PromiseRejectedResult; path: string } => entry.result.status === "rejected");
+
+  if (failures.length > 0) {
+    throw new Error(
+      [
+        "Failed to remove local tenant artifacts:",
+        ...failures.map((failure) => `- ${failure.path}: ${String(failure.result.reason)}`)
+      ].join("\n")
+    );
+  }
+}
+
+async function deleteTenantArtifactsForSummary(
+  summary: TenantDeletionSummary,
+  workspaceRoot: string,
+  runLogDir: string
+): Promise<void> {
+  await deleteTenantArtifacts([
+    ...summary.reviewJobIds.map((reviewJobId) => join(workspaceRoot, reviewJobId)),
+    ...summary.reviewRunIds.map((reviewRunId) => join(runLogDir, reviewRunId))
+  ]);
 }
 
 async function loadRunMetricsRows(runLogDir: string): Promise<RunMetricsRow[]> {

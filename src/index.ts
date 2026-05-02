@@ -11,6 +11,17 @@ import { TenantRegistry } from "./tenants/tenant-registry.js";
 import { createApp } from "./app.js";
 import { loadLocalEnvFile } from "./env.js";
 
+function buildCopilotProviderConfig(config: ReturnType<typeof loadConfig>) {
+  if (!config.copilotProviderBaseUrl) {
+    return undefined;
+  }
+
+  return {
+    baseUrl: config.copilotProviderBaseUrl,
+    ...(config.copilotProviderType ? { type: config.copilotProviderType } : {})
+  };
+}
+
 async function main(): Promise<void> {
   loadLocalEnvFile();
   const config = loadConfig();
@@ -35,6 +46,8 @@ async function main(): Promise<void> {
     logger,
     model: config.copilotModel,
     textGenerationModel: config.textGenerationModel,
+    provider: buildCopilotProviderConfig(config),
+    sdkLogLevel: config.copilotSdkLogLevel,
     cliPath: config.copilotCliPath,
     runLogDir: config.runLogDir,
     timeoutMs: config.copilotTimeoutMs,
