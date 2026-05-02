@@ -3,13 +3,18 @@ import { z } from "zod";
 
 import { normalizeGitLabBaseUrl } from "./gitlab/url.js";
 
+export const modelProfileNameSchema = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, {
+  message: "profile names may contain letters, numbers, dots, underscores, and dashes"
+});
+
 export const tenantConfigSchema = z.object({
   baseUrl: z.string().url().transform((value) => normalizeGitLabBaseUrl(value)),
   projectId: z.coerce.number().int().positive(),
   apiToken: z.string().min(1),
   webhookSecret: z.string().min(1),
   botUserId: z.coerce.number().int().positive().optional(),
-  botUsername: z.string().min(1)
+  botUsername: z.string().min(1),
+  modelProfileName: modelProfileNameSchema.optional()
 });
 
 const envSchema = z.object({
@@ -25,10 +30,6 @@ const envSchema = z.object({
   COPILOT_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
   REVIEWPHIN_MEMORY_ENABLED: z.enum(["true", "false"]).default("true"),
   REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS: z.coerce.number().int().positive().default(5_000),
-  REVIEWPHIN_TEXT_GENERATION_MODEL: z.string().min(1).default("auto"),
-  COPILOT_MODEL: z.string().min(1).optional(),
-  COPILOT_PROVIDER_BASE_URL: z.string().url().optional(),
-  COPILOT_PROVIDER_TYPE: z.enum(["openai", "azure", "anthropic"]).optional(),
   COPILOT_SDK_LOG_LEVEL: z.enum(["none", "error", "warning", "info", "debug", "all"]).optional(),
   COPILOT_CLI_PATH: z.string().min(1).optional()
 });
@@ -47,10 +48,6 @@ export interface AppConfig {
   copilotTimeoutMs: number;
   memoryEnabled: boolean;
   maxPromptMemoryChars: number;
-  textGenerationModel: string;
-  copilotModel?: string | undefined;
-  copilotProviderBaseUrl?: string | undefined;
-  copilotProviderType?: "openai" | "azure" | "anthropic" | undefined;
   copilotSdkLogLevel?: "none" | "error" | "warning" | "info" | "debug" | "all" | undefined;
   copilotCliPath?: string | undefined;
 }
@@ -69,10 +66,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     COPILOT_TIMEOUT_MS: env.COPILOT_TIMEOUT_MS,
     REVIEWPHIN_MEMORY_ENABLED: env.REVIEWPHIN_MEMORY_ENABLED?.toLowerCase(),
     REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS: env.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,
-    REVIEWPHIN_TEXT_GENERATION_MODEL: env.REVIEWPHIN_TEXT_GENERATION_MODEL,
-    COPILOT_MODEL: env.COPILOT_MODEL,
-    COPILOT_PROVIDER_BASE_URL: env.COPILOT_PROVIDER_BASE_URL,
-    COPILOT_PROVIDER_TYPE: env.COPILOT_PROVIDER_TYPE,
     COPILOT_SDK_LOG_LEVEL: env.COPILOT_SDK_LOG_LEVEL,
     COPILOT_CLI_PATH: env.COPILOT_CLI_PATH
   });
@@ -89,10 +82,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     copilotTimeoutMs: parsedEnv.COPILOT_TIMEOUT_MS,
     memoryEnabled: parsedEnv.REVIEWPHIN_MEMORY_ENABLED === "true",
     maxPromptMemoryChars: parsedEnv.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,
-    textGenerationModel: parsedEnv.REVIEWPHIN_TEXT_GENERATION_MODEL,
-    copilotModel: parsedEnv.COPILOT_MODEL,
-    copilotProviderBaseUrl: parsedEnv.COPILOT_PROVIDER_BASE_URL,
-    copilotProviderType: parsedEnv.COPILOT_PROVIDER_TYPE,
     copilotSdkLogLevel: parsedEnv.COPILOT_SDK_LOG_LEVEL,
     copilotCliPath: parsedEnv.COPILOT_CLI_PATH
   };

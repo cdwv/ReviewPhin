@@ -17,6 +17,7 @@ describe("review summary note", () => {
           webhookSecret: "secret",
           botUserId: 999,
           botUsername: "review-bot",
+          modelProfileName: null,
           createdAt: timestamp,
           updatedAt: timestamp
         },
@@ -129,6 +130,7 @@ describe("review summary note", () => {
           webhookSecret: "secret",
           botUserId: 999,
           botUsername: "review-bot",
+          modelProfileName: null,
           createdAt: timestamp,
           updatedAt: timestamp
         },
@@ -238,6 +240,7 @@ describe("review summary note", () => {
           webhookSecret: "secret",
           botUserId: 999,
           botUsername: "review-bot",
+          modelProfileName: null,
           createdAt: timestamp,
           updatedAt: timestamp
         },

@@ -6,7 +6,8 @@ import { buildProjectMemoryCoalescePrompt } from "../prompts/prompt-builders.js"
 
 interface ProjectMemoryCoalescerOptions {
   logger: Logger;
-  model: string;
+  model?: string | undefined;
+  authToken?: string | undefined;
   provider?: ProviderConfig | undefined;
   sdkLogLevel?: "none" | "error" | "warning" | "info" | "debug" | "all" | undefined;
   cliPath?: string | undefined;
@@ -15,7 +16,8 @@ interface ProjectMemoryCoalescerOptions {
 
 export class ProjectMemoryTextCoalescer {
   private readonly logger: Logger;
-  private readonly model: string;
+  private readonly model: string | undefined;
+  private readonly authToken: string | undefined;
   private readonly provider: ProviderConfig | undefined;
   private readonly sdkLogLevel: ProjectMemoryCoalescerOptions["sdkLogLevel"];
   private readonly cliPath: string | undefined;
@@ -24,6 +26,7 @@ export class ProjectMemoryTextCoalescer {
   public constructor(options: ProjectMemoryCoalescerOptions) {
     this.logger = options.logger;
     this.model = options.model;
+    this.authToken = options.authToken;
     this.provider = options.provider;
     this.sdkLogLevel = options.sdkLogLevel;
     this.cliPath = options.cliPath;
@@ -36,6 +39,7 @@ export class ProjectMemoryTextCoalescer {
     }
 
     const client = new CopilotClient({
+      ...(this.authToken ? { gitHubToken: this.authToken } : {}),
       ...(this.sdkLogLevel ? { logLevel: this.sdkLogLevel } : {}),
       ...(this.cliPath ? { cliPath: this.cliPath } : {})
     });
@@ -44,10 +48,10 @@ export class ProjectMemoryTextCoalescer {
     try {
       const session = await client.createSession({
         onPermissionRequest: permissionHandler,
-        model: this.model,
+        ...(this.model ? { model: this.model } : {}),
         ...(this.provider ? { provider: this.provider } : {}),
         availableTools: [],
-        enableConfigDiscovery: false
+        ...(this.provider ? { enableConfigDiscovery: false } : {})
       });
 
       try {

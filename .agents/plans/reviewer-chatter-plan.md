@@ -20,9 +20,9 @@ This plan intentionally drops the broader option comparison and focuses only on 
 
 This plan assumes **two LLM agents**, not three:
 
-- **reviewer** = LLM agent - gpt-5.4 (it should be default under REVIEWPHIN_CODE_REVIEW_MODEL env)
-- **chatter** = LLM agent - claude-sonnet-4.6 (it should be default under REVIEWPHIN_TEXT_GENERATION_MODEL env)
-- **router** = **not** an LLM agent by default, possibly gpt-5-mini later (if added, it should be default under REVIEWPHIN_ROUTER_MODEL env)
+- **reviewer** = LLM agent (using reviewer model from model profile)
+- **chatter** = LLM agent (using text generation model from model profile)
+- **router** = **not** an LLM agent by default, possibly sth like gpt-5-mini later (if added, it should have new dedicated config in model profile)
 
 The router should be implemented as deterministic application logic.
 

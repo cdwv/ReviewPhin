@@ -16,6 +16,7 @@ const tenant = {
   webhookSecret: "secret",
   botUserId: 999,
   botUsername: "review-bot",
+  modelProfileName: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString()
 };
@@ -84,7 +85,7 @@ describe("review job dedupe", () => {
       tenantRegistry: {} as never,
       hydrator: {} as never,
       workspaceMaterializer: {} as never,
-      reviewProvider: {} as never,
+      reviewProviderFactory: {} as never,
       reconciler: {} as never,
       logger: createLogger("silent"),
       runLogDir: tmpPath("run-logs"),

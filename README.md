@@ -79,7 +79,7 @@ The repository includes a multi-stage `Dockerfile` and a `docker-compose.yml` th
 4. Register at least one tenant in the container-backed SQLite database:
 
    ```bash
-   docker compose run --rm worker node dist/cli.js tenant add --base-url https://gitlab.example.com --project-id 123 --api-token glpat-xxxxxxxx --webhook-secret replace-me --bot-user-id 999 --bot-username review-bot
+   docker compose run --rm worker reviewphin tenant add --base-url https://gitlab.example.com --project-id 123 --api-token glpat-xxxxxxxx --webhook-secret replace-me --bot-user-id 999 --bot-username review-bot
    ```
 
 5. Confirm the container is healthy:
@@ -261,13 +261,18 @@ MAX_JOB_RETRIES=3
 RETRY_BACKOFF_MS=5000
 COPILOT_TIMEOUT_MS=180000
 REVIEWPHIN_MEMORY_ENABLED=true
-COPILOT_MODEL=gpt-5.4
+```
+
+If you want an explicit named model profile instead of the plain Copilot CLI fallback, add it first:
+
+```bash
+pnpm cli model-profile add --name native-gpt5 --review-model gpt-5.4 --text-generation-model claude-sonnet-4.6 --default
 ```
 
 Then add the tenant to the local SQLite database used by the worker:
 
 ```bash
-pnpm cli tenant add --base-url https://gitlab.example.com --project-id 123 --api-token glpat-xxxxxxxx --webhook-secret replace-me --bot-user-id 999 --bot-username review-bot
+pnpm cli tenant add --base-url https://gitlab.example.com --project-id 123 --api-token glpat-xxxxxxxx --webhook-secret replace-me --bot-user-id 999 --bot-username review-bot --model-profile native-gpt5
 ```
 
 If you store the worker database somewhere else, pass `--database-path`.
@@ -278,6 +283,14 @@ To inspect what is registered locally:
 pnpm cli tenant list
 ```
 
+To inspect model profiles or change the tenant assignment later:
+
+```bash
+pnpm cli model-profile list
+pnpm cli tenant set-profile --base-url https://gitlab.example.com --project-id 123 --model-profile native-gpt5
+pnpm cli tenant clear-profile --base-url https://gitlab.example.com --project-id 123
+```
+
 To remove a tenant registration you no longer want locally:
 
 ```bash
@@ -285,6 +298,8 @@ pnpm cli tenant remove --base-url https://gitlab.example.com --project-id 123
 ```
 
 The remove command now prints a deletion summary for tenant-owned database rows plus local review workspaces and run logs, then asks for confirmation before deleting them. Use `--yes` for non-interactive runs.
+
+Inside the Docker image, the compiled CLI is also exposed as a `reviewphin` command, so container examples can use `reviewphin ...` instead of `node dist/cli.js ...`.
 
 To add another test project on the same server, run `tenant add` again with a different `projectId`.
 
@@ -362,8 +377,6 @@ The Docker image reads the same application variables as a local run. All worker
 | `COPILOT_TIMEOUT_MS` | No | `180000` | Copilot review timeout in milliseconds |
 | `REVIEWPHIN_MEMORY_ENABLED` | No | `true` | Enables per-project wiki-backed memory on the `Reviewphin memory` page; set to `false` to disable all reads and writes |
 | `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS` | No | `5000` | Character budget used for injected project memory and for triggering memory coalescing |
-| `REVIEWPHIN_TEXT_GENERATION_MODEL` | No | `auto` | Dedicated Copilot model used for memory coalescing passes |
-| `COPILOT_MODEL` | No | unset | Model name passed to the Copilot CLI. Required when using a custom provider. |
 | `COPILOT_CLI_PATH` | No | `/usr/local/bin/copilot` in the image | The packaged image sets this automatically to the installed Copilot CLI |
 
 #### GitHub Copilot authentication (default mode)
@@ -378,39 +391,37 @@ When using GitHub-hosted models, set exactly one of these variables:
 
 The GitHub token used for `GH_TOKEN`, `GITHUB_TOKEN` or `COPILOT_GITHUB_TOKEN` should be a **fine-grained PAT** with the **Copilot Requests** permission. The token owner also needs an active GitHub Copilot entitlement, and if Copilot access comes from an organization or enterprise, Copilot CLI must be allowed by that org or enterprise policy.
 
-#### Custom provider / BYOK mode (e.g. vLLM, Ollama, Azure OpenAI)
+#### Model profiles and BYOK providers
 
-Setting `COPILOT_PROVIDER_BASE_URL` activates BYOK (Bring Your Own Key) mode. In this mode GitHub authentication is **not** required; the Copilot CLI routes all inference requests to your own endpoint instead. `COPILOT_MODEL` is required and must match the model name exposed by the provider.
+Model selection and BYOK provider settings are now stored in SQLite as named **model profiles** instead of process-global env vars. If no profiles exist, Reviewphin runs the Copilot CLI as-is. If profiles do exist, the effective profile is resolved in this order:
 
-| Variable | Required | Description |
-| --- | --- | --- |
-| `COPILOT_PROVIDER_BASE_URL` | **Yes** (to activate BYOK) | OpenAI-compatible API endpoint, e.g. `http://vllm-host:8000/v1` |
-| `COPILOT_MODEL` | **Yes** | Model name as the provider knows it, e.g. `meta-llama/Llama-3.1-8B-Instruct` |
-| `COPILOT_PROVIDER_TYPE` | No | `openai` (default), `azure`, or `anthropic` |
-| `COPILOT_PROVIDER_API_KEY` | No | API key; not required for local providers like Ollama or vLLM without auth |
-| `COPILOT_PROVIDER_BEARER_TOKEN` | No | Bearer token; takes precedence over `COPILOT_PROVIDER_API_KEY` |
-| `COPILOT_PROVIDER_WIRE_API` | No | `completions` (default) or `responses` |
-| `COPILOT_PROVIDER_MODEL_ID` | No | Well-known base model ID used for internal capability and token-limit lookup when the wire model name differs (e.g. a fine-tune or Azure deployment name) |
-| `COPILOT_PROVIDER_WIRE_MODEL` | No | Exact model identifier sent to the provider API; defaults to `COPILOT_MODEL` |
-| `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` | No | Override max prompt tokens for the model |
-| `COPILOT_PROVIDER_MAX_OUTPUT_TOKENS` | No | Override max output tokens for the model |
+1. `/reviewphin-profile <name>` in the merge request description
+2. the tenant's assigned profile
+3. the database default profile
+4. plain Copilot CLI fallback
+
+Use the CLI to manage them:
+
+```bash
+pnpm cli model-profile add --name native-gpt5 --review-model gpt-5.4 --text-generation-model gpt-5.4-mini --default
+pnpm cli model-profile add --name byok-vllm --base-url http://vllm-host:8000/v1 --provider-type openai --auth-token your-token --review-model meta-llama/Llama-3.1-8B-Instruct
+pnpm cli model-profile list
+pnpm cli model-profile set-default --name native-gpt5
+pnpm cli model-profile remove --name byok-vllm
+```
+
+Only the shared worker runtime stays in env; profile-specific review models, provider URLs, and auth tokens live in the database.
 
 **vLLM example** (no auth required when vLLM runs without an API key):
 
-```env
-COPILOT_PROVIDER_BASE_URL=http://vllm-host:8000/v1
-COPILOT_MODEL=meta-llama/Llama-3.1-8B-Instruct
+```bash
+pnpm cli model-profile add --name byok-vllm --base-url http://vllm-host:8000/v1 --provider-type openai --review-model meta-llama/Llama-3.1-8B-Instruct
 ```
 
 **Azure OpenAI example** (must use `type=azure` for `*.openai.azure.com` endpoints):
 
-```env
-COPILOT_PROVIDER_TYPE=azure
-COPILOT_PROVIDER_BASE_URL=https://my-resource.openai.azure.com
-COPILOT_PROVIDER_API_KEY=your-key-here
-COPILOT_PROVIDER_MODEL_ID=gpt-4
-COPILOT_PROVIDER_WIRE_MODEL=my-gpt4-deployment
-COPILOT_MODEL=my-gpt4-deployment
+```bash
+pnpm cli model-profile add --name azure-gpt4 --base-url https://my-resource.openai.azure.com --provider-type azure --auth-token your-key-here --review-model my-gpt4-deployment
 ```
 
 `pnpm cli tenant add` accepts these fields:
@@ -423,7 +434,28 @@ COPILOT_MODEL=my-gpt4-deployment
 | `--webhook-secret` | Yes | Secret expected in the `X-Gitlab-Token` header |
 | `--bot-user-id` | No | Numeric GitLab bot user ID used for stricter ownership checks |
 | `--bot-username` | Yes | Bot username used for direct mention matching |
+| `--model-profile` | No | Named model profile to assign to the tenant immediately |
 | `--database-path` | No | Override the SQLite path instead of using `DATABASE_PATH` from `.env` |
+
+`pnpm cli tenant set-profile` and `pnpm cli tenant clear-profile` use the same `--base-url`, `--project-id`, and optional `--database-path` lookup fields.
+
+`pnpm cli model-profile add` accepts these fields:
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `--name` | Yes | Stable profile name used by tenants and `/reviewphin-profile <name>` overrides |
+| `--base-url` | No | Optional BYOK provider base URL; leave unset for native Copilot-backed profiles |
+| `--provider-type` | No | Optional provider type for BYOK profiles: `openai`, `azure`, or `anthropic` |
+| `--wire-api` | No | Optional BYOK wire API mode: `responses` or `completions`. When omitted for BYOK profiles, Reviewphin uses `responses` |
+| `--auth-token` | No | Optional auth token. With `--base-url`, it is sent as the BYOK provider `apiKey`; without `--base-url`, it is used as the native Copilot GitHub token. CLI output always masks it |
+| `--review-model` | No | Explicit review model; required when `--base-url` is set |
+| `--text-generation-model` | No | Optional dedicated model for memory coalescing; defaults to the review model when omitted |
+| `--default` | No | Marks the profile as the single database default |
+| `--database-path` | No | Override the SQLite path instead of using `DATABASE_PATH` from `.env` |
+
+To clear nullable fields on an existing profile, re-run `model-profile add` with one or more of:
+`--clear-base-url`, `--clear-provider-type`, `--clear-wire-api`, `--clear-auth-token`,
+`--clear-review-model`, or `--clear-text-generation-model`. `--clear-base-url` also clears the stored provider type and wire API unless you explicitly set new values in the same command.
 
 `pnpm cli tenant remove` accepts these fields:
 
@@ -448,7 +480,7 @@ When `REVIEWPHIN_MEMORY_ENABLED=true`, the worker reads and writes a dedicated p
 - Its contents are loaded into every review as durable project context, using the `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS` budget.
 - The model may update it when a user comment clearly communicates long-term guidance such as team policy, stable convention, or "for future reference" knowledge.
 - If the wiki is disabled or temporarily unavailable, the review still runs and simply skips project memory for that pass.
-- When the managed memory grows close to the configured character budget, Reviewphin runs a dedicated coalescing pass with `REVIEWPHIN_TEXT_GENERATION_MODEL` to merge duplicates and shrink the stored memory before saving.
+- When the managed memory grows close to the configured character budget, Reviewphin runs a dedicated coalescing pass with the resolved profile's `textGenerationModel` (or its review model when that field is omitted) to merge duplicates and shrink the stored memory before saving.
 - One-off review remarks, temporary incidents, and merge-request-specific instructions should not be stored there.
 
 `baseUrl` may include a path prefix for self-hosted installs behind a reverse proxy, but it should point to the GitLab instance root, not directly to `/api/v4`. The worker normalizes `/api/v4` away if you include it by mistake.

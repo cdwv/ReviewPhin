@@ -10,8 +10,33 @@ export interface TenantRecord {
   webhookSecret: string;
   botUserId: number | null;
   botUsername: string | null;
+  modelProfileName: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ModelProfileRecord {
+  name: string;
+  providerBaseUrl: string | null;
+  providerType: "openai" | "azure" | "anthropic" | null;
+  wireApi: "completions" | "responses" | null;
+  authToken: string | null;
+  reviewModel: string | null;
+  textGenerationModel: string | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertModelProfileInput {
+  name: string;
+  providerBaseUrl?: string | null | undefined;
+  providerType?: "openai" | "azure" | "anthropic" | null | undefined;
+  wireApi?: "completions" | "responses" | null | undefined;
+  authToken?: string | null | undefined;
+  reviewModel?: string | null | undefined;
+  textGenerationModel?: string | null | undefined;
+  isDefault?: boolean | undefined;
 }
 
 export interface TenantDeletionSummary {
@@ -95,6 +120,10 @@ export interface ReviewRunRecord {
   tenantId: string;
   provider: string;
   model: string | null;
+  modelProfileName: string | null;
+  providerBaseUrl: string | null;
+  providerType: "openai" | "azure" | "anthropic" | null;
+  textGenerationModel: string | null;
   status: ReviewRunStatus;
   resultJson: string | null;
   error: string | null;
@@ -134,6 +163,10 @@ export interface CreateReviewRunInput {
   tenantId: string;
   provider: string;
   model: string | null;
+  modelProfileName: string | null;
+  providerBaseUrl: string | null;
+  providerType: "openai" | "azure" | "anthropic" | null;
+  textGenerationModel: string | null;
 }
 
 export interface UpsertReviewRunMetricsInput {
@@ -250,10 +283,17 @@ export interface UpsertDiscussionMappingInput {
 
 export interface Storage {
   initialize(): Promise<void>;
+  upsertModelProfile(input: UpsertModelProfileInput): Promise<ModelProfileRecord>;
+  listModelProfiles(): Promise<ModelProfileRecord[]>;
+  getModelProfileByName(name: string): Promise<ModelProfileRecord | null>;
+  getDefaultModelProfile(): Promise<ModelProfileRecord | null>;
+  setDefaultModelProfile(name: string | null): Promise<ModelProfileRecord | null>;
+  deleteModelProfile(name: string): Promise<ModelProfileRecord | null>;
   upsertTenant(tenant: TenantConfig): Promise<TenantRecord>;
   listTenants(): Promise<TenantRecord[]>;
   listTenantsByProjectId(projectId: number): Promise<TenantRecord[]>;
   getTenantById(tenantId: string): Promise<TenantRecord | null>;
+  setTenantModelProfile(baseUrl: string, projectId: number, modelProfileName: string | null): Promise<TenantRecord>;
   getTenantDeletionSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null>;
   deleteTenantWithSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null>;
   deleteTenant(baseUrl: string, projectId: number): Promise<TenantRecord | null>;

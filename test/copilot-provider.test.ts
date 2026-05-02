@@ -174,6 +174,7 @@ describe("CopilotReviewProvider", () => {
       baseUrl: "http://llm.internal/v1",
       type: "openai"
     });
+    expect(sessionOptions.enableConfigDiscovery).toBe(false);
   });
 
   it("passes explicit sdk log level into the Copilot client when configured", async () => {
@@ -216,6 +217,93 @@ describe("CopilotReviewProvider", () => {
 
     expect(CopilotClient).toHaveBeenCalledWith({
       logLevel: "debug"
+    });
+  });
+
+  it("keeps config discovery enabled when only a model is configured", async () => {
+    createSessionMock.mockResolvedValue({
+      sessionId: "session_1",
+      on: vi.fn(() => () => {}),
+      sendAndWait: vi.fn(async () => ({
+        data: {
+          content: JSON.stringify({
+            overview: {
+              summary: "Looks good",
+              overallSeverity: "low"
+            },
+            findings: [],
+            priorDispositions: []
+          })
+        }
+      })),
+      disconnect: vi.fn(async () => {})
+    });
+    stopMock.mockResolvedValue(undefined);
+
+    const provider = new CopilotReviewProvider({
+      logger: {
+        warn: vi.fn(),
+        error: vi.fn(),
+        child: vi.fn(() => ({
+          warn: vi.fn(),
+          error: vi.fn()
+        }))
+      } as never,
+      model: "gpt-5.4",
+      textGenerationModel: "auto",
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000
+    });
+
+    await provider.review(createReviewContext());
+
+    const sessionOptions = createSessionMock.mock.calls[0]?.[0];
+    expect(sessionOptions.model).toBe("gpt-5.4");
+    expect(sessionOptions.enableConfigDiscovery).toBeUndefined();
+  });
+
+  it("passes a native Copilot auth token through the client when no custom provider is configured", async () => {
+    createSessionMock.mockResolvedValue({
+      sessionId: "session_1",
+      on: vi.fn(() => () => {}),
+      sendAndWait: vi.fn(async () => ({
+        data: {
+          content: JSON.stringify({
+            overview: {
+              summary: "Looks good",
+              overallSeverity: "low"
+            },
+            findings: [],
+            priorDispositions: []
+          })
+        }
+      })),
+      disconnect: vi.fn(async () => {})
+    });
+    stopMock.mockResolvedValue(undefined);
+
+    const provider = new CopilotReviewProvider({
+      logger: {
+        warn: vi.fn(),
+        error: vi.fn(),
+        child: vi.fn(() => ({
+          warn: vi.fn(),
+          error: vi.fn()
+        }))
+      } as never,
+      model: "gpt-5.4",
+      textGenerationModel: "auto",
+      authToken: "github-token",
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000
+    });
+
+    await provider.review(createReviewContext());
+
+    expect(CopilotClient).toHaveBeenCalledWith({
+      gitHubToken: "github-token"
     });
   });
 });

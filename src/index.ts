@@ -5,22 +5,11 @@ import { JobQueue } from "./jobs/job-queue.js";
 import { ReviewWorker } from "./jobs/review-worker.js";
 import { createLogger } from "./logger.js";
 import { DiscussionReconciler } from "./reconcile/discussion-reconciler.js";
-import { CopilotReviewProvider } from "./review/copilot-provider.js";
+import { CopilotReviewProviderFactory } from "./review/copilot-provider.js";
 import { SqliteStorage } from "./storage/sqlite-storage.js";
 import { TenantRegistry } from "./tenants/tenant-registry.js";
 import { createApp } from "./app.js";
 import { loadLocalEnvFile } from "./env.js";
-
-function buildCopilotProviderConfig(config: ReturnType<typeof loadConfig>) {
-  if (!config.copilotProviderBaseUrl) {
-    return undefined;
-  }
-
-  return {
-    baseUrl: config.copilotProviderBaseUrl,
-    ...(config.copilotProviderType ? { type: config.copilotProviderType } : {})
-  };
-}
 
 async function main(): Promise<void> {
   loadLocalEnvFile();
@@ -42,11 +31,8 @@ async function main(): Promise<void> {
     logger
   });
 
-  const reviewProvider = new CopilotReviewProvider({
+  const reviewProviderFactory = new CopilotReviewProviderFactory({
     logger,
-    model: config.copilotModel,
-    textGenerationModel: config.textGenerationModel,
-    provider: buildCopilotProviderConfig(config),
     sdkLogLevel: config.copilotSdkLogLevel,
     cliPath: config.copilotCliPath,
     runLogDir: config.runLogDir,
@@ -71,7 +57,7 @@ async function main(): Promise<void> {
     tenantRegistry,
     hydrator,
     workspaceMaterializer,
-    reviewProvider,
+    reviewProviderFactory,
     reconciler,
     logger,
     runLogDir: config.runLogDir,

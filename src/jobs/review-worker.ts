@@ -9,7 +9,8 @@ import type { MergeRequestContextHydrator } from "../gitlab/hydrator.js";
 import type { WorkspaceMaterializer } from "../gitlab/workspace.js";
 import { buildProviderThreads, type ReconcileSummary, DiscussionReconciler } from "../reconcile/discussion-reconciler.js";
 import { readCopilotRunMetrics } from "../review/copilot-run-metrics.js";
-import type { ReviewProvider } from "../review/provider.js";
+import { ModelProfileConfigurationError, resolveReviewProviderConfig } from "../review/model-profiles.js";
+import type { ReviewProviderFactory } from "../review/provider.js";
 import { ReviewRunArtifacts } from "../review/run-artifacts.js";
 import { buildScopedReviewContext } from "../review/review-scope.js";
 import { buildReviewTriggerContext, classifyWebhookTrigger, locateTriggerNoteReference } from "../review/trigger.js";
@@ -27,7 +28,7 @@ interface ReviewWorkerOptions {
   tenantRegistry: TenantRegistry;
   hydrator: MergeRequestContextHydrator;
   workspaceMaterializer: WorkspaceMaterializer;
-  reviewProvider: ReviewProvider;
+  reviewProviderFactory: ReviewProviderFactory;
   reconciler: DiscussionReconciler;
   logger: Logger;
   runLogDir: string;
@@ -40,7 +41,7 @@ export class ReviewWorker {
   private readonly tenantRegistry: TenantRegistry;
   private readonly hydrator: MergeRequestContextHydrator;
   private readonly workspaceMaterializer: WorkspaceMaterializer;
-  private readonly reviewProvider: ReviewProvider;
+  private readonly reviewProviderFactory: ReviewProviderFactory;
   private readonly reconciler: DiscussionReconciler;
   private readonly logger: Logger;
   private readonly runLogDir: string;
@@ -52,7 +53,7 @@ export class ReviewWorker {
     this.tenantRegistry = options.tenantRegistry;
     this.hydrator = options.hydrator;
     this.workspaceMaterializer = options.workspaceMaterializer;
-    this.reviewProvider = options.reviewProvider;
+    this.reviewProviderFactory = options.reviewProviderFactory;
     this.reconciler = options.reconciler;
     this.logger = options.logger;
     this.runLogDir = options.runLogDir;
@@ -136,29 +137,8 @@ export class ReviewWorker {
     let triggerNote: TriggerNoteReference | null = null;
 
     try {
-      const reviewRun = await this.storage.createReviewRun({
-        reviewJobId: job.id,
-        tenantId: tenant.id,
-        provider: this.reviewProvider.name,
-        model: this.reviewProvider.name === "copilot-sdk" ? null : null
-      });
-      reviewRunId = reviewRun.id;
-      runArtifacts = new ReviewRunArtifacts(this.runLogDir, reviewRun.id);
-      await runArtifacts.initialize();
-
-      await this.logRunEvent(runArtifacts, "info", "review run started", {
-        jobId: job.id,
-        tenantId: tenant.id,
-        mergeRequestIid: job.mergeRequestIid
-      });
-
-      client = this.createGitLabClient(tenant, job.id, reviewRun.id, runArtifacts);
+      client = this.createGitLabClient(tenant, job.id);
       const parsedPayload = parseGitLabNoteHook(JSON.parse(job.payloadJson));
-
-      await this.logRunEvent(runArtifacts, "info", "hydrating merge request context", {
-        jobId: job.id,
-        mergeRequestIid: job.mergeRequestIid
-      });
 
       const context = await this.hydrator.hydrate({
         tenant,
@@ -167,6 +147,44 @@ export class ReviewWorker {
       });
       workspaceToCleanup = context.workspace;
       triggerNote = locateTriggerNoteReference(context.discussions, job.noteId);
+      const resolvedProviderConfig = await resolveReviewProviderConfig({
+        storage: this.storage,
+        tenant,
+        mergeRequest: context.mergeRequest
+      });
+      const reviewProvider = this.reviewProviderFactory.createProvider(resolvedProviderConfig);
+      const reviewRun = await this.storage.createReviewRun({
+        reviewJobId: job.id,
+        tenantId: tenant.id,
+        provider: reviewProvider.name,
+        model: resolvedProviderConfig.reviewModel,
+        modelProfileName: resolvedProviderConfig.modelProfileName,
+        providerBaseUrl: resolvedProviderConfig.providerBaseUrl,
+        providerType: resolvedProviderConfig.providerType,
+        textGenerationModel: resolvedProviderConfig.textGenerationModel
+      });
+      reviewRunId = reviewRun.id;
+      runArtifacts = new ReviewRunArtifacts(this.runLogDir, reviewRun.id);
+      await runArtifacts.initialize();
+      client = this.createGitLabClient(tenant, job.id, reviewRun.id, runArtifacts);
+
+      await this.logRunEvent(runArtifacts, "info", "review run started", {
+        jobId: job.id,
+        tenantId: tenant.id,
+        mergeRequestIid: job.mergeRequestIid,
+        modelProfileName: resolvedProviderConfig.modelProfileName,
+        selectionSource: resolvedProviderConfig.selectionSource,
+        reviewModel: resolvedProviderConfig.reviewModel,
+        textGenerationModel: resolvedProviderConfig.textGenerationModel,
+        providerBaseUrl: resolvedProviderConfig.providerBaseUrl,
+        providerType: resolvedProviderConfig.providerType
+      });
+
+      await this.logRunEvent(runArtifacts, "info", "merge request context hydrated", {
+        jobId: job.id,
+        mergeRequestIid: job.mergeRequestIid,
+        changedFiles: context.changes.length
+      });
 
       const mappings = await this.storage.listDiscussionMappings(tenant.id, context.mergeRequest.iid);
       const priorThreads = buildProviderThreads({
@@ -250,7 +268,7 @@ export class ReviewWorker {
         promptContextChangedFiles: providerContext.changes.length
       });
 
-      const reviewResult = await this.reviewProvider.review(providerContext);
+      const reviewResult = await reviewProvider.review(providerContext);
 
       await this.storage.completeReviewRun(reviewRun.id, JSON.stringify(reviewResult));
       await this.storage.replaceReviewFindings(
@@ -323,7 +341,7 @@ export class ReviewWorker {
       }
 
       const nextRetryCount = job.retryCount + 1;
-      if (nextRetryCount <= this.maxJobRetries) {
+      if (!isNonRetryableReviewError(error) && nextRetryCount <= this.maxJobRetries) {
         await this.storage.markJobQueued(job.id, nextRetryCount, getErrorMessage(error));
         this.logger.warn(
           {
@@ -515,4 +533,8 @@ function serializeError(error: unknown): Record<string, unknown> {
   return {
     message: String(error)
   };
+}
+
+function isNonRetryableReviewError(error: unknown): boolean {
+  return error instanceof ModelProfileConfigurationError;
 }
