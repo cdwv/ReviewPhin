@@ -38,6 +38,7 @@ describe("MergeRequestContextHydrator project memory", () => {
         webhookSecret: "secret",
         botUserId: 1,
         botUsername: "review-bot",
+        modelProfileName: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       },

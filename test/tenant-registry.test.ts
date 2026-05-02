@@ -46,6 +46,7 @@ describe("TenantRegistry", () => {
           webhookSecret: "secret",
           botUserId: null,
           botUsername: null,
+          modelProfileName: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         },
@@ -58,6 +59,7 @@ describe("TenantRegistry", () => {
           webhookSecret: "secret",
           botUserId: null,
           botUsername: null,
+          modelProfileName: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         }

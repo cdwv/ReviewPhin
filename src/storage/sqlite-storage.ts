@@ -12,6 +12,7 @@ import type {
   CreateReviewRunInput,
   DiscussionMappingRecord,
   MergeRequestSnapshotRecord,
+  ModelProfileRecord,
   PreviousCompletedReviewRecord,
   PriorReviewFindingRecord,
   ReviewFindingStatus,
@@ -20,6 +21,7 @@ import type {
   ReviewRunRecord,
   TenantDeletionSummary,
   TenantRecord,
+  UpsertModelProfileInput,
   UpsertReviewRunMetricsInput,
   UpsertDiscussionMappingInput
 } from "./types.js";
@@ -47,6 +49,19 @@ export class SqliteStorage implements Storage {
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
 
+      CREATE TABLE IF NOT EXISTS model_profiles (
+        name TEXT PRIMARY KEY,
+        provider_base_url TEXT,
+        provider_type TEXT,
+        wire_api TEXT,
+        auth_token TEXT,
+        review_model TEXT,
+        text_generation_model TEXT,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS tenants (
         id TEXT PRIMARY KEY,
         tenant_key TEXT NOT NULL UNIQUE,
@@ -56,6 +71,7 @@ export class SqliteStorage implements Storage {
         webhook_secret TEXT NOT NULL,
         bot_user_id INTEGER,
         bot_username TEXT,
+        model_profile_name TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         UNIQUE(base_url, project_id)
@@ -104,6 +120,10 @@ export class SqliteStorage implements Storage {
         tenant_id TEXT NOT NULL,
         provider TEXT NOT NULL,
         model TEXT,
+        model_profile_name TEXT,
+        provider_base_url TEXT,
+        provider_type TEXT,
+        text_generation_model TEXT,
         status TEXT NOT NULL,
         result_json TEXT,
         error TEXT,
@@ -184,17 +204,174 @@ export class SqliteStorage implements Storage {
         UNIQUE(tenant_id, merge_request_iid, gitlab_discussion_id)
       );
     `);
+    ensureColumn(this.db, "model_profiles", "wire_api", "TEXT");
+    ensureColumn(this.db, "tenants", "model_profile_name", "TEXT");
     ensureColumn(this.db, "merge_request_snapshots", "project_memory_json", "TEXT");
+    ensureColumn(this.db, "review_runs", "model_profile_name", "TEXT");
+    ensureColumn(this.db, "review_runs", "provider_base_url", "TEXT");
+    ensureColumn(this.db, "review_runs", "provider_type", "TEXT");
+    ensureColumn(this.db, "review_runs", "text_generation_model", "TEXT");
     normalizeReviewFindingsTable(this.db);
     dedupeReviewFindingsTable(this.db);
     this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS model_profiles_single_default_idx
+      ON model_profiles (is_default)
+      WHERE is_default = 1;
+
       CREATE UNIQUE INDEX IF NOT EXISTS review_findings_review_run_identity_key_idx
       ON review_findings (review_run_id, identity_key);
     `);
   }
 
+  public async upsertModelProfile(input: UpsertModelProfileInput): Promise<ModelProfileRecord> {
+    const database = this.getDb();
+    const now = new Date().toISOString();
+
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      const existingRow = database.prepare("SELECT * FROM model_profiles WHERE name = ?").get(input.name) as Row | undefined;
+      const existing = existingRow ? mapModelProfileRow(existingRow) : null;
+      const resolvedInput = resolveModelProfileUpsertInput(existing, input);
+
+      if (resolvedInput.isDefault) {
+        database
+          .prepare("UPDATE model_profiles SET is_default = 0, updated_at = ? WHERE is_default = 1 AND name != ?")
+          .run(now, input.name);
+      }
+
+      database
+        .prepare(`
+          INSERT INTO model_profiles (
+            name,
+            provider_base_url,
+            provider_type,
+            wire_api,
+            auth_token,
+            review_model,
+            text_generation_model,
+            is_default,
+            created_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(name) DO UPDATE SET
+            provider_base_url = excluded.provider_base_url,
+            provider_type = excluded.provider_type,
+            wire_api = excluded.wire_api,
+            auth_token = excluded.auth_token,
+            review_model = excluded.review_model,
+            text_generation_model = excluded.text_generation_model,
+            is_default = excluded.is_default,
+            updated_at = excluded.updated_at
+        `)
+        .run(
+          input.name,
+          resolvedInput.providerBaseUrl,
+          resolvedInput.providerType,
+          resolvedInput.wireApi,
+          resolvedInput.authToken,
+          resolvedInput.reviewModel,
+          resolvedInput.textGenerationModel,
+          resolvedInput.isDefault ? 1 : 0,
+          now,
+          now
+        );
+
+      const row = database.prepare("SELECT * FROM model_profiles WHERE name = ?").get(input.name) as Row | undefined;
+      if (!row) {
+        throw new Error(`Failed to upsert model profile ${input.name}`);
+      }
+
+      database.exec("COMMIT");
+      return mapModelProfileRow(row);
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  public async listModelProfiles(): Promise<ModelProfileRecord[]> {
+    const rows = this.getDb()
+      .prepare("SELECT * FROM model_profiles ORDER BY is_default DESC, name ASC")
+      .all() as Row[];
+    return rows.map(mapModelProfileRow);
+  }
+
+  public async getModelProfileByName(name: string): Promise<ModelProfileRecord | null> {
+    const row = this.getDb().prepare("SELECT * FROM model_profiles WHERE name = ?").get(name) as Row | undefined;
+    return row ? mapModelProfileRow(row) : null;
+  }
+
+  public async getDefaultModelProfile(): Promise<ModelProfileRecord | null> {
+    const row = this.getDb().prepare("SELECT * FROM model_profiles WHERE is_default = 1 LIMIT 1").get() as Row | undefined;
+    return row ? mapModelProfileRow(row) : null;
+  }
+
+  public async setDefaultModelProfile(name: string | null): Promise<ModelProfileRecord | null> {
+    const database = this.getDb();
+    const now = new Date().toISOString();
+
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      database.prepare("UPDATE model_profiles SET is_default = 0, updated_at = ? WHERE is_default = 1").run(now);
+      if (name === null) {
+        database.exec("COMMIT");
+        return null;
+      }
+
+      const result = database
+        .prepare("UPDATE model_profiles SET is_default = 1, updated_at = ? WHERE name = ?")
+        .run(now, name);
+      if (result.changes === 0) {
+        throw new Error(`Unknown model profile ${name}`);
+      }
+
+      const row = database.prepare("SELECT * FROM model_profiles WHERE name = ?").get(name) as Row | undefined;
+      if (!row) {
+        throw new Error(`Failed to load model profile ${name} after setting default`);
+      }
+
+      database.exec("COMMIT");
+      return mapModelProfileRow(row);
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  public async deleteModelProfile(name: string): Promise<ModelProfileRecord | null> {
+    const database = this.getDb();
+    const existing = database.prepare("SELECT * FROM model_profiles WHERE name = ?").get(name) as Row | undefined;
+    if (!existing) {
+      return null;
+    }
+
+    const tenantReferenceCount = asNumber(
+      (database
+        .prepare("SELECT COUNT(*) AS count FROM tenants WHERE model_profile_name = ?")
+        .get(name) as Row).count
+    );
+    if (tenantReferenceCount > 0) {
+      throw new Error(`Cannot delete model profile "${name}" because ${tenantReferenceCount} tenant(s) still reference it`);
+    }
+
+    database.prepare("DELETE FROM model_profiles WHERE name = ?").run(name);
+    return mapModelProfileRow(existing);
+  }
+
   public async upsertTenant(tenant: TenantConfig): Promise<TenantRecord> {
     const database = this.getDb();
+    const existingRow = database
+      .prepare("SELECT * FROM tenants WHERE base_url = ? AND project_id = ?")
+      .get(tenant.baseUrl, tenant.projectId) as Row | undefined;
+    const existing = existingRow ? mapTenantRow(existingRow) : null;
+    const resolvedModelProfileName = tenant.modelProfileName === undefined
+      ? (existing?.modelProfileName ?? null)
+      : tenant.modelProfileName;
+    if (resolvedModelProfileName) {
+      assertModelProfileExists(database, resolvedModelProfileName);
+    }
+
     const statement = database.prepare(`
       INSERT INTO tenants (
         id,
@@ -205,6 +382,7 @@ export class SqliteStorage implements Storage {
         webhook_secret,
         bot_user_id,
         bot_username,
+        model_profile_name,
         created_at,
         updated_at
       )
@@ -217,6 +395,7 @@ export class SqliteStorage implements Storage {
         :webhookSecret,
         :botUserId,
         :botUsername,
+        :modelProfileName,
         :createdAt,
         :updatedAt
       )
@@ -226,6 +405,7 @@ export class SqliteStorage implements Storage {
         webhook_secret = excluded.webhook_secret,
         bot_user_id = excluded.bot_user_id,
         bot_username = excluded.bot_username,
+        model_profile_name = excluded.model_profile_name,
         updated_at = excluded.updated_at
     `);
 
@@ -239,6 +419,7 @@ export class SqliteStorage implements Storage {
       webhookSecret: tenant.webhookSecret,
       botUserId: tenant.botUserId ?? null,
       botUsername: tenant.botUsername ?? null,
+      modelProfileName: resolvedModelProfileName,
       createdAt: now,
       updatedAt: now
     });
@@ -268,6 +449,32 @@ export class SqliteStorage implements Storage {
   public async getTenantById(tenantId: string): Promise<TenantRecord | null> {
     const row = this.getDb().prepare("SELECT * FROM tenants WHERE id = ?").get(tenantId) as Row | undefined;
     return row ? mapTenantRow(row) : null;
+  }
+
+  public async setTenantModelProfile(
+    baseUrl: string,
+    projectId: number,
+    modelProfileName: string | null
+  ): Promise<TenantRecord> {
+    const database = this.getDb();
+    const tenantKey = createTenantKey(baseUrl, projectId);
+    if (modelProfileName) {
+      assertModelProfileExists(database, modelProfileName);
+    }
+
+    const result = database
+      .prepare("UPDATE tenants SET model_profile_name = ?, updated_at = ? WHERE tenant_key = ?")
+      .run(modelProfileName, new Date().toISOString(), tenantKey);
+    if (result.changes === 0) {
+      throw new Error(`Tenant not found for ${baseUrl} :: ${projectId}`);
+    }
+
+    const row = database.prepare("SELECT * FROM tenants WHERE tenant_key = ?").get(tenantKey) as Row | undefined;
+    if (!row) {
+      throw new Error(`Failed to reload tenant ${baseUrl} :: ${projectId}`);
+    }
+
+    return mapTenantRow(row);
   }
 
   public async getTenantDeletionSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null> {
@@ -505,15 +712,30 @@ export class SqliteStorage implements Storage {
           tenant_id,
           provider,
           model,
+          model_profile_name,
+          provider_base_url,
+          provider_type,
+          text_generation_model,
           status,
           result_json,
           error,
           started_at,
           finished_at
         )
-        VALUES (?, ?, ?, ?, ?, 'in_progress', NULL, NULL, ?, NULL)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_progress', NULL, NULL, ?, NULL)
       `)
-      .run(reviewRunId, input.reviewJobId, input.tenantId, input.provider, input.model, now);
+      .run(
+        reviewRunId,
+        input.reviewJobId,
+        input.tenantId,
+        input.provider,
+        input.model,
+        input.modelProfileName,
+        input.providerBaseUrl,
+        input.providerType,
+        input.textGenerationModel,
+        now
+      );
 
     return {
       id: reviewRunId,
@@ -521,6 +743,10 @@ export class SqliteStorage implements Storage {
       tenantId: input.tenantId,
       provider: input.provider,
       model: input.model,
+      modelProfileName: input.modelProfileName,
+      providerBaseUrl: input.providerBaseUrl,
+      providerType: input.providerType,
+      textGenerationModel: input.textGenerationModel,
       status: "in_progress",
       resultJson: null,
       error: null,
@@ -938,6 +1164,68 @@ export class SqliteStorage implements Storage {
   }
 }
 
+function mapModelProfileRow(row: Row): ModelProfileRecord {
+  return {
+    name: asString(row.name),
+    providerBaseUrl: asNullableString(row.provider_base_url),
+    providerType: asNullableProviderType(row.provider_type),
+    wireApi: asNullableWireApi(row.wire_api),
+    authToken: asNullableString(row.auth_token),
+    reviewModel: asNullableString(row.review_model),
+    textGenerationModel: asNullableString(row.text_generation_model),
+    isDefault: asBoolean(row.is_default),
+    createdAt: asString(row.created_at),
+    updatedAt: asString(row.updated_at)
+  };
+}
+
+function resolveModelProfileUpsertInput(
+  existing: ModelProfileRecord | null,
+  input: UpsertModelProfileInput
+): {
+  name: string;
+  providerBaseUrl: string | null;
+  providerType: "openai" | "azure" | "anthropic" | null;
+  wireApi: "completions" | "responses" | null;
+  authToken: string | null;
+  reviewModel: string | null;
+  textGenerationModel: string | null;
+  isDefault: boolean;
+} {
+  const providerBaseUrl = input.providerBaseUrl !== undefined
+    ? input.providerBaseUrl
+    : (existing?.providerBaseUrl ?? null);
+  const providerType = providerBaseUrl === null && input.providerType === undefined
+    ? null
+    : (input.providerType !== undefined ? input.providerType : (existing?.providerType ?? null));
+  const resolved = {
+    name: input.name,
+    providerBaseUrl,
+    providerType,
+    wireApi: input.wireApi !== undefined ? input.wireApi : (existing?.wireApi ?? null),
+    authToken: input.authToken !== undefined ? input.authToken : (existing?.authToken ?? null),
+    reviewModel: input.reviewModel !== undefined ? input.reviewModel : (existing?.reviewModel ?? null),
+    textGenerationModel: input.textGenerationModel !== undefined
+      ? input.textGenerationModel
+      : (existing?.textGenerationModel ?? null),
+    isDefault: input.isDefault !== undefined ? input.isDefault : (existing?.isDefault ?? false)
+  };
+
+  if (!resolved.providerBaseUrl && resolved.providerType) {
+    throw new Error("provider type requires --base-url");
+  }
+
+  if (!resolved.providerBaseUrl && resolved.wireApi) {
+    throw new Error("wire api requires --base-url");
+  }
+
+  if (resolved.providerBaseUrl && !resolved.reviewModel) {
+    throw new Error("custom providers require --review-model");
+  }
+
+  return resolved;
+}
+
 function mapTenantRow(row: Row): TenantRecord {
   return {
     id: asString(row.id),
@@ -948,6 +1236,7 @@ function mapTenantRow(row: Row): TenantRecord {
     webhookSecret: asString(row.webhook_secret),
     botUserId: asNullableNumber(row.bot_user_id),
     botUsername: asNullableString(row.bot_username),
+    modelProfileName: asNullableString(row.model_profile_name),
     createdAt: asString(row.created_at),
     updatedAt: asString(row.updated_at)
   };
@@ -1100,8 +1389,41 @@ function asNullableNumber(value: unknown): number | null {
   return asNumber(value);
 }
 
+function asNullableProviderType(value: unknown): "openai" | "azure" | "anthropic" | null {
+  const parsed = asNullableString(value);
+  if (parsed === null) {
+    return null;
+  }
+
+  if (parsed === "openai" || parsed === "azure" || parsed === "anthropic") {
+    return parsed;
+  }
+
+  throw new Error(`Expected provider type row value, received ${parsed}`);
+}
+
+function asNullableWireApi(value: unknown): "completions" | "responses" | null {
+  const parsed = asNullableString(value);
+  if (parsed === null) {
+    return null;
+  }
+
+  if (parsed === "completions" || parsed === "responses") {
+    return parsed;
+  }
+
+  throw new Error(`Expected wire api row value, received ${parsed}`);
+}
+
 function asBoolean(value: unknown): boolean {
   return asNumber(value) === 1;
+}
+
+function assertModelProfileExists(database: DatabaseSync, name: string): void {
+  const row = database.prepare("SELECT name FROM model_profiles WHERE name = ?").get(name) as Row | undefined;
+  if (!row) {
+    throw new Error(`Unknown model profile ${name}`);
+  }
 }
 
 function ensureColumn(database: DatabaseSync, tableName: string, columnName: string, definition: string): boolean {
@@ -1372,6 +1694,10 @@ function _mapReviewRunRow(row: Row): ReviewRunRecord {
     tenantId: asString(row.tenant_id),
     provider: asString(row.provider),
     model: asNullableString(row.model),
+    modelProfileName: asNullableString(row.model_profile_name),
+    providerBaseUrl: asNullableString(row.provider_base_url),
+    providerType: asNullableProviderType(row.provider_type),
+    textGenerationModel: asNullableString(row.text_generation_model),
     status: asString(row.status) as ReviewRunRecord["status"],
     resultJson: asNullableString(row.result_json),
     error: asNullableString(row.error),

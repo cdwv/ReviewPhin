@@ -17,7 +17,7 @@ import { getProjectMemoryContentLength, updateProjectMemory } from "../memory/pr
 import { renderPrompt } from "../prompts/instruction-renderer.js";
 import { CopilotRunLog } from "./copilot-run-log.js";
 import { buildReviewPrompt } from "../prompts/prompt-builders.js";
-import type { ReviewProvider } from "./provider.js";
+import type { ReviewProvider, ReviewProviderConfig, ReviewProviderFactory } from "./provider.js";
 import type { ReviewContext, ReviewResult } from "./types.js";
 import { reviewResultSchema } from "./types.js";
 
@@ -26,7 +26,8 @@ const PROJECT_MEMORY_TOOL_NAME = "update_project_memory";
 interface CopilotReviewProviderOptions {
   logger: Logger;
   model?: string | undefined;
-  textGenerationModel: string;
+  textGenerationModel?: string | undefined;
+  authToken?: string | undefined;
   provider?: ProviderConfig | undefined;
   sdkLogLevel?: "none" | "error" | "warning" | "info" | "debug" | "all" | undefined;
   cliPath?: string | undefined;
@@ -40,7 +41,8 @@ export class CopilotReviewProvider implements ReviewProvider {
 
   private readonly logger: Logger;
   private readonly model: string | undefined;
-  private readonly textGenerationModel: string;
+  private readonly textGenerationModel: string | undefined;
+  private readonly authToken: string | undefined;
   private readonly provider: ProviderConfig | undefined;
   private readonly sdkLogLevel: CopilotReviewProviderOptions["sdkLogLevel"];
   private readonly cliPath: string | undefined;
@@ -53,6 +55,7 @@ export class CopilotReviewProvider implements ReviewProvider {
     this.logger = options.logger;
     this.model = options.model;
     this.textGenerationModel = options.textGenerationModel;
+    this.authToken = options.authToken;
     this.provider = options.provider;
     this.sdkLogLevel = options.sdkLogLevel;
     this.cliPath = options.cliPath;
@@ -62,6 +65,7 @@ export class CopilotReviewProvider implements ReviewProvider {
     this.projectMemoryCoalescer = new ProjectMemoryTextCoalescer({
       logger: this.logger,
       model: this.textGenerationModel,
+      authToken: this.authToken,
       provider: this.provider,
       sdkLogLevel: this.sdkLogLevel,
       cliPath: this.cliPath,
@@ -81,6 +85,7 @@ export class CopilotReviewProvider implements ReviewProvider {
       model: this.model
     });
     const client = new CopilotClient({
+      ...(this.authToken ? { gitHubToken: this.authToken } : {}),
       ...(this.sdkLogLevel ? { logLevel: this.sdkLogLevel } : {}),
       ...(this.cliPath ? { cliPath: this.cliPath } : {})
     });
@@ -160,6 +165,7 @@ export class CopilotReviewProvider implements ReviewProvider {
         workingDirectory: effectiveContext.workspacePath,
         ...(this.model ? { model: this.model } : {}),
         ...(this.provider ? { provider: this.provider } : {}),
+        ...(this.provider ? { enableConfigDiscovery: false } : {}),
         tools,
         availableTools: reviewAuthorTools,
         customAgents: [
@@ -263,6 +269,56 @@ export class CopilotReviewProvider implements ReviewProvider {
       );
       return input.entries;
     }
+  }
+}
+
+interface CopilotReviewProviderFactoryOptions {
+  logger: Logger;
+  sdkLogLevel?: "none" | "error" | "warning" | "info" | "debug" | "all" | undefined;
+  cliPath?: string | undefined;
+  runLogDir: string;
+  timeoutMs: number;
+  maxPromptMemoryChars: number;
+}
+
+export class CopilotReviewProviderFactory implements ReviewProviderFactory {
+  private readonly logger: Logger;
+  private readonly sdkLogLevel: CopilotReviewProviderFactoryOptions["sdkLogLevel"];
+  private readonly cliPath: string | undefined;
+  private readonly runLogDir: string;
+  private readonly timeoutMs: number;
+  private readonly maxPromptMemoryChars: number;
+
+  public constructor(options: CopilotReviewProviderFactoryOptions) {
+    this.logger = options.logger;
+    this.sdkLogLevel = options.sdkLogLevel;
+    this.cliPath = options.cliPath;
+    this.runLogDir = options.runLogDir;
+    this.timeoutMs = options.timeoutMs;
+    this.maxPromptMemoryChars = options.maxPromptMemoryChars;
+  }
+
+  public createProvider(config: ReviewProviderConfig): ReviewProvider {
+    return new CopilotReviewProvider({
+      logger: this.logger.child({
+        modelProfileName: config.modelProfileName,
+        selectionSource: config.selectionSource,
+        reviewModel: config.reviewModel,
+        textGenerationModel: config.textGenerationModel,
+        hasAuthToken: Boolean(config.authToken),
+        providerBaseUrl: config.providerBaseUrl,
+        providerType: config.providerType
+      }),
+      model: config.reviewModel ?? undefined,
+      textGenerationModel: config.textGenerationModel ?? undefined,
+      authToken: config.provider ? undefined : (config.authToken ?? undefined),
+      provider: config.provider,
+      sdkLogLevel: this.sdkLogLevel,
+      cliPath: this.cliPath,
+      runLogDir: this.runLogDir,
+      timeoutMs: this.timeoutMs,
+      maxPromptMemoryChars: this.maxPromptMemoryChars
+    });
   }
 }
 

@@ -484,7 +484,11 @@ describe("SqliteStorage review findings", () => {
       reviewJobId: job.job.id,
       tenantId: tenant.id,
       provider: "copilot-sdk",
-      model: null
+      model: null,
+      modelProfileName: null,
+      providerBaseUrl: null,
+      providerType: null,
+      textGenerationModel: null
     });
 
     await storage.replaceReviewFindings(run.id, [
@@ -514,6 +518,102 @@ describe("SqliteStorage review findings", () => {
 });
 
 describe("SqliteStorage tenants", () => {
+  it("stores model profiles, tenant assignments, and resolved review run config", async () => {
+    const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
+    const storage = new SqliteStorage({ databasePath });
+    await storage.initialize();
+
+    const defaultProfile = await storage.upsertModelProfile({
+      name: "native-default",
+      providerBaseUrl: null,
+      providerType: null,
+      wireApi: null,
+      authToken: null,
+      reviewModel: "gpt-5.4",
+      textGenerationModel: "gpt-5.4-mini",
+      isDefault: true
+    });
+    await storage.upsertModelProfile({
+      name: "byok",
+      providerBaseUrl: "https://llm.example.com/v1",
+      providerType: "openai",
+      wireApi: "responses",
+      authToken: "secret-token",
+      reviewModel: "custom-review",
+      textGenerationModel: "custom-text",
+      isDefault: false
+    });
+
+    const tenant = await storage.upsertTenant({
+      baseUrl: "https://gitlab.example.com",
+      projectId: 123,
+      apiToken: "token",
+      webhookSecret: "secret",
+      botUserId: 999,
+      botUsername: "review-bot",
+      modelProfileName: "byok"
+    });
+    const job = await storage.createOrGetReviewJob({
+      tenantId: tenant.id,
+      dedupeKey: "profiled-job",
+      projectId: tenant.projectId,
+      mergeRequestIid: 7,
+      noteId: 55,
+      headSha: "head-profiled",
+      payloadJson: "{}"
+    });
+    const run = await storage.createReviewRun({
+      reviewJobId: job.job.id,
+      tenantId: tenant.id,
+      provider: "copilot-sdk",
+      model: "custom-review",
+      modelProfileName: "byok",
+      providerBaseUrl: "https://llm.example.com/v1",
+      providerType: "openai",
+      textGenerationModel: "custom-text"
+    });
+
+    expect(defaultProfile.isDefault).toBe(true);
+    expect((await storage.getDefaultModelProfile())?.name).toBe("native-default");
+    expect(await storage.listModelProfiles()).toHaveLength(2);
+    expect(tenant.modelProfileName).toBe("byok");
+    expect((await storage.getModelProfileByName("byok"))?.wireApi).toBe("responses");
+    expect(run).toMatchObject({
+      model: "custom-review",
+      modelProfileName: "byok",
+      providerBaseUrl: "https://llm.example.com/v1",
+      providerType: "openai",
+      textGenerationModel: "custom-text"
+    });
+  });
+
+  it("refuses to delete a model profile while a tenant still references it", async () => {
+    const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
+    const storage = new SqliteStorage({ databasePath });
+    await storage.initialize();
+
+    await storage.upsertModelProfile({
+      name: "shared-profile",
+      providerBaseUrl: null,
+      providerType: null,
+      authToken: null,
+      reviewModel: "gpt-5.4",
+      textGenerationModel: null,
+      isDefault: false
+    });
+    await storage.upsertTenant({
+      baseUrl: "https://gitlab.example.com",
+      projectId: 123,
+      apiToken: "token",
+      webhookSecret: "secret",
+      botUserId: 999,
+      botUsername: "review-bot",
+      modelProfileName: "shared-profile"
+    });
+
+    await expect(storage.deleteModelProfile("shared-profile")).rejects.toThrow("still reference");
+  });
+
   it("deletes a tenant by normalized base URL and project ID", async () => {
     const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
     const storage = new SqliteStorage({ databasePath });
@@ -592,7 +692,11 @@ describe("SqliteStorage tenants", () => {
       reviewJobId: reviewJob.job.id,
       tenantId: tenant.id,
       provider: "copilot-sdk",
-      model: null
+      model: null,
+      modelProfileName: null,
+      providerBaseUrl: null,
+      providerType: null,
+      textGenerationModel: null
     });
     await storage.replaceReviewFindings(reviewRun.id, [
       {
@@ -751,7 +855,11 @@ async function createCompletedRun(
     reviewJobId: job.job.id,
     tenantId,
     provider: "copilot-sdk",
-    model: null
+    model: null,
+    modelProfileName: null,
+    providerBaseUrl: null,
+    providerType: null,
+    textGenerationModel: null
   });
   await storage.completeReviewRun(
     run.id,
@@ -795,7 +903,11 @@ async function createFailedRun(
     reviewJobId: job.job.id,
     tenantId,
     provider: "copilot-sdk",
-    model: null
+    model: null,
+    modelProfileName: null,
+    providerBaseUrl: null,
+    providerType: null,
+    textGenerationModel: null
   });
   await storage.replaceReviewFindings(
     run.id,

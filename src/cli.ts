@@ -5,8 +5,9 @@ import { pathToFileURL } from "node:url";
 
 import { z } from "zod";
 
-import { loadConfig, tenantConfigSchema } from "./config.js";
+import { loadConfig, modelProfileNameSchema, tenantConfigSchema } from "./config.js";
 import { loadLocalEnvFile } from "./env.js";
+import { maskSecret } from "./review/model-profiles.js";
 import { readCopilotRunMetrics, type PremiumRequestsByModelMetric } from "./review/copilot-run-metrics.js";
 import { SqliteStorage } from "./storage/sqlite-storage.js";
 import type { TenantDeletionSummary } from "./storage/types.js";
@@ -68,6 +69,36 @@ const tenantLookupSchema = tenantConfigSchema
     databasePath: z.string().min(1).optional()
   });
 
+const tenantProfileSchema = tenantLookupSchema.extend({
+  modelProfileName: modelProfileNameSchema
+});
+
+const modelProfileSchema = z.object({
+  name: modelProfileNameSchema,
+  providerBaseUrl: z.string().url().optional(),
+  providerType: z.enum(["openai", "azure", "anthropic"]).optional(),
+  wireApi: z.enum(["completions", "responses"]).optional(),
+  authToken: z.string().min(1).optional(),
+  reviewModel: z.string().min(1).optional(),
+  textGenerationModel: z.string().min(1).optional(),
+  isDefault: z.boolean().optional(),
+  databasePath: z.string().min(1).optional()
+});
+
+const clearableModelProfileFields = [
+  "base-url",
+  "provider-type",
+  "wire-api",
+  "auth-token",
+  "review-model",
+  "text-generation-model"
+] as const;
+
+const modelProfileLookupSchema = z.object({
+  name: modelProfileNameSchema,
+  databasePath: z.string().min(1).optional()
+});
+
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
   loadLocalEnvFile();
 
@@ -83,6 +114,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       webhookSecret: options["webhook-secret"],
       botUserId: options["bot-user-id"],
       botUsername: options["bot-username"],
+      modelProfileName: options["model-profile"],
       databasePath: options["database-path"]
     });
 
@@ -97,7 +129,8 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
         "Tenant saved.",
         `id: ${savedTenant.id}`,
         `key: ${savedTenant.key}`,
-        `project: ${savedTenant.baseUrl} :: ${savedTenant.projectId}`
+        `project: ${savedTenant.baseUrl} :: ${savedTenant.projectId}`,
+        `modelProfile: ${savedTenant.modelProfileName ?? "(none)"}`
       ].join("\n") + "\n"
     );
     return 0;
@@ -123,11 +156,62 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
           baseUrl: tenant.baseUrl,
           projectId: tenant.projectId,
           botUserId: tenant.botUserId,
-          botUsername: tenant.botUsername
+          botUsername: tenant.botUsername,
+          modelProfileName: tenant.modelProfileName
         })),
         null,
         2
       )}\n`
+    );
+    return 0;
+  }
+
+  if (resource === "tenant" && action === "set-profile") {
+    const config = loadConfig();
+    const tenant = tenantProfileSchema.parse({
+      baseUrl: options["base-url"],
+      projectId: options["project-id"],
+      modelProfileName: options["model-profile"],
+      databasePath: options["database-path"]
+    });
+    const storage = new SqliteStorage({
+      databasePath: tenant.databasePath ?? config.databasePath
+    });
+    await storage.initialize();
+
+    const updatedTenant = await storage.setTenantModelProfile(tenant.baseUrl, tenant.projectId, tenant.modelProfileName);
+    process.stdout.write(
+      [
+        "Tenant profile updated.",
+        `id: ${updatedTenant.id}`,
+        `key: ${updatedTenant.key}`,
+        `project: ${updatedTenant.baseUrl} :: ${updatedTenant.projectId}`,
+        `modelProfile: ${updatedTenant.modelProfileName ?? "(none)"}`
+      ].join("\n") + "\n"
+    );
+    return 0;
+  }
+
+  if (resource === "tenant" && action === "clear-profile") {
+    const config = loadConfig();
+    const tenant = tenantLookupSchema.parse({
+      baseUrl: options["base-url"],
+      projectId: options["project-id"],
+      databasePath: options["database-path"]
+    });
+    const storage = new SqliteStorage({
+      databasePath: tenant.databasePath ?? config.databasePath
+    });
+    await storage.initialize();
+
+    const updatedTenant = await storage.setTenantModelProfile(tenant.baseUrl, tenant.projectId, null);
+    process.stdout.write(
+      [
+        "Tenant profile cleared.",
+        `id: ${updatedTenant.id}`,
+        `key: ${updatedTenant.key}`,
+        `project: ${updatedTenant.baseUrl} :: ${updatedTenant.projectId}`
+      ].join("\n") + "\n"
     );
     return 0;
   }
@@ -186,6 +270,136 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
         `project: ${deletedSummary.tenant.baseUrl} :: ${deletedSummary.tenant.projectId}`
       ].join("\n") + "\n"
     );
+    return 0;
+  }
+
+  if (resource === "model-profile" && action === "add") {
+    const config = loadConfig();
+    assertNoConflictingModelProfileFieldOptions(options);
+    const profile = modelProfileSchema.parse({
+      name: options.name,
+      providerBaseUrl: options["base-url"],
+      providerType: options["provider-type"],
+      wireApi: options["wire-api"],
+      authToken: options["auth-token"],
+      reviewModel: options["review-model"],
+      textGenerationModel: options["text-generation-model"],
+      isDefault: "default" in options ? options.default === true || options.default === "true" : undefined,
+      databasePath: options["database-path"]
+    });
+    const storage = new SqliteStorage({
+      databasePath: profile.databasePath ?? config.databasePath
+    });
+    await storage.initialize();
+
+    const clearBaseUrl = options["clear-base-url"] === true || options["clear-base-url"] === "true";
+    const clearProviderType =
+      clearBaseUrl || options["clear-provider-type"] === true || options["clear-provider-type"] === "true";
+    const clearWireApi = clearBaseUrl || options["clear-wire-api"] === true || options["clear-wire-api"] === "true";
+
+    const savedProfile = await storage.upsertModelProfile({
+      name: profile.name,
+      providerBaseUrl: clearBaseUrl ? null : ("base-url" in options ? (profile.providerBaseUrl ?? null) : undefined),
+      providerType: clearProviderType ? null : ("provider-type" in options ? (profile.providerType ?? null) : undefined),
+      wireApi: clearWireApi ? null : ("wire-api" in options ? (profile.wireApi ?? null) : undefined),
+      authToken:
+        options["clear-auth-token"] === true || options["clear-auth-token"] === "true"
+          ? null
+          : ("auth-token" in options ? (profile.authToken ?? null) : undefined),
+      reviewModel:
+        options["clear-review-model"] === true || options["clear-review-model"] === "true"
+          ? null
+          : ("review-model" in options ? (profile.reviewModel ?? null) : undefined),
+      textGenerationModel:
+        options["clear-text-generation-model"] === true || options["clear-text-generation-model"] === "true"
+          ? null
+          : ("text-generation-model" in options ? (profile.textGenerationModel ?? null) : undefined),
+      isDefault: "default" in options ? (profile.isDefault ?? false) : undefined
+    });
+    process.stdout.write(formatModelProfileSummary("Model profile saved.", savedProfile));
+    return 0;
+  }
+
+  if (resource === "model-profile" && action === "list") {
+    const config = loadConfig();
+    const databasePath = typeof options["database-path"] === "string" ? options["database-path"] : config.databasePath;
+    const storage = new SqliteStorage({ databasePath });
+    await storage.initialize();
+
+    const profiles = await storage.listModelProfiles();
+    if (profiles.length === 0) {
+      process.stdout.write("No model profiles configured.\n");
+      return 0;
+    }
+
+    process.stdout.write(
+      `${JSON.stringify(
+        profiles.map((profile) => ({
+          name: profile.name,
+          providerBaseUrl: profile.providerBaseUrl,
+          providerType: profile.providerType,
+          wireApi: profile.wireApi,
+          reviewModel: profile.reviewModel,
+          textGenerationModel: profile.textGenerationModel,
+          isDefault: profile.isDefault,
+          authToken: maskSecret(profile.authToken)
+        })),
+        null,
+        2
+      )}\n`
+    );
+    return 0;
+  }
+
+  if (resource === "model-profile" && action === "remove") {
+    const config = loadConfig();
+    const profile = modelProfileLookupSchema.parse({
+      name: options.name,
+      databasePath: options["database-path"]
+    });
+    const storage = new SqliteStorage({
+      databasePath: profile.databasePath ?? config.databasePath
+    });
+    await storage.initialize();
+
+    const removedProfile = await storage.deleteModelProfile(profile.name);
+    if (!removedProfile) {
+      process.stdout.write(`Model profile ${profile.name} not found.\n`);
+      return 1;
+    }
+
+    process.stdout.write(formatModelProfileSummary("Model profile removed.", removedProfile));
+    return 0;
+  }
+
+  if (resource === "model-profile" && action === "set-default") {
+    const config = loadConfig();
+    const profile = modelProfileLookupSchema.parse({
+      name: options.name,
+      databasePath: options["database-path"]
+    });
+    const storage = new SqliteStorage({
+      databasePath: profile.databasePath ?? config.databasePath
+    });
+    await storage.initialize();
+
+    const updatedProfile = await storage.setDefaultModelProfile(profile.name);
+    if (!updatedProfile) {
+      process.stdout.write("No model profile selected as default.\n");
+      return 1;
+    }
+
+    process.stdout.write(formatModelProfileSummary("Default model profile updated.", updatedProfile));
+    return 0;
+  }
+
+  if (resource === "model-profile" && action === "clear-default") {
+    const config = loadConfig();
+    const databasePath = typeof options["database-path"] === "string" ? options["database-path"] : config.databasePath;
+    const storage = new SqliteStorage({ databasePath });
+    await storage.initialize();
+    await storage.setDefaultModelProfile(null);
+    process.stdout.write("Default model profile cleared.\n");
     return 0;
   }
 
@@ -254,12 +468,60 @@ function printHelp(): void {
   process.stdout.write(
       [
         "Usage:",
-        "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> --bot-username <name> [--bot-user-id <id>] [--database-path <path>]",
+        "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> --bot-username <name> [--bot-user-id <id>] [--model-profile <name>] [--database-path <path>]",
         "  pnpm cli tenant list [--database-path <path>]",
+        "  pnpm cli tenant set-profile --base-url <url> --project-id <id> --model-profile <name> [--database-path <path>]",
+        "  pnpm cli tenant clear-profile --base-url <url> --project-id <id> [--database-path <path>]",
         "  pnpm cli tenant remove --base-url <url> --project-id <id> [--database-path <path>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
+        "  pnpm cli model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--default] [--database-path <path>]",
+        "  pnpm cli model-profile list [--database-path <path>]",
+        "  pnpm cli model-profile remove --name <name> [--database-path <path>]",
+        "  pnpm cli model-profile set-default --name <name> [--database-path <path>]",
+        "  pnpm cli model-profile clear-default [--database-path <path>]",
         "  pnpm cli metrics sessions [--run-log-dir <path>]"
       ].join("\n") + "\n"
     );
+}
+
+function formatModelProfileSummary(
+  header: string,
+  profile: {
+    name: string;
+    providerBaseUrl: string | null;
+    providerType: string | null;
+    wireApi: string | null;
+    reviewModel: string | null;
+    textGenerationModel: string | null;
+    isDefault: boolean;
+    authToken: string | null;
+  }
+): string {
+  return [
+    header,
+    `name: ${profile.name}`,
+    `providerBaseUrl: ${profile.providerBaseUrl ?? "(none)"}`,
+    `providerType: ${profile.providerType ?? "(native)"}`,
+    `wireApi: ${profile.providerBaseUrl ? (profile.wireApi ?? "responses") : "(native)"}`,
+    `reviewModel: ${profile.reviewModel ?? "(default)"}`,
+    `textGenerationModel: ${profile.textGenerationModel ?? "(default)"}`,
+    `default: ${profile.isDefault ? "yes" : "no"}`,
+    `authToken: ${maskSecret(profile.authToken) ?? "(none)"}`
+  ].join("\n") + "\n";
+}
+
+function assertNoConflictingModelProfileFieldOptions(options: Record<string, string | boolean>): void {
+  for (const field of clearableModelProfileFields) {
+    const clearOption = `clear-${field}`;
+    if (!(field in options) || !(clearOption in options)) {
+      continue;
+    }
+
+    throw new Error(`Cannot use --${field} and --${clearOption} together`);
+  }
+
+  if ("clear-base-url" in options && ("provider-type" in options || "wire-api" in options)) {
+    throw new Error("Cannot combine --clear-base-url with --provider-type or --wire-api");
+  }
 }
 
 async function collectTenantArtifactSummary(

@@ -44,7 +44,9 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prompts ./prompts
 
-RUN mkdir -p /app/data /app/tmp
+RUN mkdir -p /app/data /app/tmp \
+  && printf '#!/bin/sh\nexec node /app/dist/cli.js "$@"\n' > /usr/local/bin/reviewphin \
+  && chmod +x /usr/local/bin/reviewphin
 
 EXPOSE 3000
 

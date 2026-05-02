@@ -112,6 +112,315 @@ describe("tenant CLI", () => {
     ).rejects.toThrow();
   });
 
+  it("adds and lists model profiles with masked auth tokens", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+
+    const addExitCode = await runCli([
+      "model-profile",
+      "add",
+      "--database-path",
+      databasePath,
+      "--name",
+      "byok",
+      "--base-url",
+      "https://llm.example.com/v1",
+      "--provider-type",
+      "openai",
+      "--wire-api",
+      "completions",
+      "--auth-token",
+      "super-secret-token",
+      "--review-model",
+      "custom-review",
+      "--text-generation-model",
+      "custom-text",
+      "--default"
+    ]);
+    expect(addExitCode).toBe(0);
+
+    let stdout = "";
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      stdout += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+      return true;
+    });
+
+    const listExitCode = await runCli([
+      "model-profile",
+      "list",
+      "--database-path",
+      databasePath
+    ]);
+
+    stdoutSpy.mockRestore();
+
+    expect(listExitCode).toBe(0);
+    expect(stdout).toContain('"name": "byok"');
+    expect(stdout).toContain('"isDefault": true');
+    expect(stdout).toContain('"wireApi": "completions"');
+    expect(stdout).not.toContain("super-secret-token");
+  });
+
+  it("accepts a native Copilot auth token without a custom provider base URL", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+
+    const exitCode = await runCli([
+      "model-profile",
+      "add",
+      "--database-path",
+      databasePath,
+      "--name",
+      "native-token",
+      "--auth-token",
+      "github-token",
+      "--review-model",
+      "gpt-5.4"
+    ]);
+
+    expect(exitCode).toBe(0);
+
+    const storage = new SqliteStorage({ databasePath });
+    await storage.initialize();
+    expect(await storage.getModelProfileByName("native-token")).toMatchObject({
+      name: "native-token",
+      providerBaseUrl: null,
+      authToken: "github-token",
+      reviewModel: "gpt-5.4"
+    });
+  });
+
+  it("preserves existing model profile fields when add updates only one flag", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+
+    await runCli([
+      "model-profile",
+      "add",
+      "--database-path",
+      databasePath,
+      "--name",
+      "byok",
+      "--base-url",
+      "https://llm.example.com/v1",
+      "--provider-type",
+      "openai",
+      "--auth-token",
+      "super-secret-token",
+      "--review-model",
+      "custom-review",
+      "--text-generation-model",
+      "custom-text"
+    ]);
+
+    const exitCode = await runCli([
+      "model-profile",
+      "add",
+      "--database-path",
+      databasePath,
+      "--name",
+      "byok",
+      "--default"
+    ]);
+
+    expect(exitCode).toBe(0);
+
+    const storage = new SqliteStorage({ databasePath });
+    await storage.initialize();
+    expect(await storage.getModelProfileByName("byok")).toMatchObject({
+      name: "byok",
+      providerBaseUrl: "https://llm.example.com/v1",
+      providerType: "openai",
+      authToken: "super-secret-token",
+      reviewModel: "custom-review",
+      textGenerationModel: "custom-text",
+      isDefault: true
+    });
+  });
+
+  it("clears nullable model profile fields explicitly", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+
+    await runCli([
+      "model-profile",
+      "add",
+      "--database-path",
+      databasePath,
+      "--name",
+      "byok",
+      "--base-url",
+      "https://llm.example.com/v1",
+      "--provider-type",
+      "openai",
+      "--wire-api",
+      "completions",
+      "--auth-token",
+      "super-secret-token",
+      "--review-model",
+      "custom-review",
+      "--text-generation-model",
+      "custom-text"
+    ]);
+
+    const exitCode = await runCli([
+      "model-profile",
+      "add",
+      "--database-path",
+      databasePath,
+      "--name",
+      "byok",
+      "--clear-base-url",
+      "--clear-auth-token",
+      "--clear-text-generation-model"
+    ]);
+
+    expect(exitCode).toBe(0);
+
+    const storage = new SqliteStorage({ databasePath });
+    await storage.initialize();
+    expect(await storage.getModelProfileByName("byok")).toMatchObject({
+      name: "byok",
+      providerBaseUrl: null,
+      providerType: null,
+      wireApi: null,
+      authToken: null,
+      reviewModel: "custom-review",
+      textGenerationModel: null
+    });
+  });
+
+  it("assigns and clears tenant model profiles through the CLI", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+
+    await runCli([
+      "model-profile",
+      "add",
+      "--database-path",
+      databasePath,
+      "--name",
+      "native-gpt5",
+      "--review-model",
+      "gpt-5.4"
+    ]);
+    await runCli([
+      "tenant",
+      "add",
+      "--database-path",
+      databasePath,
+      "--base-url",
+      "https://gitlab.example.com",
+      "--project-id",
+      "123",
+      "--api-token",
+      "glpat-xxxxxxxx",
+      "--webhook-secret",
+      "replace-me",
+      "--bot-user-id",
+      "999",
+      "--bot-username",
+      "review-bot"
+    ]);
+
+    const setExitCode = await runCli([
+      "tenant",
+      "set-profile",
+      "--database-path",
+      databasePath,
+      "--base-url",
+      "https://gitlab.example.com",
+      "--project-id",
+      "123",
+      "--model-profile",
+      "native-gpt5"
+    ]);
+    expect(setExitCode).toBe(0);
+
+    const storage = new SqliteStorage({ databasePath });
+    await storage.initialize();
+    expect((await storage.listTenants())[0]?.modelProfileName).toBe("native-gpt5");
+
+    const clearExitCode = await runCli([
+      "tenant",
+      "clear-profile",
+      "--database-path",
+      databasePath,
+      "--base-url",
+      "https://gitlab.example.com",
+      "--project-id",
+      "123"
+    ]);
+    expect(clearExitCode).toBe(0);
+    expect((await storage.listTenants())[0]?.modelProfileName).toBeNull();
+  });
+
+  it("preserves an existing tenant profile when tenant add reruns without --model-profile", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+
+    await runCli([
+      "model-profile",
+      "add",
+      "--database-path",
+      databasePath,
+      "--name",
+      "native-gpt5",
+      "--review-model",
+      "gpt-5.4"
+    ]);
+
+    await runCli([
+      "tenant",
+      "add",
+      "--database-path",
+      databasePath,
+      "--base-url",
+      "https://gitlab.example.com",
+      "--project-id",
+      "123",
+      "--api-token",
+      "glpat-original",
+      "--webhook-secret",
+      "replace-me",
+      "--bot-user-id",
+      "999",
+      "--bot-username",
+      "review-bot",
+      "--model-profile",
+      "native-gpt5"
+    ]);
+
+    const exitCode = await runCli([
+      "tenant",
+      "add",
+      "--database-path",
+      databasePath,
+      "--base-url",
+      "https://gitlab.example.com",
+      "--project-id",
+      "123",
+      "--api-token",
+      "glpat-rotated",
+      "--webhook-secret",
+      "replace-me-2",
+      "--bot-user-id",
+      "999",
+      "--bot-username",
+      "review-bot"
+    ]);
+
+    expect(exitCode).toBe(0);
+
+    const storage = new SqliteStorage({ databasePath });
+    await storage.initialize();
+    expect((await storage.listTenants())[0]).toMatchObject({
+      apiToken: "glpat-rotated",
+      webhookSecret: "replace-me-2",
+      modelProfileName: "native-gpt5"
+    });
+  });
+
   it("removes a tenant by base URL and project ID", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
     const databasePath = join(workspace, "tenants.sqlite");
@@ -263,7 +572,11 @@ describe("tenant CLI", () => {
       reviewJobId: reviewJob.job.id,
       tenantId: tenant.id,
       provider: "copilot-sdk",
-      model: null
+      model: null,
+      modelProfileName: null,
+      providerBaseUrl: null,
+      providerType: null,
+      textGenerationModel: null
     });
     await storage.replaceReviewFindings(reviewRun.id, [
       {
@@ -400,7 +713,11 @@ describe("tenant CLI", () => {
       reviewJobId: initialJob.job.id,
       tenantId: tenant.id,
       provider: "copilot-sdk",
-      model: null
+      model: null,
+      modelProfileName: null,
+      providerBaseUrl: null,
+      providerType: null,
+      textGenerationModel: null
     });
     await mkdir(join(workspaceRoot, initialJob.job.id, "workspace"), { recursive: true });
     await writeFile(join(workspaceRoot, initialJob.job.id, "workspace", "README.md"), "workspace");
@@ -427,7 +744,11 @@ describe("tenant CLI", () => {
           reviewJobId: lateJob.job.id,
           tenantId: tenant.id,
           provider: "copilot-sdk",
-          model: null
+          model: null,
+          modelProfileName: null,
+          providerBaseUrl: null,
+          providerType: null,
+          textGenerationModel: null
         });
         await mkdir(join(workspaceRoot, lateJob.job.id, "workspace"), { recursive: true });
         await writeFile(join(workspaceRoot, lateJob.job.id, "workspace", "README.md"), "late workspace");

@@ -16,6 +16,7 @@ const tenant = {
   webhookSecret: "secret",
   botUserId: 999,
   botUsername: "review-bot",
+  modelProfileName: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString()
 };
@@ -455,12 +456,18 @@ function createWorker(input: {
       tenantId: tenant.id,
       provider: "copilot-sdk",
       model: null,
+      modelProfileName: null,
+      providerBaseUrl: null,
+      providerType: null,
+      textGenerationModel: null,
       status: "in_progress",
       resultJson: null,
       error: null,
       startedAt: new Date().toISOString(),
       finishedAt: null
     })),
+    getModelProfileByName: vi.fn(async () => null),
+    getDefaultModelProfile: vi.fn(async () => null),
     getLatestCompletedReviewForMergeRequest: vi.fn(async () => null),
     listPriorReviewFindings: vi.fn(async () => []),
     completeReviewRun: vi.fn(async () => {}),
@@ -532,22 +539,24 @@ function createWorker(input: {
     workspaceMaterializer: {
       cleanup: vi.fn(async () => {})
     } as never,
-    reviewProvider: {
-      name: "copilot-sdk",
-      review: vi.fn(async () => {
-        if (input.reviewError) {
-          throw input.reviewError;
-        }
+    reviewProviderFactory: {
+      createProvider: vi.fn(() => ({
+        name: "copilot-sdk",
+        review: vi.fn(async () => {
+          if (input.reviewError) {
+            throw input.reviewError;
+          }
 
-        return {
-          overview: {
-            summary: "Done",
-            overallSeverity: "low" as const
-          },
-          findings: [],
-          priorDispositions: []
-        };
-      })
+          return {
+            overview: {
+              summary: "Done",
+              overallSeverity: "low" as const
+            },
+            findings: [],
+            priorDispositions: []
+          };
+        })
+      }))
     },
     reconciler: {
       reconcile: vi.fn(async () => ({

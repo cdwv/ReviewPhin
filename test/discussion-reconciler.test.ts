@@ -19,6 +19,7 @@ describe("Discussion reconciler", () => {
     webhookSecret: "secret",
     botUserId: 999,
     botUsername: "review-bot",
+    modelProfileName: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -1094,6 +1095,7 @@ function createHydratedContext(overrides?: {
       webhookSecret: "secret",
       botUserId: 999,
       botUsername: "review-bot",
+      modelProfileName: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     },
