@@ -4,6 +4,7 @@ import {
   CopilotClient,
   defineTool,
   type AssistantMessageEvent,
+  type ProviderConfig,
   type SessionEvent,
   type PermissionHandler
 } from "@github/copilot-sdk";
@@ -26,6 +27,8 @@ interface CopilotReviewProviderOptions {
   logger: Logger;
   model?: string | undefined;
   textGenerationModel: string;
+  provider?: ProviderConfig | undefined;
+  sdkLogLevel?: "none" | "error" | "warning" | "info" | "debug" | "all" | undefined;
   cliPath?: string | undefined;
   runLogDir: string;
   timeoutMs: number;
@@ -38,6 +41,8 @@ export class CopilotReviewProvider implements ReviewProvider {
   private readonly logger: Logger;
   private readonly model: string | undefined;
   private readonly textGenerationModel: string;
+  private readonly provider: ProviderConfig | undefined;
+  private readonly sdkLogLevel: CopilotReviewProviderOptions["sdkLogLevel"];
   private readonly cliPath: string | undefined;
   private readonly runLogDir: string;
   private readonly timeoutMs: number;
@@ -48,6 +53,8 @@ export class CopilotReviewProvider implements ReviewProvider {
     this.logger = options.logger;
     this.model = options.model;
     this.textGenerationModel = options.textGenerationModel;
+    this.provider = options.provider;
+    this.sdkLogLevel = options.sdkLogLevel;
     this.cliPath = options.cliPath;
     this.runLogDir = options.runLogDir;
     this.timeoutMs = options.timeoutMs;
@@ -55,6 +62,8 @@ export class CopilotReviewProvider implements ReviewProvider {
     this.projectMemoryCoalescer = new ProjectMemoryTextCoalescer({
       logger: this.logger,
       model: this.textGenerationModel,
+      provider: this.provider,
+      sdkLogLevel: this.sdkLogLevel,
       cliPath: this.cliPath,
       timeoutMs: this.timeoutMs
     });
@@ -72,6 +81,7 @@ export class CopilotReviewProvider implements ReviewProvider {
       model: this.model
     });
     const client = new CopilotClient({
+      ...(this.sdkLogLevel ? { logLevel: this.sdkLogLevel } : {}),
       ...(this.cliPath ? { cliPath: this.cliPath } : {})
     });
 
@@ -149,6 +159,7 @@ export class CopilotReviewProvider implements ReviewProvider {
         onPermissionRequest: permissionHandler,
         workingDirectory: effectiveContext.workspacePath,
         ...(this.model ? { model: this.model } : {}),
+        ...(this.provider ? { provider: this.provider } : {}),
         tools,
         availableTools: reviewAuthorTools,
         customAgents: [

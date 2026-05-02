@@ -1,4 +1,4 @@
-import { CopilotClient, type AssistantMessageEvent, type PermissionHandler } from "@github/copilot-sdk";
+import { CopilotClient, type AssistantMessageEvent, type PermissionHandler, type ProviderConfig } from "@github/copilot-sdk";
 import type { Logger } from "pino";
 
 import type { ProjectMemoryCoalesceInput, ProjectMemoryEntry } from "./types.js";
@@ -7,6 +7,8 @@ import { buildProjectMemoryCoalescePrompt } from "../prompts/prompt-builders.js"
 interface ProjectMemoryCoalescerOptions {
   logger: Logger;
   model: string;
+  provider?: ProviderConfig | undefined;
+  sdkLogLevel?: "none" | "error" | "warning" | "info" | "debug" | "all" | undefined;
   cliPath?: string | undefined;
   timeoutMs: number;
 }
@@ -14,12 +16,16 @@ interface ProjectMemoryCoalescerOptions {
 export class ProjectMemoryTextCoalescer {
   private readonly logger: Logger;
   private readonly model: string;
+  private readonly provider: ProviderConfig | undefined;
+  private readonly sdkLogLevel: ProjectMemoryCoalescerOptions["sdkLogLevel"];
   private readonly cliPath: string | undefined;
   private readonly timeoutMs: number;
 
   public constructor(options: ProjectMemoryCoalescerOptions) {
     this.logger = options.logger;
     this.model = options.model;
+    this.provider = options.provider;
+    this.sdkLogLevel = options.sdkLogLevel;
     this.cliPath = options.cliPath;
     this.timeoutMs = options.timeoutMs;
   }
@@ -30,6 +36,7 @@ export class ProjectMemoryTextCoalescer {
     }
 
     const client = new CopilotClient({
+      ...(this.sdkLogLevel ? { logLevel: this.sdkLogLevel } : {}),
       ...(this.cliPath ? { cliPath: this.cliPath } : {})
     });
     const permissionHandler: PermissionHandler = () => ({ kind: "user-not-available" });
@@ -38,6 +45,7 @@ export class ProjectMemoryTextCoalescer {
       const session = await client.createSession({
         onPermissionRequest: permissionHandler,
         model: this.model,
+        ...(this.provider ? { provider: this.provider } : {}),
         availableTools: [],
         enableConfigDiscovery: false
       });

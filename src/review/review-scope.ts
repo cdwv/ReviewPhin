@@ -195,7 +195,7 @@ function hasExplicitFullRescanInstruction(instruction: string | null): boolean {
     return false;
   }
 
-  return /\b(full\s+rescan|fresh\s+full\s+review|full\s+review\s+from\s+scratch|rescan\s+everything)\b/i.test(
+  return /\b(full\s+rescan|full\s+review|fresh\s+full\s+review|full\s+review\s+from\s+scratch|rescan\s+everything)\b/i.test(
     instruction
   );
 }
