@@ -176,7 +176,7 @@ describe("GitLab reactions", () => {
       discussions: []
     });
 
-    await worker.createReviewJobFromWebhook(directMentionPayload, tenant, {
+    await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
       kind: "direct-mention",
       note: {
         kind: "merge-request-note",
@@ -248,7 +248,7 @@ describe("GitLab reactions", () => {
       reviewError: new Error("final failure")
     });
 
-    await worker.createReviewJobFromWebhook(directMentionPayload, tenant, {
+    await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
       kind: "direct-mention",
       note: {
         kind: "merge-request-note",
@@ -316,7 +316,7 @@ describe("GitLab reactions", () => {
       reviewError: new Error("retryable failure")
     });
 
-    await worker.createReviewJobFromWebhook(directMentionPayload, tenant, {
+    await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
       kind: "direct-mention",
       note: {
         kind: "merge-request-note",
@@ -403,7 +403,7 @@ describe("GitLab reactions", () => {
       discussions
     });
 
-    await worker.createReviewJobFromWebhook(followUpPayload, tenant, {
+    await worker.createInteractionJobFromWebhook(followUpPayload, tenant, {
       kind: "follow-up-comment",
       note: {
         kind: "discussion-note",
@@ -443,16 +443,16 @@ function createWorker(input: {
   };
 
   const storage = {
-    createOrGetReviewJob: vi.fn(async () => ({
+    createOrGetInteractionJob: vi.fn(async () => ({
       job,
       created: true
     })),
-    getReviewJobById: vi.fn(async () => job),
+    getInteractionJobById: vi.fn(async () => job),
     markJobInProgress: vi.fn(async () => {}),
     listDiscussionMappings: vi.fn(async () => []),
-    createReviewRun: vi.fn(async () => ({
+    createInteractionRun: vi.fn(async () => ({
       id: "run_1",
-      reviewJobId: "job_1",
+      interactionJobId: "job_1",
       tenantId: tenant.id,
       provider: "copilot-sdk",
       model: null,
@@ -468,12 +468,12 @@ function createWorker(input: {
     })),
     getModelProfileByName: vi.fn(async () => null),
     getDefaultModelProfile: vi.fn(async () => null),
-    getLatestCompletedReviewForMergeRequest: vi.fn(async () => null),
+    getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
     listPriorReviewFindings: vi.fn(async () => []),
-    completeReviewRun: vi.fn(async () => {}),
+    completeInteractionRun: vi.fn(async () => {}),
     replaceReviewFindings: vi.fn(async () => {}),
     markJobCompleted: vi.fn(async () => {}),
-    failReviewRun: vi.fn(async () => {}),
+    failInteractionRun: vi.fn(async () => {}),
     markJobQueued: vi.fn(async () => {}),
     markJobFailed: vi.fn(async () => {})
   };
@@ -520,7 +520,7 @@ function createWorker(input: {
         },
         snapshot: {
           id: "snapshot_1",
-          reviewJobId: "job_1",
+          interactionJobId: "job_1",
           tenantId: tenant.id,
           mergeRequestIid: 7,
           headSha: "abc123",

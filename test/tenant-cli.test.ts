@@ -545,7 +545,7 @@ describe("tenant CLI", () => {
       botUserId: 999,
       botUsername: "review-bot"
     });
-    const reviewJob = await storage.createOrGetReviewJob({
+    const reviewJob = await storage.createOrGetInteractionJob({
       tenantId: tenant.id,
       dedupeKey: "tenant-remove-job",
       projectId: tenant.projectId,
@@ -555,7 +555,7 @@ describe("tenant CLI", () => {
       payloadJson: "{}"
     });
     await storage.createMergeRequestSnapshot({
-      reviewJobId: reviewJob.job.id,
+      interactionJobId: reviewJob.job.id,
       tenantId: tenant.id,
       mergeRequestIid: 7,
       headSha: "abc123",
@@ -568,8 +568,8 @@ describe("tenant CLI", () => {
       projectMemoryJson: null,
       workspaceStrategy: "git"
     });
-    const reviewRun = await storage.createReviewRun({
-      reviewJobId: reviewJob.job.id,
+    const reviewRun = await storage.createInteractionRun({
+      interactionJobId: reviewJob.job.id,
       tenantId: tenant.id,
       provider: "copilot-sdk",
       model: null,
@@ -580,7 +580,7 @@ describe("tenant CLI", () => {
     });
     await storage.replaceReviewFindings(reviewRun.id, [
       {
-        reviewRunId: reviewRun.id,
+        interactionRunId: reviewRun.id,
         identityKey: "tenant-remove-finding",
         severity: "medium",
         category: "correctness",
@@ -591,8 +591,8 @@ describe("tenant CLI", () => {
         status: "open"
       }
     ]);
-    await storage.upsertReviewRunMetrics({
-      reviewRunId: reviewRun.id,
+    await storage.upsertInteractionRunMetrics({
+      interactionRunId: reviewRun.id,
       triggerKind: "note",
       promptMode: "full",
       promptChars: 10,
@@ -633,7 +633,7 @@ describe("tenant CLI", () => {
       noteAuthorId: 999,
       noteAuthorUsername: "review-bot",
       status: "open",
-      lastReviewRunId: reviewRun.id
+      lastInteractionRunId: reviewRun.id
     });
 
     await mkdir(join(workspaceRoot, reviewJob.job.id, "workspace"), { recursive: true });
@@ -667,17 +667,17 @@ describe("tenant CLI", () => {
 
     expect(exitCode).toBe(0);
     expect(stdout).toContain("This will delete:");
-    expect(stdout).toContain("- 1 review job");
+    expect(stdout).toContain("- 1 interaction job");
     expect(stdout).toContain("- 1/1 workspace directory");
     expect(stdout).toContain("- 1/1 run log directory");
     expect(stdout).toContain("Tenant removed.");
 
     expect(await storage.listTenants()).toEqual([]);
-    expect(countRows(databasePath, "review_jobs")).toBe(0);
+    expect(countRows(databasePath, "interaction_jobs")).toBe(0);
     expect(countRows(databasePath, "merge_request_snapshots")).toBe(0);
-    expect(countRows(databasePath, "review_runs")).toBe(0);
+    expect(countRows(databasePath, "interaction_runs")).toBe(0);
     expect(countRows(databasePath, "review_findings")).toBe(0);
-    expect(countRows(databasePath, "review_run_metrics")).toBe(0);
+    expect(countRows(databasePath, "interaction_run_metrics")).toBe(0);
     expect(countRows(databasePath, "discussion_mappings")).toBe(0);
     await expect(pathExists(join(workspaceRoot, reviewJob.job.id))).resolves.toBe(false);
     await expect(pathExists(join(runLogDir, reviewRun.id))).resolves.toBe(false);
@@ -700,7 +700,7 @@ describe("tenant CLI", () => {
       botUserId: 999,
       botUsername: "review-bot"
     });
-    const initialJob = await seedStorage.createOrGetReviewJob({
+    const initialJob = await seedStorage.createOrGetInteractionJob({
       tenantId: tenant.id,
       dedupeKey: "tenant-remove-job-initial",
       projectId: tenant.projectId,
@@ -709,8 +709,8 @@ describe("tenant CLI", () => {
       headSha: "abc123",
       payloadJson: "{}"
     });
-    const initialRun = await seedStorage.createReviewRun({
-      reviewJobId: initialJob.job.id,
+    const initialRun = await seedStorage.createInteractionRun({
+      interactionJobId: initialJob.job.id,
       tenantId: tenant.id,
       provider: "copilot-sdk",
       model: null,
@@ -731,7 +731,7 @@ describe("tenant CLI", () => {
         const summary = await originalGetTenantDeletionSummary.call(this, baseUrl, projectId);
         const lateStorage = new SqliteStorage({ databasePath });
         await lateStorage.initialize();
-        const lateJob = await lateStorage.createOrGetReviewJob({
+        const lateJob = await lateStorage.createOrGetInteractionJob({
           tenantId: tenant.id,
           dedupeKey: "tenant-remove-job-late",
           projectId: tenant.projectId,
@@ -740,8 +740,8 @@ describe("tenant CLI", () => {
           headSha: "def456",
           payloadJson: "{}"
         });
-        const lateRun = await lateStorage.createReviewRun({
-          reviewJobId: lateJob.job.id,
+        const lateRun = await lateStorage.createInteractionRun({
+          interactionJobId: lateJob.job.id,
           tenantId: tenant.id,
           provider: "copilot-sdk",
           model: null,
@@ -777,8 +777,8 @@ describe("tenant CLI", () => {
 
     expect(exitCode).toBe(0);
     expect(countRows(databasePath, "tenants")).toBe(0);
-    expect(countRows(databasePath, "review_jobs")).toBe(0);
-    expect(countRows(databasePath, "review_runs")).toBe(0);
+    expect(countRows(databasePath, "interaction_jobs")).toBe(0);
+    expect(countRows(databasePath, "interaction_runs")).toBe(0);
     await expect(pathExists(join(workspaceRoot, initialJob.job.id))).resolves.toBe(false);
     await expect(pathExists(join(runLogDir, initialRun.id))).resolves.toBe(false);
 

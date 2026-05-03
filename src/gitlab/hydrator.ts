@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { Storage, TenantRecord, ReviewJobRecord } from "../storage/types.js";
+import type { Storage, TenantRecord, InteractionJobRecord } from "../storage/types.js";
 import { loadProjectMemory } from "../memory/project-memory.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
 import type { GitLabClient } from "./client.js";
@@ -29,7 +29,7 @@ export class MergeRequestContextHydrator {
 
   public async hydrate(input: {
     tenant: TenantRecord;
-    job: ReviewJobRecord;
+    job: InteractionJobRecord;
     client: GitLabClient;
   }): Promise<HydratedMergeRequestContext> {
     const { tenant, job, client } = input;
@@ -65,7 +65,7 @@ export class MergeRequestContextHydrator {
     ]);
 
     const snapshot = await this.storage.createMergeRequestSnapshot({
-      reviewJobId: job.id,
+      interactionJobId: job.id,
       tenantId: tenant.id,
       mergeRequestIid: job.mergeRequestIid,
       headSha: job.headSha,
@@ -82,7 +82,7 @@ export class MergeRequestContextHydrator {
     this.logger.info(
       {
         tenantId: tenant.id,
-        jobId: job.id,
+        interactionJobId: job.id,
         mergeRequestIid: job.mergeRequestIid,
         changedFiles: changes.length,
         discussionCount: discussions.length,
@@ -110,7 +110,7 @@ export class MergeRequestContextHydrator {
   private async loadProjectMemorySafely(input: {
     client: GitLabClient;
     tenant: TenantRecord;
-    job: ReviewJobRecord;
+    job: InteractionJobRecord;
   }): Promise<ProjectMemoryContext> {
     try {
       return await loadProjectMemory(input.client, input.tenant.projectId, this.memoryEnabled);
@@ -119,7 +119,7 @@ export class MergeRequestContextHydrator {
         {
           err: error,
           tenantId: input.tenant.id,
-          jobId: input.job.id,
+          interactionJobId: input.job.id,
           projectId: input.tenant.projectId
         },
         "project memory unavailable; continuing review without wiki-backed memory"

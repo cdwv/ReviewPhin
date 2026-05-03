@@ -4,12 +4,12 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { ReviewRunArtifacts } from "../src/review/run-artifacts.js";
+import { InteractionRunArtifacts } from "../src/review/run-artifacts.js";
 
-describe("ReviewRunArtifacts", () => {
+describe("InteractionRunArtifacts", () => {
   it("writes app and GitLab HTTP logs into the review run directory", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-run-logs-"));
-    const artifacts = new ReviewRunArtifacts(rootDir, "run_123");
+    const artifacts = new InteractionRunArtifacts(rootDir, "run_123");
 
     await artifacts.initialize();
     await artifacts.appendAppLog({

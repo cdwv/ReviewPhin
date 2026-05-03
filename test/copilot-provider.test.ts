@@ -65,7 +65,7 @@ describe("CopilotReviewProvider", () => {
       },
       {
         logging: {
-          reviewRunId: "run_1",
+          interactionRunId: "run_1",
           tenantId: "tenant_1"
         }
       }
@@ -368,8 +368,8 @@ function createReviewContext(): ReviewContext {
       deltaSincePreviousReview: null
     },
     logging: {
-      reviewRunId: "run_1",
-      jobId: "job_1",
+      interactionRunId: "run_1",
+      interactionJobId: "job_1",
       tenantId: "tenant_1",
       runDirectory: tmpPath()
     }

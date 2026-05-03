@@ -160,6 +160,243 @@ describe("SqliteStorage review findings", () => {
     expect(columnNames.has("file_path")).toBe(false);
   });
 
+  it("renames legacy review run foreign-key columns during interaction schema upgrade", async () => {
+    const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
+    const legacyDb = new DatabaseSync(databasePath);
+    legacyDb.exec(`
+      CREATE TABLE tenants (
+        id TEXT PRIMARY KEY,
+        tenant_key TEXT NOT NULL UNIQUE,
+        base_url TEXT NOT NULL,
+        project_id INTEGER NOT NULL,
+        api_token TEXT NOT NULL,
+        webhook_secret TEXT NOT NULL,
+        bot_user_id INTEGER,
+        bot_username TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE review_jobs (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL UNIQUE,
+        project_id INTEGER NOT NULL,
+        merge_request_iid INTEGER NOT NULL,
+        note_id INTEGER NOT NULL,
+        head_sha TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        enqueued_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT
+      );
+      CREATE TABLE review_runs (
+        id TEXT PRIMARY KEY,
+        review_job_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT,
+        model_profile_name TEXT,
+        provider_base_url TEXT,
+        provider_type TEXT,
+        text_generation_model TEXT,
+        status TEXT NOT NULL,
+        result_json TEXT,
+        error TEXT,
+        started_at TEXT NOT NULL,
+        finished_at TEXT
+      );
+      CREATE TABLE review_run_metrics (
+        id TEXT PRIMARY KEY,
+        review_run_id TEXT NOT NULL UNIQUE,
+        trigger_kind TEXT,
+        prompt_mode TEXT,
+        prompt_chars INTEGER NOT NULL,
+        prompt_context_changed_files INTEGER NOT NULL,
+        prompt_context_prior_threads INTEGER NOT NULL,
+        prompt_context_notes INTEGER NOT NULL,
+        assistant_turns INTEGER NOT NULL,
+        assistant_calls INTEGER NOT NULL,
+        tool_executions INTEGER NOT NULL,
+        view_tool_calls INTEGER NOT NULL,
+        glob_tool_calls INTEGER NOT NULL,
+        input_tokens INTEGER NOT NULL,
+        output_tokens INTEGER NOT NULL,
+        cache_read_tokens INTEGER NOT NULL,
+        cache_write_tokens INTEGER NOT NULL,
+        reasoning_tokens INTEGER NOT NULL,
+        api_duration_ms INTEGER NOT NULL,
+        premium_requests INTEGER NOT NULL,
+        repeated_view_reads INTEGER NOT NULL,
+        repeated_view_paths_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE merge_request_snapshots (
+        id TEXT PRIMARY KEY,
+        review_job_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        merge_request_iid INTEGER NOT NULL,
+        head_sha TEXT NOT NULL,
+        merge_request_json TEXT NOT NULL,
+        versions_json TEXT NOT NULL,
+        changes_json TEXT NOT NULL,
+        notes_json TEXT NOT NULL,
+        discussions_json TEXT NOT NULL,
+        instructions_json TEXT NOT NULL,
+        project_memory_json TEXT,
+        workspace_strategy TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      INSERT INTO tenants VALUES (
+        'tenant_1',
+        'https://gitlab.example.com::123',
+        'https://gitlab.example.com',
+        123,
+        'token',
+        'secret',
+        999,
+        'review-bot',
+        '2026-04-01T00:00:00.000Z',
+        '2026-04-01T00:00:00.000Z'
+      );
+      INSERT INTO review_jobs VALUES (
+        'job_1',
+        'tenant_1',
+        'dedupe_1',
+        123,
+        7,
+        55,
+        'headsha',
+        'completed',
+        '{}',
+        0,
+        NULL,
+        '2026-04-01T00:00:00.000Z',
+        '2026-04-01T00:00:00.000Z',
+        '2026-04-01T00:05:00.000Z'
+      );
+      INSERT INTO review_runs VALUES (
+        'run_1',
+        'job_1',
+        'tenant_1',
+        'copilot-sdk',
+        'gpt-5.4',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        'completed',
+        '{"overview":{"summary":"ok","overallSeverity":"low"},"findings":[],"priorDispositions":[]}',
+        NULL,
+        '2026-04-01T00:00:00.000Z',
+        '2026-04-01T00:05:00.000Z'
+      );
+      INSERT INTO review_run_metrics VALUES (
+        'metrics_1',
+        'run_1',
+        'note',
+        'full',
+        10,
+        1,
+        0,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        10,
+        20,
+        0,
+        0,
+        0,
+        100,
+        1,
+        0,
+        '[]',
+        '2026-04-01T00:05:00.000Z',
+        '2026-04-01T00:05:00.000Z'
+      );
+      INSERT INTO merge_request_snapshots VALUES (
+        'snapshot_1',
+        'job_1',
+        'tenant_1',
+        7,
+        'headsha',
+        '{}',
+        '[]',
+        '[]',
+        '[]',
+        '[]',
+        '[]',
+        NULL,
+        'git',
+        '2026-04-01T00:05:00.000Z'
+      );
+    `);
+    legacyDb.close();
+
+    const storage = new SqliteStorage({ databasePath });
+    await storage.initialize();
+
+    const createdRun = await storage.createInteractionRun({
+      interactionJobId: "job_1",
+      tenantId: "tenant_1",
+      provider: "copilot-sdk",
+      model: "gpt-5.4",
+      modelProfileName: null,
+      providerBaseUrl: null,
+      providerType: null,
+      textGenerationModel: null
+    });
+    await storage.upsertInteractionRunMetrics({
+      interactionRunId: createdRun.id,
+      triggerKind: "note",
+      promptMode: "full",
+      promptChars: 12,
+      promptContextChangedFiles: 1,
+      promptContextPriorThreads: 0,
+      promptContextNotes: 1,
+      assistantTurns: 1,
+      assistantCalls: 1,
+      toolExecutions: 0,
+      viewToolCalls: 0,
+      globToolCalls: 0,
+      inputTokens: 11,
+      outputTokens: 22,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reasoningTokens: 0,
+      apiDurationMs: 123,
+      premiumRequests: 1,
+      repeatedViewReads: 0,
+      repeatedViewPathsJson: "[]"
+    });
+
+    const previousInteraction = await storage.getLatestCompletedInteractionForMergeRequest("tenant_1", 7, "job_2");
+    const verifiedDb = new DatabaseSync(databasePath);
+    const interactionRunColumns = new Set(
+      (verifiedDb.prepare("PRAGMA table_info(interaction_runs)").all() as Array<{ name: string }>).map((column) => column.name)
+    );
+    const interactionRunMetricColumns = new Set(
+      (verifiedDb.prepare("PRAGMA table_info(interaction_run_metrics)").all() as Array<{ name: string }>).map((column) => column.name)
+    );
+    verifiedDb.close();
+
+    expect(previousInteraction).toMatchObject({
+      interactionRunId: "run_1",
+      interactionJobId: "job_1",
+      headSha: "headsha"
+    });
+    expect(interactionRunColumns.has("interaction_job_id")).toBe(true);
+    expect(interactionRunColumns.has("review_job_id")).toBe(false);
+    expect(interactionRunMetricColumns.has("interaction_run_id")).toBe(true);
+    expect(interactionRunMetricColumns.has("review_run_id")).toBe(false);
+  });
+
   it("returns latest prior finding state per identity and updates status in place", async () => {
     const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
     const storage = new SqliteStorage({ databasePath });
@@ -203,7 +440,7 @@ describe("SqliteStorage review findings", () => {
       })
     ]);
 
-    const currentJob = await storage.createOrGetReviewJob({
+    const currentJob = await storage.createOrGetInteractionJob({
       tenantId: tenant.id,
       dedupeKey: "current-job",
       projectId: tenant.projectId,
@@ -228,7 +465,7 @@ describe("SqliteStorage review findings", () => {
       status: "dismissed",
       title: "Validate request body",
       body: "Latest version",
-      reviewRunId: expect.any(String),
+      interactionRunId: expect.any(String),
       headSha: "head-two"
     });
     expect(priorFindings[1]?.anchor).toEqual({
@@ -279,7 +516,7 @@ describe("SqliteStorage review findings", () => {
 
     expect(await storage.updateReviewFindingStatus(tenant.id, 7, "identity_status", "dismissed")).toBe(true);
 
-    const currentJob = await storage.createOrGetReviewJob({
+    const currentJob = await storage.createOrGetInteractionJob({
       tenantId: tenant.id,
       dedupeKey: "current-job-after-failed-run",
       projectId: tenant.projectId,
@@ -437,7 +674,7 @@ describe("SqliteStorage review findings", () => {
 
     const verifiedDb = new DatabaseSync(databasePath);
     const dedupedRows = verifiedDb
-      .prepare("SELECT id, status, body FROM review_findings WHERE review_run_id = ? AND identity_key = ?")
+      .prepare("SELECT id, status, body FROM review_findings WHERE interaction_run_id = ? AND identity_key = ?")
       .all("run_1", "identity_1") as Array<{ id: string; status: string; body: string }>;
     const indexes = verifiedDb.prepare("PRAGMA index_list(review_findings)").all() as Array<{ name: string; unique: number }>;
     verifiedDb.close();
@@ -450,7 +687,7 @@ describe("SqliteStorage review findings", () => {
     expect(indexes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: "review_findings_review_run_identity_key_idx",
+          name: "review_findings_interaction_run_identity_key_idx",
           unique: 1
         })
       ])
@@ -471,7 +708,7 @@ describe("SqliteStorage review findings", () => {
       botUsername: "review-bot"
     });
 
-    const job = await storage.createOrGetReviewJob({
+    const job = await storage.createOrGetInteractionJob({
       tenantId: tenant.id,
       dedupeKey: "dedupe-write-path",
       projectId: tenant.projectId,
@@ -480,8 +717,8 @@ describe("SqliteStorage review findings", () => {
       headSha: "head-dedupe",
       payloadJson: "{}"
     });
-    const run = await storage.createReviewRun({
-      reviewJobId: job.job.id,
+    const run = await storage.createInteractionRun({
+      interactionJobId: job.job.id,
       tenantId: tenant.id,
       provider: "copilot-sdk",
       model: null,
@@ -553,7 +790,7 @@ describe("SqliteStorage tenants", () => {
       botUsername: "review-bot",
       modelProfileName: "byok"
     });
-    const job = await storage.createOrGetReviewJob({
+    const job = await storage.createOrGetInteractionJob({
       tenantId: tenant.id,
       dedupeKey: "profiled-job",
       projectId: tenant.projectId,
@@ -562,8 +799,8 @@ describe("SqliteStorage tenants", () => {
       headSha: "head-profiled",
       payloadJson: "{}"
     });
-    const run = await storage.createReviewRun({
-      reviewJobId: job.job.id,
+    const run = await storage.createInteractionRun({
+      interactionJobId: job.job.id,
       tenantId: tenant.id,
       provider: "copilot-sdk",
       model: "custom-review",
@@ -665,7 +902,7 @@ describe("SqliteStorage tenants", () => {
       botUsername: "review-bot"
     });
 
-    const reviewJob = await storage.createOrGetReviewJob({
+    const reviewJob = await storage.createOrGetInteractionJob({
       tenantId: tenant.id,
       dedupeKey: "delete-tenant-job",
       projectId: tenant.projectId,
@@ -675,7 +912,7 @@ describe("SqliteStorage tenants", () => {
       payloadJson: "{}"
     });
     await storage.createMergeRequestSnapshot({
-      reviewJobId: reviewJob.job.id,
+      interactionJobId: reviewJob.job.id,
       tenantId: tenant.id,
       mergeRequestIid: 7,
       headSha: "head-sha",
@@ -688,8 +925,8 @@ describe("SqliteStorage tenants", () => {
       projectMemoryJson: null,
       workspaceStrategy: "git"
     });
-    const reviewRun = await storage.createReviewRun({
-      reviewJobId: reviewJob.job.id,
+    const reviewRun = await storage.createInteractionRun({
+      interactionJobId: reviewJob.job.id,
       tenantId: tenant.id,
       provider: "copilot-sdk",
       model: null,
@@ -706,11 +943,11 @@ describe("SqliteStorage tenants", () => {
           body: "The finding should be removed",
           status: "open"
         }),
-        reviewRunId: reviewRun.id
+        interactionRunId: reviewRun.id
       }
     ]);
-    await storage.upsertReviewRunMetrics({
-      reviewRunId: reviewRun.id,
+    await storage.upsertInteractionRunMetrics({
+      interactionRunId: reviewRun.id,
       triggerKind: "note",
       promptMode: "full",
       promptChars: 10,
@@ -751,19 +988,19 @@ describe("SqliteStorage tenants", () => {
       noteAuthorId: 999,
       noteAuthorUsername: "review-bot",
       status: "open",
-      lastReviewRunId: reviewRun.id
+      lastInteractionRunId: reviewRun.id
     });
 
     const deletionSummary = await storage.getTenantDeletionSummary(tenant.baseUrl, tenant.projectId);
     expect(deletionSummary).toMatchObject({
-      reviewJobCount: 1,
+      interactionJobCount: 1,
       mergeRequestSnapshotCount: 1,
-      reviewRunCount: 1,
+      interactionRunCount: 1,
       reviewFindingCount: 1,
-      reviewRunMetricCount: 1,
+      interactionRunMetricCount: 1,
       discussionMappingCount: 1,
-      reviewJobIds: [reviewJob.job.id],
-      reviewRunIds: [reviewRun.id]
+      interactionJobIds: [reviewJob.job.id],
+      interactionRunIds: [reviewRun.id]
     });
 
     const deletedSummary = await storage.deleteTenantWithSummary(tenant.baseUrl, tenant.projectId);
@@ -772,15 +1009,15 @@ describe("SqliteStorage tenants", () => {
       tenant: {
         id: tenant.id
       },
-      reviewJobIds: [reviewJob.job.id],
-      reviewRunIds: [reviewRun.id]
+      interactionJobIds: [reviewJob.job.id],
+      interactionRunIds: [reviewRun.id]
     });
     expect(countRows(databasePath, "tenants")).toBe(0);
-    expect(countRows(databasePath, "review_jobs")).toBe(0);
+    expect(countRows(databasePath, "interaction_jobs")).toBe(0);
     expect(countRows(databasePath, "merge_request_snapshots")).toBe(0);
-    expect(countRows(databasePath, "review_runs")).toBe(0);
+    expect(countRows(databasePath, "interaction_runs")).toBe(0);
     expect(countRows(databasePath, "review_findings")).toBe(0);
-    expect(countRows(databasePath, "review_run_metrics")).toBe(0);
+    expect(countRows(databasePath, "interaction_run_metrics")).toBe(0);
     expect(countRows(databasePath, "discussion_mappings")).toBe(0);
   });
 });
@@ -799,11 +1036,11 @@ function readFindingStatuses(databasePath: string, identityKey: string): string[
 function readFindingRows(
   databasePath: string,
   identityKey: string
-): Array<{ id: string; review_run_id: string; status: string; body: string }> {
+): Array<{ id: string; interaction_run_id: string; status: string; body: string }> {
   const database = new DatabaseSync(databasePath);
   const rows = database
-    .prepare("SELECT id, review_run_id, status, body FROM review_findings WHERE identity_key = ? ORDER BY review_run_id ASC, id ASC")
-    .all(identityKey) as Array<{ id: string; review_run_id: string; status: string; body: string }>;
+    .prepare("SELECT id, interaction_run_id, status, body FROM review_findings WHERE identity_key = ? ORDER BY interaction_run_id ASC, id ASC")
+    .all(identityKey) as Array<{ id: string; interaction_run_id: string; status: string; body: string }>;
   database.close();
   return rows;
 }
@@ -816,7 +1053,7 @@ function createFinding(input: {
   suggestionJson?: string | null;
 }): CreateReviewFindingInput {
   return {
-    reviewRunId: "",
+    interactionRunId: "",
     identityKey: input.identityKey,
     severity: "medium",
     category: "correctness",
@@ -842,7 +1079,7 @@ async function createCompletedRun(
   headSha: string,
   findings: CreateReviewFindingInput[]
 ): Promise<void> {
-  const job = await storage.createOrGetReviewJob({
+  const job = await storage.createOrGetInteractionJob({
     tenantId,
     dedupeKey: `job-${noteId}`,
     projectId,
@@ -851,8 +1088,8 @@ async function createCompletedRun(
     headSha,
     payloadJson: "{}"
   });
-  const run = await storage.createReviewRun({
-    reviewJobId: job.job.id,
+  const run = await storage.createInteractionRun({
+    interactionJobId: job.job.id,
     tenantId,
     provider: "copilot-sdk",
     model: null,
@@ -861,7 +1098,7 @@ async function createCompletedRun(
     providerType: null,
     textGenerationModel: null
   });
-  await storage.completeReviewRun(
+  await storage.completeInteractionRun(
     run.id,
     JSON.stringify({
       overview: {
@@ -876,7 +1113,7 @@ async function createCompletedRun(
     run.id,
     findings.map((finding) => ({
       ...finding,
-      reviewRunId: run.id
+      interactionRunId: run.id
     }))
   );
 }
@@ -890,7 +1127,7 @@ async function createFailedRun(
   headSha: string,
   findings: CreateReviewFindingInput[]
 ): Promise<void> {
-  const job = await storage.createOrGetReviewJob({
+  const job = await storage.createOrGetInteractionJob({
     tenantId,
     dedupeKey: `failed-job-${noteId}`,
     projectId,
@@ -899,8 +1136,8 @@ async function createFailedRun(
     headSha,
     payloadJson: "{}"
   });
-  const run = await storage.createReviewRun({
-    reviewJobId: job.job.id,
+  const run = await storage.createInteractionRun({
+    interactionJobId: job.job.id,
     tenantId,
     provider: "copilot-sdk",
     model: null,
@@ -913,8 +1150,8 @@ async function createFailedRun(
     run.id,
     findings.map((finding) => ({
       ...finding,
-      reviewRunId: run.id
+      interactionRunId: run.id
     }))
   );
-  await storage.failReviewRun(run.id, "synthetic failure");
+  await storage.failInteractionRun(run.id, "synthetic failure");
 }

@@ -529,8 +529,8 @@ async function collectTenantArtifactSummary(
   workspaceRoot: string,
   runLogDir: string
 ): Promise<TenantArtifactSummary> {
-  const workspacePaths = summary.reviewJobIds.map((reviewJobId) => join(workspaceRoot, reviewJobId));
-  const runLogPaths = summary.reviewRunIds.map((reviewRunId) => join(runLogDir, reviewRunId));
+  const workspacePaths = summary.interactionJobIds.map((interactionJobId) => join(workspaceRoot, interactionJobId));
+  const runLogPaths = summary.interactionRunIds.map((interactionRunId) => join(runLogDir, interactionRunId));
   const [existingWorkspaceCount, existingRunLogCount] = await Promise.all([
     countExistingPaths(workspacePaths),
     countExistingPaths(runLogPaths)
@@ -570,11 +570,11 @@ function formatTenantRemovalSummary(
     `database: ${databasePath}`,
     "This will delete:",
     `- 1 tenant record`,
-    `- ${summary.reviewJobCount} ${pluralize("review job", summary.reviewJobCount)}`,
+    `- ${summary.interactionJobCount} ${pluralize("interaction job", summary.interactionJobCount)}`,
     `- ${summary.mergeRequestSnapshotCount} ${pluralize("merge request snapshot", summary.mergeRequestSnapshotCount)}`,
-    `- ${summary.reviewRunCount} ${pluralize("review run", summary.reviewRunCount)}`,
+    `- ${summary.interactionRunCount} ${pluralize("interaction run", summary.interactionRunCount)}`,
     `- ${summary.reviewFindingCount} ${pluralize("review finding", summary.reviewFindingCount)}`,
-    `- ${summary.reviewRunMetricCount} ${pluralize("review run metric", summary.reviewRunMetricCount)}`,
+    `- ${summary.interactionRunMetricCount} ${pluralize("interaction run metric", summary.interactionRunMetricCount)}`,
     `- ${summary.discussionMappingCount} ${pluralize("discussion mapping", summary.discussionMappingCount)}`,
     `- ${artifactSummary.existingWorkspaceCount}/${artifactSummary.workspacePaths.length} workspace ${pluralize("directory", artifactSummary.workspacePaths.length)} under ${workspaceRoot}`,
     `- ${artifactSummary.existingRunLogCount}/${artifactSummary.runLogPaths.length} run log ${pluralize("directory", artifactSummary.runLogPaths.length)} under ${runLogDir}`,
@@ -632,8 +632,8 @@ async function deleteTenantArtifactsForSummary(
   runLogDir: string
 ): Promise<void> {
   await deleteTenantArtifacts([
-    ...summary.reviewJobIds.map((reviewJobId) => join(workspaceRoot, reviewJobId)),
-    ...summary.reviewRunIds.map((reviewRunId) => join(runLogDir, reviewRunId))
+    ...summary.interactionJobIds.map((interactionJobId) => join(workspaceRoot, interactionJobId)),
+    ...summary.interactionRunIds.map((interactionRunId) => join(runLogDir, interactionRunId))
   ]);
 }
 

@@ -41,19 +41,19 @@ export interface UpsertModelProfileInput {
 
 export interface TenantDeletionSummary {
   tenant: TenantRecord;
-  reviewJobCount: number;
+  interactionJobCount: number;
   mergeRequestSnapshotCount: number;
-  reviewRunCount: number;
+  interactionRunCount: number;
   reviewFindingCount: number;
-  reviewRunMetricCount: number;
+  interactionRunMetricCount: number;
   discussionMappingCount: number;
-  reviewJobIds: string[];
-  reviewRunIds: string[];
+  interactionJobIds: string[];
+  interactionRunIds: string[];
 }
 
-export type ReviewJobStatus = "queued" | "in_progress" | "completed" | "failed";
+export type InteractionJobStatus = "queued" | "in_progress" | "completed" | "failed";
 
-export interface ReviewJobRecord {
+export interface InteractionJobRecord {
   id: string;
   tenantId: string;
   dedupeKey: string;
@@ -61,7 +61,7 @@ export interface ReviewJobRecord {
   mergeRequestIid: number;
   noteId: number;
   headSha: string;
-  status: ReviewJobStatus;
+  status: InteractionJobStatus;
   payloadJson: string;
   retryCount: number;
   lastError: string | null;
@@ -70,7 +70,7 @@ export interface ReviewJobRecord {
   finishedAt: string | null;
 }
 
-export interface CreateReviewJobInput {
+export interface CreateInteractionJobInput {
   tenantId: string;
   dedupeKey: string;
   projectId: number;
@@ -82,7 +82,7 @@ export interface CreateReviewJobInput {
 
 export interface MergeRequestSnapshotRecord {
   id: string;
-  reviewJobId: string;
+  interactionJobId: string;
   tenantId: string;
   mergeRequestIid: number;
   headSha: string;
@@ -98,7 +98,7 @@ export interface MergeRequestSnapshotRecord {
 }
 
 export interface CreateMergeRequestSnapshotInput {
-  reviewJobId: string;
+  interactionJobId: string;
   tenantId: string;
   mergeRequestIid: number;
   headSha: string;
@@ -112,11 +112,11 @@ export interface CreateMergeRequestSnapshotInput {
   workspaceStrategy: string;
 }
 
-export type ReviewRunStatus = "in_progress" | "completed" | "failed";
+export type InteractionRunStatus = "in_progress" | "completed" | "failed";
 
-export interface ReviewRunRecord {
+export interface InteractionRunRecord {
   id: string;
-  reviewJobId: string;
+  interactionJobId: string;
   tenantId: string;
   provider: string;
   model: string | null;
@@ -124,16 +124,16 @@ export interface ReviewRunRecord {
   providerBaseUrl: string | null;
   providerType: "openai" | "azure" | "anthropic" | null;
   textGenerationModel: string | null;
-  status: ReviewRunStatus;
+  status: InteractionRunStatus;
   resultJson: string | null;
   error: string | null;
   startedAt: string;
   finishedAt: string | null;
 }
 
-export interface ReviewRunMetricsRecord {
+export interface InteractionRunMetricsRecord {
   id: string;
-  reviewRunId: string;
+  interactionRunId: string;
   triggerKind: string | null;
   promptMode: string | null;
   promptChars: number;
@@ -158,8 +158,8 @@ export interface ReviewRunMetricsRecord {
   updatedAt: string;
 }
 
-export interface CreateReviewRunInput {
-  reviewJobId: string;
+export interface CreateInteractionRunInput {
+  interactionJobId: string;
   tenantId: string;
   provider: string;
   model: string | null;
@@ -169,8 +169,8 @@ export interface CreateReviewRunInput {
   textGenerationModel: string | null;
 }
 
-export interface UpsertReviewRunMetricsInput {
-  reviewRunId: string;
+export interface UpsertInteractionRunMetricsInput {
+  interactionRunId: string;
   triggerKind: string | null;
   promptMode: string | null;
   promptChars: number;
@@ -193,9 +193,9 @@ export interface UpsertReviewRunMetricsInput {
   repeatedViewPathsJson: string;
 }
 
-export interface PreviousCompletedReviewRecord {
-  reviewRunId: string;
-  reviewJobId: string;
+export interface PreviousCompletedInteractionRecord {
+  interactionRunId: string;
+  interactionJobId: string;
   finishedAt: string;
   headSha: string;
   resultJson: string;
@@ -205,7 +205,7 @@ export interface PreviousCompletedReviewRecord {
 export type ReviewFindingStatus = "open" | "resolved" | "dismissed";
 
 export interface CreateReviewFindingInput {
-  reviewRunId: string;
+  interactionRunId: string;
   identityKey: string;
   severity: string;
   category: string;
@@ -226,7 +226,7 @@ export interface PriorReviewFindingRecord {
   category: string;
   anchor: ReviewAnchor | null;
   suggestion: ReviewSuggestion | null;
-  reviewRunId: string;
+  interactionRunId: string;
   reviewedAt: string;
   headSha: string;
 }
@@ -253,7 +253,7 @@ export interface DiscussionMappingRecord {
   noteAuthorId: number | null;
   noteAuthorUsername: string | null;
   status: DiscussionMappingStatus;
-  lastReviewRunId: string | null;
+  lastInteractionRunId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -278,7 +278,7 @@ export interface UpsertDiscussionMappingInput {
   noteAuthorId: number | null;
   noteAuthorUsername: string | null;
   status: DiscussionMappingStatus;
-  lastReviewRunId: string | null;
+  lastInteractionRunId: string | null;
 }
 
 export interface Storage {
@@ -297,28 +297,28 @@ export interface Storage {
   getTenantDeletionSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null>;
   deleteTenantWithSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null>;
   deleteTenant(baseUrl: string, projectId: number): Promise<TenantRecord | null>;
-  createOrGetReviewJob(input: CreateReviewJobInput): Promise<{ job: ReviewJobRecord; created: boolean }>;
-  getReviewJobById(jobId: string): Promise<ReviewJobRecord | null>;
-  listQueuedReviewJobs(): Promise<ReviewJobRecord[]>;
+  createOrGetInteractionJob(input: CreateInteractionJobInput): Promise<{ job: InteractionJobRecord; created: boolean }>;
+  getInteractionJobById(jobId: string): Promise<InteractionJobRecord | null>;
+  listQueuedInteractionJobs(): Promise<InteractionJobRecord[]>;
   markJobInProgress(jobId: string): Promise<void>;
   markJobCompleted(jobId: string): Promise<void>;
   markJobQueued(jobId: string, retryCount: number, error: string): Promise<void>;
   markJobFailed(jobId: string, retryCount: number, error: string): Promise<void>;
   createMergeRequestSnapshot(input: CreateMergeRequestSnapshotInput): Promise<MergeRequestSnapshotRecord>;
-  createReviewRun(input: CreateReviewRunInput): Promise<ReviewRunRecord>;
-  getLatestCompletedReviewForMergeRequest(
+  createInteractionRun(input: CreateInteractionRunInput): Promise<InteractionRunRecord>;
+  getLatestCompletedInteractionForMergeRequest(
     tenantId: string,
     mergeRequestIid: number,
-    currentReviewJobId: string
-  ): Promise<PreviousCompletedReviewRecord | null>;
-  completeReviewRun(reviewRunId: string, resultJson: string): Promise<void>;
-  failReviewRun(reviewRunId: string, error: string): Promise<void>;
-  upsertReviewRunMetrics(input: UpsertReviewRunMetricsInput): Promise<ReviewRunMetricsRecord>;
-  replaceReviewFindings(reviewRunId: string, findings: CreateReviewFindingInput[]): Promise<void>;
+    currentInteractionJobId: string
+  ): Promise<PreviousCompletedInteractionRecord | null>;
+  completeInteractionRun(interactionRunId: string, resultJson: string): Promise<void>;
+  failInteractionRun(interactionRunId: string, error: string): Promise<void>;
+  upsertInteractionRunMetrics(input: UpsertInteractionRunMetricsInput): Promise<InteractionRunMetricsRecord>;
+  replaceReviewFindings(interactionRunId: string, findings: CreateReviewFindingInput[]): Promise<void>;
   listPriorReviewFindings(
     tenantId: string,
     mergeRequestIid: number,
-    currentReviewJobId: string
+    currentInteractionJobId: string
   ): Promise<PriorReviewFindingRecord[]>;
   listLatestReviewFindings(tenantId: string, mergeRequestIid: number): Promise<PriorReviewFindingRecord[]>;
   updateReviewFindingStatus(

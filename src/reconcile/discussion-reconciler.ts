@@ -67,7 +67,7 @@ export class DiscussionReconciler {
     tenant: TenantRecord;
     context: HydratedMergeRequestContext;
     mappings: DiscussionMappingRecord[];
-    reviewRunId: string;
+    interactionRunId: string;
     reviewResult: ReviewResult;
     client: GitLabClient;
   }): Promise<ReconcileSummary> {
@@ -111,7 +111,7 @@ export class DiscussionReconciler {
           tenant: input.tenant,
           context: input.context,
           client: input.client,
-          reviewRunId: input.reviewRunId,
+          interactionRunId: input.interactionRunId,
           thread: matchedThread,
           finding,
           disposition
@@ -124,7 +124,7 @@ export class DiscussionReconciler {
         tenant: input.tenant,
         context: input.context,
         client: input.client,
-        reviewRunId: input.reviewRunId,
+        interactionRunId: input.interactionRunId,
         finding
       });
       summary.created += 1;
@@ -153,7 +153,7 @@ export class DiscussionReconciler {
         await this.persistThreadState({
           tenant: input.tenant,
           context: input.context,
-          reviewRunId: input.reviewRunId,
+          interactionRunId: input.interactionRunId,
           thread,
           note: thread.latestBotNote ?? thread.discussion.notes[0] ?? null,
           identityKey: thread.mapping?.identityKey ?? createFindingIdentityKey({
@@ -198,7 +198,7 @@ export class DiscussionReconciler {
         await this.persistThreadState({
           tenant: input.tenant,
           context: input.context,
-          reviewRunId: input.reviewRunId,
+          interactionRunId: input.interactionRunId,
           thread,
           note,
           identityKey:
@@ -245,7 +245,7 @@ export class DiscussionReconciler {
     tenant: TenantRecord;
     context: HydratedMergeRequestContext;
     client: GitLabClient;
-    reviewRunId: string;
+    interactionRunId: string;
     thread: KnownThread;
     finding: ReviewFinding;
     disposition: PriorDisposition | undefined;
@@ -275,7 +275,7 @@ export class DiscussionReconciler {
       await this.persistThreadState({
         tenant: input.tenant,
         context: input.context,
-        reviewRunId: input.reviewRunId,
+        interactionRunId: input.interactionRunId,
         thread: input.thread,
         note: input.thread.latestBotNote ?? input.thread.discussion.notes[0] ?? null,
         identityKey,
@@ -301,7 +301,7 @@ export class DiscussionReconciler {
       await this.persistThreadState({
         tenant: input.tenant,
         context: input.context,
-        reviewRunId: input.reviewRunId,
+        interactionRunId: input.interactionRunId,
         thread: input.thread,
         note,
         identityKey,
@@ -332,7 +332,7 @@ export class DiscussionReconciler {
     await this.persistThreadState({
       tenant: input.tenant,
       context: input.context,
-      reviewRunId: input.reviewRunId,
+      interactionRunId: input.interactionRunId,
       thread: input.thread,
       note: updatedNote,
       identityKey,
@@ -352,7 +352,7 @@ export class DiscussionReconciler {
     tenant: TenantRecord;
     context: HydratedMergeRequestContext;
     client: GitLabClient;
-    reviewRunId: string;
+    interactionRunId: string;
     finding: ReviewFinding;
   }): Promise<void> {
     const body = renderFindingBody(input.finding);
@@ -363,7 +363,7 @@ export class DiscussionReconciler {
       client: input.client,
       projectId: input.tenant.projectId,
       mergeRequestIid: input.context.mergeRequest.iid,
-      reviewRunId: input.reviewRunId,
+      interactionRunId: input.interactionRunId,
       finding: input.finding,
       body,
       position
@@ -408,7 +408,7 @@ export class DiscussionReconciler {
       noteAuthorId: note.author.id,
       noteAuthorUsername: note.author.username,
       status: note.resolved ? "resolved" : "open",
-      lastReviewRunId: input.reviewRunId
+      lastInteractionRunId: input.interactionRunId
     });
     const updatedFinding = await this.storage.updateReviewFindingStatus(
       input.tenant.id,
@@ -433,7 +433,7 @@ export class DiscussionReconciler {
     client: GitLabClient;
     projectId: number;
     mergeRequestIid: number;
-    reviewRunId: string;
+    interactionRunId: string;
     finding: ReviewFinding;
     body: string;
     position: GitLabDiffPosition | null;
@@ -463,7 +463,7 @@ export class DiscussionReconciler {
       this.logger.warn(
         {
           err: error,
-          reviewRunId: input.reviewRunId,
+          interactionRunId: input.interactionRunId,
           projectId: input.projectId,
           mergeRequestIid: input.mergeRequestIid,
           findingTitle: input.finding.title,
@@ -485,7 +485,7 @@ export class DiscussionReconciler {
   private async persistThreadState(input: {
     tenant: TenantRecord;
     context: HydratedMergeRequestContext;
-    reviewRunId: string;
+    interactionRunId: string;
     thread: KnownThread;
     note: GitLabNote | null;
     identityKey: string;
@@ -523,7 +523,7 @@ export class DiscussionReconciler {
       noteAuthorId: input.note.author.id,
       noteAuthorUsername: input.note.author.username,
       status: input.discussionStatus,
-      lastReviewRunId: input.reviewRunId
+      lastInteractionRunId: input.interactionRunId
     });
 
     const updatedFinding = await this.storage.updateReviewFindingStatus(
@@ -548,7 +548,7 @@ export class DiscussionReconciler {
   private async syncSummaryNote(input: {
     tenant: TenantRecord;
     context: HydratedMergeRequestContext;
-    reviewRunId: string;
+    interactionRunId: string;
     reviewResult: ReviewResult;
     client: GitLabClient;
     summaryResolvedFindingIdentityKeys: ReadonlySet<string>;

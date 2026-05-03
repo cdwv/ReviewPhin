@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildReviewTriggerContext, classifyWebhookTrigger } from "../src/review/trigger.js";
 import { REVIEW_SUMMARY_NOTE_MARKER } from "../src/review/summary.js";
-import { createReviewJobDedupeKey } from "../src/utils/ids.js";
+import { createInteractionJobDedupeKey } from "../src/utils/ids.js";
 
 const tenant = {
   id: "tenant_1",
@@ -473,14 +473,14 @@ describe("review trigger helpers", () => {
   });
 
   it("treats note updates as distinct dedupe identities for the same trigger comment", () => {
-    const createKey = createReviewJobDedupeKey({
+    const createKey = createInteractionJobDedupeKey({
       baseUrl: tenant.baseUrl,
       projectId: tenant.projectId,
       mergeRequestIid: 7,
       noteId: 55
     });
 
-    const firstUpdateKey = createReviewJobDedupeKey({
+    const firstUpdateKey = createInteractionJobDedupeKey({
       baseUrl: tenant.baseUrl,
       projectId: tenant.projectId,
       mergeRequestIid: 7,
@@ -490,7 +490,7 @@ describe("review trigger helpers", () => {
       noteBody: "@review-bot please review this again"
     });
 
-    const secondUpdateKey = createReviewJobDedupeKey({
+    const secondUpdateKey = createInteractionJobDedupeKey({
       baseUrl: tenant.baseUrl,
       projectId: tenant.projectId,
       mergeRequestIid: 7,
@@ -503,7 +503,7 @@ describe("review trigger helpers", () => {
     expect(createKey).not.toBe(firstUpdateKey);
     expect(firstUpdateKey).not.toBe(secondUpdateKey);
     expect(firstUpdateKey).toBe(
-      createReviewJobDedupeKey({
+      createInteractionJobDedupeKey({
         baseUrl: tenant.baseUrl,
         projectId: tenant.projectId,
         mergeRequestIid: 7,
@@ -517,7 +517,7 @@ describe("review trigger helpers", () => {
 
   it("falls back to the note body when an update webhook omits updated_at", () => {
     expect(
-      createReviewJobDedupeKey({
+      createInteractionJobDedupeKey({
         baseUrl: tenant.baseUrl,
         projectId: tenant.projectId,
         mergeRequestIid: 7,
@@ -526,7 +526,7 @@ describe("review trigger helpers", () => {
         noteBody: "@review-bot first edit"
       })
     ).not.toBe(
-      createReviewJobDedupeKey({
+      createInteractionJobDedupeKey({
         baseUrl: tenant.baseUrl,
         projectId: tenant.projectId,
         mergeRequestIid: 7,

@@ -72,7 +72,7 @@ async function main(): Promise<void> {
     }
   });
 
-  const queuedJobs = await storage.listQueuedReviewJobs();
+  const queuedJobs = await storage.listQueuedInteractionJobs();
   queue.enqueueMany(queuedJobs.map((job) => job.id));
 
   const app = await createApp({
@@ -98,7 +98,7 @@ async function main(): Promise<void> {
     port: config.port
   });
 
-  logger.info("Gitlab review worker listening.");
+  logger.info("GitLab interaction worker listening.");
   logger.info(
     { host: config.host, port: config.port },
     `Point your GitLab webhooks to http://${config.host}:${config.port}/webhooks/gitlab/note`

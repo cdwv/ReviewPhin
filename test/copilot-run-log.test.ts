@@ -32,8 +32,8 @@ describe("CopilotRunLog", () => {
         deltaSincePreviousReview: null
       },
       logging: {
-        reviewRunId: "run_123",
-        jobId: "job_123",
+        interactionRunId: "run_123",
+        interactionJobId: "job_123",
         tenantId: "tenant_123"
       }
     } as unknown as ReviewContext;
@@ -75,7 +75,7 @@ describe("CopilotRunLog", () => {
 
     expect(logPath).toBe(join(logDir, "session.json"));
     expect(written.sessionId).toBe("session_123");
-    expect(written.metadata.reviewRunId).toBe("run_123");
+    expect(written.metadata.interactionRunId).toBe("run_123");
     expect(written.prompt).toBe("Return JSON only.");
     expect(written.events).toHaveLength(1);
     expect(written.response.content).toContain("\"overview\"");

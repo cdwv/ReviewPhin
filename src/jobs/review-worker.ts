@@ -11,13 +11,13 @@ import { buildProviderThreads, type ReconcileSummary, DiscussionReconciler } fro
 import { readCopilotRunMetrics } from "../review/copilot-run-metrics.js";
 import { ModelProfileConfigurationError, resolveReviewProviderConfig } from "../review/model-profiles.js";
 import type { ReviewProviderFactory } from "../review/provider.js";
-import { ReviewRunArtifacts } from "../review/run-artifacts.js";
+import { InteractionRunArtifacts } from "../review/run-artifacts.js";
 import { buildScopedReviewContext } from "../review/review-scope.js";
 import { buildReviewTriggerContext, classifyWebhookTrigger, locateTriggerNoteReference } from "../review/trigger.js";
 import type { ReviewContext, WebhookReviewTrigger } from "../review/types.js";
-import type { CreateReviewFindingInput, ReviewJobRecord, Storage, TenantRecord } from "../storage/types.js";
+import type { CreateReviewFindingInput, InteractionJobRecord, Storage, TenantRecord } from "../storage/types.js";
 import type { TenantRegistry } from "../tenants/tenant-registry.js";
-import { createReviewJobDedupeKey, createFindingIdentityKey } from "../utils/ids.js";
+import { createInteractionJobDedupeKey, createFindingIdentityKey } from "../utils/ids.js";
 
 const REVIEW_STARTED_REACTION = "eyes";
 const REVIEW_COMPLETED_REACTION = "white_check_mark";
@@ -61,18 +61,18 @@ export class ReviewWorker {
     this.retryBackoffMs = options.retryBackoffMs;
   }
 
-  public async createReviewJobFromWebhook(
+  public async createInteractionJobFromWebhook(
     payload: GitLabNoteHookPayload,
     tenant: TenantRecord,
     trigger: WebhookReviewTrigger
   ): Promise<{
-    job: ReviewJobRecord;
+    job: InteractionJobRecord;
     created: boolean;
   }> {
     const headSha = extractWebhookHeadSha(payload);
-    const createdJob = await this.storage.createOrGetReviewJob({
+    const createdJob = await this.storage.createOrGetInteractionJob({
       tenantId: tenant.id,
-      dedupeKey: createReviewJobDedupeKey({
+      dedupeKey: createInteractionJobDedupeKey({
         baseUrl: tenant.baseUrl,
         projectId: tenant.projectId,
         mergeRequestIid: payload.merge_request.iid,
@@ -116,9 +116,9 @@ export class ReviewWorker {
   }
 
   public async processJob(jobId: string): Promise<{ requeueAfterMs?: number } | void> {
-    const job = await this.storage.getReviewJobById(jobId);
+    const job = await this.storage.getInteractionJobById(jobId);
     if (!job) {
-      this.logger.warn({ jobId }, "review job not found");
+      this.logger.warn({ interactionJobId: jobId }, "interaction job not found");
       return;
     }
 
@@ -129,8 +129,8 @@ export class ReviewWorker {
 
     await this.storage.markJobInProgress(job.id);
 
-    let reviewRunId: string | null = null;
-    let runArtifacts: ReviewRunArtifacts | null = null;
+    let interactionRunId: string | null = null;
+    let runArtifacts: InteractionRunArtifacts | null = null;
     let workspaceToCleanup: Awaited<ReturnType<MergeRequestContextHydrator["hydrate"]>>["workspace"] | null = null;
     let providerContext: ReviewContext | null = null;
     let client: GitLabClient | null = null;
@@ -153,8 +153,8 @@ export class ReviewWorker {
         mergeRequest: context.mergeRequest
       });
       const reviewProvider = this.reviewProviderFactory.createProvider(resolvedProviderConfig);
-      const reviewRun = await this.storage.createReviewRun({
-        reviewJobId: job.id,
+      const interactionRun = await this.storage.createInteractionRun({
+        interactionJobId: job.id,
         tenantId: tenant.id,
         provider: reviewProvider.name,
         model: resolvedProviderConfig.reviewModel,
@@ -163,13 +163,13 @@ export class ReviewWorker {
         providerType: resolvedProviderConfig.providerType,
         textGenerationModel: resolvedProviderConfig.textGenerationModel
       });
-      reviewRunId = reviewRun.id;
-      runArtifacts = new ReviewRunArtifacts(this.runLogDir, reviewRun.id);
+      interactionRunId = interactionRun.id;
+      runArtifacts = new InteractionRunArtifacts(this.runLogDir, interactionRun.id);
       await runArtifacts.initialize();
-      client = this.createGitLabClient(tenant, job.id, reviewRun.id, runArtifacts);
+      client = this.createGitLabClient(tenant, job.id, interactionRun.id, runArtifacts);
 
-      await this.logRunEvent(runArtifacts, "info", "review run started", {
-        jobId: job.id,
+      await this.logRunEvent(runArtifacts, "info", "interaction run started", {
+        interactionJobId: job.id,
         tenantId: tenant.id,
         mergeRequestIid: job.mergeRequestIid,
         modelProfileName: resolvedProviderConfig.modelProfileName,
@@ -181,7 +181,7 @@ export class ReviewWorker {
       });
 
       await this.logRunEvent(runArtifacts, "info", "merge request context hydrated", {
-        jobId: job.id,
+        interactionJobId: job.id,
         mergeRequestIid: job.mergeRequestIid,
         changedFiles: context.changes.length
       });
@@ -206,7 +206,7 @@ export class ReviewWorker {
         discussions: context.discussions,
         priorThreads
       });
-      const previousReview = await this.storage.getLatestCompletedReviewForMergeRequest(
+      const previousInteraction = await this.storage.getLatestCompletedInteractionForMergeRequest(
         tenant.id,
         context.mergeRequest.iid,
         job.id
@@ -236,32 +236,32 @@ export class ReviewWorker {
           title: finding.title,
           body: finding.body,
           severity: finding.severity as ReviewContext["scope"]["priorFindings"][number]["severity"],
-          category: finding.category as ReviewContext["scope"]["priorFindings"][number]["category"],
-          anchor: finding.anchor,
-          suggestion: finding.suggestion,
-          reviewRunId: finding.reviewRunId,
-          reviewedAt: finding.reviewedAt,
-          headSha: finding.headSha
-        })),
-        previousReview: previousReview
+           category: finding.category as ReviewContext["scope"]["priorFindings"][number]["category"],
+           anchor: finding.anchor,
+           suggestion: finding.suggestion,
+           reviewRunId: finding.interactionRunId,
+           reviewedAt: finding.reviewedAt,
+           headSha: finding.headSha
+         })),
+        previousReview: previousInteraction
           ? {
-              reviewRunId: previousReview.reviewRunId,
-              finishedAt: previousReview.finishedAt,
-              headSha: previousReview.headSha,
-              resultJson: previousReview.resultJson,
-              changesJson: previousReview.snapshot.changesJson
+              reviewRunId: previousInteraction.interactionRunId,
+              finishedAt: previousInteraction.finishedAt,
+              headSha: previousInteraction.headSha,
+              resultJson: previousInteraction.resultJson,
+              changesJson: previousInteraction.snapshot.changesJson
             }
           : null,
         logging: {
-          reviewRunId: reviewRun.id,
-          jobId: job.id,
+          interactionRunId: interactionRun.id,
+          interactionJobId: job.id,
           tenantId: tenant.id,
           runDirectory: runArtifacts.runDirectory
         }
       });
 
-      await this.logRunEvent(runArtifacts, "info", "starting Copilot review", {
-        reviewRunId: reviewRun.id,
+      await this.logRunEvent(runArtifacts, "info", "starting Copilot interaction", {
+        interactionRunId: interactionRun.id,
         workspacePath: context.workspace.rootPath,
         changedFiles: context.changes.length,
         promptMode: providerContext.scope.mode,
@@ -270,9 +270,9 @@ export class ReviewWorker {
 
       const reviewResult = await reviewProvider.review(providerContext);
 
-      await this.storage.completeReviewRun(reviewRun.id, JSON.stringify(reviewResult));
+      await this.storage.completeInteractionRun(interactionRun.id, JSON.stringify(reviewResult));
       await this.storage.replaceReviewFindings(
-        reviewRun.id,
+        interactionRun.id,
         reviewResult.findings.map((finding): CreateReviewFindingInput => {
           const identityKey = createFindingIdentityKey({
             title: finding.title,
@@ -283,7 +283,7 @@ export class ReviewWorker {
             side: finding.anchor?.side
           });
           return {
-            reviewRunId: reviewRun.id,
+            interactionRunId: interactionRun.id,
             identityKey,
             severity: finding.severity,
             category: finding.category,
@@ -300,13 +300,13 @@ export class ReviewWorker {
         tenant,
         context,
         mappings,
-        reviewRunId: reviewRun.id,
+        interactionRunId: interactionRun.id,
         reviewResult,
         client
       });
 
       await this.logRunEvent(runArtifacts, "info", "reconciled review result into GitLab", {
-        reviewRunId: reviewRun.id,
+        interactionRunId: interactionRun.id,
         summary: reconcileSummary
       });
 
@@ -321,21 +321,21 @@ export class ReviewWorker {
       );
       this.logger.info(
         {
-          jobId: job.id,
-          reviewRunId: reviewRun.id,
+          interactionJobId: job.id,
+          interactionRunId: interactionRun.id,
           summary: reconcileSummary
         },
-        "review job completed"
+        "interaction job completed"
       );
     } catch (error) {
-      if (reviewRunId) {
-        await this.storage.failReviewRun(reviewRunId, getErrorMessage(error));
+      if (interactionRunId) {
+        await this.storage.failInteractionRun(interactionRunId, getErrorMessage(error));
       }
 
       if (runArtifacts) {
-        await this.logRunEvent(runArtifacts, "error", "review job failed", {
-          jobId: job.id,
-          reviewRunId,
+        await this.logRunEvent(runArtifacts, "error", "interaction job failed", {
+          interactionJobId: job.id,
+          interactionRunId,
           error: serializeError(error)
         });
       }
@@ -346,10 +346,10 @@ export class ReviewWorker {
         this.logger.warn(
           {
             err: error,
-            jobId: job.id,
+            interactionJobId: job.id,
             retryCount: nextRetryCount
           },
-          "review job failed and will be retried"
+          "interaction job failed and will be retried"
         );
         return { requeueAfterMs: this.retryBackoffMs * nextRetryCount };
       }
@@ -367,8 +367,8 @@ export class ReviewWorker {
       }
       throw error;
     } finally {
-      if (reviewRunId && runArtifacts && providerContext) {
-        await this.persistReviewRunMetrics(reviewRunId, providerContext, runArtifacts);
+      if (interactionRunId && runArtifacts && providerContext) {
+        await this.persistInteractionRunMetrics(interactionRunId, providerContext, runArtifacts);
       }
 
       if (workspaceToCleanup) {
@@ -376,8 +376,8 @@ export class ReviewWorker {
           await this.workspaceMaterializer.cleanup(workspaceToCleanup);
         } catch (error) {
           if (runArtifacts) {
-            await this.logRunEvent(runArtifacts, "warn", "workspace cleanup failed after review completion", {
-              jobId: job.id,
+            await this.logRunEvent(runArtifacts, "warn", "workspace cleanup failed after interaction completion", {
+              interactionJobId: job.id,
               cleanupRoot: workspaceToCleanup.cleanupRoot,
               error: serializeError(error)
             });
@@ -385,10 +385,10 @@ export class ReviewWorker {
           this.logger.warn(
             {
               err: error,
-              jobId: job.id,
+              interactionJobId: job.id,
               cleanupRoot: workspaceToCleanup.cleanupRoot
             },
-            "workspace cleanup failed after review completion"
+            "workspace cleanup failed after interaction completion"
           );
         }
       }
@@ -397,17 +397,17 @@ export class ReviewWorker {
 
   private createGitLabClient(
     tenant: TenantRecord,
-    jobId: string,
-    reviewRunId?: string,
-    runArtifacts?: ReviewRunArtifacts
+    interactionJobId: string,
+    interactionRunId?: string,
+    runArtifacts?: InteractionRunArtifacts
   ): GitLabClient {
     return new GitLabClient({
       baseUrl: tenant.baseUrl,
       apiToken: tenant.apiToken,
       logger: this.logger.child({
         tenantId: tenant.id,
-        jobId,
-        ...(reviewRunId ? { reviewRunId } : {})
+        interactionJobId,
+        ...(interactionRunId ? { interactionRunId } : {})
       }),
       ...(runArtifacts
         ? {
@@ -425,7 +425,7 @@ export class ReviewWorker {
     mergeRequestIid: number,
     note: TriggerNoteReference,
     reactionName: string,
-    jobId: string
+    interactionJobId: string
   ): Promise<void> {
     if (note.kind === "discussion-note") {
       return;
@@ -444,18 +444,18 @@ export class ReviewWorker {
         {
           err: error,
           tenantId: tenant.id,
-          jobId,
+          interactionJobId,
           mergeRequestIid,
           note,
           reactionName
         },
-        "failed to synchronize review reaction"
+        "failed to synchronize trigger-note reaction"
       );
     }
   }
 
   private async logRunEvent(
-    runArtifacts: ReviewRunArtifacts,
+    runArtifacts: InteractionRunArtifacts,
     level: "debug" | "info" | "warn" | "error",
     message: string,
     data: Record<string, unknown>
@@ -473,10 +473,10 @@ export class ReviewWorker {
     }
   }
 
-  private async persistReviewRunMetrics(
-    reviewRunId: string,
+  private async persistInteractionRunMetrics(
+    interactionRunId: string,
     context: ReviewContext,
-    runArtifacts: ReviewRunArtifacts
+    runArtifacts: InteractionRunArtifacts
   ): Promise<void> {
     try {
       const metrics = await readCopilotRunMetrics(runArtifacts.copilotSessionLogPath);
@@ -484,8 +484,8 @@ export class ReviewWorker {
         return;
       }
 
-      await this.storage.upsertReviewRunMetrics({
-        reviewRunId,
+      await this.storage.upsertInteractionRunMetrics({
+        interactionRunId,
         triggerKind: context.trigger.kind,
         promptMode: context.scope.mode,
         promptChars: metrics.promptChars,
@@ -508,7 +508,7 @@ export class ReviewWorker {
         repeatedViewPathsJson: JSON.stringify(metrics.repeatedViewPaths)
       });
     } catch (error) {
-      this.logger.warn({ err: error, reviewRunId }, "failed to persist review run metrics");
+      this.logger.warn({ err: error, interactionRunId }, "failed to persist interaction run metrics");
     }
   }
 }

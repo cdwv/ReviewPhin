@@ -67,7 +67,7 @@ describe("GitLab webhook route", () => {
   };
   const reviewWorker = {
     classifyWebhookTrigger: vi.fn(async (): Promise<WebhookReviewTrigger | null> => null),
-    createReviewJobFromWebhook: vi.fn(async () => ({
+    createInteractionJobFromWebhook: vi.fn(async () => ({
       job: { id: "job_1" },
       created: true
     }))
@@ -88,7 +88,7 @@ describe("GitLab webhook route", () => {
     await app.close();
     tenantRegistry.resolveWebhookTenant.mockClear();
     reviewWorker.classifyWebhookTrigger.mockClear();
-    reviewWorker.createReviewJobFromWebhook.mockClear();
+    reviewWorker.createInteractionJobFromWebhook.mockClear();
     queue.enqueue.mockClear();
     appPromise = createApp({
       logger,
@@ -117,7 +117,7 @@ describe("GitLab webhook route", () => {
       jobId: "job_1",
       deduplicated: false
     });
-    expect(reviewWorker.createReviewJobFromWebhook).toHaveBeenCalledTimes(1);
+    expect(reviewWorker.createInteractionJobFromWebhook).toHaveBeenCalledTimes(1);
     expect(queue.enqueue).toHaveBeenCalledWith("job_1");
   });
 
@@ -148,7 +148,7 @@ describe("GitLab webhook route", () => {
       deduplicated: false
     });
     expect(reviewWorker.classifyWebhookTrigger).toHaveBeenCalledTimes(1);
-    expect(reviewWorker.createReviewJobFromWebhook).toHaveBeenCalledTimes(1);
+    expect(reviewWorker.createInteractionJobFromWebhook).toHaveBeenCalledTimes(1);
     expect(queue.enqueue).toHaveBeenCalledWith("job_1");
   });
 
@@ -170,7 +170,7 @@ describe("GitLab webhook route", () => {
       reason: "no-trigger"
     });
     expect(reviewWorker.classifyWebhookTrigger).toHaveBeenCalledTimes(1);
-    expect(reviewWorker.createReviewJobFromWebhook).not.toHaveBeenCalled();
+    expect(reviewWorker.createInteractionJobFromWebhook).not.toHaveBeenCalled();
     expect(queue.enqueue).not.toHaveBeenCalled();
   });
 });
