@@ -13,7 +13,7 @@ export function createTenantKey(baseUrl: string, projectId: number): string {
   return `${normalizeGitLabBaseUrl(baseUrl)}::${projectId}`;
 }
 
-export function createReviewJobDedupeKey(input: {
+export function createInteractionJobDedupeKey(input: {
   baseUrl: string;
   projectId: number;
   mergeRequestIid: number;
@@ -29,7 +29,7 @@ export function createReviewJobDedupeKey(input: {
       input.mergeRequestIid,
       input.noteId,
       input.noteAction ?? "create",
-      resolveReviewJobNoteRevision(input)
+      resolveInteractionJobNoteRevision(input)
     ].join("::")
   );
 }
@@ -72,7 +72,7 @@ function normalizeForKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function resolveReviewJobNoteRevision(input: {
+function resolveInteractionJobNoteRevision(input: {
   noteAction?: "create" | "update" | undefined;
   noteUpdatedAt?: string | undefined;
   noteBody?: string | undefined;

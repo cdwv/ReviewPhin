@@ -140,7 +140,7 @@ export class CopilotReviewProvider implements ReviewProvider {
                     baseUrl: target.baseUrl,
                     apiToken: target.apiToken,
                     logger: this.logger.child({
-                      reviewRunId: effectiveContext.logging?.reviewRunId ?? null,
+                      interactionRunId: effectiveContext.logging?.interactionRunId ?? null,
                       tenantId: effectiveContext.logging?.tenantId ?? null,
                       toolName: PROJECT_MEMORY_TOOL_NAME
                     })
@@ -261,7 +261,7 @@ export class CopilotReviewProvider implements ReviewProvider {
       this.logger.warn(
         {
           err: error,
-          reviewRunId: context.logging?.reviewRunId ?? null,
+          interactionRunId: context.logging?.interactionRunId ?? null,
           tenantId: context.logging?.tenantId ?? null,
           reason: input.reason
         },

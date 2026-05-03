@@ -78,7 +78,7 @@ describe("Discussion reconciler", () => {
         noteAuthorId: 999,
         noteAuthorUsername: "review-bot",
         status: "open" as const,
-        lastReviewRunId: "run_old",
+        lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }
@@ -88,7 +88,7 @@ describe("Discussion reconciler", () => {
       tenant,
       context,
       mappings,
-      reviewRunId: "run_1",
+      interactionRunId: "run_1",
       reviewResult: {
         overview: {
           summary: "Found one issue",
@@ -186,7 +186,7 @@ describe("Discussion reconciler", () => {
         noteAuthorId: 999,
         noteAuthorUsername: "review-bot",
         status: "open" as const,
-        lastReviewRunId: "run_old",
+        lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }
@@ -196,7 +196,7 @@ describe("Discussion reconciler", () => {
       tenant,
       context,
       mappings,
-      reviewRunId: "run_1",
+      interactionRunId: "run_1",
       reviewResult: {
         overview: {
           summary: "Handled follow-up",
@@ -243,7 +243,7 @@ describe("Discussion reconciler", () => {
           category: "correctness",
           anchor: null,
           suggestion: null,
-          reviewRunId: "run_prev",
+          interactionRunId: "run_prev",
           reviewedAt: new Date().toISOString(),
           headSha: "head-prev"
         }
@@ -289,12 +289,12 @@ describe("Discussion reconciler", () => {
           noteAuthorId: 999,
           noteAuthorUsername: "review-bot",
           status: "open" as const,
-          lastReviewRunId: "run_old",
+          lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         }
       ],
-      reviewRunId: "run_1",
+      interactionRunId: "run_1",
       reviewResult: {
         overview: {
           summary: "Handled follow-up",
@@ -339,7 +339,7 @@ describe("Discussion reconciler", () => {
           category: "correctness",
           anchor: null,
           suggestion: null,
-          reviewRunId: "run_prev",
+          interactionRunId: "run_prev",
           reviewedAt: new Date().toISOString(),
           headSha: "head-prev"
         },
@@ -353,7 +353,7 @@ describe("Discussion reconciler", () => {
           category: "correctness",
           anchor: null,
           suggestion: null,
-          reviewRunId: "run_prev",
+          interactionRunId: "run_prev",
           reviewedAt: new Date().toISOString(),
           headSha: "head-prev"
         }
@@ -398,12 +398,12 @@ describe("Discussion reconciler", () => {
           noteAuthorId: 999,
           noteAuthorUsername: "review-bot",
           status: "open" as const,
-          lastReviewRunId: "run_old",
+          lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         }
       ],
-      reviewRunId: "run_1",
+      interactionRunId: "run_1",
       reviewResult: {
         overview: {
           summary: "The targeted rerun looks good.",
@@ -494,7 +494,7 @@ describe("Discussion reconciler", () => {
         noteAuthorId: 999,
         noteAuthorUsername: "review-bot",
         status: "resolved" as const,
-        lastReviewRunId: "run_old",
+        lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }
@@ -522,7 +522,7 @@ describe("Discussion reconciler", () => {
         ]
       }),
       mappings,
-      reviewRunId: "run_1",
+      interactionRunId: "run_1",
       reviewResult: {
         overview: {
           summary: "Handled resolved thread",
@@ -593,7 +593,7 @@ describe("Discussion reconciler", () => {
       tenant,
       context,
       mappings: [],
-      reviewRunId: "run_1",
+      interactionRunId: "run_1",
       reviewResult: {
         overview: {
           summary: "Looks good overall",
@@ -644,7 +644,7 @@ describe("Discussion reconciler", () => {
           category: "correctness",
           anchor: null,
           suggestion: null,
-          reviewRunId: "run_prev",
+          interactionRunId: "run_prev",
           reviewedAt: new Date().toISOString(),
           headSha: "head-prev"
         }
@@ -683,7 +683,7 @@ describe("Discussion reconciler", () => {
       tenant,
       context,
       mappings: [],
-      reviewRunId: "run_2",
+      interactionRunId: "run_2",
       reviewResult: {
         overview: {
           summary: "The targeted rerun looks good.",
@@ -761,7 +761,7 @@ describe("Discussion reconciler", () => {
           noteAuthorId: 999,
           noteAuthorUsername: "review-bot",
           status: "open",
-          lastReviewRunId: "run_old",
+          lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         }
@@ -841,7 +841,7 @@ describe("Discussion reconciler", () => {
           noteAuthorId: 999,
           noteAuthorUsername: "review-bot",
           status: "open",
-          lastReviewRunId: "run_old",
+          lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         }
@@ -943,7 +943,7 @@ describe("Discussion reconciler", () => {
         ]
       }),
       mappings: [],
-      reviewRunId: "run_1",
+      interactionRunId: "run_1",
       reviewResult: {
         overview: {
           summary: "Found one issue",
@@ -1040,7 +1040,7 @@ describe("Discussion reconciler", () => {
           ]
         }),
         mappings: [],
-        reviewRunId: "run_1",
+        interactionRunId: "run_1",
         reviewResult: {
           overview: {
             summary: "Found one issue",
@@ -1173,7 +1173,7 @@ function createHydratedContext(overrides?: {
     },
     snapshot: {
       id: "snapshot_1",
-      reviewJobId: "job_1",
+      interactionJobId: "job_1",
       tenantId: "tenant_1",
       mergeRequestIid: 7,
       headSha: "abc123",

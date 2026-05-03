@@ -23,8 +23,8 @@ export interface CopilotRunLogRecord {
   finishedAt: string | null;
   sessionId: string | null;
   metadata: {
-    reviewRunId: string | null;
-    jobId: string | null;
+    interactionRunId: string | null;
+    interactionJobId: string | null;
     tenantId: string | null;
     mergeRequestIid: number;
     workspacePath: string;
@@ -53,8 +53,8 @@ export class CopilotRunLog {
       finishedAt: null,
       sessionId: null,
       metadata: {
-        reviewRunId: options.context.logging?.reviewRunId ?? null,
-        jobId: options.context.logging?.jobId ?? null,
+        interactionRunId: options.context.logging?.interactionRunId ?? null,
+        interactionJobId: options.context.logging?.interactionJobId ?? null,
         tenantId: options.context.logging?.tenantId ?? null,
         mergeRequestIid: options.context.mergeRequest.iid,
         workspacePath: options.context.workspacePath,

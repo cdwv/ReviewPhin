@@ -103,12 +103,12 @@ describe("ReviewWorker cleanup", () => {
     };
 
     const storage = {
-      getReviewJobById: vi.fn(async () => job),
+      getInteractionJobById: vi.fn(async () => job),
       markJobInProgress: vi.fn(async () => {}),
       listDiscussionMappings: vi.fn(async () => []),
-      createReviewRun: vi.fn(async () => ({
+      createInteractionRun: vi.fn(async () => ({
         id: "run_1",
-        reviewJobId: job.id,
+        interactionJobId: job.id,
         tenantId: tenant.id,
         provider: "copilot-sdk",
         model: null,
@@ -124,12 +124,12 @@ describe("ReviewWorker cleanup", () => {
       })),
       getModelProfileByName: vi.fn(async () => null),
       getDefaultModelProfile: vi.fn(async () => null),
-      getLatestCompletedReviewForMergeRequest: vi.fn(async () => null),
+      getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
       listPriorReviewFindings: vi.fn(async () => []),
-      completeReviewRun: vi.fn(async () => {}),
+      completeInteractionRun: vi.fn(async () => {}),
       replaceReviewFindings: vi.fn(async () => {}),
       markJobCompleted: vi.fn(async () => {}),
-      failReviewRun: vi.fn(async () => {}),
+      failInteractionRun: vi.fn(async () => {}),
       markJobQueued: vi.fn(async () => {}),
       markJobFailed: vi.fn(async () => {})
     };
@@ -176,7 +176,7 @@ describe("ReviewWorker cleanup", () => {
           },
           snapshot: {
             id: "snapshot_1",
-            reviewJobId: "job_1",
+            interactionJobId: "job_1",
             tenantId: tenant.id,
             mergeRequestIid: 7,
             headSha: "abc123",
@@ -228,7 +228,7 @@ describe("ReviewWorker cleanup", () => {
 
     await expect(worker.processJob("job_1")).resolves.toBeUndefined();
     expect(storage.markJobCompleted).toHaveBeenCalledTimes(1);
-    expect(storage.failReviewRun).not.toHaveBeenCalled();
+    expect(storage.failInteractionRun).not.toHaveBeenCalled();
     expect(storage.markJobFailed).not.toHaveBeenCalled();
 
     globalThis.fetch = originalFetch;
@@ -285,12 +285,12 @@ describe("ReviewWorker cleanup", () => {
     };
 
     const storage = {
-      getReviewJobById: vi.fn(async () => job),
+      getInteractionJobById: vi.fn(async () => job),
       markJobInProgress: vi.fn(async () => {}),
       listDiscussionMappings: vi.fn(async () => []),
-      createReviewRun: vi.fn(async () => ({
+      createInteractionRun: vi.fn(async () => ({
         id: "run_1",
-        reviewJobId: job.id,
+        interactionJobId: job.id,
         tenantId: tenant.id,
         provider: "copilot-sdk",
         model: null,
@@ -306,12 +306,12 @@ describe("ReviewWorker cleanup", () => {
       })),
       getModelProfileByName: vi.fn(async () => null),
       getDefaultModelProfile: vi.fn(async () => null),
-      getLatestCompletedReviewForMergeRequest: vi.fn(async () => null),
+      getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
       listPriorReviewFindings: vi.fn(async () => []),
-      completeReviewRun: vi.fn(async () => {}),
+      completeInteractionRun: vi.fn(async () => {}),
       replaceReviewFindings: vi.fn(async () => {}),
       markJobCompleted: vi.fn(async () => {}),
-      failReviewRun: vi.fn(async () => {}),
+      failInteractionRun: vi.fn(async () => {}),
       markJobQueued: vi.fn(async () => {}),
       markJobFailed: vi.fn(async () => {})
     };
@@ -362,7 +362,7 @@ describe("ReviewWorker cleanup", () => {
           },
           snapshot: {
             id: "snapshot_1",
-            reviewJobId: "job_1",
+            interactionJobId: "job_1",
             tenantId: tenant.id,
             mergeRequestIid: 7,
             headSha: "abc123",
@@ -400,7 +400,7 @@ describe("ReviewWorker cleanup", () => {
       1,
       'Tenant https://gitlab.example.com::123 references unknown model profile "missing-profile"'
     );
-    expect(storage.failReviewRun).not.toHaveBeenCalled();
+    expect(storage.failInteractionRun).not.toHaveBeenCalled();
     expect(cleanup).toHaveBeenCalledWith({
       rootPath: join("tmp", "workspace"),
       cleanupRoot: join("tmp", "cleanup"),

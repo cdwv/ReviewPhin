@@ -50,7 +50,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
       });
     }
 
-    const { job, created } = await options.reviewWorker.createReviewJobFromWebhook(payload, tenant, trigger);
+    const { job, created } = await options.reviewWorker.createInteractionJobFromWebhook(payload, tenant, trigger);
     if (created) {
       options.queue.enqueue(job.id);
     }

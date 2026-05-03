@@ -8,21 +8,21 @@ import { createId, createTenantKey } from "../utils/ids.js";
 import type {
   CreateMergeRequestSnapshotInput,
   CreateReviewFindingInput,
-  CreateReviewJobInput,
-  CreateReviewRunInput,
+  CreateInteractionJobInput,
+  CreateInteractionRunInput,
   DiscussionMappingRecord,
   MergeRequestSnapshotRecord,
   ModelProfileRecord,
-  PreviousCompletedReviewRecord,
+  PreviousCompletedInteractionRecord,
   PriorReviewFindingRecord,
   ReviewFindingStatus,
-  ReviewRunMetricsRecord,
-  ReviewJobRecord,
-  ReviewRunRecord,
+  InteractionRunMetricsRecord,
+  InteractionJobRecord,
+  InteractionRunRecord,
   TenantDeletionSummary,
   TenantRecord,
   UpsertModelProfileInput,
-  UpsertReviewRunMetricsInput,
+  UpsertInteractionRunMetricsInput,
   UpsertDiscussionMappingInput
 } from "./types.js";
 import type { Storage } from "./types.js";
@@ -48,6 +48,9 @@ export class SqliteStorage implements Storage {
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
+    `);
+    migrateInteractionExecutionSchema(this.db);
+    this.db.exec(`
 
       CREATE TABLE IF NOT EXISTS model_profiles (
         name TEXT PRIMARY KEY,
@@ -77,7 +80,7 @@ export class SqliteStorage implements Storage {
         UNIQUE(base_url, project_id)
       );
 
-      CREATE TABLE IF NOT EXISTS review_jobs (
+      CREATE TABLE IF NOT EXISTS interaction_jobs (
         id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
         dedupe_key TEXT NOT NULL UNIQUE,
@@ -97,7 +100,7 @@ export class SqliteStorage implements Storage {
 
       CREATE TABLE IF NOT EXISTS merge_request_snapshots (
         id TEXT PRIMARY KEY,
-        review_job_id TEXT NOT NULL,
+        interaction_job_id TEXT NOT NULL,
         tenant_id TEXT NOT NULL,
         merge_request_iid INTEGER NOT NULL,
         head_sha TEXT NOT NULL,
@@ -110,13 +113,13 @@ export class SqliteStorage implements Storage {
         project_memory_json TEXT,
         workspace_strategy TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        FOREIGN KEY (review_job_id) REFERENCES review_jobs(id),
+        FOREIGN KEY (interaction_job_id) REFERENCES interaction_jobs(id),
         FOREIGN KEY (tenant_id) REFERENCES tenants(id)
       );
 
-      CREATE TABLE IF NOT EXISTS review_runs (
+      CREATE TABLE IF NOT EXISTS interaction_runs (
         id TEXT PRIMARY KEY,
-        review_job_id TEXT NOT NULL,
+        interaction_job_id TEXT NOT NULL,
         tenant_id TEXT NOT NULL,
         provider TEXT NOT NULL,
         model TEXT,
@@ -129,13 +132,13 @@ export class SqliteStorage implements Storage {
         error TEXT,
         started_at TEXT NOT NULL,
         finished_at TEXT,
-        FOREIGN KEY (review_job_id) REFERENCES review_jobs(id),
+        FOREIGN KEY (interaction_job_id) REFERENCES interaction_jobs(id),
         FOREIGN KEY (tenant_id) REFERENCES tenants(id)
       );
 
       CREATE TABLE IF NOT EXISTS review_findings (
         id TEXT PRIMARY KEY,
-        review_run_id TEXT NOT NULL,
+        interaction_run_id TEXT NOT NULL,
         identity_key TEXT NOT NULL,
         severity TEXT NOT NULL,
         category TEXT NOT NULL,
@@ -145,12 +148,12 @@ export class SqliteStorage implements Storage {
         suggestion_json TEXT,
         status TEXT NOT NULL DEFAULT 'open',
         created_at TEXT NOT NULL,
-        FOREIGN KEY (review_run_id) REFERENCES review_runs(id)
+        FOREIGN KEY (interaction_run_id) REFERENCES interaction_runs(id)
       );
 
-      CREATE TABLE IF NOT EXISTS review_run_metrics (
+      CREATE TABLE IF NOT EXISTS interaction_run_metrics (
         id TEXT PRIMARY KEY,
-        review_run_id TEXT NOT NULL UNIQUE,
+        interaction_run_id TEXT NOT NULL UNIQUE,
         trigger_kind TEXT,
         prompt_mode TEXT,
         prompt_chars INTEGER NOT NULL,
@@ -173,7 +176,7 @@ export class SqliteStorage implements Storage {
         repeated_view_paths_json TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        FOREIGN KEY (review_run_id) REFERENCES review_runs(id)
+        FOREIGN KEY (interaction_run_id) REFERENCES interaction_runs(id)
       );
 
       CREATE TABLE IF NOT EXISTS discussion_mappings (
@@ -196,30 +199,32 @@ export class SqliteStorage implements Storage {
         note_author_id INTEGER,
         note_author_username TEXT,
         status TEXT NOT NULL,
-        last_review_run_id TEXT,
+        last_interaction_run_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (tenant_id) REFERENCES tenants(id),
-        FOREIGN KEY (last_review_run_id) REFERENCES review_runs(id),
+        FOREIGN KEY (last_interaction_run_id) REFERENCES interaction_runs(id),
         UNIQUE(tenant_id, merge_request_iid, gitlab_discussion_id)
       );
     `);
     ensureColumn(this.db, "model_profiles", "wire_api", "TEXT");
     ensureColumn(this.db, "tenants", "model_profile_name", "TEXT");
     ensureColumn(this.db, "merge_request_snapshots", "project_memory_json", "TEXT");
-    ensureColumn(this.db, "review_runs", "model_profile_name", "TEXT");
-    ensureColumn(this.db, "review_runs", "provider_base_url", "TEXT");
-    ensureColumn(this.db, "review_runs", "provider_type", "TEXT");
-    ensureColumn(this.db, "review_runs", "text_generation_model", "TEXT");
+    ensureColumn(this.db, "interaction_runs", "model_profile_name", "TEXT");
+    ensureColumn(this.db, "interaction_runs", "provider_base_url", "TEXT");
+    ensureColumn(this.db, "interaction_runs", "provider_type", "TEXT");
+    ensureColumn(this.db, "interaction_runs", "text_generation_model", "TEXT");
     normalizeReviewFindingsTable(this.db);
     dedupeReviewFindingsTable(this.db);
     this.db.exec(`
+      DROP INDEX IF EXISTS review_findings_review_run_identity_key_idx;
+
       CREATE UNIQUE INDEX IF NOT EXISTS model_profiles_single_default_idx
       ON model_profiles (is_default)
       WHERE is_default = 1;
 
-      CREATE UNIQUE INDEX IF NOT EXISTS review_findings_review_run_identity_key_idx
-      ON review_findings (review_run_id, identity_key);
+      CREATE UNIQUE INDEX IF NOT EXISTS review_findings_interaction_run_identity_key_idx
+      ON review_findings (interaction_run_id, identity_key);
     `);
   }
 
@@ -505,9 +510,9 @@ export class SqliteStorage implements Storage {
       database
         .prepare(
           `
-            DELETE FROM review_run_metrics
-            WHERE review_run_id IN (
-              SELECT id FROM review_runs WHERE tenant_id = ?
+            DELETE FROM interaction_run_metrics
+            WHERE interaction_run_id IN (
+              SELECT id FROM interaction_runs WHERE tenant_id = ?
             )
           `
         )
@@ -516,15 +521,15 @@ export class SqliteStorage implements Storage {
         .prepare(
           `
             DELETE FROM review_findings
-            WHERE review_run_id IN (
-              SELECT id FROM review_runs WHERE tenant_id = ?
+            WHERE interaction_run_id IN (
+              SELECT id FROM interaction_runs WHERE tenant_id = ?
             )
           `
         )
         .run(summary.tenant.id);
       database.prepare("DELETE FROM merge_request_snapshots WHERE tenant_id = ?").run(summary.tenant.id);
-      database.prepare("DELETE FROM review_runs WHERE tenant_id = ?").run(summary.tenant.id);
-      database.prepare("DELETE FROM review_jobs WHERE tenant_id = ?").run(summary.tenant.id);
+      database.prepare("DELETE FROM interaction_runs WHERE tenant_id = ?").run(summary.tenant.id);
+      database.prepare("DELETE FROM interaction_jobs WHERE tenant_id = ?").run(summary.tenant.id);
       database.prepare("DELETE FROM tenants WHERE id = ?").run(summary.tenant.id);
       database.exec("COMMIT");
       return summary;
@@ -539,17 +544,17 @@ export class SqliteStorage implements Storage {
     return summary?.tenant ?? null;
   }
 
-  public async createOrGetReviewJob(
-    input: CreateReviewJobInput
-  ): Promise<{ job: ReviewJobRecord; created: boolean }> {
+  public async createOrGetInteractionJob(
+    input: CreateInteractionJobInput
+  ): Promise<{ job: InteractionJobRecord; created: boolean }> {
     const database = this.getDb();
-    const existing = database.prepare("SELECT * FROM review_jobs WHERE dedupe_key = ?").get(input.dedupeKey) as
+    const existing = database.prepare("SELECT * FROM interaction_jobs WHERE dedupe_key = ?").get(input.dedupeKey) as
       | Row
       | undefined;
 
     if (existing) {
       return {
-        job: mapReviewJobRow(existing),
+        job: mapInteractionJobRow(existing),
         created: false
       };
     }
@@ -559,7 +564,7 @@ export class SqliteStorage implements Storage {
 
     database
       .prepare(`
-        INSERT INTO review_jobs (
+        INSERT INTO interaction_jobs (
           id,
           tenant_id,
           dedupe_key,
@@ -589,44 +594,44 @@ export class SqliteStorage implements Storage {
         now
       );
 
-    const created = await this.getReviewJobById(jobId);
+    const created = await this.getInteractionJobById(jobId);
     if (!created) {
-      throw new Error(`Failed to create review job ${jobId}`);
+      throw new Error(`Failed to create interaction job ${jobId}`);
     }
 
     return { job: created, created: true };
   }
 
-  public async getReviewJobById(jobId: string): Promise<ReviewJobRecord | null> {
-    const row = this.getDb().prepare("SELECT * FROM review_jobs WHERE id = ?").get(jobId) as Row | undefined;
-    return row ? mapReviewJobRow(row) : null;
+  public async getInteractionJobById(jobId: string): Promise<InteractionJobRecord | null> {
+    const row = this.getDb().prepare("SELECT * FROM interaction_jobs WHERE id = ?").get(jobId) as Row | undefined;
+    return row ? mapInteractionJobRow(row) : null;
   }
 
-  public async listQueuedReviewJobs(): Promise<ReviewJobRecord[]> {
+  public async listQueuedInteractionJobs(): Promise<InteractionJobRecord[]> {
     const rows = this.getDb()
-      .prepare("SELECT * FROM review_jobs WHERE status = 'queued' ORDER BY enqueued_at ASC")
+      .prepare("SELECT * FROM interaction_jobs WHERE status = 'queued' ORDER BY enqueued_at ASC")
       .all() as Row[];
-    return rows.map(mapReviewJobRow);
+    return rows.map(mapInteractionJobRow);
   }
 
   public async markJobInProgress(jobId: string): Promise<void> {
     this.getDb()
       .prepare(
-        "UPDATE review_jobs SET status = 'in_progress', started_at = ?, finished_at = NULL, last_error = NULL WHERE id = ?"
+        "UPDATE interaction_jobs SET status = 'in_progress', started_at = ?, finished_at = NULL, last_error = NULL WHERE id = ?"
       )
       .run(new Date().toISOString(), jobId);
   }
 
   public async markJobCompleted(jobId: string): Promise<void> {
     this.getDb()
-      .prepare("UPDATE review_jobs SET status = 'completed', finished_at = ?, last_error = NULL WHERE id = ?")
+      .prepare("UPDATE interaction_jobs SET status = 'completed', finished_at = ?, last_error = NULL WHERE id = ?")
       .run(new Date().toISOString(), jobId);
   }
 
   public async markJobQueued(jobId: string, retryCount: number, error: string): Promise<void> {
     this.getDb()
       .prepare(
-        "UPDATE review_jobs SET status = 'queued', retry_count = ?, last_error = ?, finished_at = NULL WHERE id = ?"
+        "UPDATE interaction_jobs SET status = 'queued', retry_count = ?, last_error = ?, finished_at = NULL WHERE id = ?"
       )
       .run(retryCount, error, jobId);
   }
@@ -634,7 +639,7 @@ export class SqliteStorage implements Storage {
   public async markJobFailed(jobId: string, retryCount: number, error: string): Promise<void> {
     this.getDb()
       .prepare(
-        "UPDATE review_jobs SET status = 'failed', retry_count = ?, last_error = ?, finished_at = ? WHERE id = ?"
+        "UPDATE interaction_jobs SET status = 'failed', retry_count = ?, last_error = ?, finished_at = ? WHERE id = ?"
       )
       .run(retryCount, error, new Date().toISOString(), jobId);
   }
@@ -649,7 +654,7 @@ export class SqliteStorage implements Storage {
       .prepare(`
         INSERT INTO merge_request_snapshots (
           id,
-          review_job_id,
+          interaction_job_id,
           tenant_id,
           merge_request_iid,
           head_sha,
@@ -667,7 +672,7 @@ export class SqliteStorage implements Storage {
       `)
       .run(
         snapshotId,
-        input.reviewJobId,
+        input.interactionJobId,
         input.tenantId,
         input.mergeRequestIid,
         input.headSha,
@@ -684,7 +689,7 @@ export class SqliteStorage implements Storage {
 
     return {
       id: snapshotId,
-      reviewJobId: input.reviewJobId,
+      interactionJobId: input.interactionJobId,
       tenantId: input.tenantId,
       mergeRequestIid: input.mergeRequestIid,
       headSha: input.headSha,
@@ -700,15 +705,15 @@ export class SqliteStorage implements Storage {
     };
   }
 
-  public async createReviewRun(input: CreateReviewRunInput): Promise<ReviewRunRecord> {
-    const reviewRunId = createId("run");
+  public async createInteractionRun(input: CreateInteractionRunInput): Promise<InteractionRunRecord> {
+    const interactionRunId = createId("run");
     const now = new Date().toISOString();
 
     this.getDb()
       .prepare(`
-        INSERT INTO review_runs (
+        INSERT INTO interaction_runs (
           id,
-          review_job_id,
+          interaction_job_id,
           tenant_id,
           provider,
           model,
@@ -725,8 +730,8 @@ export class SqliteStorage implements Storage {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_progress', NULL, NULL, ?, NULL)
       `)
       .run(
-        reviewRunId,
-        input.reviewJobId,
+        interactionRunId,
+        input.interactionJobId,
         input.tenantId,
         input.provider,
         input.model,
@@ -738,8 +743,8 @@ export class SqliteStorage implements Storage {
       );
 
     return {
-      id: reviewRunId,
-      reviewJobId: input.reviewJobId,
+      id: interactionRunId,
+      interactionJobId: input.interactionJobId,
       tenantId: input.tenantId,
       provider: input.provider,
       model: input.model,
@@ -755,66 +760,66 @@ export class SqliteStorage implements Storage {
     };
   }
 
-  public async getLatestCompletedReviewForMergeRequest(
+  public async getLatestCompletedInteractionForMergeRequest(
     tenantId: string,
     mergeRequestIid: number,
-    currentReviewJobId: string
-  ): Promise<PreviousCompletedReviewRecord | null> {
+    currentInteractionJobId: string
+  ): Promise<PreviousCompletedInteractionRecord | null> {
     const row = this.getDb()
       .prepare(`
         SELECT
           s.*,
-          r.id AS review_run_id,
-          r.finished_at AS review_run_finished_at,
-          r.result_json AS review_run_result_json,
-          j.id AS review_job_id,
-          j.head_sha AS review_job_head_sha
+          r.id AS interaction_run_id,
+          r.finished_at AS interaction_run_finished_at,
+          r.result_json AS interaction_run_result_json,
+          j.id AS interaction_job_id,
+          j.head_sha AS interaction_job_head_sha
         FROM merge_request_snapshots s
-        INNER JOIN review_jobs j ON j.id = s.review_job_id
-        INNER JOIN review_runs r ON r.review_job_id = j.id
+        INNER JOIN interaction_jobs j ON j.id = s.interaction_job_id
+        INNER JOIN interaction_runs r ON r.interaction_job_id = j.id
         WHERE s.tenant_id = ?
           AND s.merge_request_iid = ?
-          AND s.review_job_id != ?
+          AND s.interaction_job_id != ?
           AND r.status = 'completed'
           AND r.result_json IS NOT NULL
         ORDER BY COALESCE(r.finished_at, r.started_at) DESC, s.created_at DESC
         LIMIT 1
       `)
-      .get(tenantId, mergeRequestIid, currentReviewJobId) as Row | undefined;
+      .get(tenantId, mergeRequestIid, currentInteractionJobId) as Row | undefined;
 
     if (!row) {
       return null;
     }
 
     return {
-      reviewRunId: asString(row.review_run_id),
-      reviewJobId: asString(row.review_job_id),
-      finishedAt: asString(row.review_run_finished_at),
-      headSha: asString(row.review_job_head_sha),
-      resultJson: asString(row.review_run_result_json),
+      interactionRunId: asString(row.interaction_run_id),
+      interactionJobId: asString(row.interaction_job_id),
+      finishedAt: asString(row.interaction_run_finished_at),
+      headSha: asString(row.interaction_job_head_sha),
+      resultJson: asString(row.interaction_run_result_json),
       snapshot: mapMergeRequestSnapshotRow(row)
     };
   }
 
-  public async completeReviewRun(reviewRunId: string, resultJson: string): Promise<void> {
+  public async completeInteractionRun(interactionRunId: string, resultJson: string): Promise<void> {
     this.getDb()
       .prepare(
-        "UPDATE review_runs SET status = 'completed', result_json = ?, error = NULL, finished_at = ? WHERE id = ?"
+        "UPDATE interaction_runs SET status = 'completed', result_json = ?, error = NULL, finished_at = ? WHERE id = ?"
       )
-      .run(resultJson, new Date().toISOString(), reviewRunId);
+      .run(resultJson, new Date().toISOString(), interactionRunId);
   }
 
-  public async failReviewRun(reviewRunId: string, error: string): Promise<void> {
+  public async failInteractionRun(interactionRunId: string, error: string): Promise<void> {
     const database = this.getDb();
-    database.prepare("DELETE FROM review_findings WHERE review_run_id = ?").run(reviewRunId);
+    database.prepare("DELETE FROM review_findings WHERE interaction_run_id = ?").run(interactionRunId);
     database
-      .prepare("UPDATE review_runs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?")
-      .run(error, new Date().toISOString(), reviewRunId);
+      .prepare("UPDATE interaction_runs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?")
+      .run(error, new Date().toISOString(), interactionRunId);
   }
 
-  public async upsertReviewRunMetrics(input: UpsertReviewRunMetricsInput): Promise<ReviewRunMetricsRecord> {
+  public async upsertInteractionRunMetrics(input: UpsertInteractionRunMetricsInput): Promise<InteractionRunMetricsRecord> {
     const database = this.getDb();
-    const existing = database.prepare("SELECT * FROM review_run_metrics WHERE review_run_id = ?").get(input.reviewRunId) as
+    const existing = database.prepare("SELECT * FROM interaction_run_metrics WHERE interaction_run_id = ?").get(input.interactionRunId) as
       | Row
       | undefined;
     const id = existing ? asString(existing.id) : createId("metrics");
@@ -822,9 +827,9 @@ export class SqliteStorage implements Storage {
 
     database
       .prepare(`
-        INSERT INTO review_run_metrics (
+        INSERT INTO interaction_run_metrics (
           id,
-          review_run_id,
+          interaction_run_id,
           trigger_kind,
           prompt_mode,
           prompt_chars,
@@ -849,7 +854,7 @@ export class SqliteStorage implements Storage {
           updated_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(review_run_id) DO UPDATE SET
+        ON CONFLICT(interaction_run_id) DO UPDATE SET
           trigger_kind = excluded.trigger_kind,
           prompt_mode = excluded.prompt_mode,
           prompt_chars = excluded.prompt_chars,
@@ -874,7 +879,7 @@ export class SqliteStorage implements Storage {
       `)
       .run(
         id,
-        input.reviewRunId,
+        input.interactionRunId,
         input.triggerKind,
         input.promptMode,
         input.promptChars,
@@ -899,24 +904,24 @@ export class SqliteStorage implements Storage {
         now
       );
 
-    const row = database.prepare("SELECT * FROM review_run_metrics WHERE review_run_id = ?").get(input.reviewRunId) as
+    const row = database.prepare("SELECT * FROM interaction_run_metrics WHERE interaction_run_id = ?").get(input.interactionRunId) as
       | Row
       | undefined;
     if (!row) {
-      throw new Error(`Failed to persist metrics for review run ${input.reviewRunId}`);
+      throw new Error(`Failed to persist metrics for interaction run ${input.interactionRunId}`);
     }
 
-    return mapReviewRunMetricsRow(row);
+    return mapInteractionRunMetricsRow(row);
   }
 
-  public async replaceReviewFindings(reviewRunId: string, findings: CreateReviewFindingInput[]): Promise<void> {
+  public async replaceReviewFindings(interactionRunId: string, findings: CreateReviewFindingInput[]): Promise<void> {
     const database = this.getDb();
-    database.prepare("DELETE FROM review_findings WHERE review_run_id = ?").run(reviewRunId);
+    database.prepare("DELETE FROM review_findings WHERE interaction_run_id = ?").run(interactionRunId);
 
     const insert = database.prepare(`
       INSERT INTO review_findings (
         id,
-        review_run_id,
+        interaction_run_id,
         identity_key,
         severity,
         category,
@@ -940,7 +945,7 @@ export class SqliteStorage implements Storage {
     for (const finding of latestFindingsByIdentity.values()) {
       insert.run(
         createId("finding"),
-        reviewRunId,
+        interactionRunId,
         finding.identityKey,
         finding.severity,
         finding.category,
@@ -957,9 +962,9 @@ export class SqliteStorage implements Storage {
   public async listPriorReviewFindings(
     tenantId: string,
     mergeRequestIid: number,
-    currentReviewJobId: string
+    currentInteractionJobId: string
   ): Promise<PriorReviewFindingRecord[]> {
-    return this.listReviewFindings(tenantId, mergeRequestIid, currentReviewJobId);
+    return this.listReviewFindings(tenantId, mergeRequestIid, currentInteractionJobId);
   }
 
   public async listLatestReviewFindings(tenantId: string, mergeRequestIid: number): Promise<PriorReviewFindingRecord[]> {
@@ -969,11 +974,11 @@ export class SqliteStorage implements Storage {
   private listReviewFindings(
     tenantId: string,
     mergeRequestIid: number,
-    excludeReviewJobId?: string
+    excludeInteractionJobId?: string
   ): PriorReviewFindingRecord[] {
-    const excludeCurrentJobClause = excludeReviewJobId ? "AND j.id != ?" : "";
-    const bindings = excludeReviewJobId
-      ? [tenantId, mergeRequestIid, excludeReviewJobId]
+    const excludeCurrentJobClause = excludeInteractionJobId ? "AND j.id != ?" : "";
+    const bindings = excludeInteractionJobId
+      ? [tenantId, mergeRequestIid, excludeInteractionJobId]
       : [tenantId, mergeRequestIid];
     const rows = this.getDb()
       .prepare(`
@@ -995,8 +1000,8 @@ export class SqliteStorage implements Storage {
                 rf.id DESC
             ) AS row_num
           FROM review_findings rf
-          INNER JOIN review_runs r ON r.id = rf.review_run_id
-          INNER JOIN review_jobs j ON j.id = r.review_job_id
+          INNER JOIN interaction_runs r ON r.id = rf.interaction_run_id
+          INNER JOIN interaction_jobs j ON j.id = r.interaction_job_id
           WHERE j.tenant_id = ?
             AND j.merge_request_iid = ?
             AND r.status = 'completed'
@@ -1032,8 +1037,8 @@ export class SqliteStorage implements Storage {
         WHERE id IN (
           SELECT rf.id
           FROM review_findings rf
-          INNER JOIN review_runs r ON r.id = rf.review_run_id
-          INNER JOIN review_jobs j ON j.id = r.review_job_id
+          INNER JOIN interaction_runs r ON r.id = rf.interaction_run_id
+          INNER JOIN interaction_jobs j ON j.id = r.interaction_job_id
           WHERE j.tenant_id = ?
             AND j.merge_request_iid = ?
             AND rf.identity_key = ?
@@ -1089,7 +1094,7 @@ export class SqliteStorage implements Storage {
           note_author_id,
           note_author_username,
           status,
-          last_review_run_id,
+          last_interaction_run_id,
           created_at,
           updated_at
         )
@@ -1109,7 +1114,7 @@ export class SqliteStorage implements Storage {
           note_author_id = excluded.note_author_id,
           note_author_username = excluded.note_author_username,
           status = excluded.status,
-          last_review_run_id = excluded.last_review_run_id,
+          last_interaction_run_id = excluded.last_interaction_run_id,
           updated_at = excluded.updated_at
       `)
       .run(
@@ -1132,7 +1137,7 @@ export class SqliteStorage implements Storage {
         input.noteAuthorId,
         input.noteAuthorUsername,
         input.status,
-        input.lastReviewRunId,
+        input.lastInteractionRunId,
         existing ? String(existing.created_at) : now,
         now
       );
@@ -1242,7 +1247,7 @@ function mapTenantRow(row: Row): TenantRecord {
   };
 }
 
-function mapReviewJobRow(row: Row): ReviewJobRecord {
+function mapInteractionJobRow(row: Row): InteractionJobRecord {
   return {
     id: asString(row.id),
     tenantId: asString(row.tenant_id),
@@ -1251,7 +1256,7 @@ function mapReviewJobRow(row: Row): ReviewJobRecord {
     mergeRequestIid: asNumber(row.merge_request_iid),
     noteId: asNumber(row.note_id),
     headSha: asString(row.head_sha),
-    status: asString(row.status) as ReviewJobRecord["status"],
+    status: asString(row.status) as InteractionJobRecord["status"],
     payloadJson: asString(row.payload_json),
     retryCount: asNumber(row.retry_count),
     lastError: asNullableString(row.last_error),
@@ -1282,7 +1287,7 @@ function mapDiscussionMappingRow(row: Row): DiscussionMappingRecord {
     noteAuthorId: asNullableNumber(row.note_author_id),
     noteAuthorUsername: asNullableString(row.note_author_username),
     status: asString(row.status) as DiscussionMappingRecord["status"],
-    lastReviewRunId: asNullableString(row.last_review_run_id),
+    lastInteractionRunId: asNullableString(row.last_interaction_run_id),
     createdAt: asString(row.created_at),
     updatedAt: asString(row.updated_at)
   };
@@ -1291,7 +1296,7 @@ function mapDiscussionMappingRow(row: Row): DiscussionMappingRecord {
 function mapMergeRequestSnapshotRow(row: Row): MergeRequestSnapshotRecord {
   return {
     id: asString(row.id),
-    reviewJobId: asString(row.review_job_id),
+    interactionJobId: asString(row.interaction_job_id),
     tenantId: asString(row.tenant_id),
     mergeRequestIid: asNumber(row.merge_request_iid),
     headSha: asString(row.head_sha),
@@ -1307,10 +1312,10 @@ function mapMergeRequestSnapshotRow(row: Row): MergeRequestSnapshotRecord {
   };
 }
 
-function mapReviewRunMetricsRow(row: Row): ReviewRunMetricsRecord {
+function mapInteractionRunMetricsRow(row: Row): InteractionRunMetricsRecord {
   return {
     id: asString(row.id),
-    reviewRunId: asString(row.review_run_id),
+    interactionRunId: asString(row.interaction_run_id),
     triggerKind: asNullableString(row.trigger_kind),
     promptMode: asNullableString(row.prompt_mode),
     promptChars: asNumber(row.prompt_chars),
@@ -1347,7 +1352,7 @@ function mapPriorReviewFindingRow(row: Row): PriorReviewFindingRecord {
     category: asString(row.category),
     anchor: parseAnchor(row.anchor_json),
     suggestion: parseSuggestion(row.suggestion_json),
-    reviewRunId: asString(row.review_run_id),
+    interactionRunId: asString(row.interaction_run_id),
     reviewedAt: asString(row.reviewed_at),
     headSha: asString(row.head_sha)
   };
@@ -1437,6 +1442,146 @@ function ensureColumn(database: DatabaseSync, tableName: string, columnName: str
   return false;
 }
 
+function hasTable(database: DatabaseSync, tableName: string): boolean {
+  const row = database
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(tableName) as Row | undefined;
+  return Boolean(row);
+}
+
+function hasColumn(database: DatabaseSync, tableName: string, columnName: string): boolean {
+  if (!hasTable(database, tableName)) {
+    return false;
+  }
+
+  const columns = database.prepare(`PRAGMA table_info(${tableName})`).all() as Row[];
+  return columns.some((column) => asString(column.name) === columnName);
+}
+
+function migrateInteractionExecutionSchema(database: DatabaseSync): void {
+  database.exec("PRAGMA foreign_keys = OFF");
+  database.exec("BEGIN IMMEDIATE");
+
+  try {
+    migrateLegacyExecutionTable(database, {
+      legacyTableName: "review_jobs",
+      targetTableName: "interaction_jobs",
+      selectColumns: `
+        id,
+        tenant_id,
+        dedupe_key,
+        project_id,
+        merge_request_iid,
+        note_id,
+        head_sha,
+        status,
+        payload_json,
+        retry_count,
+        last_error,
+        enqueued_at,
+        started_at,
+        finished_at
+      `
+    });
+    migrateLegacyExecutionTable(database, {
+      legacyTableName: "review_runs",
+      targetTableName: "interaction_runs",
+      selectColumns: `
+        id,
+        review_job_id AS interaction_job_id,
+        tenant_id,
+        provider,
+        model,
+        model_profile_name,
+        provider_base_url,
+        provider_type,
+        text_generation_model,
+        status,
+        result_json,
+        error,
+        started_at,
+        finished_at
+      `
+    });
+    migrateLegacyExecutionTable(database, {
+      legacyTableName: "review_run_metrics",
+      targetTableName: "interaction_run_metrics",
+      selectColumns: `
+        id,
+        review_run_id AS interaction_run_id,
+        trigger_kind,
+        prompt_mode,
+        prompt_chars,
+        prompt_context_changed_files,
+        prompt_context_prior_threads,
+        prompt_context_notes,
+        assistant_turns,
+        assistant_calls,
+        tool_executions,
+        view_tool_calls,
+        glob_tool_calls,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
+        reasoning_tokens,
+        api_duration_ms,
+        premium_requests,
+        repeated_view_reads,
+        repeated_view_paths_json,
+        created_at,
+        updated_at
+      `
+    });
+
+    renameLegacyColumn(database, "interaction_runs", "review_job_id", "interaction_job_id");
+    renameLegacyColumn(database, "interaction_run_metrics", "review_run_id", "interaction_run_id");
+    renameLegacyColumn(database, "merge_request_snapshots", "review_job_id", "interaction_job_id");
+    renameLegacyColumn(database, "review_findings", "review_run_id", "interaction_run_id");
+    renameLegacyColumn(database, "discussion_mappings", "last_review_run_id", "last_interaction_run_id");
+
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  } finally {
+    database.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
+function migrateLegacyExecutionTable(
+  database: DatabaseSync,
+  input: {
+    legacyTableName: string;
+    targetTableName: string;
+    selectColumns: string;
+  }
+): void {
+  if (!hasTable(database, input.legacyTableName)) {
+    return;
+  }
+
+  if (!hasTable(database, input.targetTableName)) {
+    database.exec(`ALTER TABLE ${input.legacyTableName} RENAME TO ${input.targetTableName}`);
+    return;
+  }
+
+  database.exec(`
+    INSERT OR IGNORE INTO ${input.targetTableName}
+    SELECT ${input.selectColumns}
+    FROM ${input.legacyTableName};
+    DROP TABLE ${input.legacyTableName};
+  `);
+}
+
+function renameLegacyColumn(database: DatabaseSync, tableName: string, legacyColumnName: string, targetColumnName: string): void {
+  if (!hasColumn(database, tableName, legacyColumnName) || hasColumn(database, tableName, targetColumnName)) {
+    return;
+  }
+
+  database.exec(`ALTER TABLE ${tableName} RENAME COLUMN ${legacyColumnName} TO ${targetColumnName}`);
+}
+
 function normalizeReviewFindingsTable(database: DatabaseSync): void {
   const columns = database.prepare("PRAGMA table_info(review_findings)").all() as Row[];
   if (columns.length === 0) {
@@ -1448,7 +1593,7 @@ function normalizeReviewFindingsTable(database: DatabaseSync): void {
   const defaultValue = statusColumn ? asNullableString(statusColumn.dflt_value) : null;
   const expectedColumns = [
     "id",
-    "review_run_id",
+    "interaction_run_id",
     "identity_key",
     "severity",
     "category",
@@ -1501,7 +1646,7 @@ function normalizeReviewFindingsTable(database: DatabaseSync): void {
     ALTER TABLE review_findings RENAME TO review_findings_legacy;
     CREATE TABLE review_findings (
       id TEXT PRIMARY KEY,
-      review_run_id TEXT NOT NULL,
+      interaction_run_id TEXT NOT NULL,
       identity_key TEXT NOT NULL,
       severity TEXT NOT NULL,
       category TEXT NOT NULL,
@@ -1511,11 +1656,11 @@ function normalizeReviewFindingsTable(database: DatabaseSync): void {
       suggestion_json TEXT,
       status TEXT NOT NULL DEFAULT 'open',
       created_at TEXT NOT NULL,
-      FOREIGN KEY (review_run_id) REFERENCES review_runs(id)
+      FOREIGN KEY (interaction_run_id) REFERENCES interaction_runs(id)
     );
     INSERT INTO review_findings (
       id,
-      review_run_id,
+      interaction_run_id,
       identity_key,
       severity,
       category,
@@ -1528,7 +1673,7 @@ function normalizeReviewFindingsTable(database: DatabaseSync): void {
     )
     SELECT
       id,
-      review_run_id,
+      ${columnNames.has("interaction_run_id") ? "interaction_run_id" : "review_run_id"},
       identity_key,
       severity,
       category,
@@ -1548,9 +1693,9 @@ function normalizeReviewFindingsTable(database: DatabaseSync): void {
 function dedupeReviewFindingsTable(database: DatabaseSync): void {
   const duplicateRow = database
     .prepare(`
-      SELECT review_run_id, identity_key, COUNT(*) AS duplicate_count
+      SELECT interaction_run_id, identity_key, COUNT(*) AS duplicate_count
       FROM review_findings
-      GROUP BY review_run_id, identity_key
+      GROUP BY interaction_run_id, identity_key
       HAVING COUNT(*) > 1
       LIMIT 1
     `)
@@ -1565,7 +1710,7 @@ function dedupeReviewFindingsTable(database: DatabaseSync): void {
     ALTER TABLE review_findings RENAME TO review_findings_dedup_source;
     CREATE TABLE review_findings (
       id TEXT PRIMARY KEY,
-      review_run_id TEXT NOT NULL,
+      interaction_run_id TEXT NOT NULL,
       identity_key TEXT NOT NULL,
       severity TEXT NOT NULL,
       category TEXT NOT NULL,
@@ -1575,11 +1720,11 @@ function dedupeReviewFindingsTable(database: DatabaseSync): void {
       suggestion_json TEXT,
       status TEXT NOT NULL DEFAULT 'open',
       created_at TEXT NOT NULL,
-      FOREIGN KEY (review_run_id) REFERENCES review_runs(id)
+      FOREIGN KEY (interaction_run_id) REFERENCES interaction_runs(id)
     );
     INSERT INTO review_findings (
       id,
-      review_run_id,
+      interaction_run_id,
       identity_key,
       severity,
       category,
@@ -1594,7 +1739,7 @@ function dedupeReviewFindingsTable(database: DatabaseSync): void {
       SELECT
         *,
         ROW_NUMBER() OVER (
-          PARTITION BY review_run_id, identity_key
+          PARTITION BY interaction_run_id, identity_key
           ORDER BY
             CASE status
               WHEN 'dismissed' THEN 0
@@ -1608,7 +1753,7 @@ function dedupeReviewFindingsTable(database: DatabaseSync): void {
     )
     SELECT
       id,
-      review_run_id,
+      interaction_run_id,
       identity_key,
       severity,
       category,
@@ -1627,25 +1772,25 @@ function dedupeReviewFindingsTable(database: DatabaseSync): void {
 }
 
 function buildTenantDeletionSummary(database: DatabaseSync, tenant: TenantRecord): TenantDeletionSummary {
-  const reviewJobIds = database
-    .prepare("SELECT id FROM review_jobs WHERE tenant_id = ? ORDER BY id ASC")
+  const interactionJobIds = database
+    .prepare("SELECT id FROM interaction_jobs WHERE tenant_id = ? ORDER BY id ASC")
     .all(tenant.id)
     .map((row) => asString((row as Row).id));
-  const reviewRunIds = database
-    .prepare("SELECT id FROM review_runs WHERE tenant_id = ? ORDER BY id ASC")
+  const interactionRunIds = database
+    .prepare("SELECT id FROM interaction_runs WHERE tenant_id = ? ORDER BY id ASC")
     .all(tenant.id)
     .map((row) => asString((row as Row).id));
 
   return {
     tenant,
-    reviewJobCount: countRows(database, "review_jobs", tenant.id),
+    interactionJobCount: countRows(database, "interaction_jobs", tenant.id),
     mergeRequestSnapshotCount: countRows(database, "merge_request_snapshots", tenant.id),
-    reviewRunCount: countRows(database, "review_runs", tenant.id),
-    reviewFindingCount: countRowsForReviewRuns(database, "review_findings", tenant.id),
-    reviewRunMetricCount: countRowsForReviewRuns(database, "review_run_metrics", tenant.id),
+    interactionRunCount: countRows(database, "interaction_runs", tenant.id),
+    reviewFindingCount: countRowsForInteractionRuns(database, "review_findings", tenant.id),
+    interactionRunMetricCount: countRowsForInteractionRuns(database, "interaction_run_metrics", tenant.id),
     discussionMappingCount: countRows(database, "discussion_mappings", tenant.id),
-    reviewJobIds,
-    reviewRunIds
+    interactionJobIds,
+    interactionRunIds
   };
 }
 
@@ -1672,14 +1817,14 @@ function countRows(database: DatabaseSync, tableName: string, tenantId: string):
   return asNumber(row.count);
 }
 
-function countRowsForReviewRuns(database: DatabaseSync, tableName: string, tenantId: string): number {
+function countRowsForInteractionRuns(database: DatabaseSync, tableName: string, tenantId: string): number {
   const row = database
     .prepare(
       `
         SELECT COUNT(*) AS count
         FROM ${tableName}
-        WHERE review_run_id IN (
-          SELECT id FROM review_runs WHERE tenant_id = ?
+        WHERE interaction_run_id IN (
+          SELECT id FROM interaction_runs WHERE tenant_id = ?
         )
       `
     )
@@ -1687,10 +1832,10 @@ function countRowsForReviewRuns(database: DatabaseSync, tableName: string, tenan
   return asNumber(row.count);
 }
 
-function _mapReviewRunRow(row: Row): ReviewRunRecord {
+function mapInteractionRunRow(row: Row): InteractionRunRecord {
   return {
     id: asString(row.id),
-    reviewJobId: asString(row.review_job_id),
+    interactionJobId: asString(row.interaction_job_id),
     tenantId: asString(row.tenant_id),
     provider: asString(row.provider),
     model: asNullableString(row.model),
@@ -1698,7 +1843,7 @@ function _mapReviewRunRow(row: Row): ReviewRunRecord {
     providerBaseUrl: asNullableString(row.provider_base_url),
     providerType: asNullableProviderType(row.provider_type),
     textGenerationModel: asNullableString(row.text_generation_model),
-    status: asString(row.status) as ReviewRunRecord["status"],
+    status: asString(row.status) as InteractionRunRecord["status"],
     resultJson: asNullableString(row.result_json),
     error: asNullableString(row.error),
     startedAt: asString(row.started_at),

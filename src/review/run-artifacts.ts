@@ -26,17 +26,17 @@ export interface GitLabHttpLogEntry {
   } | undefined;
 }
 
-export class ReviewRunArtifacts {
+export class InteractionRunArtifacts {
   private readonly rootDir: string;
-  private readonly reviewRunId: string;
+  private readonly interactionRunId: string;
 
-  public constructor(rootDir: string, reviewRunId: string) {
+  public constructor(rootDir: string, interactionRunId: string) {
     this.rootDir = rootDir;
-    this.reviewRunId = sanitizeFileName(reviewRunId);
+    this.interactionRunId = sanitizeFileName(interactionRunId);
   }
 
   public get runDirectory(): string {
-    return join(this.rootDir, this.reviewRunId);
+    return join(this.rootDir, this.interactionRunId);
   }
 
   public get copilotDirectory(): string {

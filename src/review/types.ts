@@ -177,8 +177,8 @@ export interface ReviewContext {
   priorThreads: ProviderThreadContext[];
   scope: ReviewScopeContext;
   logging?: {
-    reviewRunId: string;
-    jobId: string;
+    interactionRunId: string;
+    interactionJobId: string;
     tenantId: string;
     runDirectory?: string | undefined;
   };

@@ -78,7 +78,7 @@ describe("review summary note", () => {
         },
         snapshot: {
           id: "snapshot_1",
-          reviewJobId: "job_1",
+          interactionJobId: "job_1",
           tenantId: "tenant_1",
           mergeRequestIid: 7,
           headSha: "abc123",
@@ -183,7 +183,7 @@ describe("review summary note", () => {
         },
         snapshot: {
           id: "snapshot_2",
-          reviewJobId: "job_1",
+          interactionJobId: "job_1",
           tenantId: "tenant_1",
           mergeRequestIid: 7,
           headSha: "abc123",
@@ -293,7 +293,7 @@ describe("review summary note", () => {
         },
         snapshot: {
           id: "snapshot_3",
-          reviewJobId: "job_1",
+          interactionJobId: "job_1",
           tenantId: "tenant_1",
           mergeRequestIid: 7,
           headSha: "abc123",

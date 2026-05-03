@@ -10,8 +10,8 @@ describe("Copilot run metrics", () => {
     const betaPath = repoPath("src", "beta.ts");
     const metrics = summarizeCopilotRunLog({
       metadata: {
-        reviewRunId: "run_1",
-        jobId: "job_1",
+        interactionRunId: "run_1",
+        interactionJobId: "job_1",
         tenantId: "tenant_1",
         mergeRequestIid: 7,
         workspacePath,

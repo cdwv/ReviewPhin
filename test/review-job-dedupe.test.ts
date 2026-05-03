@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { GitLabNoteHookPayload } from "../src/gitlab/types.js";
 import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
-import type { CreateReviewJobInput } from "../src/storage/types.js";
-import { createReviewJobDedupeKey } from "../src/utils/ids.js";
+import type { CreateInteractionJobInput } from "../src/storage/types.js";
+import { createInteractionJobDedupeKey } from "../src/utils/ids.js";
 import { tmpPath } from "./test-paths.js";
 
 const tenant = {
@@ -59,7 +59,7 @@ describe("review job dedupe", () => {
     };
 
     const storage = {
-      createOrGetReviewJob: vi.fn(async (input: CreateReviewJobInput) => ({
+      createOrGetInteractionJob: vi.fn(async (input: CreateInteractionJobInput) => ({
         job: {
           id: "job_1",
           tenantId: tenant.id,
@@ -93,7 +93,7 @@ describe("review job dedupe", () => {
       retryBackoffMs: 1000
     });
 
-    await worker.createReviewJobFromWebhook(payload, tenant, {
+    await worker.createInteractionJobFromWebhook(payload, tenant, {
       kind: "direct-mention",
       note: {
         kind: "merge-request-note",
@@ -101,9 +101,9 @@ describe("review job dedupe", () => {
       }
     });
 
-    expect(storage.createOrGetReviewJob).toHaveBeenCalledWith(
+    expect(storage.createOrGetInteractionJob).toHaveBeenCalledWith(
       expect.objectContaining({
-        dedupeKey: createReviewJobDedupeKey({
+        dedupeKey: createInteractionJobDedupeKey({
           baseUrl: tenant.baseUrl,
           projectId: tenant.projectId,
           mergeRequestIid: 7,

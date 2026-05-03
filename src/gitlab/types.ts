@@ -1,4 +1,4 @@
-import type { MergeRequestSnapshotRecord, ReviewJobRecord, TenantRecord } from "../storage/types.js";
+import type { MergeRequestSnapshotRecord, InteractionJobRecord, TenantRecord } from "../storage/types.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
 
 export interface GitLabUser {
@@ -167,7 +167,7 @@ export interface MaterializedWorkspace {
 
 export interface HydratedMergeRequestContext {
   tenant: TenantRecord;
-  job: ReviewJobRecord;
+  job: InteractionJobRecord;
   mergeRequest: GitLabMergeRequest;
   versions: GitLabMergeRequestVersion[];
   latestVersion: GitLabMergeRequestVersion | null;
