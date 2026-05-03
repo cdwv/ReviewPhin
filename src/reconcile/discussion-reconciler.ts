@@ -91,12 +91,21 @@ export class DiscussionReconciler {
       summaryNoteAction: null
     };
 
-    const referencedThreadIds = new Set<string>();
+    const referencedThreadIds = collectReferencedThreadIds(input.reviewResult.findings, threadById);
+    const summaryResolvedFindingIdentityKeys = collectSummaryResolvedFindingIdentityKeys({
+      reviewResult: input.reviewResult,
+      threadById,
+      referencedThreadIds
+    });
+
+    summary.summaryNoteAction = await this.syncSummaryNote({
+      ...input,
+      summaryResolvedFindingIdentityKeys
+    });
 
     for (const finding of input.reviewResult.findings) {
       const matchedThread = finding.priorThreadId ? threadById.get(finding.priorThreadId) ?? null : null;
       if (matchedThread) {
-        referencedThreadIds.add(matchedThread.threadId);
         const disposition = dispositionByThreadId.get(matchedThread.threadId);
         const action = await this.applyFindingToExistingThread({
           tenant: input.tenant,
@@ -228,17 +237,6 @@ export class DiscussionReconciler {
         summary.replied += 1;
       }
     }
-
-    const summaryResolvedFindingIdentityKeys = collectSummaryResolvedFindingIdentityKeys({
-      reviewResult: input.reviewResult,
-      threadById,
-      referencedThreadIds
-    });
-
-    summary.summaryNoteAction = await this.syncSummaryNote({
-      ...input,
-      summaryResolvedFindingIdentityKeys
-    });
 
     return summary;
   }
@@ -722,6 +720,23 @@ function extractAnchorFromNote(note: GitLabNote | null): ReviewAnchor | null {
 
 function stripTitleDecoration(value: string): string {
   return value.replace(/^[#*\s`]+/, "").replace(/[*\s`]+$/, "");
+}
+
+function collectReferencedThreadIds(
+  findings: ReadonlyArray<ReviewFinding>,
+  threadById: ReadonlyMap<string, KnownThread>
+): Set<string> {
+  const referencedThreadIds = new Set<string>();
+
+  for (const finding of findings) {
+    if (!finding.priorThreadId || !threadById.has(finding.priorThreadId)) {
+      continue;
+    }
+
+    referencedThreadIds.add(finding.priorThreadId);
+  }
+
+  return referencedThreadIds;
 }
 
 function collectSummaryResolvedFindingIdentityKeys(input: {
