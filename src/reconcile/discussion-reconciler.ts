@@ -92,7 +92,9 @@ export class DiscussionReconciler {
     };
 
     const referencedThreadIds = collectReferencedThreadIds(input.reviewResult.findings, threadById);
-    const summaryResolvedFindingIdentityKeys = collectSummaryResolvedFindingIdentityKeys({
+    const projectedActiveFindings = await this.projectActiveFindings({
+      tenant: input.tenant,
+      mergeRequestIid: input.context.mergeRequest.iid,
       reviewResult: input.reviewResult,
       threadById,
       referencedThreadIds
@@ -100,7 +102,7 @@ export class DiscussionReconciler {
 
     summary.summaryNoteAction = await this.syncSummaryNote({
       ...input,
-      summaryResolvedFindingIdentityKeys
+      activeFindings: projectedActiveFindings
     });
 
     for (const finding of input.reviewResult.findings) {
@@ -285,13 +287,22 @@ export class DiscussionReconciler {
         severity: input.finding.severity,
         category: input.finding.category,
         position: input.thread.discussion.notes[0]?.position ?? null,
-        discussionStatus: input.thread.resolved ? "resolved" : "open",
+        discussionStatus: "open",
         findingStatus: "open"
       });
       return "kept";
     }
 
     if (shouldReply) {
+      if (input.thread.resolved) {
+        await input.client.resolveDiscussion(
+          input.tenant.projectId,
+          input.context.mergeRequest.iid,
+          input.thread.discussionId,
+          false
+        );
+      }
+
       const note = await input.client.replyToDiscussion(
         input.tenant.projectId,
         input.context.mergeRequest.iid,
@@ -311,7 +322,7 @@ export class DiscussionReconciler {
         severity: input.finding.severity,
         category: input.finding.category,
         position: note.position ?? input.thread.discussion.notes[0]?.position ?? null,
-        discussionStatus: input.thread.resolved ? "resolved" : "open",
+        discussionStatus: "open",
         findingStatus: "open"
       });
       return "replied";
@@ -342,7 +353,7 @@ export class DiscussionReconciler {
       severity: input.finding.severity,
       category: input.finding.category,
       position: updatedNote.position ?? input.thread.discussion.notes[0]?.position ?? null,
-      discussionStatus: input.thread.resolved ? "resolved" : "open",
+      discussionStatus: "open",
       findingStatus: "open"
     });
     return "updated";
@@ -543,6 +554,13 @@ export class DiscussionReconciler {
         "failed to update persisted review finding status"
       );
     }
+
+    await this.retireReplacedFinding({
+      tenantId: input.tenant.id,
+      mergeRequestIid: input.context.mergeRequest.iid,
+      previousIdentityKey: input.thread.mapping?.identityKey ?? null,
+      nextIdentityKey: input.identityKey
+    });
   }
 
   private async syncSummaryNote(input: {
@@ -551,35 +569,12 @@ export class DiscussionReconciler {
     interactionRunId: string;
     reviewResult: ReviewResult;
     client: GitLabClient;
-    summaryResolvedFindingIdentityKeys: ReadonlySet<string>;
+    activeFindings: SummaryFinding[];
   }): Promise<ReconcileSummary["summaryNoteAction"]> {
-    const activePersistedFindings =
-      (
-        await this.storage.listLatestReviewFindings(input.tenant.id, input.context.mergeRequest.iid)
-      )
-        .filter(
-          (finding) =>
-            finding.status === "open" && !input.summaryResolvedFindingIdentityKeys.has(finding.identityKey)
-        )
-        .map((finding) => ({
-          title: finding.title,
-          body: finding.body,
-          severity: finding.severity as ReviewResult["findings"][number]["severity"],
-          category: finding.category as ReviewResult["findings"][number]["category"]
-        }));
-    const activeFindings =
-      activePersistedFindings.length > 0
-        ? activePersistedFindings
-        : input.reviewResult.findings.map((finding) => ({
-            title: finding.title,
-            body: finding.body,
-            severity: finding.severity,
-            category: finding.category
-          }));
     const body = buildReviewSummaryNote({
       context: input.context,
       reviewResult: input.reviewResult,
-      activeFindings
+      activeFindings: input.activeFindings
     });
     const existingNote = findLatestReviewSummaryNote(input.context.notes, (note) => isBotUser(note.author, input.tenant));
 
@@ -596,7 +591,113 @@ export class DiscussionReconciler {
     await input.client.createMergeRequestNote(input.tenant.projectId, input.context.mergeRequest.iid, body);
     return "created";
   }
+
+  private async retireReplacedFinding(input: {
+    tenantId: string;
+    mergeRequestIid: number;
+    previousIdentityKey: string | null;
+    nextIdentityKey: string;
+  }): Promise<void> {
+    if (!input.previousIdentityKey || input.previousIdentityKey === input.nextIdentityKey) {
+      return;
+    }
+
+    const retiredFinding = await this.storage.updateReviewFindingStatus(
+      input.tenantId,
+      input.mergeRequestIid,
+      input.previousIdentityKey,
+      "resolved"
+    );
+    if (!retiredFinding) {
+      this.logger.warn(
+        {
+          tenantId: input.tenantId,
+          mergeRequestIid: input.mergeRequestIid,
+          previousIdentityKey: input.previousIdentityKey,
+          nextIdentityKey: input.nextIdentityKey,
+          findingStatus: "resolved"
+        },
+        "failed to retire replaced review finding status"
+      );
+    }
+  }
+
+  private async projectActiveFindings(input: {
+    tenant: TenantRecord;
+    mergeRequestIid: number;
+    reviewResult: ReviewResult;
+    threadById: ReadonlyMap<string, KnownThread>;
+    referencedThreadIds: ReadonlySet<string>;
+  }): Promise<SummaryFinding[]> {
+    const activeFindings = new Map<string, SummaryFinding>();
+    const persistedFindings = await this.storage.listLatestReviewFindings(input.tenant.id, input.mergeRequestIid);
+
+    for (const finding of persistedFindings) {
+      if (finding.status !== "open") {
+        continue;
+      }
+
+      activeFindings.set(finding.identityKey, {
+        title: finding.title,
+        body: finding.body,
+        severity: finding.severity as SummaryFinding["severity"],
+        category: finding.category as SummaryFinding["category"]
+      });
+    }
+
+    for (const finding of input.reviewResult.findings) {
+      const nextIdentityKey = createFindingIdentityKey({
+        title: finding.title,
+        category: finding.category,
+        path: finding.anchor?.path,
+        startLine: finding.anchor?.startLine,
+        endLine: finding.anchor?.endLine,
+        side: finding.anchor?.side
+      });
+      const matchedThread = finding.priorThreadId ? input.threadById.get(finding.priorThreadId) ?? null : null;
+      if (matchedThread) {
+        const previousIdentityKey = matchedThread.mapping?.identityKey ?? null;
+        if (previousIdentityKey && previousIdentityKey !== nextIdentityKey) {
+          activeFindings.delete(previousIdentityKey);
+        }
+      }
+
+      activeFindings.set(nextIdentityKey, {
+        title: finding.title,
+        body: finding.body,
+        severity: finding.severity,
+        category: finding.category
+      });
+    }
+
+    for (const disposition of input.reviewResult.priorDispositions) {
+      if (disposition.action !== "resolve" || input.referencedThreadIds.has(disposition.threadId)) {
+        continue;
+      }
+
+      const thread = input.threadById.get(disposition.threadId);
+      if (!thread) {
+        continue;
+      }
+
+      const identityKey =
+        thread.mapping?.identityKey ??
+        createFindingIdentityKey({
+          title: thread.title,
+          category: thread.mapping?.category ?? "correctness",
+          path: thread.anchor?.path,
+          startLine: thread.anchor?.startLine,
+          endLine: thread.anchor?.endLine,
+          side: thread.anchor?.side
+        });
+      activeFindings.delete(identityKey);
+    }
+
+    return [...activeFindings.values()];
+  }
 }
+
+type SummaryFinding = Pick<ReviewFinding, "title" | "body" | "severity" | "category">;
 
 function isInvalidDiffPositionError(error: unknown): error is GitLabApiError {
   return (
@@ -739,39 +840,3 @@ function collectReferencedThreadIds(
   return referencedThreadIds;
 }
 
-function collectSummaryResolvedFindingIdentityKeys(input: {
-  reviewResult: ReviewResult;
-  threadById: ReadonlyMap<string, KnownThread>;
-  referencedThreadIds: ReadonlySet<string>;
-}): Set<string> {
-  const identityKeys = new Set<string>();
-
-  for (const disposition of input.reviewResult.priorDispositions) {
-    if (disposition.action !== "resolve" || input.referencedThreadIds.has(disposition.threadId)) {
-      continue;
-    }
-
-    const thread = input.threadById.get(disposition.threadId);
-    if (!thread) {
-      continue;
-    }
-
-    identityKeys.add(resolveThreadIdentityKey(thread));
-  }
-
-  return identityKeys;
-}
-
-function resolveThreadIdentityKey(thread: KnownThread): string {
-  return (
-    thread.mapping?.identityKey ??
-    createFindingIdentityKey({
-      title: thread.title,
-      category: thread.mapping?.category ?? "correctness",
-      path: thread.anchor?.path,
-      startLine: thread.anchor?.startLine,
-      endLine: thread.anchor?.endLine,
-      side: thread.anchor?.side
-    })
-  );
-}

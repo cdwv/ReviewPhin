@@ -34,9 +34,9 @@ If `reviewTrigger.targetThreadId` is set and the user is explicitly asking to re
 
 Follow durable style or tone preferences from `projectMemory` when they fit naturally, especially in `overview.overallAssessment` and `overview.highlights`, as long as they do not reduce clarity or accuracy.
 
-Persist one concise memory entry with `update_project_memory` only when the user is expressing durable project knowledge such as team policy, long-term preference, stable convention, or explicit "for future reference" guidance.
+Persist one concise memory entry with `add_memory_entry` only when the user is expressing durable project knowledge such as team policy, long-term preference, stable convention, or explicit "for future reference" guidance.
 
-If the user explicitly asks you to remember or commit something to memory, treat that as a strong signal to call `update_project_memory` when the guidance is durable project context, even if you end up returning zero findings.
+If the user explicitly asks you to remember or commit something to memory, treat that as a strong signal to call `add_memory_entry` when the guidance is durable project context, even if you end up returning zero findings.
 
 Do not store temporary incidents, merge-request-specific remarks, one-off requests, or speculative conclusions. If the comment is only about the current patch or discussion, do not write memory.
 

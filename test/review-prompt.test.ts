@@ -51,6 +51,7 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain("unused locals, helper functions, imports, parameters, or computed values");
     expect(prompt).toContain("instruction precedence from lowest to highest");
     expect(prompt).toContain("merge-request-level user comments, then the current `reviewTrigger`");
+    expect(prompt).toContain("prefer updating that existing thread/finding instead of creating a duplicate");
     expect(renderPrompt("subagent.context-analyst", {})).toContain("unused locals, helper functions, imports, parameters, or assigned values");
     expect(renderPrompt("subagent.context-analyst", {})).toContain("merge-request-level user comments, then the current request");
     expect(renderPrompt("subagent.review-author", {})).not.toContain("unused");
@@ -138,7 +139,6 @@ function createContext(
         { text: "For future reference, we generally avoid snapshot tests for API responses." }
       ]
     },
-    projectMemoryWriteTarget: null,
     trigger: {
       kind: triggerKind,
       noteId: 55,

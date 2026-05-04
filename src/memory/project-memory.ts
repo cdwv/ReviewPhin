@@ -4,96 +4,9 @@ import {
   REVIEWPHIN_MEMORY_PAGE_SLUG,
   REVIEWPHIN_MEMORY_PAGE_TITLE,
   REVIEWPHIN_MEMORY_SECTION_HEADING,
-  type ProjectMemoryCoalescer,
-  type ProjectMemoryContext,
   type ProjectMemoryEntry,
-  type ProjectMemoryToolInput,
-  type ProjectMemoryUpdateResult
+  type ProjectMemoryToolInput
 } from "./types.js";
-
-const MEMORY_SAVE_COALESCE_THRESHOLD_RATIO = 0.9;
-const MEMORY_COALESCE_TARGET_RATIO = 0.75;
-
-export async function loadProjectMemory(
-  client: GitLabClient,
-  projectId: number,
-  enabled: boolean
-): Promise<ProjectMemoryContext> {
-  if (!enabled) {
-    return {
-      enabled: false,
-      page: null,
-      entries: []
-    };
-  }
-
-  const page = await resolveProjectMemoryPage(client, projectId);
-  return {
-    enabled: true,
-    page,
-    entries: page ? parseProjectMemoryContent(page.content ?? "") : []
-  };
-}
-
-export async function updateProjectMemory(
-  client: GitLabClient,
-  projectId: number,
-  currentMemory: ProjectMemoryContext,
-  input: ProjectMemoryToolInput,
-  options: {
-    maxChars: number;
-    coalesce?: ProjectMemoryCoalescer | undefined;
-  }
-): Promise<ProjectMemoryUpdateResult> {
-  if (!currentMemory.enabled) {
-    throw new Error("Project memory is disabled");
-  }
-
-  let nextEntries = mergeProjectMemoryEntries(currentMemory.entries, input);
-  const unchanged = areMemoryEntriesEqual(currentMemory.entries, nextEntries);
-  if (unchanged) {
-    return {
-      changed: false,
-      action: "unchanged",
-      memory: {
-        ...currentMemory,
-        entries: nextEntries
-      }
-    };
-  }
-
-  nextEntries = await maybeCoalesceProjectMemoryEntries(nextEntries, {
-    maxChars: options.maxChars,
-    triggerChars: Math.floor(options.maxChars * MEMORY_SAVE_COALESCE_THRESHOLD_RATIO),
-    targetChars: Math.floor(options.maxChars * MEMORY_COALESCE_TARGET_RATIO),
-    coalesce: options.coalesce,
-    reason: "save-threshold"
-  });
-
-  const content = renderProjectMemory(nextEntries);
-  const page =
-    currentMemory.page === null
-      ? await client.createProjectWikiPage(projectId, {
-          title: REVIEWPHIN_MEMORY_PAGE_TITLE,
-          content,
-          format: "markdown"
-        })
-      : await client.updateProjectWikiPage(projectId, currentMemory.page.slug, {
-          title: REVIEWPHIN_MEMORY_PAGE_TITLE,
-          content,
-          format: currentMemory.page.format || "markdown"
-        });
-
-  return {
-    changed: true,
-    action: currentMemory.page === null ? "created" : "updated",
-    memory: {
-      enabled: true,
-      page,
-      entries: nextEntries
-    }
-  };
-}
 
 export async function resolveProjectMemoryPage(
   client: GitLabClient,
@@ -201,9 +114,9 @@ export function mergeProjectMemoryEntries(
 ): ProjectMemoryEntry[] {
   const nextEntries = existingEntries.map((entry) => ({ ...entry }));
   const supersededKeys = new Set(input.supersedes.map(normalizeMemoryText));
-  const normalizedIncoming = normalizeMemoryText(input.memory);
-  const earliestSupersededIndex = nextEntries.findIndex((entry) => supersededKeys.has(normalizeMemoryText(entry.text)));
-  const filteredEntries = nextEntries.filter((entry) => !supersededKeys.has(normalizeMemoryText(entry.text)));
+  const normalizedIncoming = normalizeProjectMemoryText(input.memory);
+  const earliestSupersededIndex = nextEntries.findIndex((entry) => supersededKeys.has(normalizeProjectMemoryText(entry.text)));
+  const filteredEntries = nextEntries.filter((entry) => !supersededKeys.has(normalizeProjectMemoryText(entry.text)));
   const existingIndex = filteredEntries.findIndex((entry) => normalizeMemoryText(entry.text) === normalizedIncoming);
   const replacementEntry = { text: input.memory };
 
@@ -221,7 +134,7 @@ export function mergeProjectMemoryEntries(
   return dedupeProjectMemoryEntries(filteredEntries);
 }
 
-function dedupeProjectMemoryEntries(entries: ProjectMemoryEntry[]): ProjectMemoryEntry[] {
+export function dedupeProjectMemoryEntries(entries: ProjectMemoryEntry[]): ProjectMemoryEntry[] {
   const dedupedEntries: ProjectMemoryEntry[] = [];
   const seen = new Set<string>();
 
@@ -231,7 +144,7 @@ function dedupeProjectMemoryEntries(entries: ProjectMemoryEntry[]): ProjectMemor
       continue;
     }
 
-    const normalized = normalizeMemoryText(text);
+    const normalized = normalizeProjectMemoryText(text);
     if (seen.has(normalized)) {
       continue;
     }
@@ -241,10 +154,6 @@ function dedupeProjectMemoryEntries(entries: ProjectMemoryEntry[]): ProjectMemor
   }
 
   return dedupedEntries;
-}
-
-function areMemoryEntriesEqual(left: ProjectMemoryEntry[], right: ProjectMemoryEntry[]): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function buildWikiSlugCandidates(title: string): string[] {
@@ -261,7 +170,7 @@ function normalizeWikiTitle(title: string): string {
   return title.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function normalizeMemoryText(value: string): string {
+export function normalizeProjectMemoryText(value: string): string {
   return value
     .trim()
     .toLowerCase()
@@ -270,26 +179,6 @@ function normalizeMemoryText(value: string): string {
     .replace(/\s+/g, " ");
 }
 
-async function maybeCoalesceProjectMemoryEntries(
-  entries: ProjectMemoryEntry[],
-  options: {
-    maxChars: number;
-    triggerChars: number;
-    targetChars: number;
-    coalesce?: ProjectMemoryCoalescer | undefined;
-    reason: "prompt-budget" | "save-threshold";
-  }
-): Promise<ProjectMemoryEntry[]> {
-  if (!options.coalesce || getProjectMemoryContentLength(entries) <= options.triggerChars) {
-    return entries;
-  }
-
-  return dedupeProjectMemoryEntries(
-    await options.coalesce({
-      entries,
-      maxChars: options.maxChars,
-      targetChars: options.targetChars,
-      reason: options.reason
-    })
-  );
+function normalizeMemoryText(value: string): string {
+  return normalizeProjectMemoryText(value);
 }
