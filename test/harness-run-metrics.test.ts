@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { summarizeCopilotRunLog } from "../src/review/copilot-run-metrics.js";
+import { summarizeHarnessRunLog } from "../src/harness/run-metrics.js";
 import { repoPath } from "./test-paths.js";
 
 describe("Copilot run metrics", () => {
@@ -8,14 +8,16 @@ describe("Copilot run metrics", () => {
     const workspacePath = repoPath();
     const alphaPath = repoPath("src", "alpha.ts");
     const betaPath = repoPath("src", "beta.ts");
-    const metrics = summarizeCopilotRunLog({
+    const metrics = summarizeHarnessRunLog({
       metadata: {
         interactionRunId: "run_1",
         interactionJobId: "job_1",
+        parentInteractionRunId: null,
         tenantId: "tenant_1",
         mergeRequestIid: 7,
         workspacePath,
-        requestedModel: "gpt-5.4"
+        requestedModel: "gpt-5.4",
+        sessionKind: "review"
       },
       prompt: "Review this merge request.",
       events: [

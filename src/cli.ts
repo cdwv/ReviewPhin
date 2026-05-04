@@ -8,7 +8,7 @@ import { z } from "zod";
 import { loadConfig, modelProfileNameSchema, tenantConfigSchema } from "./config.js";
 import { loadLocalEnvFile } from "./env.js";
 import { maskSecret } from "./review/model-profiles.js";
-import { readCopilotRunMetrics, type PremiumRequestsByModelMetric } from "./review/copilot-run-metrics.js";
+import { readHarnessRunMetrics, type PremiumRequestsByModelMetric } from "./harness/run-metrics.js";
 import { SqliteStorage } from "./storage/sqlite-storage.js";
 import type { TenantDeletionSummary } from "./storage/types.js";
 
@@ -644,7 +644,7 @@ async function loadRunMetricsRows(runLogDir: string): Promise<RunMetricsRow[]> {
     const rows: RunMetricsRow[] = [];
 
     for (const entry of runDirectories) {
-      const metrics = await readCopilotRunMetrics(join(runLogDir, entry.name, "copilot", "session.json"));
+      const metrics = await readHarnessRunMetrics(join(runLogDir, entry.name, "copilot", "session.json"));
       if (!metrics) {
         continue;
       }

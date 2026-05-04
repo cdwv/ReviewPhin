@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import type { CopilotRunLogRecord } from "./copilot-run-log.js";
+import type { HarnessRunLogRecord } from "./run-log.js";
 
 export interface RepeatedViewPathMetric {
   path: string;
@@ -12,7 +12,7 @@ export interface PremiumRequestsByModelMetric {
   premiumRequests: number;
 }
 
-export interface CopilotRunMetricsSummary {
+export interface HarnessRunMetricsSummary {
   promptChars: number;
   assistantTurns: number;
   assistantCalls: number;
@@ -31,18 +31,18 @@ export interface CopilotRunMetricsSummary {
   repeatedViewPaths: RepeatedViewPathMetric[];
 }
 
-export async function readCopilotRunMetrics(logPath: string): Promise<CopilotRunMetricsSummary | null> {
+export async function readHarnessRunMetrics(logPath: string): Promise<HarnessRunMetricsSummary | null> {
   try {
     const raw = await readFile(logPath, "utf8");
-    return summarizeCopilotRunLog(JSON.parse(raw) as CopilotRunLogRecord);
+    return summarizeHarnessRunLog(JSON.parse(raw) as HarnessRunLogRecord);
   } catch {
     return null;
   }
 }
 
-export function summarizeCopilotRunLog(
-  record: Pick<CopilotRunLogRecord, "prompt" | "events" | "metadata">
-): CopilotRunMetricsSummary {
+export function summarizeHarnessRunLog(
+  record: Pick<HarnessRunLogRecord, "prompt" | "events" | "metadata">
+): HarnessRunMetricsSummary {
   const assistantUsages = record.events.filter((event) => event.type === "assistant.usage");
   const assistantTurns = record.events.filter((event) => event.type === "assistant.turn_start").length;
   const toolExecutions = record.events.filter((event) => event.type === "tool.execution_start");

@@ -3,13 +3,14 @@ import { join } from "node:path";
 
 import type { AssistantMessageEvent, SessionEvent } from "@github/copilot-sdk";
 
-import type { ReviewContext } from "./types.js";
+import type { HarnessRunLoggingContext, HarnessRunMetadata } from "./types.js";
 
-interface CopilotRunLogOptions {
+interface HarnessRunLogOptions {
   logDir: string;
-  context: ReviewContext;
   prompt: string;
   model?: string | undefined;
+  logging?: HarnessRunLoggingContext | undefined;
+  metadata?: HarnessRunMetadata | undefined;
 }
 
 interface SerializedError {
@@ -18,17 +19,19 @@ interface SerializedError {
   stack?: string | undefined;
 }
 
-export interface CopilotRunLogRecord {
+export interface HarnessRunLogRecord {
   startedAt: string;
   finishedAt: string | null;
   sessionId: string | null;
   metadata: {
     interactionRunId: string | null;
     interactionJobId: string | null;
+    parentInteractionRunId: string | null;
     tenantId: string | null;
-    mergeRequestIid: number;
-    workspacePath: string;
+    mergeRequestIid: number | null;
+    workspacePath: string | null;
     requestedModel: string | null;
+    sessionKind: string | null;
   };
   prompt: string;
   response:
@@ -42,23 +45,25 @@ export interface CopilotRunLogRecord {
   events: SessionEvent[];
 }
 
-export class CopilotRunLog {
+export class HarnessRunLog {
   private readonly logDir: string;
-  private readonly record: CopilotRunLogRecord;
+  private readonly record: HarnessRunLogRecord;
 
-  public constructor(options: CopilotRunLogOptions) {
+  public constructor(options: HarnessRunLogOptions) {
     this.logDir = options.logDir;
     this.record = {
       startedAt: new Date().toISOString(),
       finishedAt: null,
       sessionId: null,
       metadata: {
-        interactionRunId: options.context.logging?.interactionRunId ?? null,
-        interactionJobId: options.context.logging?.interactionJobId ?? null,
-        tenantId: options.context.logging?.tenantId ?? null,
-        mergeRequestIid: options.context.mergeRequest.iid,
-        workspacePath: options.context.workspacePath,
-        requestedModel: options.model ?? null
+        interactionRunId: options.logging?.interactionRunId ?? null,
+        interactionJobId: options.logging?.interactionJobId ?? null,
+        parentInteractionRunId: options.logging?.parentInteractionRunId ?? null,
+        tenantId: options.logging?.tenantId ?? null,
+        mergeRequestIid: options.metadata?.mergeRequestIid ?? null,
+        workspacePath: options.metadata?.workspacePath ?? null,
+        requestedModel: options.model ?? null,
+        sessionKind: options.logging?.sessionKind ?? null
       },
       prompt: options.prompt,
       response: null,

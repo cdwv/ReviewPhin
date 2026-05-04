@@ -27,12 +27,6 @@ export interface ProjectMemoryContext {
   entries: ProjectMemoryEntry[];
 }
 
-export interface ProjectMemoryWriteTarget {
-  baseUrl: string;
-  projectId: number;
-  apiToken: string;
-}
-
 function normalizeProjectMemoryToolText(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }

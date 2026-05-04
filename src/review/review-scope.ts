@@ -1,5 +1,5 @@
 import type { GitLabDiscussion, GitLabMergeRequest, GitLabMergeRequestChange, GitLabNote, InstructionFile } from "../gitlab/types.js";
-import type { ProjectMemoryContext, ProjectMemoryWriteTarget } from "../memory/types.js";
+import type { ProjectMemoryContext } from "../memory/types.js";
 import { reviewResultSchema } from "./types.js";
 import type {
   PriorReviewFindingContext,
@@ -30,7 +30,6 @@ interface BuildScopedReviewContextInput {
   discussions: GitLabDiscussion[];
   instructionFiles: InstructionFile[];
   projectMemory?: ProjectMemoryContext | undefined;
-  projectMemoryWriteTarget?: ProjectMemoryWriteTarget | null | undefined;
   trigger: ReviewTriggerContext;
   priorThreads: ProviderThreadContext[];
   priorFindings?: PriorReviewFindingContext[] | undefined;
@@ -166,7 +165,6 @@ export function buildScopedReviewContext(input: BuildScopedReviewContextInput): 
     discussions: selectedDiscussions,
     instructionFiles: input.instructionFiles,
     projectMemory: input.projectMemory ?? { enabled: false, page: null, entries: [] },
-    projectMemoryWriteTarget: input.projectMemoryWriteTarget ?? null,
     trigger: input.trigger,
     priorThreads: selectedThreads,
     scope,

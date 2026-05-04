@@ -1,11 +1,13 @@
 import { loadConfig } from "./config.js";
 import { MergeRequestContextHydrator } from "./gitlab/hydrator.js";
 import { WorkspaceMaterializer } from "./gitlab/workspace.js";
+import { HarnessSessionRuntime } from "./harness/session.js";
 import { JobQueue } from "./jobs/job-queue.js";
 import { ReviewWorker } from "./jobs/review-worker.js";
 import { createLogger } from "./logger.js";
+import { GitLabProjectMemoryBackendFactory } from "./memory/gitlab-wiki-backend.js";
 import { DiscussionReconciler } from "./reconcile/discussion-reconciler.js";
-import { CopilotReviewProviderFactory } from "./review/copilot-provider.js";
+import { HarnessReviewProviderFactory } from "./review/harness-review-provider.js";
 import { SqliteStorage } from "./storage/sqlite-storage.js";
 import { TenantRegistry } from "./tenants/tenant-registry.js";
 import { createApp } from "./app.js";
@@ -31,12 +33,20 @@ async function main(): Promise<void> {
     logger
   });
 
-  const reviewProviderFactory = new CopilotReviewProviderFactory({
+  const projectMemoryBackendFactory = new GitLabProjectMemoryBackendFactory();
+  const harnessRuntime = new HarnessSessionRuntime({
     logger,
-    sdkLogLevel: config.copilotSdkLogLevel,
-    cliPath: config.copilotCliPath,
+    projectMemoryBackendFactory,
     runLogDir: config.runLogDir,
     timeoutMs: config.copilotTimeoutMs,
+    maxPromptMemoryChars: config.maxPromptMemoryChars,
+    sdkLogLevel: config.copilotSdkLogLevel,
+    cliPath: config.copilotCliPath
+  });
+
+  const reviewProviderFactory = new HarnessReviewProviderFactory({
+    logger,
+    harnessRuntime,
     maxPromptMemoryChars: config.maxPromptMemoryChars
   });
 
@@ -49,7 +59,8 @@ async function main(): Promise<void> {
     storage,
     workspaceMaterializer,
     memoryEnabled: config.memoryEnabled,
-    logger
+    logger,
+    projectMemoryBackendFactory
   });
 
   const reviewWorker = new ReviewWorker({

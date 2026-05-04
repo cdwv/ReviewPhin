@@ -4,45 +4,26 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { CopilotRunLog } from "../src/review/copilot-run-log.js";
-import type { ReviewContext } from "../src/review/types.js";
+import { HarnessRunLog } from "../src/harness/run-log.js";
 
-describe("CopilotRunLog", () => {
+describe("HarnessRunLog", () => {
   it("writes prompt, events, response, and error details to disk", async () => {
     const logDir = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-logs-"));
-    const context = {
-      workspacePath: join("workspace", "review"),
-      mergeRequest: {
-        iid: 7
-      },
-      changes: [],
-      notes: [],
-      discussions: [],
-      instructionFiles: [],
-      priorThreads: [],
-      scope: {
-        mode: "first-pass-full",
-        scopeSummary: "Initial review scope",
-        widenScopeHints: [],
-        allChangedFiles: [],
-        omittedChangedFiles: [],
-        targetThread: null,
-        previousReview: null,
-        priorFindings: [],
-        deltaSincePreviousReview: null
-      },
+
+    const runLog = new HarnessRunLog({
+      logDir,
+      prompt: "Return JSON only.",
+      model: "gpt-5.4",
       logging: {
         interactionRunId: "run_123",
         interactionJobId: "job_123",
-        tenantId: "tenant_123"
+        tenantId: "tenant_123",
+        sessionKind: "review"
+      },
+      metadata: {
+        mergeRequestIid: 7,
+        workspacePath: join("workspace", "review")
       }
-    } as unknown as ReviewContext;
-
-    const runLog = new CopilotRunLog({
-      logDir,
-      context,
-      prompt: "Return JSON only.",
-      model: "gpt-5.4"
     });
 
     runLog.setSessionId("session_123");

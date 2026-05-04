@@ -8,7 +8,7 @@ import type {
   InstructionFile,
   TriggerNoteReference
 } from "../gitlab/types.js";
-import type { ProjectMemoryContext, ProjectMemoryWriteTarget } from "../memory/types.js";
+import type { ProjectMemoryContext } from "../memory/types.js";
 import type { ReviewFindingStatus } from "../storage/types.js";
 
 export const reviewAnchorSchema = z
@@ -172,7 +172,6 @@ export interface ReviewContext {
   discussions: GitLabDiscussion[];
   instructionFiles: InstructionFile[];
   projectMemory: ProjectMemoryContext;
-  projectMemoryWriteTarget: ProjectMemoryWriteTarget | null;
   trigger: ReviewTriggerContext;
   priorThreads: ProviderThreadContext[];
   scope: ReviewScopeContext;

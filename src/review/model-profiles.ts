@@ -1,8 +1,7 @@
+import type { HarnessModelConfig } from "../harness/types.js";
 import type { ProviderConfig } from "@github/copilot-sdk";
-
 import type { GitLabMergeRequest } from "../gitlab/types.js";
 import type { ModelProfileRecord, Storage, TenantRecord } from "../storage/types.js";
-import type { ReviewProviderConfig } from "./provider.js";
 
 const REVIEWPHIN_PROFILE_OVERRIDE_PATTERN = /(?:^|\r?\n)\s*\/reviewphin-profile\s+([A-Za-z0-9][A-Za-z0-9._-]*)\b/i;
 
@@ -22,7 +21,7 @@ export async function resolveReviewProviderConfig(input: {
   storage: Pick<Storage, "getModelProfileByName" | "getDefaultModelProfile">;
   tenant: TenantRecord;
   mergeRequest: Pick<GitLabMergeRequest, "description">;
-}): Promise<ReviewProviderConfig> {
+}): Promise<HarnessModelConfig> {
   const overrideName = extractMergeRequestModelProfileOverride(input.mergeRequest.description);
   if (overrideName) {
     const profile = await input.storage.getModelProfileByName(overrideName);
@@ -75,8 +74,8 @@ export function maskSecret(value: string | null): string | null {
 
 function mapResolvedProfile(
   profile: ModelProfileRecord,
-  selectionSource: ReviewProviderConfig["selectionSource"]
-): ReviewProviderConfig {
+  selectionSource: HarnessModelConfig["selectionSource"]
+): HarnessModelConfig {
   validateModelProfile(profile);
 
   return {

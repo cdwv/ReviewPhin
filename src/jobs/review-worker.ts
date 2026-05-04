@@ -8,7 +8,7 @@ import { extractWebhookHeadSha } from "../gitlab/webhook.js";
 import type { MergeRequestContextHydrator } from "../gitlab/hydrator.js";
 import type { WorkspaceMaterializer } from "../gitlab/workspace.js";
 import { buildProviderThreads, type ReconcileSummary, DiscussionReconciler } from "../reconcile/discussion-reconciler.js";
-import { readCopilotRunMetrics } from "../review/copilot-run-metrics.js";
+import { readHarnessRunMetrics } from "../harness/run-metrics.js";
 import { ModelProfileConfigurationError, resolveReviewProviderConfig } from "../review/model-profiles.js";
 import type { ReviewProviderFactory } from "../review/provider.js";
 import { InteractionRunArtifacts } from "../review/run-artifacts.js";
@@ -212,22 +212,15 @@ export class ReviewWorker {
         job.id
       );
       const priorFindings = await this.storage.listPriorReviewFindings(tenant.id, context.mergeRequest.iid, job.id);
-      providerContext = buildScopedReviewContext({
-        workspacePath: context.workspace.rootPath,
-        mergeRequest: context.mergeRequest,
+       providerContext = buildScopedReviewContext({
+         workspacePath: context.workspace.rootPath,
+         mergeRequest: context.mergeRequest,
         changes: context.changes,
         notes: context.notes,
-        discussions: context.discussions,
-        instructionFiles: context.workspace.instructionFiles,
-        projectMemory: context.projectMemory,
-        projectMemoryWriteTarget: context.projectMemory.enabled
-          ? {
-              baseUrl: tenant.baseUrl,
-              projectId: tenant.projectId,
-              apiToken: tenant.apiToken
-            }
-          : null,
-        trigger,
+         discussions: context.discussions,
+         instructionFiles: context.workspace.instructionFiles,
+         projectMemory: context.projectMemory,
+         trigger,
         priorThreads,
         priorFindings: priorFindings.map((finding) => ({
           findingId: finding.findingId,
@@ -268,7 +261,15 @@ export class ReviewWorker {
         promptContextChangedFiles: providerContext.changes.length
       });
 
-      const reviewResult = await reviewProvider.review(providerContext);
+      const reviewResult = await reviewProvider.review(providerContext, {
+        tenant: {
+          id: tenant.id,
+          baseUrl: tenant.baseUrl,
+          projectId: tenant.projectId,
+          apiToken: tenant.apiToken,
+          memoryEnabled: context.projectMemory.enabled
+        }
+      });
 
       await this.storage.completeInteractionRun(interactionRun.id, JSON.stringify(reviewResult));
       await this.storage.replaceReviewFindings(
@@ -479,7 +480,7 @@ export class ReviewWorker {
     runArtifacts: InteractionRunArtifacts
   ): Promise<void> {
     try {
-      const metrics = await readCopilotRunMetrics(runArtifacts.copilotSessionLogPath);
+      const metrics = await readHarnessRunMetrics(runArtifacts.copilotSessionLogPath);
       if (!metrics) {
         return;
       }

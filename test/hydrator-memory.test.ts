@@ -21,11 +21,21 @@ describe("MergeRequestContextHydrator project memory", () => {
         instructionFiles: []
       }))
     };
+    const createForGitLabClient = vi.fn(() => ({
+      load: vi.fn(async () => {
+        throw new Error("wiki unavailable");
+      }),
+      saveEntries: vi.fn()
+    }));
     const hydrator = new MergeRequestContextHydrator({
       storage: storage as never,
       workspaceMaterializer: workspaceMaterializer as never,
       memoryEnabled: true,
-      logger: createLogger("silent")
+      logger: createLogger("silent"),
+      projectMemoryBackendFactory: {
+        createForHarnessRun: vi.fn(),
+        createForGitLabClient
+      }
     });
 
     const context = await hydrator.hydrate({
@@ -99,6 +109,12 @@ describe("MergeRequestContextHydrator project memory", () => {
           page: null,
           entries: []
         })
+      })
+    );
+    expect(createForGitLabClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: 123,
+        enabled: true
       })
     );
   });

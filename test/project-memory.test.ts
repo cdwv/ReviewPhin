@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { GitLabApiError } from "../src/gitlab/client.js";
+import { GitLabWikiProjectMemoryBackend } from "../src/memory/gitlab-wiki-backend.js";
 import {
-  loadProjectMemory,
   mergeProjectMemoryEntries,
-  renderProjectMemory,
   parseProjectMemoryContent,
-  updateProjectMemory
+  renderProjectMemory
 } from "../src/memory/project-memory.js";
 import { REVIEWPHIN_MEMORY_PAGE_TITLE, projectMemoryToolInputSchema } from "../src/memory/types.js";
 
@@ -70,15 +69,15 @@ describe("project memory", () => {
         content: "## Remembered project knowledge\n- We generally prefer small focused PRs."
       };
     });
-
-    const memory = await loadProjectMemory(
-      {
+    const backend = new GitLabWikiProjectMemoryBackend({
+      client: {
         listProjectWikiPages: vi.fn(async () => []),
         getProjectWikiPage
       } as never,
-      1085,
-      true
-    );
+      projectId: 1085
+    });
+
+    const memory = await backend.load();
 
     expect(getProjectWikiPage).toHaveBeenCalledWith(1085, "reviewphin-memory");
     expect(memory.page?.slug).toBe("reviewphin-memory");
@@ -105,50 +104,43 @@ describe("project memory", () => {
         format: "markdown"
       }
     ]);
-
-    const memory = await loadProjectMemory(
-      {
+    const backend = new GitLabWikiProjectMemoryBackend({
+      client: {
         listProjectWikiPages,
         getProjectWikiPage
       } as never,
-      1085,
-      true
-    );
+      projectId: 1085
+    });
+
+    const memory = await backend.load();
 
     expect(listProjectWikiPages).toHaveBeenCalledWith(1085);
     expect(memory.entries).toEqual([{ text: "Team policy is to use squash merges." }]);
   });
 
-  it("creates the wiki page when the first memory is stored", async () => {
+  it("saves the provided memory entries into the wiki page", async () => {
     const createProjectWikiPage = vi.fn(async (_projectId: number, input: { title: string; content: string }) => ({
       title: input.title,
       slug: "Reviewphin-memory",
       format: "markdown",
       content: input.content
     }));
-
-    const result = await updateProjectMemory(
-      {
+    const backend = new GitLabWikiProjectMemoryBackend({
+      client: {
         createProjectWikiPage,
-        updateProjectWikiPage: vi.fn()
+        updateProjectWikiPage: vi.fn(),
+        listProjectWikiPages: vi.fn(async () => []),
+        getProjectWikiPage: vi.fn(async () => {
+          throw new GitLabApiError("not found", 404, "missing", "https://gitlab.example.com");
+        })
       } as never,
-      1085,
-      {
-        enabled: true,
-        page: null,
-        entries: []
-      },
-      {
-        memory: "For future reference, we generally keep API validation in zod schemas.",
-        rationale: "Stable project convention",
-        supersedes: []
-      },
-      {
-        maxChars: 5_000
-      }
-    );
+      projectId: 1085
+    });
 
-    expect(result.action).toBe("created");
+    const result = await backend.saveEntries([
+      { text: "For future reference, we generally keep API validation in zod schemas." }
+    ]);
+
     expect(createProjectWikiPage).toHaveBeenCalledWith(
       1085,
       expect.objectContaining({
@@ -156,7 +148,7 @@ describe("project memory", () => {
         format: "markdown"
       })
     );
-    expect(result.memory.entries).toEqual([
+    expect(result.entries).toEqual([
       { text: "For future reference, we generally keep API validation in zod schemas." }
     ]);
   });
@@ -176,69 +168,137 @@ describe("project memory", () => {
 
   it("returns empty memory when the page is missing", async () => {
     const getProjectWikiPage = vi
-      .fn(async (_projectId: number, slug: string) => {
+      .fn(async () => {
         throw new GitLabApiError("not found", 404, "missing", "https://gitlab.example.com");
       });
-
-    const memory = await loadProjectMemory(
-      {
+    const backend = new GitLabWikiProjectMemoryBackend({
+      client: {
         listProjectWikiPages: vi.fn(async () => []),
         getProjectWikiPage
       } as never,
-      1085,
-      true
-    );
+      projectId: 1085
+    });
+
+    const memory = await backend.load();
 
     expect(getProjectWikiPage).toHaveBeenCalledWith(1085, "reviewphin-memory");
     expect(memory.entries).toEqual([]);
     expect(memory.page).toBeNull();
   });
 
-  it("coalesces memory before saving when the content nears the configured budget", async () => {
+  it("preserves concurrent additions when consolidated memory is saved back", async () => {
     const updateProjectWikiPage = vi.fn(async (_projectId: number, _slug: string, input: { content: string }) => ({
       title: REVIEWPHIN_MEMORY_PAGE_TITLE,
       slug: "reviewphin-memory",
       format: "markdown",
       content: input.content
     }));
-    const coalesce = vi.fn(async () => [
-      { text: "We generally keep API validation in zod schemas and avoid snapshot tests for API responses." }
-    ]);
-
-    const result = await updateProjectMemory(
-      {
+    const backend = new GitLabWikiProjectMemoryBackend({
+      client: {
         createProjectWikiPage: vi.fn(),
-        updateProjectWikiPage
-      } as never,
-      1085,
-      {
-        enabled: true,
-        page: {
+        updateProjectWikiPage,
+        getProjectWikiPage: vi.fn(async () => ({
           title: REVIEWPHIN_MEMORY_PAGE_TITLE,
           slug: "reviewphin-memory",
           format: "markdown",
-          content: ""
-        },
-        entries: [
+          content:
+            "## Remembered project knowledge\n- We generally keep API validation in zod schemas.\n- We generally avoid snapshot tests for API responses.\n- We use pnpm for scripts."
+        })),
+        listProjectWikiPages: vi.fn(async () => [])
+      } as never,
+      projectId: 1085
+    });
+
+    const result = await backend.saveEntries(
+      [{ text: "We generally keep API validation in zod schemas and avoid snapshot tests for API responses." }],
+      {
+        baseEntries: [
           { text: "We generally keep API validation in zod schemas." },
           { text: "We generally avoid snapshot tests for API responses." }
         ]
-      },
-      {
-        memory: "For future reference, we generally keep request validation close to zod schemas.",
-        rationale: "Stable convention",
-        supersedes: []
-      },
-      {
-        maxChars: 220,
-        coalesce
       }
     );
 
-    expect(coalesce).toHaveBeenCalledOnce();
     expect(updateProjectWikiPage).toHaveBeenCalledOnce();
-    expect(result.memory.entries).toEqual([
-      { text: "We generally keep API validation in zod schemas and avoid snapshot tests for API responses." }
+    expect(result.entries).toEqual([
+      { text: "We generally keep API validation in zod schemas and avoid snapshot tests for API responses." },
+      { text: "We use pnpm for scripts." }
     ]);
+  });
+
+  it("abandons stale consolidation when a base entry was superseded concurrently", async () => {
+    const updateProjectWikiPage = vi.fn(async (_projectId: number, _slug: string, input: { content: string }) => ({
+      title: REVIEWPHIN_MEMORY_PAGE_TITLE,
+      slug: "reviewphin-memory",
+      format: "markdown",
+      content: input.content
+    }));
+    const backend = new GitLabWikiProjectMemoryBackend({
+      client: {
+        createProjectWikiPage: vi.fn(),
+        updateProjectWikiPage,
+        getProjectWikiPage: vi.fn(async () => ({
+          title: REVIEWPHIN_MEMORY_PAGE_TITLE,
+          slug: "reviewphin-memory",
+          format: "markdown",
+          content:
+            "## Remembered project knowledge\n- We now use Vitest for tests.\n- We generally avoid snapshot tests for API responses."
+        })),
+        listProjectWikiPages: vi.fn(async () => [])
+      } as never,
+      projectId: 1085
+    });
+
+    const result = await backend.saveEntries(
+      [{ text: "We generally use Jest and avoid snapshot tests for API responses." }],
+      {
+        baseEntries: [
+          { text: "We generally use Jest for tests." },
+          { text: "We generally avoid snapshot tests for API responses." }
+        ]
+      }
+    );
+
+    expect(updateProjectWikiPage).not.toHaveBeenCalled();
+    expect(result.entries).toEqual([
+      { text: "We now use Vitest for tests." },
+      { text: "We generally avoid snapshot tests for API responses." }
+    ]);
+  });
+
+  it("abandons stale consolidation when a base entry was removed concurrently", async () => {
+    const updateProjectWikiPage = vi.fn(async (_projectId: number, _slug: string, input: { content: string }) => ({
+      title: REVIEWPHIN_MEMORY_PAGE_TITLE,
+      slug: "reviewphin-memory",
+      format: "markdown",
+      content: input.content
+    }));
+    const backend = new GitLabWikiProjectMemoryBackend({
+      client: {
+        createProjectWikiPage: vi.fn(),
+        updateProjectWikiPage,
+        getProjectWikiPage: vi.fn(async () => ({
+          title: REVIEWPHIN_MEMORY_PAGE_TITLE,
+          slug: "reviewphin-memory",
+          format: "markdown",
+          content: "## Remembered project knowledge\n- We generally keep API validation in zod schemas."
+        })),
+        listProjectWikiPages: vi.fn(async () => [])
+      } as never,
+      projectId: 1085
+    });
+
+    const result = await backend.saveEntries(
+      [{ text: "We generally keep API validation in zod schemas and avoid snapshot tests for API responses." }],
+      {
+        baseEntries: [
+          { text: "We generally keep API validation in zod schemas." },
+          { text: "We generally avoid snapshot tests for API responses." }
+        ]
+      }
+    );
+
+    expect(updateProjectWikiPage).not.toHaveBeenCalled();
+    expect(result.entries).toEqual([{ text: "We generally keep API validation in zod schemas." }]);
   });
 });
