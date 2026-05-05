@@ -22,6 +22,8 @@ This plan still points in the right direction, but it needs to be grounded in th
 
 So the remaining work is mostly **orchestration refactoring and capability split**, not inventing a second parallel provider stack.
 
+This plan also assumes **only one interaction run executes at a time**, so the initial design does not need claim coordination or parallel batch orchestration.
+
 ## Dependencies
 
 This plan depends on the earlier interaction rename and centralized harness-session work being the baseline.
@@ -178,14 +180,14 @@ Recommended shape:
 
 - one interaction run = one orchestration/review decision for one merge request state
 - zero or one reviewer pass inside that run
-- zero to many chatter reply actions inside that run
-- each reply action targets a specific note/discussion and records its own outcome
+- zero or one chatter pass inside that run
+- the chatter pass may generate replies for multiple specific note/discussion targets in one batch
 
 This is a moderate extension, not a separate architecture:
 
 - the reviewer side still wants a single shared review context
 - the router/planner needs to widen from singular trigger handling to a list of pending response candidates
-- chatter needs to iterate over planned response actions instead of assuming one target
+- chatter needs one batch prompt that covers all included response targets instead of assuming one target
 
 The main complication is not the LLM call itself. It is deciding **which pending comments are eligible to be grouped into the same run** and making that decision deterministic.
 
@@ -197,6 +199,24 @@ Recommended eligibility rules for the first version:
 4. allow backfilling older unanswered comments only when they still map to an open response target and were not superseded by a newer bot reply
 
 This keeps grouped replies bounded and avoids turning the router into cross-thread policy soup.
+
+### Mixed-batch refinement
+
+if any of batch targets needs code review, we run code review first for entire batch. If any of batch targets need reply, we run one chatter reply for whole batch.
+
+### Pending-target discovery
+
+The plan now talks about `responseTargets`, but it should say more clearly **where they come from**.
+
+Pending targets should come from lightweight GitLab note/discussion state inspection during routing.
+
+Because the worker only executes **one run at a time**, the initial grouped-run design does **not** need:
+
+- response-target claiming
+- concurrent batch coordination
+- overlap prevention between parallel parent runs
+
+That keeps the first implementation focused on routing and grouped response generation rather than concurrency control.
 
 ## Reviewer output reuse for chatter
 
@@ -217,12 +237,34 @@ Refinement after recent changes:
 - add an explicit reviewer-to-chatter handoff shape, either inside `ReviewResult` or alongside it
 - keep the handoff structured enough that chatter can stay lightweight and avoid repository tools
 
-For grouped replies, that handoff should support either:
+For grouped replies, the handoff should use:
 
-- one shared technical handoff plus per-target reply instructions, or
-- a small list of per-target handoff items keyed by target identity
+- one shared technical handoff
+- one grouped reply input that lists all included targets/questions clearly
 
-The first option is probably enough for grouped summary/direct-mention replies as long as the per-target prompt input clearly states which question is being answered.
+That keeps the first batch implementation simple while still letting chatter generate distinct replies for each target.
+
+### Grouped chatter response contract
+
+This is the main detail that should be locked in now.
+
+The grouped chatter pass should return a structured payload shaped as:
+
+- `memory`: optional memory-write decision/outcome for the batch
+- `replies`: array of reply items, one per included target
+
+Each reply item should include at least:
+
+- target identity (`noteId` and/or `discussionId`, plus target kind)
+- `replyBody`
+
+Optional per-reply fields can be added later if needed, but the first version should stay minimal.
+
+Recommended rule:
+
+- chatter must return at most one reply item per included target
+- chatter must not invent extra targets that were not present in the grouped input
+- publish logic should depend only on this explicit structured output, not on freeform parsing heuristics
 
 ## Runtime order
 
@@ -234,7 +276,7 @@ The first option is probably enough for grouped summary/direct-mention replies a
 4. run router
 5. build the list of eligible response targets
 6. if `memoryCandidate`, let chatter persist memory
-7. run chatter for each planned reply action
+7. run one chatter pass for the grouped reply batch
 8. stop
 
 No workspace hydration. No reviewer session.
@@ -263,9 +305,9 @@ No workspace hydration. No reviewer session.
 8. run reviewer
 9. reconcile findings + summary
 10. capture reviewer-produced reply/explanation content from the same review pass
-11. run chatter for each planned reply action with:
-    - the specific trigger comment / pending target being answered
-    - response target metadata
+11. run one grouped chatter pass with:
+    - the list of included trigger comments / pending targets being answered
+    - response target metadata for each target
     - memory outcome
     - reviewer-produced reply/explanation content
     - compact review result / outcome summary when useful as extra context
@@ -281,7 +323,7 @@ This path matters for older unanswered comments.
 3. resolve model profile/config
 4. run router
 5. decide whether grouped pending questions can be answered from existing review state without a fresh review
-6. run chatter for each eligible pending target
+6. run one grouped chatter pass for the eligible pending targets
 7. stop
 
 No workspace hydration. No reviewer session.
@@ -332,7 +374,8 @@ For grouped reply runs:
 
 - one interaction run should remain the parent durable record
 - reviewer and chatter sessions can still be logged as child harness sessions beneath that run
-- if chatter answers multiple targets, the artifact directory should persist a machine-readable per-target outcome list
+- if chatter answers multiple targets, the artifact directory should persist a machine-readable grouped reply payload plus per-target publish outcomes
+- artifacts should also preserve the planner's inclusion/exclusion decisions so grouped-run behavior is explainable after the fact
 
 ## Tool and hydration efficiency
 
@@ -422,11 +465,12 @@ Planned changes:
 - gather only the minimum state needed for the router before full hydration
 - create an `InteractionPlan`
 - allow `InteractionPlan` to contain multiple planned response actions, not just one
+- separate per-target routing decisions from aggregate batch execution decisions
 - preserve existing interaction-run / run-artifact / reaction handling
 - skip workspace hydration entirely when `reviewNeeded = false`
 - when `reviewNeeded = true` and `replyNeeded = true`, pass reviewer-produced reply/explanation content into chatter instead of publishing it directly
 - run chatter after review when `replyNeeded = true`
-- publish and record per-target outcomes without turning each target into a separate parent run
+- publish and record grouped reply outcomes without turning each target into a separate parent run
 
 ### `src/review/trigger.ts`
 
@@ -457,6 +501,7 @@ Create a deterministic planner responsible for:
 - normalizing trigger text
 - applying the heuristic rules
 - producing `reviewNeeded`, `replyNeeded`, `memoryCandidate`, and `responseTargets`
+- producing one aggregate batch plan
 - deciding which pending comments can be answered in the same parent run
 - marking some pending comments ineligible when they require a separate review or belong to the reviewer-only finding-thread flow
 
@@ -504,9 +549,11 @@ This should stay lighter than `HarnessReviewProvider`:
 For grouped replies, this runner should support either:
 
 - one chatter session per target, or
-- one chatter session that receives multiple reply tasks and returns a list of outputs
+- one chatter session that receives the grouped reply batch and returns a list of outputs
 
-The simpler first step is **one chatter call per target** inside the same parent run. That keeps prompts smaller, reduces parsing complexity, and makes partial failure handling much easier.
+The preferred first step is **one chatter call for the entire grouped batch** so review reasoning, memory context, and grouped targets stay together in one response-generation pass.
+
+Its output contract should match the grouped chatter response contract above: one optional batch-level memory outcome plus one explicit reply item per included target.
 
 ### `src/review/harness-review-provider.ts`
 
@@ -527,7 +574,7 @@ Add or refine types needed for chatter runs, for example:
 
 Do not fork model configuration types just for chatter.
 
-Grouped runs should also standardize a per-target correlation id in logs/artifacts so each reply attempt can be traced back to its specific note/discussion target.
+Grouped runs should also standardize target correlation data in logs/artifacts so each published reply can be traced back to its specific note/discussion target.
 
 ### `src/harness/registry.ts`
 
@@ -589,6 +636,14 @@ When no review runs:
 
 Use the existing `ProjectMemoryService` path; do not create a second write path outside the harness tool.
 
+For grouped runs, memory should be treated as a **batch-level side effect**, not a per-target side effect.
+
+Recommended rule:
+
+- collect all memory-candidate targets first
+- perform at most one memory-write phase before any shared review
+- let the one grouped chatter pass be the single source of any memory updates for that parent run
+
 ## Tests
 
 Plan tests for:
@@ -611,12 +666,17 @@ Plan tests for:
 - standalone note reply target correctness
 - reviewer prompt no longer implies general conversational output
 - chatter prompt registration / prompt-builder coverage
+- grouped chatter output parses into the locked structured reply contract
 - chatter-only run persistence does not require fabricated review findings
 - grouped reply planning can produce multiple response targets in one parent run
 - grouped reply execution can publish multiple successful replies after one review pass
-- partial grouped reply failure does not erase successful sibling replies from the same parent run
+- grouped chatter can return multiple target-specific replies from one batch pass
+- partial grouped publish failure does not erase successful sibling replies from the same parent run
 - stale/superseded unanswered comments are excluded from grouped backfill
 - grouped backfill can answer older eligible comments without forcing a fresh review
+- mixed batches with both review-needed and no-review targets produce one aggregate execution plan
+- if any eligible target needs review, the grouped run performs one shared review and uses it for all grouped responses
+- grouped memory candidates do not trigger duplicate competing memory writes inside one parent run
 
 ## Final recommendation
 
