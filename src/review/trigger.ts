@@ -4,7 +4,7 @@ import type { GitLabDiscussion, TriggerNoteReference, GitLabNoteHookPayload } fr
 import { containsBotMention, extractBotMentionInstruction } from "../gitlab/webhook.js";
 import type { TenantRecord } from "../storage/types.js";
 import { isReviewSummaryNoteBody } from "./summary.js";
-import type { ProviderThreadContext, ReviewTriggerContext, WebhookReviewTrigger } from "./types.js";
+import type { ProviderThreadContext, ResponseTarget, ReviewTriggerContext, WebhookReviewTrigger } from "./types.js";
 
 export async function classifyWebhookTrigger(input: {
   payload: GitLabNoteHookPayload;
@@ -61,6 +61,7 @@ export function buildReviewTriggerContext(input: {
   priorThreads: ProviderThreadContext[];
 }): ReviewTriggerContext {
   const note = locateTriggerNoteReference(input.discussions, input.payload.object_attributes.id);
+  const responseTargetNote = locateResponseTargetReference(input.discussions, input.payload.object_attributes.id);
   const targetThread =
     input.priorThreads.find((thread) => thread.humanReplies.some((reply) => reply.noteId === input.payload.object_attributes.id)) ??
     null;
@@ -83,7 +84,14 @@ export function buildReviewTriggerContext(input: {
     instruction,
     targetThreadId: targetThread?.threadId ?? null,
     targetDiscussionId: targetThread?.discussionId ?? null,
-    targetThreadTitle: targetThread?.title ?? null
+    targetThreadTitle: targetThread?.title ?? null,
+    responseTarget: buildResponseTarget({
+      kind,
+      note: responseTargetNote,
+      authorUsername: input.payload.user?.username ?? null,
+      body: input.payload.object_attributes.note,
+      instruction
+    })
   };
 }
 
@@ -118,5 +126,70 @@ export function locateTriggerNoteReference(
   return {
     kind: "merge-request-note",
     noteId
+  };
+}
+
+function locateResponseTargetReference(
+  discussions: GitLabDiscussion[],
+  noteId: number
+): TriggerNoteReference {
+  for (const discussion of discussions) {
+    if (discussion.notes.some((note) => note.id === noteId)) {
+      return {
+        kind: "discussion-note",
+        discussionId: discussion.id,
+        noteId
+      };
+    }
+  }
+
+  return {
+    kind: "merge-request-note",
+    noteId
+  };
+}
+
+function buildResponseTarget(input: {
+  kind: ReviewTriggerContext["kind"];
+  note: TriggerNoteReference;
+  authorUsername: string | null;
+  body: string;
+  instruction: string | null;
+}): ResponseTarget {
+  if (input.kind === "summary-follow-up") {
+    return {
+      kind: "summary-discussion-reply",
+      locationType: "summary-discussion",
+      triggerKind: input.kind,
+      noteId: input.note.noteId,
+      discussionId: input.note.kind === "discussion-note" ? input.note.discussionId : undefined,
+      authorUsername: input.authorUsername,
+      body: input.body,
+      instruction: input.instruction
+    };
+  }
+
+  if (input.kind === "follow-up-comment") {
+    return {
+      kind: "finding-thread-reply",
+      locationType: "finding-thread",
+      triggerKind: input.kind,
+      noteId: input.note.noteId,
+      discussionId: input.note.kind === "discussion-note" ? input.note.discussionId : undefined,
+      authorUsername: input.authorUsername,
+      body: input.body,
+      instruction: input.instruction
+    };
+  }
+
+  return {
+    kind: input.note.kind === "discussion-note" ? "discussion-reply" : "merge-request-note",
+    locationType: input.note.kind === "discussion-note" ? "discussion-note" : "merge-request-note",
+    triggerKind: input.kind,
+    noteId: input.note.noteId,
+    discussionId: input.note.kind === "discussion-note" ? input.note.discussionId : undefined,
+    authorUsername: input.authorUsername,
+    body: input.body,
+    instruction: input.instruction
   };
 }

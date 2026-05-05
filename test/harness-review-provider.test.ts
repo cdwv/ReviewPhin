@@ -85,11 +85,149 @@ describe("HarnessReviewProvider", () => {
       expect.objectContaining({
         model: "gpt-5.4",
         tenant: createTenantRuntimeContext(),
-        tools: ["glob", "rg", "view", "add_memory_entry"],
+        tools: ["glob", "rg", "view"],
         subagents: ["context-analyst", "review-author"],
         agent: "review-author"
       })
     );
+  });
+
+  it("synthesizes a reply handoff summary when the model returns it blank", async () => {
+    const run = vi.fn(async () => ({
+      response: {
+        data: {
+          content: JSON.stringify({
+            overview: {
+              summary: "Looks good",
+              overallSeverity: "low"
+            },
+            findings: [],
+            priorDispositions: [
+              {
+                threadId: "thread_1",
+                action: "resolve",
+                resolution: "dismissed"
+              }
+            ],
+            replyHandoff: {
+              summary: "   ",
+              targets: [
+                {
+                  kind: "discussion-reply",
+                  noteId: 55,
+                  discussionId: "disc_1",
+                  guidance: "The concern is not applicable because the value is validated before this path runs."
+                }
+              ]
+            }
+          })
+        }
+      },
+      events: []
+    }));
+
+    const provider = new HarnessReviewProvider({
+      logger: createLogger(),
+      modelConfig: createModelConfig(),
+      harnessRuntime: {
+        run
+      } as never,
+      memoryConsolidator: {
+        coalesce: vi.fn(async (input) => input.coalesceInput.entries)
+      } as never,
+      maxPromptMemoryChars: 5_000
+    });
+
+    const result = await provider.review(createReviewContext(), {
+      tenant: createTenantRuntimeContext()
+    });
+
+    expect(result.priorDispositions).toEqual([
+      {
+        threadId: "thread_1",
+        action: "resolve",
+        resolution: "dismissed"
+      }
+    ]);
+    expect(result.replyHandoff).toEqual({
+      summary: "The concern is not applicable because the value is validated before this path runs.",
+      targets: [
+        {
+          kind: "discussion-reply",
+          noteId: 55,
+          discussionId: "disc_1",
+          guidance: "The concern is not applicable because the value is validated before this path runs."
+        }
+      ]
+    });
+  });
+
+  it("falls back to the review overview when a blank handoff has no target guidance", async () => {
+    const run = vi.fn(async () => ({
+      response: {
+        data: {
+          content: JSON.stringify({
+            overview: {
+              summary: "The rerun found no remaining blocking issues.",
+              overallSeverity: "low",
+              mergeReadiness: {
+                status: "ready",
+                confidence: "high",
+                summary: "Everything needed for merge readiness is now addressed."
+              }
+            },
+            findings: [],
+            priorDispositions: [
+              {
+                threadId: "thread_1",
+                action: "resolve",
+                resolution: "resolved"
+              }
+            ],
+            replyHandoff: {
+              summary: "   ",
+              targets: [
+                {
+                  kind: "discussion-reply",
+                  noteId: 55,
+                  discussionId: "disc_1",
+                  guidance: "   "
+                }
+              ]
+            }
+          })
+        }
+      },
+      events: []
+    }));
+
+    const provider = new HarnessReviewProvider({
+      logger: createLogger(),
+      modelConfig: createModelConfig(),
+      harnessRuntime: {
+        run
+      } as never,
+      memoryConsolidator: {
+        coalesce: vi.fn(async (input) => input.coalesceInput.entries)
+      } as never,
+      maxPromptMemoryChars: 5_000
+    });
+
+    const result = await provider.review(createReviewContext(), {
+      tenant: createTenantRuntimeContext()
+    });
+
+    expect(result.replyHandoff).toEqual({
+      summary: "Everything needed for merge readiness is now addressed.",
+      targets: [
+        {
+          kind: "discussion-reply",
+          noteId: 55,
+          discussionId: "disc_1",
+          guidance: "   "
+        }
+      ]
+    });
   });
 });
 
@@ -164,7 +302,17 @@ function createReviewContext(): ReviewContext {
       instruction: "Please commit this to memory.",
       targetThreadId: null,
       targetDiscussionId: null,
-      targetThreadTitle: null
+      targetThreadTitle: null,
+      responseTarget: {
+        kind: "summary-discussion-reply",
+        locationType: "summary-discussion",
+        triggerKind: "summary-follow-up",
+        noteId: 55,
+        discussionId: "disc_summary",
+        authorUsername: "developer",
+        body: "Please commit this to memory.",
+        instruction: "Please commit this to memory."
+      }
     },
     priorThreads: [],
     scope: {

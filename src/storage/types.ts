@@ -311,7 +311,7 @@ export interface Storage {
     mergeRequestIid: number,
     currentInteractionJobId: string
   ): Promise<PreviousCompletedInteractionRecord | null>;
-  completeInteractionRun(interactionRunId: string, resultJson: string): Promise<void>;
+  completeInteractionRun(interactionRunId: string, resultJson: string | null): Promise<void>;
   failInteractionRun(interactionRunId: string, error: string): Promise<void>;
   upsertInteractionRunMetrics(input: UpsertInteractionRunMetricsInput): Promise<InteractionRunMetricsRecord>;
   replaceReviewFindings(interactionRunId: string, findings: CreateReviewFindingInput[]): Promise<void>;

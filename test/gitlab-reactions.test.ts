@@ -484,6 +484,39 @@ function createWorker(input: {
       getTenantById: vi.fn(async () => tenant)
     } as never,
     hydrator: {
+      loadRoutingContext: vi.fn(async () => ({
+        tenant,
+        job,
+        mergeRequest: {
+          id: 1,
+          iid: 7,
+          project_id: tenant.projectId,
+          title: "Add worker",
+          description: "Adds the worker",
+          web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+          source_branch: "feature",
+          target_branch: "main",
+          author: {
+            id: 42,
+            username: "developer",
+            name: "Dev User"
+          }
+        },
+        changes: [],
+        notes: [],
+        discussions: input.discussions,
+        workspace: {
+          rootPath: join("tmp", "workspace-routing"),
+          cleanupRoot: join("tmp", "cleanup-routing"),
+          strategy: "git",
+          instructionFiles: []
+        },
+        projectMemory: {
+          enabled: true,
+          page: null,
+          entries: []
+        }
+      })),
       hydrate: vi.fn(async () => ({
         tenant,
         job,
@@ -558,6 +591,21 @@ function createWorker(input: {
         })
       }))
     },
+    chatterRunnerFactory: {
+      createRunner: vi.fn(() => ({
+        run: vi.fn(async () => ({
+          memory: {
+            status: "skipped" as const,
+            summary: "No durable memory detected."
+          },
+          replies: []
+        })),
+        sessionPaths: {
+          memory: ["copilot", "chatter", "memory"],
+          reply: ["copilot", "chatter", "reply"]
+        }
+      }))
+    } as never,
     reconciler: {
       reconcile: vi.fn(async () => ({
         created: 0,

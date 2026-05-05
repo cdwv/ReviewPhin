@@ -7,6 +7,7 @@ import { ReviewWorker } from "./jobs/review-worker.js";
 import { createLogger } from "./logger.js";
 import { GitLabProjectMemoryBackendFactory } from "./memory/gitlab-wiki-backend.js";
 import { DiscussionReconciler } from "./reconcile/discussion-reconciler.js";
+import { HarnessChatterRunnerFactory } from "./review/harness-chatter.js";
 import { HarnessReviewProviderFactory } from "./review/harness-review-provider.js";
 import { SqliteStorage } from "./storage/sqlite-storage.js";
 import { TenantRegistry } from "./tenants/tenant-registry.js";
@@ -49,6 +50,9 @@ async function main(): Promise<void> {
     harnessRuntime,
     maxPromptMemoryChars: config.maxPromptMemoryChars
   });
+  const chatterRunnerFactory = new HarnessChatterRunnerFactory({
+    harnessRuntime
+  });
 
   const reconciler = new DiscussionReconciler({
     storage,
@@ -67,9 +71,10 @@ async function main(): Promise<void> {
     storage,
     tenantRegistry,
     hydrator,
-    workspaceMaterializer,
-    reviewProviderFactory,
-    reconciler,
+      workspaceMaterializer,
+      reviewProviderFactory,
+      chatterRunnerFactory,
+      reconciler,
     logger,
     runLogDir: config.runLogDir,
     maxJobRetries: config.maxJobRetries,

@@ -14,6 +14,11 @@ const promptFragments = {
   "review/incremental-rereview.md": definePromptFragment(),
   "review/follow-up-thread.md": definePromptFragment(),
   "review/summary-follow-up.md": definePromptFragment(),
+  "reply/chatter.md": definePromptFragment(),
+  "reply/direct-mention.md": definePromptFragment(),
+  "reply/summary-follow-up.md": definePromptFragment(),
+  "reply/review-result.md": definePromptFragment(),
+  "reply/memory-update.md": definePromptFragment(),
   "memory/coalesce.md": definePromptFragment<{
     reason: ProjectMemoryCoalesceInput["reason"];
     maxChars: number;
@@ -57,6 +62,28 @@ export const instructionTemplates = {
   ] as const),
   "subagent.review-author": buildStaticPromptTemplate(promptFragments, [
     "review/review-author.md"
+  ] as const),
+  "reply.direct-mention": buildStaticPromptTemplate(promptFragments, [
+    "reply/chatter.md",
+    "reply/direct-mention.md"
+  ] as const),
+  "reply.summary-follow-up": buildStaticPromptTemplate(promptFragments, [
+    "reply/chatter.md",
+    "reply/summary-follow-up.md"
+  ] as const),
+  "reply.direct-mention.after-review": buildStaticPromptTemplate(promptFragments, [
+    "reply/chatter.md",
+    "reply/direct-mention.md",
+    "reply/review-result.md"
+  ] as const),
+  "reply.summary-follow-up.after-review": buildStaticPromptTemplate(promptFragments, [
+    "reply/chatter.md",
+    "reply/summary-follow-up.md",
+    "reply/review-result.md"
+  ] as const),
+  "reply.memory-update": buildStaticPromptTemplate(promptFragments, [
+    "reply/chatter.md",
+    "reply/memory-update.md"
   ] as const),
   "memory.coalesce": definePromptTemplate((params: ProjectMemoryCoalesceInput) =>
       renderPromptFragment(promptFragments, "memory/coalesce.md", {

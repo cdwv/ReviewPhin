@@ -45,9 +45,7 @@ export class HarnessReviewProvider implements ReviewProvider {
       model: this.modelConfig.reviewModel ?? undefined,
       workingDirectory: effectiveContext.workspacePath,
       tenant: runtime.tenant,
-      tools: effectiveContext.projectMemory.enabled
-        ? ["glob", "rg", "view", "add_memory_entry"]
-        : ["glob", "rg", "view"],
+      tools: ["glob", "rg", "view"],
       subagents: ["context-analyst", "review-author"],
       agent: "review-author",
       logging: {
@@ -55,7 +53,7 @@ export class HarnessReviewProvider implements ReviewProvider {
         interactionJobId: effectiveContext.logging?.interactionJobId ?? null,
         tenantId: effectiveContext.logging?.tenantId ?? runtime.tenant.id,
         runDirectory: effectiveContext.logging?.runDirectory,
-        pathSegments: ["copilot"],
+        pathSegments: ["copilot", "reviewer"],
         sessionKind: "review"
       },
       metadata: {
@@ -68,7 +66,7 @@ export class HarnessReviewProvider implements ReviewProvider {
       throw new Error("Copilot review session returned no content");
     }
 
-    return reviewResultSchema.parse(parseJsonResponse(content));
+    return reviewResultSchema.parse(this.normalizeOptionalReplyHandoff(parseJsonResponse(content), effectiveContext));
   }
 
   private async preparePromptContext(
@@ -136,6 +134,83 @@ export class HarnessReviewProvider implements ReviewProvider {
       return input.entries;
     }
   }
+
+  private normalizeOptionalReplyHandoff(payload: unknown, context: ReviewContext): unknown {
+    if (!isRecord(payload) || !isRecord(payload.replyHandoff)) {
+      return payload;
+    }
+
+    const replyHandoff = { ...payload.replyHandoff };
+    const summary = typeof replyHandoff.summary === "string" ? replyHandoff.summary.trim() : replyHandoff.summary;
+    if (typeof summary === "string" && summary.length > 0) {
+      replyHandoff.summary = summary;
+      return {
+        ...payload,
+        replyHandoff
+      };
+    }
+
+    const synthesizedSummary = this.synthesizeReplyHandoffSummary(payload, replyHandoff.targets);
+
+    this.logger.warn(
+      {
+        interactionRunId: context.logging?.interactionRunId ?? null,
+        tenantId: context.logging?.tenantId ?? null
+      },
+      "reviewer emitted an empty reply handoff summary; synthesizing fallback summary"
+    );
+    return {
+      ...payload,
+      replyHandoff: {
+        ...replyHandoff,
+        summary: synthesizedSummary
+      }
+    };
+  }
+
+  private synthesizeReplyHandoffSummary(payload: Record<string, unknown>, targets: unknown): string {
+    if (!Array.isArray(targets)) {
+      return this.synthesizeReplyHandoffSummaryFromOverview(payload);
+    }
+
+    for (const target of targets) {
+      if (!isRecord(target) || typeof target.guidance !== "string") {
+        continue;
+      }
+
+      const guidance = target.guidance.trim();
+      if (guidance.length === 0) {
+        continue;
+      }
+
+      return guidance.length <= 240 ? guidance : `${guidance.slice(0, 237)}...`;
+    }
+
+    return this.synthesizeReplyHandoffSummaryFromOverview(payload);
+  }
+
+  private synthesizeReplyHandoffSummaryFromOverview(payload: Record<string, unknown>): string {
+    if (isRecord(payload.overview)) {
+      const overallAssessment = normalizeNonEmptyString(payload.overview.overallAssessment);
+      if (overallAssessment) {
+        return overallAssessment;
+      }
+
+      if (isRecord(payload.overview.mergeReadiness)) {
+        const mergeReadinessSummary = normalizeNonEmptyString(payload.overview.mergeReadiness.summary);
+        if (mergeReadinessSummary) {
+          return mergeReadinessSummary;
+        }
+      }
+
+      const overviewSummary = normalizeNonEmptyString(payload.overview.summary);
+      if (overviewSummary) {
+        return overviewSummary;
+      }
+    }
+
+    return "Review follow-up available.";
+  }
 }
 
 interface HarnessReviewProviderFactoryOptions {
@@ -187,4 +262,17 @@ function parseJsonResponse(content: string): unknown {
   }
 
   throw new Error("Harness review output did not contain a JSON object");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function normalizeNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
 }

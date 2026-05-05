@@ -421,23 +421,12 @@ export class DiscussionReconciler {
       status: note.resolved ? "resolved" : "open",
       lastInteractionRunId: input.interactionRunId
     });
-    const updatedFinding = await this.storage.updateReviewFindingStatus(
+    await this.storage.updateReviewFindingStatus(
       input.tenant.id,
       input.context.mergeRequest.iid,
       identityKey,
       "open"
     );
-    if (!updatedFinding) {
-      this.logger.warn(
-        {
-          tenantId: input.tenant.id,
-          mergeRequestIid: input.context.mergeRequest.iid,
-          identityKey,
-          findingStatus: "open"
-        },
-        "failed to update persisted review finding status"
-      );
-    }
   }
 
   private async createDiscussion(input: {
@@ -543,7 +532,9 @@ export class DiscussionReconciler {
       input.identityKey,
       input.findingStatus
     );
-    if (!updatedFinding) {
+    const shouldWarnAboutFindingStatusUpdate =
+      input.findingStatus !== "open" || input.thread.mapping?.status === "resolved";
+    if (!updatedFinding && shouldWarnAboutFindingStatusUpdate) {
       this.logger.warn(
         {
           tenantId: input.tenant.id,

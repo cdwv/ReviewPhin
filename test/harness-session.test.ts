@@ -73,7 +73,7 @@ describe("HarnessSessionRuntime", () => {
     const sessionOptions = createSessionMock.mock.calls[0]?.[0];
     expect(sessionOptions.availableTools).toEqual(["glob", "rg", "view", "add_memory_entry"]);
     expect(sessionOptions.customAgents[0].tools).toEqual(["glob", "rg", "view"]);
-    expect(sessionOptions.customAgents[1].tools).toEqual(["glob", "rg", "view", "add_memory_entry"]);
+    expect(sessionOptions.customAgents[1].tools).toEqual(["glob", "rg", "view"]);
 
     await sessionOptions.tools[0].handler({
       memory: "Remember this.",

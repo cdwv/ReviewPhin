@@ -72,6 +72,47 @@ describe("metrics CLI", () => {
     expect(lines).toContain("gpt-5.4 2 4 1 3 2 1.5 2 2.5 2.8");
     expect(lines).toContain("claude-sonnet-4 1 2 2 2 2 2 2 2 2");
   });
+
+  it("prefers reviewer session logs and skips runs without readable metrics", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-metrics-reviewer-"));
+    const runLogDir = join(workspace, "run-logs");
+
+    await writeSessionLog(
+      runLogDir,
+      "run_001",
+      {
+        model: "gpt-5.4",
+        premiumRequests: 5,
+        inputTokens: 500,
+        outputTokens: 50,
+        toolCalls: 7,
+        durationMs: 5000
+      },
+      ["copilot", "reviewer"]
+    );
+    await mkdir(join(runLogDir, "run_002"), { recursive: true });
+    await mkdir(join(runLogDir, "run_003", "copilot", "reviewer"), { recursive: true });
+    await writeFile(join(runLogDir, "run_003", "copilot", "reviewer", "session.json"), "{not-json", "utf8");
+
+    let stdout = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      stdout += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+      return true;
+    });
+
+    const exitCode = await runCli(["metrics", "sessions", "--run-log-dir", runLogDir]);
+
+    expect(exitCode).toBe(0);
+
+    const lines = stdout
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => line.trim().replaceAll(/\s+/g, " "));
+
+    expect(lines).toContain("run_001 5 500 50 7 5000");
+    expect(lines.some((line) => line.startsWith("run_002 "))).toBe(false);
+    expect(lines.some((line) => line.startsWith("run_003 "))).toBe(false);
+  });
 });
 
 async function writeSessionLog(
@@ -84,9 +125,10 @@ async function writeSessionLog(
     outputTokens: number;
     toolCalls: number;
     durationMs: number;
-  }
+  },
+  pathSegments: string[] = ["copilot"]
 ): Promise<void> {
-  const copilotDir = join(runLogDir, runName, "copilot");
+  const copilotDir = join(runLogDir, runName, ...pathSegments);
   await mkdir(copilotDir, { recursive: true });
   const workspacePath = repoPath();
 

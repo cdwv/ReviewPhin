@@ -140,6 +140,39 @@ describe("ReviewWorker cleanup", () => {
         getTenantById: vi.fn(async () => tenant)
       } as never,
       hydrator: {
+        loadRoutingContext: vi.fn(async () => ({
+          tenant,
+          job,
+          mergeRequest: {
+            id: 1,
+            iid: 7,
+            project_id: tenant.projectId,
+            title: "Add worker",
+            description: "Adds the worker",
+            web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+            source_branch: "feature",
+            target_branch: "main",
+            author: {
+              id: 42,
+              username: "developer",
+              name: "Dev User"
+            }
+          },
+          changes: [],
+          notes: [],
+          discussions: [],
+          workspace: {
+            rootPath: join("tmp", "workspace-routing"),
+            cleanupRoot: join("tmp", "cleanup-routing"),
+            strategy: "git",
+            instructionFiles: []
+          },
+          projectMemory: {
+            enabled: true,
+            page: null,
+            entries: []
+          }
+        })),
         hydrate: vi.fn(async () => ({
           tenant,
           job,
@@ -210,6 +243,21 @@ describe("ReviewWorker cleanup", () => {
           }))
         }))
       },
+      chatterRunnerFactory: {
+        createRunner: vi.fn(() => ({
+          run: vi.fn(async () => ({
+            memory: {
+              status: "skipped" as const,
+              summary: "No durable memory detected."
+            },
+            replies: []
+          })),
+          sessionPaths: {
+            memory: ["copilot", "chatter", "memory"],
+            reply: ["copilot", "chatter", "reply"]
+          }
+        }))
+      } as never,
       reconciler: {
         reconcile: vi.fn(async () => ({
           created: 0,
@@ -326,6 +374,39 @@ describe("ReviewWorker cleanup", () => {
         }))
       } as never,
       hydrator: {
+        loadRoutingContext: vi.fn(async () => ({
+          tenant,
+          job,
+          mergeRequest: {
+            id: 1,
+            iid: 7,
+            project_id: tenant.projectId,
+            title: "Add worker",
+            description: "Adds the worker",
+            web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+            source_branch: "feature",
+            target_branch: "main",
+            author: {
+              id: 42,
+              username: "developer",
+              name: "Dev User"
+            }
+          },
+          changes: [],
+          notes: [],
+          discussions: [],
+          workspace: {
+            rootPath: join("tmp", "workspace-routing"),
+            cleanupRoot: join("tmp", "cleanup-routing"),
+            strategy: "git",
+            instructionFiles: []
+          },
+          projectMemory: {
+            enabled: true,
+            page: null,
+            entries: []
+          }
+        })),
         hydrate: vi.fn(async () => ({
           tenant,
           job,
@@ -384,6 +465,9 @@ describe("ReviewWorker cleanup", () => {
       reviewProviderFactory: {
         createProvider: vi.fn()
       },
+      chatterRunnerFactory: {
+        createRunner: vi.fn()
+      } as never,
       reconciler: {
         reconcile: vi.fn()
       } as never,
@@ -401,12 +485,12 @@ describe("ReviewWorker cleanup", () => {
       'Tenant https://gitlab.example.com::123 references unknown model profile "missing-profile"'
     );
     expect(storage.failInteractionRun).not.toHaveBeenCalled();
-    expect(cleanup).toHaveBeenCalledWith({
-      rootPath: join("tmp", "workspace"),
-      cleanupRoot: join("tmp", "cleanup"),
-      strategy: "git",
-      instructionFiles: []
-    });
+    expect(cleanup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cleanupRoot: join("tmp", "cleanup-routing"),
+        rootPath: join("tmp", "workspace-routing")
+      })
+    );
     const postedBodies = fetchMock.mock.calls
       .filter(([input, init]) => init?.method === "POST" && String(input).includes("/award_emoji"))
       .map(([, init]) => String(init?.body));

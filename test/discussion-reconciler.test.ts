@@ -1244,6 +1244,88 @@ describe("Discussion reconciler", () => {
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledTimes(1);
   });
 
+  it("does not warn when a new open finding status cannot be updated yet", async () => {
+    const warn = vi.fn();
+    const storage = {
+      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_new", ...input })),
+      updateReviewFindingStatus: vi.fn(async () => false),
+      listLatestReviewFindings: vi.fn(async () => [])
+    };
+
+    const reconciler = new DiscussionReconciler({
+      storage: storage as never,
+      logger: { warn } as never
+    });
+
+    const createMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+      id: 90,
+      body,
+      author: { id: 999, username: "review-bot", name: "Review Bot" },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      system: false
+    }));
+    const createMergeRequestDiscussion = vi.fn(async () => ({
+      id: "disc_new",
+      individual_note: false,
+      notes: [
+        {
+          id: 12,
+          body: "**New finding**\n\nAnchor body",
+          author: { id: 999, username: "review-bot", name: "Review Bot" },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          system: false
+        }
+      ]
+    }));
+
+    await reconciler.reconcile({
+      tenant,
+      context: createHydratedContext({ discussions: [] }),
+      mappings: [],
+      interactionRunId: "run_1",
+      reviewResult: {
+        overview: {
+          summary: "Found one issue",
+          overallSeverity: "medium"
+        },
+        findings: [
+          {
+            title: "New finding",
+            body: "Anchor body",
+            severity: "medium",
+            category: "bug"
+          }
+        ],
+        priorDispositions: []
+      },
+      client: {
+        createMergeRequestNote,
+        createMergeRequestDiscussion,
+        updateMergeRequestNote: vi.fn(),
+        replyToDiscussion: vi.fn(),
+        updateDiscussionNote: vi.fn(),
+        resolveDiscussion: vi.fn()
+      } as never
+    });
+
+    expect(storage.updateReviewFindingStatus).toHaveBeenCalledWith(
+      tenant.id,
+      7,
+      createFindingIdentityKey({
+        title: "New finding",
+        category: "bug",
+        path: undefined,
+        startLine: undefined,
+        endLine: undefined,
+        side: undefined
+      }),
+      "open"
+    );
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it("does not retry unrelated 400 discussion failures as overview threads", async () => {
     const storage = {
       upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_new", ...input })),
