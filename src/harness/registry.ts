@@ -131,7 +131,7 @@ const subagentRegistry: Record<
   "review-author": {
     displayName: "Review Author",
     description: "Produces GitLab-ready review findings and thread dispositions",
-    toolIds: [...READ_ONLY_TOOL_IDS, "add_memory_entry"],
+    toolIds: READ_ONLY_TOOL_IDS,
     promptTemplateId: "subagent.review-author"
   }
 };

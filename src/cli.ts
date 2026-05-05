@@ -644,7 +644,7 @@ async function loadRunMetricsRows(runLogDir: string): Promise<RunMetricsRow[]> {
     const rows: RunMetricsRow[] = [];
 
     for (const entry of runDirectories) {
-      const metrics = await readHarnessRunMetrics(join(runLogDir, entry.name, "copilot", "session.json"));
+      const metrics = await loadRunMetrics(join(runLogDir, entry.name));
       if (!metrics) {
         continue;
       }
@@ -664,6 +664,22 @@ async function loadRunMetricsRows(runLogDir: string): Promise<RunMetricsRow[]> {
   } catch {
     return [];
   }
+}
+
+async function loadRunMetrics(runDirectory: string) {
+  const candidateLogPaths = [
+    join(runDirectory, "copilot", "reviewer", "session.json"),
+    join(runDirectory, "copilot", "session.json")
+  ];
+
+  for (const candidateLogPath of candidateLogPaths) {
+    const metrics = await readHarnessRunMetrics(candidateLogPath);
+    if (metrics) {
+      return metrics;
+    }
+  }
+
+  return null;
 }
 
 function buildModelPremiumRequestsStatsRows(rows: RunMetricsRow[]): ModelPremiumRequestsStatsRow[] {

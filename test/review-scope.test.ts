@@ -40,7 +40,8 @@ describe("buildScopedReviewContext", () => {
         instruction: "review",
         targetThreadId: null,
         targetDiscussionId: null,
-        targetThreadTitle: null
+        targetThreadTitle: null,
+        responseTarget: createResponseTarget("direct-mention", 55, "@review-bot review", "review")
       },
       priorThreads: [
         createThread("map_1", "disc_1", "Existing finding", "src\\existing.ts", false)
@@ -108,7 +109,8 @@ describe("buildScopedReviewContext", () => {
         instruction: "review again",
         targetThreadId: null,
         targetDiscussionId: null,
-        targetThreadTitle: null
+        targetThreadTitle: null,
+        responseTarget: createResponseTarget("direct-mention", 57, "@review-bot review again", "review again")
       },
       priorThreads: [],
       priorFindings: [
@@ -169,7 +171,14 @@ describe("buildScopedReviewContext", () => {
         instruction: "For future reference, prefer tasteful dolphin jokes in the overall assessment when they fit.",
         targetThreadId: null,
         targetDiscussionId: null,
-        targetThreadTitle: null
+        targetThreadTitle: null,
+        responseTarget: createResponseTarget(
+          "summary-follow-up",
+          90,
+          "For future reference, prefer tasteful dolphin jokes in the overall assessment when they fit.",
+          "For future reference, prefer tasteful dolphin jokes in the overall assessment when they fit.",
+          "disc_summary"
+        )
       },
       priorThreads: [],
       previousReview: {
@@ -211,7 +220,8 @@ describe("buildScopedReviewContext", () => {
         instruction: "review again",
         targetThreadId: null,
         targetDiscussionId: null,
-        targetThreadTitle: null
+        targetThreadTitle: null,
+        responseTarget: createResponseTarget("direct-mention", 56, "@review-bot review again", "review again")
       },
       priorThreads: [],
       previousReview: {
@@ -273,7 +283,14 @@ describe("buildScopedReviewContext", () => {
         instruction: "Please reword this.",
         targetThreadId: "map_target",
         targetDiscussionId: "disc_target",
-        targetThreadTitle: "Target finding"
+        targetThreadTitle: "Target finding",
+        responseTarget: createResponseTarget(
+          "follow-up-comment",
+          77,
+          "Please reword this.",
+          "Please reword this.",
+          "disc_target"
+        )
       },
       priorThreads: [targetThread, otherThread],
       previousReview: null
@@ -309,7 +326,14 @@ describe("buildScopedReviewContext", () => {
         instruction: "Please re-check the prior thread.",
         targetThreadId: "map_target",
         targetDiscussionId: "disc_target",
-        targetThreadTitle: "Target finding"
+        targetThreadTitle: "Target finding",
+        responseTarget: createResponseTarget(
+          "follow-up-comment",
+          78,
+          "Please re-check the prior thread.",
+          "Please re-check the prior thread.",
+          "disc_target"
+        )
       },
       priorThreads: [targetThread],
       previousReview: null
@@ -340,7 +364,8 @@ describe("buildScopedReviewContext", () => {
         instruction: "review",
         targetThreadId: null,
         targetDiscussionId: null,
-        targetThreadTitle: null
+        targetThreadTitle: null,
+        responseTarget: createResponseTarget("direct-mention", 88, "@review-bot review", "review")
       },
       priorThreads: [],
       previousReview: null
@@ -367,7 +392,8 @@ describe("buildScopedReviewContext", () => {
         instruction: "full rescan please",
         targetThreadId: null,
         targetDiscussionId: null,
-        targetThreadTitle: null
+        targetThreadTitle: null,
+        responseTarget: createResponseTarget("direct-mention", 89, "@review-bot full rescan please", "full rescan please")
       },
       priorThreads: [],
       previousReview: {
@@ -399,6 +425,39 @@ function createChange(path: string, diff: string) {
     renamed_file: false,
     deleted_file: false
   };
+}
+
+function createResponseTarget(
+  kind: "direct-mention" | "summary-follow-up" | "follow-up-comment",
+  noteId: number,
+  body: string,
+  instruction: string,
+  discussionId?: string
+) {
+  return {
+    kind:
+      kind === "summary-follow-up"
+        ? "summary-discussion-reply"
+        : kind === "follow-up-comment"
+          ? "finding-thread-reply"
+          : discussionId
+            ? "discussion-reply"
+            : "merge-request-note",
+    locationType:
+      kind === "summary-follow-up"
+        ? "summary-discussion"
+        : kind === "follow-up-comment"
+          ? "finding-thread"
+          : discussionId
+            ? "discussion-note"
+            : "merge-request-note",
+    triggerKind: kind,
+    noteId,
+    discussionId,
+    authorUsername: "developer",
+    body,
+    instruction
+  } as const;
 }
 
 function createNote(id: number, body: string) {

@@ -165,16 +165,21 @@ export interface MaterializedWorkspace {
   instructionFiles: InstructionFile[];
 }
 
-export interface HydratedMergeRequestContext {
+export interface MaterializedMergeRequestContext {
   tenant: TenantRecord;
   job: InteractionJobRecord;
   mergeRequest: GitLabMergeRequest;
-  versions: GitLabMergeRequestVersion[];
-  latestVersion: GitLabMergeRequestVersion | null;
   changes: GitLabMergeRequestChange[];
   notes: GitLabNote[];
   discussions: GitLabDiscussion[];
   workspace: MaterializedWorkspace;
   projectMemory: ProjectMemoryContext;
+}
+
+export interface HydratedMergeRequestContext extends MaterializedMergeRequestContext {
+  versions: GitLabMergeRequestVersion[];
+  latestVersion: GitLabMergeRequestVersion | null;
   snapshot: MergeRequestSnapshotRecord;
 }
+
+export type LightweightMergeRequestContext = MaterializedMergeRequestContext;

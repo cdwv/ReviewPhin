@@ -52,6 +52,37 @@ export const priorDispositionSchema = z.object({
   resolution: z.enum(["resolved", "dismissed"]).optional()
 });
 
+export const responseTargetSchema = z.object({
+  kind: z.enum(["merge-request-note", "discussion-reply", "summary-discussion-reply", "finding-thread-reply"]),
+  locationType: z.enum(["merge-request-note", "discussion-note", "summary-discussion", "finding-thread"]),
+  triggerKind: z.enum(["direct-mention", "follow-up-comment", "summary-follow-up"]),
+  noteId: z.number().int().positive(),
+  discussionId: z.string().min(1).optional(),
+  authorUsername: z.string().min(1).nullable(),
+  body: z.string().min(1),
+  instruction: z.string().min(1).nullable()
+});
+
+export const reviewerReplyTargetHandoffSchema = z.object({
+  kind: responseTargetSchema.shape.kind,
+  noteId: z.number().int().positive(),
+  discussionId: z.string().min(1).optional(),
+  guidance: z.string().min(1)
+}).superRefine((target, context) => {
+  if (target.kind !== "merge-request-note" && !target.discussionId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "discussionId is required for threaded reply targets",
+      path: ["discussionId"]
+    });
+  }
+});
+
+export const reviewerReplyHandoffSchema = z.object({
+  summary: z.string().min(1),
+  targets: z.array(reviewerReplyTargetHandoffSchema).default([])
+});
+
 export const reviewMergeReadinessSchema = z.object({
   status: z.enum(["ready", "needs_attention", "blocked"]),
   confidence: z.enum(["low", "medium", "high"]),
@@ -69,17 +100,52 @@ export const reviewOverviewSchema = z.object({
 export const reviewResultSchema = z.object({
   overview: reviewOverviewSchema,
   findings: z.array(reviewFindingSchema),
-  priorDispositions: z.array(priorDispositionSchema).default([])
+  priorDispositions: z.array(priorDispositionSchema).default([]),
+  replyHandoff: reviewerReplyHandoffSchema.optional()
+});
+
+export const chatterMemoryOutcomeSchema = z.object({
+  status: z.enum(["written", "skipped"]),
+  summary: z.string().min(1)
+});
+
+export const chatterReplySchema = z.object({
+  target: z.object({
+    kind: responseTargetSchema.shape.kind,
+    noteId: z.number().int().positive(),
+    discussionId: z.string().min(1).optional()
+  }).superRefine((target, context) => {
+    if (target.kind !== "merge-request-note" && !target.discussionId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "discussionId is required for threaded reply targets",
+        path: ["discussionId"]
+      });
+    }
+  }),
+  replyBody: z.string().min(1)
+});
+
+export const chatterBatchResultSchema = z.object({
+  memory: chatterMemoryOutcomeSchema.nullable().optional(),
+  replies: z.array(chatterReplySchema).default([])
 });
 
 export type ReviewAnchor = z.infer<typeof reviewAnchorSchema>;
 export type ReviewSuggestion = z.infer<typeof reviewSuggestionSchema>;
 export type ReviewFinding = z.infer<typeof reviewFindingSchema>;
 export type PriorDisposition = z.infer<typeof priorDispositionSchema>;
+export type ResponseTarget = z.infer<typeof responseTargetSchema>;
+export type ReviewerReplyTargetHandoff = z.infer<typeof reviewerReplyTargetHandoffSchema>;
+export type ReviewerReplyHandoff = z.infer<typeof reviewerReplyHandoffSchema>;
 export type ReviewMergeReadiness = z.infer<typeof reviewMergeReadinessSchema>;
 export type ReviewOverview = z.infer<typeof reviewOverviewSchema>;
 export type ReviewResult = z.infer<typeof reviewResultSchema>;
+export type ChatterMemoryOutcome = z.infer<typeof chatterMemoryOutcomeSchema>;
+export type ChatterReply = z.infer<typeof chatterReplySchema>;
+export type ChatterBatchResult = z.infer<typeof chatterBatchResultSchema>;
 export type ReviewMode = "first-pass-full" | "incremental-rereview" | "follow-up-thread";
+export type ReplyStyle = "none" | "direct-answer" | "summary-follow-up" | "thread-follow-up" | "acknowledgement";
 
 export interface ReviewChangeSummary {
   path: string;
@@ -131,11 +197,30 @@ export interface ReviewTriggerContext {
   targetThreadId: string | null;
   targetDiscussionId: string | null;
   targetThreadTitle: string | null;
+  responseTarget: ResponseTarget;
 }
 
 export interface WebhookReviewTrigger {
   kind: ReviewTriggerKind;
   note: TriggerNoteReference;
+}
+
+export interface PlannedResponseAction {
+  target: ResponseTarget;
+  replyStyle: ReplyStyle;
+  reviewNeeded: boolean;
+  memoryCandidate: boolean;
+}
+
+export interface InteractionPlan {
+  initiatingTrigger: ReviewTriggerContext;
+  responseTargets: ResponseTarget[];
+  plannedResponses: PlannedResponseAction[];
+  memoryCandidate: boolean;
+  reviewNeeded: boolean;
+  replyNeeded: boolean;
+  replyStyle: ReplyStyle;
+  rerunReason: string | null;
 }
 
 export interface PreviousReviewContext {

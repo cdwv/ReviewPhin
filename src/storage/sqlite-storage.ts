@@ -801,7 +801,7 @@ export class SqliteStorage implements Storage {
     };
   }
 
-  public async completeInteractionRun(interactionRunId: string, resultJson: string): Promise<void> {
+  public async completeInteractionRun(interactionRunId: string, resultJson: string | null): Promise<void> {
     this.getDb()
       .prepare(
         "UPDATE interaction_runs SET status = 'completed', result_json = ?, error = NULL, finished_at = ? WHERE id = ?"

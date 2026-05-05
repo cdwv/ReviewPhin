@@ -45,4 +45,19 @@ describe("InteractionRunArtifacts", () => {
     });
     expect(artifacts.copilotDirectory).toBe(join(rootDir, "run_123", "copilot"));
   });
+
+  it("writes JSON artifacts into nested directories using platform-safe paths", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-run-logs-"));
+    const artifacts = new InteractionRunArtifacts(rootDir, "run_123");
+
+    await artifacts.writeJsonArtifact(join("orchestration", "reply-result.json"), {
+      status: "ok"
+    });
+
+    expect(
+      JSON.parse(await readFile(join(rootDir, "run_123", "orchestration", "reply-result.json"), "utf8"))
+    ).toEqual({
+      status: "ok"
+    });
+  });
 });

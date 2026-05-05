@@ -1,5 +1,5 @@
-import { appendFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 interface AppLogEntry {
   timestamp: string;
@@ -55,6 +55,10 @@ export class InteractionRunArtifacts {
     return join(this.copilotDirectory, "session.json");
   }
 
+  public getCopilotSessionLogPath(pathSegments: string[]): string {
+    return join(this.runDirectory, ...pathSegments, "session.json");
+  }
+
   public async initialize(): Promise<void> {
     await mkdir(this.copilotDirectory, { recursive: true });
   }
@@ -65,6 +69,12 @@ export class InteractionRunArtifacts {
 
   public async appendGitLabHttpLog(entry: GitLabHttpLogEntry): Promise<void> {
     await this.appendNdjson(this.gitLabHttpLogPath, entry);
+  }
+
+  public async writeJsonArtifact(relativePath: string, value: unknown): Promise<void> {
+    const path = join(this.runDirectory, relativePath);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   }
 
   private async appendNdjson(path: string, entry: object): Promise<void> {

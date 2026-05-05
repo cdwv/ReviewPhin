@@ -86,6 +86,7 @@ describe("review job dedupe", () => {
       hydrator: {} as never,
       workspaceMaterializer: {} as never,
       reviewProviderFactory: {} as never,
+      chatterRunnerFactory: {} as never,
       reconciler: {} as never,
       logger: createLogger("silent"),
       runLogDir: tmpPath("run-logs"),

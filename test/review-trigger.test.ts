@@ -365,7 +365,12 @@ describe("review trigger helpers", () => {
       instruction: "Please make this more human.",
       targetThreadId: "map_1",
       targetDiscussionId: "disc_1",
-      targetThreadTitle: "Old finding"
+      targetThreadTitle: "Old finding",
+      responseTarget: {
+        kind: "finding-thread-reply",
+        discussionId: "disc_1",
+        noteId: 55
+      }
     });
 
     const reviewCommandTrigger = buildReviewTriggerContext({
@@ -404,7 +409,11 @@ describe("review trigger helpers", () => {
     expect(reviewCommandTrigger).toMatchObject({
       kind: "direct-mention",
       instruction: "please make the descriptions more human",
-      targetThreadId: null
+      targetThreadId: null,
+      responseTarget: {
+        kind: "merge-request-note",
+        noteId: 56
+      }
     });
 
     const summaryTrigger = buildReviewTriggerContext({
@@ -468,7 +477,72 @@ describe("review trigger helpers", () => {
     expect(summaryTrigger).toMatchObject({
       kind: "summary-follow-up",
       instruction: "In the future, please remember to throw in some dolphin related joke when it fits into the overall assessment.",
-      targetThreadId: null
+      targetThreadId: null,
+      responseTarget: {
+        kind: "summary-discussion-reply",
+        discussionId: "disc_summary",
+        noteId: 58
+      }
+    });
+  });
+
+  it("replies into an enclosing individual-note discussion for direct mentions", () => {
+    const trigger = buildReviewTriggerContext({
+      payload: {
+        object_kind: "note",
+        project: {
+          id: 123,
+          web_url: "https://gitlab.example.com/group/project"
+        },
+        repository: {
+          homepage: "https://gitlab.example.com/group/project"
+        },
+        merge_request: {
+          iid: 7,
+          title: "Add worker",
+          description: "Adds the worker",
+          source_branch: "feature",
+          target_branch: "main"
+        },
+        object_attributes: {
+          id: 77,
+          note: "@review-bot can you explain this change?",
+          noteable_type: "MergeRequest"
+        },
+        user: {
+          id: 42,
+          username: "developer",
+          name: "Dev User"
+        }
+      },
+      tenant,
+      discussions: [
+        {
+          id: "disc_individual",
+          individual_note: true,
+          notes: [
+            {
+              id: 77,
+              type: "DiscussionNote",
+              body: "@review-bot can you explain this change?",
+              author: { id: 42, username: "developer", name: "Dev User" },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false
+            }
+          ]
+        }
+      ],
+      priorThreads: []
+    });
+
+    expect(trigger).toMatchObject({
+      kind: "direct-mention",
+      responseTarget: {
+        kind: "discussion-reply",
+        discussionId: "disc_individual",
+        noteId: 77
+      }
     });
   });
 

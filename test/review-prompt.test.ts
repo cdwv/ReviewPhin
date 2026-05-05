@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { renderPrompt } from "../src/prompts/instruction-renderer.js";
-import { buildReviewPrompt } from "../src/prompts/prompt-builders.js";
+import { buildChatterPrompt, buildReviewPrompt } from "../src/prompts/prompt-builders.js";
 import type { ReviewContext } from "../src/review/types.js";
 import { repoPath } from "./test-paths.js";
 
@@ -84,6 +84,8 @@ describe("buildReviewPrompt", () => {
   it("renders registered standalone prompts and parameterized templates", () => {
     expect(renderPrompt("subagent.context-analyst", {})).toContain("You are a read-only context analyst.");
     expect(renderPrompt("subagent.review-author", {})).toContain("You are a review author.");
+    expect(renderPrompt("reply.direct-mention", {})).toContain("You are the lightweight interaction chatter");
+    expect(renderPrompt("reply.memory-update", {})).toContain("This phase runs before any optional reviewer pass.");
     expect(
       renderPrompt("memory.coalesce", {
         entries: [{ text: "Keep pnpm usage consistent." }],
@@ -92,6 +94,43 @@ describe("buildReviewPrompt", () => {
         reason: "prompt-budget"
       })
     ).toContain("Reason for compression: prompt-budget");
+  });
+
+  it("builds chatter prompts with grouped target context and reviewer handoff", () => {
+    const prompt = buildChatterPrompt({
+      phase: "reply",
+      replyStyle: "summary-follow-up",
+      trigger: createContext(null, "summary-follow-up").trigger,
+      responseTargets: [createContext(null, "summary-follow-up").trigger.responseTarget],
+      projectMemory: createContext().projectMemory,
+      reviewContext: createContext(),
+      reviewResult: {
+        overview: {
+          summary: "Still needs one fix",
+          overallSeverity: "medium"
+        },
+        findings: [],
+        priorDispositions: [],
+        replyHandoff: {
+          summary: "The prior finding still applies because validation is missing.",
+          targets: [
+            {
+              kind: "summary-discussion-reply",
+              noteId: 55,
+              discussionId: "disc_summary",
+              guidance: "Explain that schema validation is still absent."
+            }
+          ]
+        }
+      }
+    });
+
+    expect(prompt).toContain('"phase": "reply"');
+    expect(prompt).toContain('"mergeRequest": {');
+    expect(prompt).toContain('"author": "developer"');
+    expect(prompt).toContain('"changedFiles": [');
+    expect(prompt).toContain('"responseTargets": [');
+    expect(prompt).toContain("The prior finding still applies because validation is missing.");
   });
 });
 
@@ -122,10 +161,39 @@ function createContext(
         name: "Dev"
       }
     },
-    changes: [],
-    notes: [],
+    changes: [
+      {
+        old_path: "src/old-worker.ts",
+        new_path: "src/worker.ts",
+        diff: "@@ -1,2 +1,4 @@\n-export function oldWorker() {}\n+export function worker() {\n+  return true;\n+}",
+        new_file: false,
+        renamed_file: true,
+        deleted_file: false
+      }
+    ],
+    notes: [
+      {
+        id: 60,
+        body: "Can we summarize the worker changes clearly?",
+        author: {
+          id: 2,
+          username: "reviewer",
+          name: "Reviewer"
+        },
+        created_at: "2026-04-27T12:00:00.000Z",
+        updated_at: "2026-04-27T12:00:00.000Z",
+        system: false,
+        resolvable: false,
+        resolved: false
+      }
+    ],
     discussions: [],
-    instructionFiles: [],
+    instructionFiles: [
+      {
+        path: ".github/copilot-instructions.md",
+        content: "Prefer concise explanations."
+      }
+    ],
     projectMemory: {
       enabled: true,
       page: {
@@ -153,7 +221,23 @@ function createContext(
           : "review",
       targetThreadId: null,
       targetDiscussionId: null,
-      targetThreadTitle: null
+      targetThreadTitle: null,
+      responseTarget: {
+        kind: triggerKind === "summary-follow-up" ? "summary-discussion-reply" : "merge-request-note",
+        locationType: triggerKind === "summary-follow-up" ? "summary-discussion" : "merge-request-note",
+        triggerKind,
+        noteId: 55,
+        ...(triggerKind === "summary-follow-up" ? { discussionId: "disc_summary" } : {}),
+        authorUsername: "developer",
+        body:
+          triggerKind === "summary-follow-up"
+            ? "In the future, please remember to throw in some dolphin related joke when it fits into the overall assessment."
+            : "@review-bot review",
+        instruction:
+          triggerKind === "summary-follow-up"
+            ? "In the future, please remember to throw in some dolphin related joke when it fits into the overall assessment."
+            : "review"
+      }
     },
     priorThreads: [],
     scope: {
