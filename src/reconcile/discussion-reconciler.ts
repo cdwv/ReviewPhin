@@ -9,7 +9,8 @@ import type {
   GitLabNote,
   HydratedMergeRequestContext
 } from "../gitlab/types.js";
-import type { Storage, DiscussionMappingRecord, ReviewFindingStatus, TenantRecord } from "../storage/types.js";
+import type { StorageHelpers } from "../storage/storage-helpers.js";
+import type { DiscussionMappingRecord, ReviewFindingStatus, TenantRecord } from "../storage/contract/index.js";
 import { createFindingFingerprint, createFindingIdentityKey } from "../utils/ids.js";
 import { firstNonEmptyLine } from "../utils/text.js";
 import { buildReviewSummaryNote, findLatestReviewSummaryNote, isReviewSummaryNoteBody } from "../review/summary.js";
@@ -48,14 +49,14 @@ export interface ReconcileSummary {
 }
 
 interface DiscussionReconcilerOptions {
-  storage: Storage;
+  storage: StorageHelpers;
   logger: Logger;
 }
 
 type ThreadReconcileAction = "created" | "updated" | "replied" | "resolved" | "kept";
 
 export class DiscussionReconciler {
-  private readonly storage: Storage;
+  private readonly storage: StorageHelpers;
   private readonly logger: Logger;
 
   public constructor(options: DiscussionReconcilerOptions) {

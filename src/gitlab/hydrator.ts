@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
-import type { Storage, TenantRecord, InteractionJobRecord } from "../storage/types.js";
+import type { StorageHelpers } from "../storage/storage-helpers.js";
+import type { TenantRecord, InteractionJobRecord } from "../storage/contract/index.js";
 import type { ProjectMemoryBackendFactory } from "../memory/backend.js";
 import { GitLabProjectMemoryBackendFactory } from "../memory/gitlab-wiki-backend.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
@@ -13,7 +14,7 @@ import type {
 import { WorkspaceMaterializer } from "./workspace.js";
 
 interface MergeRequestContextHydratorOptions {
-  storage: Storage;
+  storage: StorageHelpers;
   workspaceMaterializer: WorkspaceMaterializer;
   memoryEnabled: boolean;
   logger: Logger;
@@ -21,7 +22,7 @@ interface MergeRequestContextHydratorOptions {
 }
 
 export class MergeRequestContextHydrator {
-  private readonly storage: Storage;
+  private readonly storage: StorageHelpers;
   private readonly workspaceMaterializer: WorkspaceMaterializer;
   private readonly memoryEnabled: boolean;
   private readonly logger: Logger;

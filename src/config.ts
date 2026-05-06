@@ -21,7 +21,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().min(1).default("0.0.0.0"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
-  DATABASE_PATH: z.string().min(1).default("./data/review-worker.sqlite"),
+  STORAGE_PROVIDER_MODULE: z.string().min(1).optional(),
   RUN_LOG_DIR: z.string().min(1).optional(),
   COPILOT_LOG_DIR: z.string().min(1).optional(),
   WORKSPACE_ROOT: z.string().min(1).default("./tmp/review-workspaces"),
@@ -40,7 +40,7 @@ export interface AppConfig {
   host: string;
   port: number;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
-  databasePath: string;
+  storageProviderModule?: string | undefined;
   runLogDir: string;
   workspaceRoot: string;
   maxJobRetries: number;
@@ -57,7 +57,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     PORT: env.PORT,
     HOST: env.HOST,
     LOG_LEVEL: env.LOG_LEVEL,
-    DATABASE_PATH: env.DATABASE_PATH,
+    STORAGE_PROVIDER_MODULE: env.STORAGE_PROVIDER_MODULE,
     RUN_LOG_DIR: env.RUN_LOG_DIR,
     COPILOT_LOG_DIR: env.COPILOT_LOG_DIR,
     WORKSPACE_ROOT: env.WORKSPACE_ROOT,
@@ -74,7 +74,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     host: parsedEnv.HOST,
     port: parsedEnv.PORT,
     logLevel: parsedEnv.LOG_LEVEL,
-    databasePath: resolve(parsedEnv.DATABASE_PATH),
+    storageProviderModule: parsedEnv.STORAGE_PROVIDER_MODULE,
     runLogDir: resolve(parsedEnv.RUN_LOG_DIR ?? parsedEnv.COPILOT_LOG_DIR ?? "./data/run-logs"),
     workspaceRoot: resolve(parsedEnv.WORKSPACE_ROOT),
     maxJobRetries: parsedEnv.MAX_JOB_RETRIES,

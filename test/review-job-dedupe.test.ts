@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { GitLabNoteHookPayload } from "../src/gitlab/types.js";
 import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
-import type { CreateInteractionJobInput } from "../src/storage/types.js";
+import type { CreateInteractionJobInput } from "../src/storage/contract/index.js";
 import { createInteractionJobDedupeKey } from "../src/utils/ids.js";
 import { tmpPath } from "./test-paths.js";
 

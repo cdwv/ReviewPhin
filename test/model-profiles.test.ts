@@ -4,7 +4,7 @@ import {
   extractMergeRequestModelProfileOverride,
   resolveReviewProviderConfig
 } from "../src/review/model-profiles.js";
-import type { ModelProfileRecord } from "../src/storage/types.js";
+import type { ModelProfileRecord } from "../src/storage/contract/index.js";
 
 const tenant = {
   id: "tenant_1",
@@ -51,8 +51,8 @@ describe("model profile resolution", () => {
   });
 
   it("prefers merge request overrides over tenant and default profiles", async () => {
-    const storage = {
-      getModelProfileByName: vi.fn(async (name: string) =>
+    const modelProfiles = {
+      get: vi.fn(async (name: string) =>
         createProfile(name, {
           providerBaseUrl: name === "byok-prod" ? "https://llm.example.com/v1" : null,
           providerType: name === "byok-prod" ? "openai" : null,
@@ -62,7 +62,7 @@ describe("model profile resolution", () => {
           textGenerationModel: name === "byok-prod" ? "custom-text" : null
         })
       ),
-      getDefaultModelProfile: vi.fn(async () =>
+      find: vi.fn(async () =>
         createProfile("default-profile", {
           isDefault: true
         })
@@ -70,7 +70,7 @@ describe("model profile resolution", () => {
     };
 
     const resolved = await resolveReviewProviderConfig({
-      storage,
+      storage: { stores: { modelProfiles } },
       tenant,
       mergeRequest: {
         description: "Queue changes\n/reviewphin-profile byok-prod"
@@ -92,20 +92,24 @@ describe("model profile resolution", () => {
       wireApi: "completions",
       apiKey: "secret-token"
     });
-    expect(storage.getDefaultModelProfile).not.toHaveBeenCalled();
+    expect(modelProfiles.find).not.toHaveBeenCalled();
   });
 
   it("defaults custom provider profiles to responses when wireApi is omitted", async () => {
     const resolved = await resolveReviewProviderConfig({
       storage: {
-        getModelProfileByName: vi.fn(async () =>
-          createProfile("byok-default-wire-api", {
-            providerBaseUrl: "https://llm.example.com/v1",
-            providerType: "openai",
-            reviewModel: "custom-review"
-          })
-        ),
-        getDefaultModelProfile: vi.fn(async () => null)
+        stores: {
+          modelProfiles: {
+            get: vi.fn(async () =>
+              createProfile("byok-default-wire-api", {
+                providerBaseUrl: "https://llm.example.com/v1",
+                providerType: "openai",
+                reviewModel: "custom-review"
+              })
+            ),
+            find: vi.fn(async () => null)
+          }
+        }
       },
       tenant,
       mergeRequest: {
@@ -122,19 +126,23 @@ describe("model profile resolution", () => {
 
   it("falls back to default profiles, keeps native auth tokens, and errors on unknown overrides", async () => {
     const storage = {
-      getModelProfileByName: vi.fn(async (name: string) => {
-        if (name === "tenant-profile") {
-          return null;
-        }
+      stores: {
+        modelProfiles: {
+          get: vi.fn(async (name: string) => {
+            if (name === "tenant-profile") {
+              return null;
+            }
 
-        return null;
-      }),
-      getDefaultModelProfile: vi.fn(async () => ({
-        ...createProfile("default-profile", {
-          isDefault: true,
-          textGenerationModel: "gpt-5.4-mini"
-        })
-      }))
+            return null;
+          }),
+          find: vi.fn(async () => ({
+            ...createProfile("default-profile", {
+              isDefault: true,
+              textGenerationModel: "gpt-5.4-mini"
+            })
+          }))
+        }
+      }
     };
 
     await expect(
@@ -173,12 +181,16 @@ describe("model profile resolution", () => {
 
     const nativeResolved = await resolveReviewProviderConfig({
       storage: {
-        getModelProfileByName: vi.fn(async () =>
-          createProfile("native-token", {
-            authToken: "github-token"
-          })
-        ),
-        getDefaultModelProfile: vi.fn(async () => null)
+        stores: {
+          modelProfiles: {
+            get: vi.fn(async () =>
+              createProfile("native-token", {
+                authToken: "github-token"
+              })
+            ),
+            find: vi.fn(async () => null)
+          }
+        }
       },
       tenant,
       mergeRequest: {

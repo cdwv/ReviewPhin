@@ -1,4 +1,4 @@
-import type { MergeRequestSnapshotRecord, InteractionJobRecord, TenantRecord } from "../storage/types.js";
+import type { MergeRequestSnapshotRecord, InteractionJobRecord, TenantRecord } from "../storage/contract/index.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
 
 export interface GitLabUser {

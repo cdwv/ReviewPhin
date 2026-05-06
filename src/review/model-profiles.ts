@@ -1,7 +1,7 @@
 import type { HarnessModelConfig } from "../harness/types.js";
 import type { ProviderConfig } from "@github/copilot-sdk";
 import type { GitLabMergeRequest } from "../gitlab/types.js";
-import type { ModelProfileRecord, Storage, TenantRecord } from "../storage/types.js";
+import type { ModelProfileRecord, StorageStores, TenantRecord } from "../storage/contract/index.js";
 
 const REVIEWPHIN_PROFILE_OVERRIDE_PATTERN = /(?:^|\r?\n)\s*\/reviewphin-profile\s+([A-Za-z0-9][A-Za-z0-9._-]*)\b/i;
 
@@ -18,13 +18,17 @@ export function extractMergeRequestModelProfileOverride(description: string): st
 }
 
 export async function resolveReviewProviderConfig(input: {
-  storage: Pick<Storage, "getModelProfileByName" | "getDefaultModelProfile">;
+  storage: {
+    stores: {
+      modelProfiles: Pick<StorageStores["modelProfiles"], "get" | "find">;
+    };
+  };
   tenant: TenantRecord;
   mergeRequest: Pick<GitLabMergeRequest, "description">;
 }): Promise<HarnessModelConfig> {
   const overrideName = extractMergeRequestModelProfileOverride(input.mergeRequest.description);
   if (overrideName) {
-    const profile = await input.storage.getModelProfileByName(overrideName);
+    const profile = await input.storage.stores.modelProfiles.get(overrideName);
     if (!profile) {
       throw new ModelProfileConfigurationError(`Merge request requested unknown model profile "${overrideName}"`);
     }
@@ -33,7 +37,7 @@ export async function resolveReviewProviderConfig(input: {
   }
 
   if (input.tenant.modelProfileName) {
-    const profile = await input.storage.getModelProfileByName(input.tenant.modelProfileName);
+    const profile = await input.storage.stores.modelProfiles.get(input.tenant.modelProfileName);
     if (!profile) {
       throw new ModelProfileConfigurationError(
         `Tenant ${input.tenant.key} references unknown model profile "${input.tenant.modelProfileName}"`
@@ -43,7 +47,7 @@ export async function resolveReviewProviderConfig(input: {
     return mapResolvedProfile(profile, "tenant");
   }
 
-  const defaultProfile = await input.storage.getDefaultModelProfile();
+  const defaultProfile = await input.storage.stores.modelProfiles.find({ isDefault: { eq: true } });
   if (defaultProfile) {
     return mapResolvedProfile(defaultProfile, "default");
   }

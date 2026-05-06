@@ -6,7 +6,7 @@ Node.js + TypeScript service that listens for GitLab Note Hook comments that exp
 
 - Accepts GitLab **Note Hook** webhooks for merge request comments that mention `@<botUsername>`, human follow-up comments inside bot-owned review discussions, and replies on the bot-owned review summary note, including edits to those trigger comments when users refine the instruction in place
 - Treats other merge request comments as background context only; they do not trigger new review passes by themselves
-- Stores tenants, jobs, snapshots, review runs, findings, and discussion mappings in **SQLite**
+- Stores tenants, jobs, snapshots, review runs, findings, and discussion mappings in the configured storage adapter (**SQLite by default**)
 - Hydrates merge request metadata, diff versions, changed files, notes, discussions, and project instructions before each run, using `git` checkout first and API fallbacks when needed
 - Uses a provider boundary with a first implementation backed by **`@github/copilot-sdk`**
 - Creates new discussions, updates bot-authored notes, replies in bot-created discussions, and resolves obsolete bot-owned discussions
@@ -254,7 +254,8 @@ Keep the shared worker settings in `.env`:
 PORT=3000
 HOST=0.0.0.0
 LOG_LEVEL=debug
-DATABASE_PATH=./data/review-worker.sqlite
+# STORAGE_PROVIDER_MODULE=your-storage-provider-package-or-path
+SQLITE_DATABASE_PATH=./data/review-worker.sqlite
 RUN_LOG_DIR=./data/run-logs
 WORKSPACE_ROOT=./tmp/review-workspaces
 MAX_JOB_RETRIES=3
@@ -275,7 +276,7 @@ Then add the tenant to the local SQLite database used by the worker:
 pnpm cli tenant add --base-url https://gitlab.example.com --project-id 123 --api-token glpat-xxxxxxxx --webhook-secret replace-me --bot-user-id 999 --bot-username review-bot --model-profile native-gpt5
 ```
 
-If you store the worker database somewhere else, pass `--database-path`.
+If you store the worker database somewhere else, pass `--sqlite-database-path`. To load a non-default storage adapter, pass `--storage-provider-module` or set `STORAGE_PROVIDER_MODULE`.
 
 To inspect what is registered locally:
 
@@ -369,7 +370,8 @@ The Docker image reads the same application variables as a local run. All worker
 | `PORT` | No | `3000` | HTTP port exposed by the worker |
 | `HOST` | No | `0.0.0.0` | Bind address inside the container |
 | `LOG_LEVEL` | No | `info` | One of `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` |
-| `DATABASE_PATH` | No | `./data/review-worker.sqlite` | SQLite database path; keep this under `/app/data` if you want it persisted by compose |
+| `STORAGE_PROVIDER_MODULE` | No | built-in SQLite adapter | Optional package name or JS module path for a storage provider entrypoint |
+| `SQLITE_DATABASE_PATH` | No | `./data/review-worker.sqlite` | SQLite database path; keep this under `/app/data` if you want it persisted by compose |
 | `RUN_LOG_DIR` | No | `./data/run-logs` | Root directory for per-review run artifacts, including Copilot traces, GitLab HTTP logs, and worker app logs |
 | `WORKSPACE_ROOT` | No | `./tmp/review-workspaces` | Scratch directory for hydrated repositories |
 | `MAX_JOB_RETRIES` | No | `3` | Retry attempts for failed review jobs |
@@ -412,6 +414,8 @@ pnpm cli model-profile remove --name byok-vllm
 
 Only the shared worker runtime stays in env; profile-specific review models, provider URLs, and auth tokens live in the database.
 
+Storage providers are loaded dynamically. The built-in provider is SQLite; external adapters should export `createStorageProvider(...)` and follow `src/storage/adapters/README.md`.
+
 **vLLM example** (no auth required when vLLM runs without an API key):
 
 ```bash
@@ -435,9 +439,10 @@ pnpm cli model-profile add --name azure-gpt4 --base-url https://my-resource.open
 | `--bot-user-id` | No | Numeric GitLab bot user ID used for stricter ownership checks |
 | `--bot-username` | Yes | Bot username used for direct mention matching |
 | `--model-profile` | No | Named model profile to assign to the tenant immediately |
-| `--database-path` | No | Override the SQLite path instead of using `DATABASE_PATH` from `.env` |
+| `--sqlite-database-path` | No | Override the SQLite path instead of using `SQLITE_DATABASE_PATH` from `.env` |
+| `--storage-provider-module` | No | Override the storage provider module instead of using `STORAGE_PROVIDER_MODULE` from `.env` |
 
-`pnpm cli tenant set-profile` and `pnpm cli tenant clear-profile` use the same `--base-url`, `--project-id`, and optional `--database-path` lookup fields.
+`pnpm cli tenant set-profile` and `pnpm cli tenant clear-profile` use the same `--base-url`, `--project-id`, and optional `--sqlite-database-path` lookup fields.
 
 `pnpm cli model-profile add` accepts these fields:
 
@@ -451,7 +456,8 @@ pnpm cli model-profile add --name azure-gpt4 --base-url https://my-resource.open
 | `--review-model` | No | Explicit review model; required when `--base-url` is set |
 | `--text-generation-model` | No | Optional dedicated model for memory coalescing; defaults to the review model when omitted |
 | `--default` | No | Marks the profile as the single database default |
-| `--database-path` | No | Override the SQLite path instead of using `DATABASE_PATH` from `.env` |
+| `--sqlite-database-path` | No | Override the SQLite path instead of using `SQLITE_DATABASE_PATH` from `.env` |
+| `--storage-provider-module` | No | Override the storage provider module instead of using `STORAGE_PROVIDER_MODULE` from `.env` |
 
 To clear nullable fields on an existing profile, re-run `model-profile add` with one or more of:
 `--clear-base-url`, `--clear-provider-type`, `--clear-wire-api`, `--clear-auth-token`,
@@ -463,7 +469,8 @@ To clear nullable fields on an existing profile, re-run `model-profile add` with
 | --- | --- | --- |
 | `--base-url` | Yes | GitLab instance base URL, normalized the same way as tenant registration |
 | `--project-id` | Yes | Numeric GitLab project ID |
-| `--database-path` | No | Override the SQLite path instead of using `DATABASE_PATH` from `.env` |
+| `--sqlite-database-path` | No | Override the SQLite path instead of using `SQLITE_DATABASE_PATH` from `.env` |
+| `--storage-provider-module` | No | Override the storage provider module instead of using `STORAGE_PROVIDER_MODULE` from `.env` |
 | `--workspace-root` | No | Override the workspace scratch root instead of using `WORKSPACE_ROOT` from `.env` when removing tenant-owned hydrated repositories |
 | `--run-log-dir` | No | Override the run log root instead of using `RUN_LOG_DIR` from `.env` when removing tenant-owned review artifacts |
 | `--yes` | No | Skip the interactive confirmation prompt after the deletion summary, for example in scripts or CI |
@@ -501,3 +508,4 @@ The editable review instruction templates live in `prompts/review/`:
 - `pnpm build`
 - `pnpm lint`
 - `pnpm test`
+

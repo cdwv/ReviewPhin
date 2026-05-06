@@ -1,23 +1,20 @@
 import type { GitLabNoteHookPayload } from "../gitlab/types.js";
-import type { Storage, TenantRecord } from "../storage/types.js";
+import { listAll, type StorageHelpers } from "../storage/storage-helpers.js";
+import type { TenantRecord } from "../storage/contract/index.js";
 import { normalizeGitLabBaseUrl } from "../gitlab/url.js";
 import { webhookMatchesGitLabBase } from "../gitlab/webhook.js";
 import { constantTimeEqual } from "../utils/hash.js";
 import { createTenantKey } from "../utils/ids.js";
 
 export class TenantRegistry {
-  private readonly storage: Storage;
+  private readonly storage: StorageHelpers;
 
-  public constructor(options: { storage: Storage }) {
+  public constructor(options: { storage: StorageHelpers }) {
     this.storage = options.storage;
   }
 
-  public async initialize(): Promise<void> {
-    await this.storage.listTenants();
-  }
-
   public async getTenantById(tenantId: string): Promise<TenantRecord | null> {
-    return this.storage.getTenantById(tenantId);
+    return this.storage.stores.tenants.get(tenantId);
   }
 
   public async resolveWebhookTenant(
@@ -28,7 +25,13 @@ export class TenantRegistry {
       return null;
     }
 
-    const projectTenants = await this.storage.listTenantsByProjectId(payload.project.id);
+    const projectTenants = await listAll(this.storage.stores.tenants, {
+      filters: { projectId: { eq: payload.project.id } },
+      order: [
+        { field: "baseUrl", direction: "asc" },
+        { field: "projectId", direction: "asc" }
+      ]
+    });
     if (projectTenants.length === 0) {
       return null;
     }

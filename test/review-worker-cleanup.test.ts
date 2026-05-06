@@ -103,6 +103,18 @@ describe("ReviewWorker cleanup", () => {
     };
 
     const storage = {
+      stores: {
+        interactionJobs: {
+          get: vi.fn(async () => job)
+        },
+        discussionMappings: {
+          list: vi.fn(async () => [])
+        },
+        modelProfiles: {
+          get: vi.fn(async () => null),
+          find: vi.fn(async () => null)
+        }
+      },
       getInteractionJobById: vi.fn(async () => job),
       markJobInProgress: vi.fn(async () => {}),
       listDiscussionMappings: vi.fn(async () => []),
@@ -333,6 +345,18 @@ describe("ReviewWorker cleanup", () => {
     };
 
     const storage = {
+      stores: {
+        interactionJobs: {
+          get: vi.fn(async () => job)
+        },
+        discussionMappings: {
+          list: vi.fn(async () => [])
+        },
+        modelProfiles: {
+          get: vi.fn(async () => null),
+          find: vi.fn(async () => null)
+        }
+      },
       getInteractionJobById: vi.fn(async () => job),
       markJobInProgress: vi.fn(async () => {}),
       listDiscussionMappings: vi.fn(async () => []),

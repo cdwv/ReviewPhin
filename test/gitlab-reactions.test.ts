@@ -443,6 +443,18 @@ function createWorker(input: {
   };
 
   const storage = {
+    stores: {
+      interactionJobs: {
+        get: vi.fn(async () => job)
+      },
+      discussionMappings: {
+        list: vi.fn(async () => [])
+      },
+      modelProfiles: {
+        get: vi.fn(async () => null),
+        find: vi.fn(async () => null)
+      }
+    },
     createOrGetInteractionJob: vi.fn(async () => ({
       job,
       created: true

@@ -146,6 +146,18 @@ describe("ReviewWorker orchestration", () => {
 
     const worker = new ReviewWorker({
       storage: {
+        stores: {
+          interactionJobs: {
+            get: vi.fn(async () => job)
+          },
+          discussionMappings: {
+            list: vi.fn(async () => [])
+          },
+          modelProfiles: {
+            get: vi.fn(async () => null),
+            find: vi.fn(async () => null)
+          }
+        },
         getInteractionJobById: vi.fn(async () => job),
         markJobInProgress: vi.fn(async () => {}),
         listDiscussionMappings: vi.fn(async () => []),
@@ -338,6 +350,18 @@ describe("ReviewWorker orchestration", () => {
 
     const worker = new ReviewWorker({
       storage: {
+        stores: {
+          interactionJobs: {
+            get: vi.fn(async () => job)
+          },
+          discussionMappings: {
+            list: vi.fn(async () => [])
+          },
+          modelProfiles: {
+            get: vi.fn(async () => null),
+            find: vi.fn(async () => null)
+          }
+        },
         getInteractionJobById: vi.fn(async () => job),
         markJobInProgress: vi.fn(async () => {}),
         listDiscussionMappings: vi.fn(async () => []),
@@ -542,6 +566,18 @@ describe("ReviewWorker orchestration", () => {
 
     const worker = new ReviewWorker({
       storage: {
+        stores: {
+          interactionJobs: {
+            get: vi.fn(async () => job)
+          },
+          discussionMappings: {
+            list: vi.fn(async () => [])
+          },
+          modelProfiles: {
+            get: vi.fn(async () => null),
+            find: vi.fn(async () => null)
+          }
+        },
         getInteractionJobById: vi.fn(async () => job),
         markJobInProgress: vi.fn(async () => {}),
         listDiscussionMappings: vi.fn(async () => []),
@@ -692,6 +728,672 @@ describe("ReviewWorker orchestration", () => {
           !String(input).includes("/award_emoji")
       )
     ).toBe(false);
+
+    globalThis.fetch = originalFetch;
+  });
+
+  it("syncs resolved discussion findings before starting review", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      const requestUrl = String(input);
+      if (init?.method === "GET") {
+        return new Response("[]", {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        });
+      }
+
+      if (requestUrl.includes("/award_emoji")) {
+        return new Response(
+          JSON.stringify({
+            id: 1,
+            name: "white_check_mark",
+            user: {
+              id: 999,
+              username: "review-bot",
+              name: "Review Bot"
+            },
+            created_at: new Date().toISOString()
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        );
+      }
+
+      return new Response("{}", {
+        status: 200,
+        headers: {
+          "content-type": "application/json"
+        }
+      });
+    }) as typeof globalThis.fetch;
+
+    const job = {
+      id: "job_4",
+      tenantId: tenant.id,
+      dedupeKey: "dedupe-4",
+      projectId: tenant.projectId,
+      mergeRequestIid: 7,
+      noteId: 58,
+      headSha: "abc123",
+      status: "queued" as const,
+      payloadJson: JSON.stringify({
+        ...payload,
+        object_attributes: {
+          ...payload.object_attributes,
+          id: 58,
+          note: "@review-bot please review again"
+        }
+      }),
+      retryCount: 0,
+      lastError: null,
+      enqueuedAt: new Date().toISOString(),
+      startedAt: null,
+      finishedAt: null
+    };
+    const mappings = [
+      {
+        id: "map_1",
+        tenantId: tenant.id,
+        projectId: tenant.projectId,
+        mergeRequestIid: 7,
+        identityKey: "identity_old",
+        findingFingerprint: "fingerprint_old",
+        title: "Old finding",
+        severity: "medium",
+        category: "bug",
+        body: "**Old finding**\n\nOld body",
+        gitlabDiscussionId: "disc_1",
+        gitlabNoteId: 10,
+        anchorJson: null,
+        positionJson: null,
+        botDiscussion: true,
+        botNote: true,
+        noteAuthorId: 999,
+        noteAuthorUsername: "review-bot",
+        status: "open" as const,
+        lastInteractionRunId: "run_old",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    ];
+    const priorFindings: Array<{
+      findingId: string;
+      identityKey: string;
+      status: "open" | "resolved";
+      title: string;
+      body: string;
+      severity: string;
+      category: string;
+      anchor: null;
+      suggestion: null;
+      interactionRunId: string;
+      reviewedAt: string;
+      headSha: string;
+    }> = [
+      {
+        findingId: "finding_1",
+        identityKey: "identity_old",
+        status: "open" as const,
+        title: "Old finding",
+        body: "Old body",
+        severity: "medium",
+        category: "bug",
+        anchor: null,
+        suggestion: null,
+        interactionRunId: "run_old",
+        reviewedAt: new Date().toISOString(),
+        headSha: "abc123"
+      }
+    ];
+    const updateReviewFindingStatus = vi.fn(async (_tenantId: string, _mergeRequestIid: number, identityKey: string, status: "open" | "resolved") => {
+      for (const finding of priorFindings) {
+        if (finding.identityKey === identityKey) {
+          finding.status = status;
+        }
+      }
+      return true;
+    });
+    const upsertDiscussionMapping = vi.fn(async (input) => {
+      mappings[0] = {
+        ...mappings[0],
+        ...input,
+        createdAt: mappings[0]?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      return mappings[0];
+    });
+    const review = vi.fn(async (context: { scope: { priorFindings: Array<{ status: string }> } }) => ({
+      overview: {
+        summary: "No further issues found",
+        overallSeverity: "low" as const
+      },
+      findings: [],
+      priorDispositions: []
+    }));
+
+    const routingContext = {
+      tenant,
+      job,
+      mergeRequest: {
+        id: 1,
+        iid: 7,
+        project_id: tenant.projectId,
+        title: "Add worker",
+        description: "Adds the worker",
+        web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+        source_branch: "feature",
+        target_branch: "main",
+        author: {
+          id: 42,
+          username: "developer",
+          name: "Dev User"
+        }
+      },
+      changes: [],
+      notes: [
+        {
+          id: 58,
+          body: "@review-bot please review again",
+          author: {
+            id: 42,
+            username: "developer",
+            name: "Dev User"
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          system: false
+        }
+      ],
+      discussions: [
+        {
+          id: "disc_1",
+          individual_note: false,
+          notes: [
+            {
+              id: 10,
+              body: "**Old finding**\n\nOld body",
+              author: {
+                id: 999,
+                username: "review-bot",
+                name: "Review Bot"
+              },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false,
+              resolved: true
+            }
+          ]
+        }
+      ],
+      workspace: {
+        rootPath: join("tmp", "workspace-routing"),
+        cleanupRoot: join("tmp", "cleanup-routing"),
+        strategy: "git" as const,
+        instructionFiles: []
+      },
+      projectMemory: {
+        enabled: true,
+        page: null,
+        entries: []
+      }
+    };
+
+    const worker = new ReviewWorker({
+      storage: {
+        stores: {
+          interactionJobs: {
+            get: vi.fn(async () => job)
+          },
+          discussionMappings: {
+            list: vi.fn(async () => mappings)
+          },
+          modelProfiles: {
+            get: vi.fn(async () => null),
+            find: vi.fn(async () => null)
+          }
+        },
+        getInteractionJobById: vi.fn(async () => job),
+        markJobInProgress: vi.fn(async () => {}),
+        createInteractionRun: vi.fn(async () => ({
+          id: "run_4",
+          interactionJobId: job.id,
+          tenantId: tenant.id,
+          provider: "copilot-sdk",
+          model: null,
+          modelProfileName: null,
+          providerBaseUrl: null,
+          providerType: null,
+          textGenerationModel: null,
+          status: "in_progress" as const,
+          resultJson: null,
+          error: null,
+          startedAt: new Date().toISOString(),
+          finishedAt: null
+        })),
+        getModelProfileByName: vi.fn(async () => null),
+        getDefaultModelProfile: vi.fn(async () => null),
+        getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+        listPriorReviewFindings: vi.fn(async () => [...priorFindings]),
+        completeInteractionRun: vi.fn(async () => {}),
+        replaceReviewFindings: vi.fn(async () => {}),
+        updateReviewFindingStatus,
+        upsertDiscussionMapping,
+        markJobCompleted: vi.fn(async () => {}),
+        failInteractionRun: vi.fn(async () => {}),
+        markJobQueued: vi.fn(async () => {}),
+        markJobFailed: vi.fn(async () => {})
+      } as never,
+      tenantRegistry: {
+        getTenantById: vi.fn(async () => tenant)
+      } as never,
+      hydrator: {
+        loadRoutingContext: vi.fn(async () => routingContext),
+        hydrate: vi.fn(async () => routingContext)
+      } as never,
+      workspaceMaterializer: {
+        cleanup: vi.fn(async () => {})
+      } as never,
+      reviewProviderFactory: {
+        createProvider: vi.fn(() => ({
+          name: "copilot-sdk",
+          review
+        }))
+      },
+      chatterRunnerFactory: {
+        createRunner: vi.fn(() => ({
+          run: vi.fn(async () => ({
+            memory: {
+              status: "skipped" as const,
+              summary: "No durable memory detected."
+            },
+            replies: []
+          })),
+          sessionPaths: {
+            memory: ["copilot", "chatter", "memory"],
+            reply: ["copilot", "chatter", "reply"]
+          }
+        }))
+      } as never,
+      reconciler: {
+        reconcile: vi.fn(async () => ({
+          created: 0,
+          updated: 0,
+          replied: 0,
+          resolved: 0,
+          kept: 0,
+          summaryNoteAction: null
+        }))
+      } as never,
+      logger: createLogger("silent"),
+      runLogDir: join("tmp", "run-logs"),
+      maxJobRetries: 3,
+      retryBackoffMs: 5000
+    });
+
+    await expect(worker.processJob("job_4")).resolves.toBeUndefined();
+
+    expect(upsertDiscussionMapping).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "map_1",
+        gitlabDiscussionId: "disc_1",
+        status: "resolved"
+      })
+    );
+    expect(updateReviewFindingStatus).toHaveBeenCalledWith(tenant.id, 7, "identity_old", "resolved", {
+      currentStatuses: ["open", "resolved"]
+    });
+    const reviewContext = review.mock.calls[0]?.[0];
+    expect(reviewContext).toBeDefined();
+    if (!reviewContext) {
+      throw new Error("expected review context");
+    }
+    expect(reviewContext.scope.priorFindings[0]?.status).toBe("resolved");
+    expect((updateReviewFindingStatus.mock.invocationCallOrder[0] ?? 0)).toBeLessThan(
+      review.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER
+    );
+
+    globalThis.fetch = originalFetch;
+  });
+
+  it("preserves dismissed findings during pre-review status sync", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      const requestUrl = String(input);
+      if (init?.method === "GET") {
+        return new Response("[]", {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        });
+      }
+
+      if (requestUrl.includes("/award_emoji")) {
+        return new Response(
+          JSON.stringify({
+            id: 1,
+            name: "white_check_mark",
+            user: {
+              id: 999,
+              username: "review-bot",
+              name: "Review Bot"
+            },
+            created_at: new Date().toISOString()
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        );
+      }
+
+      return new Response("{}", {
+        status: 200,
+        headers: {
+          "content-type": "application/json"
+        }
+      });
+    }) as typeof globalThis.fetch;
+
+    const job = {
+      id: "job_5",
+      tenantId: tenant.id,
+      dedupeKey: "dedupe-5",
+      projectId: tenant.projectId,
+      mergeRequestIid: 7,
+      noteId: 59,
+      headSha: "abc123",
+      status: "queued" as const,
+      payloadJson: JSON.stringify({
+        ...payload,
+        object_attributes: {
+          ...payload.object_attributes,
+          id: 59,
+          note: "@review-bot please review again"
+        }
+      }),
+      retryCount: 0,
+      lastError: null,
+      enqueuedAt: new Date().toISOString(),
+      startedAt: null,
+      finishedAt: null
+    };
+    const mappings = [
+      {
+        id: "map_2",
+        tenantId: tenant.id,
+        projectId: tenant.projectId,
+        mergeRequestIid: 7,
+        identityKey: "identity_dismissed",
+        findingFingerprint: "fingerprint_dismissed",
+        title: "Accepted risk finding",
+        severity: "medium",
+        category: "bug",
+        body: "**Accepted risk finding**\n\nOld body",
+        gitlabDiscussionId: "disc_2",
+        gitlabNoteId: 11,
+        anchorJson: null,
+        positionJson: null,
+        botDiscussion: true,
+        botNote: true,
+        noteAuthorId: 999,
+        noteAuthorUsername: "review-bot",
+        status: "resolved" as const,
+        lastInteractionRunId: "run_old",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    ];
+    const priorFindings: Array<{
+      findingId: string;
+      identityKey: string;
+      status: "open" | "resolved" | "dismissed";
+      title: string;
+      body: string;
+      severity: string;
+      category: string;
+      anchor: null;
+      suggestion: null;
+      interactionRunId: string;
+      reviewedAt: string;
+      headSha: string;
+    }> = [
+      {
+        findingId: "finding_2",
+        identityKey: "identity_dismissed",
+        status: "dismissed",
+        title: "Accepted risk finding",
+        body: "Old body",
+        severity: "medium",
+        category: "bug",
+        anchor: null,
+        suggestion: null,
+        interactionRunId: "run_old",
+        reviewedAt: new Date().toISOString(),
+        headSha: "abc123"
+      }
+    ];
+    const updateReviewFindingStatus = vi.fn(
+      async (
+        _tenantId: string,
+        _mergeRequestIid: number,
+        identityKey: string,
+        status: "open" | "resolved",
+        options?: { currentStatuses?: ReadonlyArray<"open" | "resolved" | "dismissed"> }
+      ) => {
+        const allowedStatuses = options?.currentStatuses;
+        let updated = false;
+        for (const finding of priorFindings) {
+          if (finding.identityKey !== identityKey) {
+            continue;
+          }
+          if (allowedStatuses && !allowedStatuses.includes(finding.status)) {
+            continue;
+          }
+          finding.status = status;
+          updated = true;
+        }
+        return updated;
+      }
+    );
+    const upsertDiscussionMapping = vi.fn(async (input) => {
+      mappings[0] = {
+        ...mappings[0],
+        ...input,
+        createdAt: mappings[0]?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      return mappings[0];
+    });
+    const review = vi.fn(async (context: { scope: { priorFindings: Array<{ status: string }> } }) => ({
+      overview: {
+        summary: "No further issues found",
+        overallSeverity: "low" as const
+      },
+      findings: [],
+      priorDispositions: []
+    }));
+
+    const routingContext = {
+      tenant,
+      job,
+      mergeRequest: {
+        id: 1,
+        iid: 7,
+        project_id: tenant.projectId,
+        title: "Add worker",
+        description: "Adds the worker",
+        web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+        source_branch: "feature",
+        target_branch: "main",
+        author: {
+          id: 42,
+          username: "developer",
+          name: "Dev User"
+        }
+      },
+      changes: [],
+      notes: [
+        {
+          id: 59,
+          body: "@review-bot please review again",
+          author: {
+            id: 42,
+            username: "developer",
+            name: "Dev User"
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          system: false
+        }
+      ],
+      discussions: [
+        {
+          id: "disc_2",
+          individual_note: false,
+          notes: [
+            {
+              id: 11,
+              body: "**Accepted risk finding**\n\nOld body",
+              author: {
+                id: 999,
+                username: "review-bot",
+                name: "Review Bot"
+              },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false,
+              resolved: false
+            }
+          ]
+        }
+      ],
+      workspace: {
+        rootPath: join("tmp", "workspace-routing"),
+        cleanupRoot: join("tmp", "cleanup-routing"),
+        strategy: "git" as const,
+        instructionFiles: []
+      },
+      projectMemory: {
+        enabled: true,
+        page: null,
+        entries: []
+      }
+    };
+
+    const worker = new ReviewWorker({
+      storage: {
+        stores: {
+          interactionJobs: {
+            get: vi.fn(async () => job)
+          },
+          discussionMappings: {
+            list: vi.fn(async () => mappings)
+          },
+          modelProfiles: {
+            get: vi.fn(async () => null),
+            find: vi.fn(async () => null)
+          }
+        },
+        getInteractionJobById: vi.fn(async () => job),
+        markJobInProgress: vi.fn(async () => {}),
+        createInteractionRun: vi.fn(async () => ({
+          id: "run_5",
+          interactionJobId: job.id,
+          tenantId: tenant.id,
+          provider: "copilot-sdk",
+          model: null,
+          modelProfileName: null,
+          providerBaseUrl: null,
+          providerType: null,
+          textGenerationModel: null,
+          status: "in_progress" as const,
+          resultJson: null,
+          error: null,
+          startedAt: new Date().toISOString(),
+          finishedAt: null
+        })),
+        getModelProfileByName: vi.fn(async () => null),
+        getDefaultModelProfile: vi.fn(async () => null),
+        getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+        listPriorReviewFindings: vi.fn(async () => [...priorFindings]),
+        completeInteractionRun: vi.fn(async () => {}),
+        replaceReviewFindings: vi.fn(async () => {}),
+        updateReviewFindingStatus,
+        upsertDiscussionMapping,
+        markJobCompleted: vi.fn(async () => {}),
+        failInteractionRun: vi.fn(async () => {}),
+        markJobQueued: vi.fn(async () => {}),
+        markJobFailed: vi.fn(async () => {})
+      } as never,
+      tenantRegistry: {
+        getTenantById: vi.fn(async () => tenant)
+      } as never,
+      hydrator: {
+        loadRoutingContext: vi.fn(async () => routingContext),
+        hydrate: vi.fn(async () => routingContext)
+      } as never,
+      workspaceMaterializer: {
+        cleanup: vi.fn(async () => {})
+      } as never,
+      reviewProviderFactory: {
+        createProvider: vi.fn(() => ({
+          name: "copilot-sdk",
+          review
+        }))
+      },
+      chatterRunnerFactory: {
+        createRunner: vi.fn(() => ({
+          run: vi.fn(async () => ({
+            memory: {
+              status: "skipped" as const,
+              summary: "No durable memory detected."
+            },
+            replies: []
+          })),
+          sessionPaths: {
+            memory: ["copilot", "chatter", "memory"],
+            reply: ["copilot", "chatter", "reply"]
+          }
+        }))
+      } as never,
+      reconciler: {
+        reconcile: vi.fn(async () => ({
+          created: 0,
+          updated: 0,
+          replied: 0,
+          resolved: 0,
+          kept: 0,
+          summaryNoteAction: null
+        }))
+      } as never,
+      logger: createLogger("silent"),
+      runLogDir: join("tmp", "run-logs"),
+      maxJobRetries: 3,
+      retryBackoffMs: 5000
+    });
+
+    await expect(worker.processJob("job_5")).resolves.toBeUndefined();
+
+    expect(updateReviewFindingStatus).toHaveBeenCalledWith(tenant.id, 7, "identity_dismissed", "open", {
+      currentStatuses: ["open", "resolved"]
+    });
+    expect(priorFindings[0]?.status).toBe("dismissed");
+    const reviewContext = review.mock.calls[0]?.[0];
+    expect(reviewContext).toBeDefined();
+    if (!reviewContext) {
+      throw new Error("expected review context");
+    }
+    expect(reviewContext.scope.priorFindings[0]?.status).toBe("dismissed");
 
     globalThis.fetch = originalFetch;
   });

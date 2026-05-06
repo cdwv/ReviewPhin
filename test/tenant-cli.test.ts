@@ -7,8 +7,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../src/cli.js";
 import { createLogger } from "../src/logger.js";
-import { SqliteStorage } from "../src/storage/sqlite-storage.js";
+import { StoreBackedStorage, listAll } from "../src/storage/storage-helpers.js";
 import { TenantRegistry } from "../src/tenants/tenant-registry.js";
+import { openSqliteTestStorage } from "./helpers/storage.js";
 
 function createPayload() {
   return {
@@ -47,7 +48,7 @@ describe("tenant CLI", () => {
     const exitCode = await runCli([
       "tenant",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--base-url",
       "https://gitlab.example.com",
@@ -65,10 +66,14 @@ describe("tenant CLI", () => {
 
     expect(exitCode).toBe(0);
 
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    const storage = await openSqliteTestStorage(databasePath);
 
-    const tenants = await storage.listTenants();
+    const tenants = await listAll(storage.stores.tenants, {
+      order: [
+        { field: "baseUrl", direction: "asc" },
+        { field: "projectId", direction: "asc" }
+      ]
+    });
     expect(tenants).toHaveLength(1);
     expect(tenants[0]).toMatchObject({
       baseUrl: "https://gitlab.example.com",
@@ -80,7 +85,6 @@ describe("tenant CLI", () => {
     const registry = new TenantRegistry({
       storage
     });
-    await registry.initialize();
 
     const tenant = await registry.resolveWebhookTenant(createPayload(), "replace-me");
     expect(tenant).not.toBeNull();
@@ -98,7 +102,7 @@ describe("tenant CLI", () => {
       runCli([
         "tenant",
         "add",
-        "--database-path",
+        "--sqlite-database-path",
         databasePath,
         "--base-url",
         "https://gitlab.example.com",
@@ -119,7 +123,7 @@ describe("tenant CLI", () => {
     const addExitCode = await runCli([
       "model-profile",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--name",
       "byok",
@@ -148,7 +152,7 @@ describe("tenant CLI", () => {
     const listExitCode = await runCli([
       "model-profile",
       "list",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath
     ]);
 
@@ -168,7 +172,7 @@ describe("tenant CLI", () => {
     const exitCode = await runCli([
       "model-profile",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--name",
       "native-token",
@@ -180,9 +184,8 @@ describe("tenant CLI", () => {
 
     expect(exitCode).toBe(0);
 
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
-    expect(await storage.getModelProfileByName("native-token")).toMatchObject({
+    const storage = await openSqliteTestStorage(databasePath);
+    expect(await storage.stores.modelProfiles.get("native-token")).toMatchObject({
       name: "native-token",
       providerBaseUrl: null,
       authToken: "github-token",
@@ -197,7 +200,7 @@ describe("tenant CLI", () => {
     await runCli([
       "model-profile",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--name",
       "byok",
@@ -216,7 +219,7 @@ describe("tenant CLI", () => {
     const exitCode = await runCli([
       "model-profile",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--name",
       "byok",
@@ -225,9 +228,8 @@ describe("tenant CLI", () => {
 
     expect(exitCode).toBe(0);
 
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
-    expect(await storage.getModelProfileByName("byok")).toMatchObject({
+    const storage = await openSqliteTestStorage(databasePath);
+    expect(await storage.stores.modelProfiles.get("byok")).toMatchObject({
       name: "byok",
       providerBaseUrl: "https://llm.example.com/v1",
       providerType: "openai",
@@ -245,7 +247,7 @@ describe("tenant CLI", () => {
     await runCli([
       "model-profile",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--name",
       "byok",
@@ -266,7 +268,7 @@ describe("tenant CLI", () => {
     const exitCode = await runCli([
       "model-profile",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--name",
       "byok",
@@ -277,9 +279,8 @@ describe("tenant CLI", () => {
 
     expect(exitCode).toBe(0);
 
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
-    expect(await storage.getModelProfileByName("byok")).toMatchObject({
+    const storage = await openSqliteTestStorage(databasePath);
+    expect(await storage.stores.modelProfiles.get("byok")).toMatchObject({
       name: "byok",
       providerBaseUrl: null,
       providerType: null,
@@ -297,7 +298,7 @@ describe("tenant CLI", () => {
     await runCli([
       "model-profile",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--name",
       "native-gpt5",
@@ -307,7 +308,7 @@ describe("tenant CLI", () => {
     await runCli([
       "tenant",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--base-url",
       "https://gitlab.example.com",
@@ -326,7 +327,7 @@ describe("tenant CLI", () => {
     const setExitCode = await runCli([
       "tenant",
       "set-profile",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--base-url",
       "https://gitlab.example.com",
@@ -337,14 +338,22 @@ describe("tenant CLI", () => {
     ]);
     expect(setExitCode).toBe(0);
 
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
-    expect((await storage.listTenants())[0]?.modelProfileName).toBe("native-gpt5");
+    const storage = await openSqliteTestStorage(databasePath);
+    expect(
+      (
+        await listAll(storage.stores.tenants, {
+          order: [
+            { field: "baseUrl", direction: "asc" },
+            { field: "projectId", direction: "asc" }
+          ]
+        })
+      )[0]?.modelProfileName
+    ).toBe("native-gpt5");
 
     const clearExitCode = await runCli([
       "tenant",
       "clear-profile",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--base-url",
       "https://gitlab.example.com",
@@ -352,7 +361,16 @@ describe("tenant CLI", () => {
       "123"
     ]);
     expect(clearExitCode).toBe(0);
-    expect((await storage.listTenants())[0]?.modelProfileName).toBeNull();
+    expect(
+      (
+        await listAll(storage.stores.tenants, {
+          order: [
+            { field: "baseUrl", direction: "asc" },
+            { field: "projectId", direction: "asc" }
+          ]
+        })
+      )[0]?.modelProfileName
+    ).toBeNull();
   });
 
   it("preserves an existing tenant profile when tenant add reruns without --model-profile", async () => {
@@ -362,7 +380,7 @@ describe("tenant CLI", () => {
     await runCli([
       "model-profile",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--name",
       "native-gpt5",
@@ -373,7 +391,7 @@ describe("tenant CLI", () => {
     await runCli([
       "tenant",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--base-url",
       "https://gitlab.example.com",
@@ -394,7 +412,7 @@ describe("tenant CLI", () => {
     const exitCode = await runCli([
       "tenant",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--base-url",
       "https://gitlab.example.com",
@@ -412,9 +430,17 @@ describe("tenant CLI", () => {
 
     expect(exitCode).toBe(0);
 
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
-    expect((await storage.listTenants())[0]).toMatchObject({
+    const storage = await openSqliteTestStorage(databasePath);
+    expect(
+      (
+        await listAll(storage.stores.tenants, {
+          order: [
+            { field: "baseUrl", direction: "asc" },
+            { field: "projectId", direction: "asc" }
+          ]
+        })
+      )[0]
+    ).toMatchObject({
       apiToken: "glpat-rotated",
       webhookSecret: "replace-me-2",
       modelProfileName: "native-gpt5"
@@ -428,7 +454,7 @@ describe("tenant CLI", () => {
     await runCli([
       "tenant",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--base-url",
       "https://gitlab.example.com/gitlab/",
@@ -453,7 +479,7 @@ describe("tenant CLI", () => {
     const exitCode = await runCli([
       "tenant",
       "remove",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--yes",
       "--base-url",
@@ -468,14 +494,12 @@ describe("tenant CLI", () => {
     expect(stdout).toContain("Tenant removed.");
     expect(stdout).toContain("https://gitlab.example.com/gitlab :: 123");
 
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
-    expect(await storage.listTenants()).toEqual([]);
+    const storage = await openSqliteTestStorage(databasePath);
+    expect(await listAll(storage.stores.tenants)).toEqual([]);
 
     const registry = new TenantRegistry({
       storage
     });
-    await registry.initialize();
 
     const tenant = await registry.resolveWebhookTenant(createPayload(), "replace-me");
     expect(tenant).toBeNull();
@@ -488,7 +512,7 @@ describe("tenant CLI", () => {
     await runCli([
       "tenant",
       "add",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--base-url",
       "https://gitlab.example.com",
@@ -513,7 +537,7 @@ describe("tenant CLI", () => {
     const exitCode = await runCli([
       "tenant",
       "remove",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--base-url",
       "https://gitlab.example.com",
@@ -534,8 +558,7 @@ describe("tenant CLI", () => {
     const workspaceRoot = join(workspace, "review-workspaces");
     const runLogDir = join(workspace, "run-logs");
 
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    const storage = await openSqliteTestStorage(databasePath);
 
     const tenant = await storage.upsertTenant({
       baseUrl: "https://gitlab.example.com/gitlab",
@@ -650,7 +673,7 @@ describe("tenant CLI", () => {
     const exitCode = await runCli([
       "tenant",
       "remove",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--workspace-root",
       workspaceRoot,
@@ -672,7 +695,7 @@ describe("tenant CLI", () => {
     expect(stdout).toContain("- 1/1 run log directory");
     expect(stdout).toContain("Tenant removed.");
 
-    expect(await storage.listTenants()).toEqual([]);
+    expect(await listAll(storage.stores.tenants)).toEqual([]);
     expect(countRows(databasePath, "interaction_jobs")).toBe(0);
     expect(countRows(databasePath, "merge_request_snapshots")).toBe(0);
     expect(countRows(databasePath, "interaction_runs")).toBe(0);
@@ -689,8 +712,7 @@ describe("tenant CLI", () => {
     const workspaceRoot = join(workspace, "review-workspaces");
     const runLogDir = join(workspace, "run-logs");
 
-    const seedStorage = new SqliteStorage({ databasePath });
-    await seedStorage.initialize();
+    const seedStorage = await openSqliteTestStorage(databasePath);
 
     const tenant = await seedStorage.upsertTenant({
       baseUrl: "https://gitlab.example.com/gitlab",
@@ -724,13 +746,12 @@ describe("tenant CLI", () => {
     await mkdir(join(runLogDir, initialRun.id, "copilot"), { recursive: true });
     await writeFile(join(runLogDir, initialRun.id, "copilot", "session.json"), "{}");
 
-    const originalGetTenantDeletionSummary = SqliteStorage.prototype.getTenantDeletionSummary;
+    const originalGetTenantDeletionSummary = StoreBackedStorage.prototype.getTenantDeletionSummary;
     const summarySpy = vi
-      .spyOn(SqliteStorage.prototype, "getTenantDeletionSummary")
-      .mockImplementationOnce(async function (this: SqliteStorage, baseUrl: string, projectId: number) {
+      .spyOn(StoreBackedStorage.prototype, "getTenantDeletionSummary")
+      .mockImplementationOnce(async function (this: StoreBackedStorage, baseUrl: string, projectId: number) {
         const summary = await originalGetTenantDeletionSummary.call(this, baseUrl, projectId);
-        const lateStorage = new SqliteStorage({ databasePath });
-        await lateStorage.initialize();
+        const lateStorage = await openSqliteTestStorage(databasePath);
         const lateJob = await lateStorage.createOrGetInteractionJob({
           tenantId: tenant.id,
           dedupeKey: "tenant-remove-job-late",
@@ -760,7 +781,7 @@ describe("tenant CLI", () => {
     const exitCode = await runCli([
       "tenant",
       "remove",
-      "--database-path",
+      "--sqlite-database-path",
       databasePath,
       "--workspace-root",
       workspaceRoot,
@@ -813,3 +834,4 @@ async function listDirectoryIfPresent(path: string): Promise<string[]> {
   const { readdir } = await import("node:fs/promises");
   return (await readdir(path)).sort();
 }
+
