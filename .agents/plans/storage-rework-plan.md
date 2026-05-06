@@ -29,6 +29,10 @@ That makes schema evolution hard to reason about and makes future provider work 
 
 1. **Domain storage contract**
    - TypeScript record types, input types, repository interfaces, filter types, ordering types, and pagination types used by the app
+   - all schema shapes must live in dedicated **`.d.ts` files**
+   - do **not** infer schema shapes from zod or other runtime schemas
+   - each contract revision snapshot must fully describe the types used by that storage contract revision
+   - when a limited shape is needed, derive it from a common schema type with TypeScript utility types such as `Pick`, `Omit`, `Partial`, and `Required` rather than duplicating a near-identical declaration
    - no adapter-specific SQL or table knowledge leaked outside the provider package
 2. **Provider runtime**
    - open connection / client
@@ -42,6 +46,8 @@ That makes schema evolution hard to reason about and makes future provider work 
 ### 2. Provider module contract
 
 Dynamic providers should be loaded from a module that exports a single entrypoint function returning a provider object.
+
+Providers are plug-in points. They should no longer depend on the shared app `config` module and may define their own environment parsing logic and constructor parameters.
 
 Conceptually:
 
@@ -109,7 +115,7 @@ The shared contract should use a deliberately separate **storage contract revisi
 
 Recommended structure:
 
-- `src\storage\contract\current.ts` for the canonical current contract
+- `src\storage\contract\current.d.ts` for the canonical current contract
 - `src\storage\contract\history\storage-v000.d.ts` for the baseline snapshot
 - `src\storage\contract\history\storage-v001.d.ts` for later contract snapshots
 - `src\storage\contract\history\index.ts` for revision metadata and change summaries
@@ -119,7 +125,7 @@ Each contract revision entry should document:
 - revision id
 - summary of changes
 - whether the change is additive or breaking
-- entity/repository surfaces affected
+- entity/store surfaces affected
 - implementation notes for providers, such as:
   - field should be unique
   - index strongly recommended
@@ -127,11 +133,11 @@ Each contract revision entry should document:
 
 The history snapshots are for provider authors, compatibility checks, and documentation. They should not replace the single canonical current contract as the main source of truth for runtime code.
 
-## Query and repository model
+## Query and store model
 
 ### 1. No-join provider policy
 
-The app should depend on repository-style interfaces and app-shaped query results, with a strong **no-join provider policy**. Provider-facing repositories should stay close to CRUD object contracts, for example:
+The app should depend on store-style interfaces and app-shaped query results, with a strong **no-join provider policy**. Provider-facing stores should stay close to CRUD object contracts, for example:
 
 - `tenantStore`
 - `modelProfileStore`
@@ -139,6 +145,23 @@ The app should depend on repository-style interfaces and app-shaped query result
 - `interactionRunStore`
 - `reviewFindingStore`
 - `discussionMappingStore`
+
+Each store should follow the same predefined operation surface rather than adding custom query methods. Conceptually:
+
+```ts
+interface EntityStore<TEntity, TFilters, TOrder> {
+  get(id: string): Promise<TEntity | null>;
+  getMany(ids: string[]): Promise<TEntity[]>;
+  find(filters: TFilters): Promise<TEntity | null>;
+  list(input: { filters?: TFilters; order?: TOrder; page: number; pageSize: number }): Promise<TEntity[]>;
+  upsert(entity: TEntity): Promise<TEntity>;
+  replace(entity: TEntity): Promise<TEntity>;
+  update(input: unknown): Promise<TEntity>;
+  patch(input: unknown): Promise<TEntity>;
+  delete(id: string): Promise<void>;
+  deleteMany(ids: string[]): Promise<void>;
+}
+```
 
 Preferred provider-facing operations:
 
@@ -154,7 +177,7 @@ Preferred provider-facing operations:
 - `deleteMany(ids)`
 - optionally `upsertMany(...)` if the app genuinely needs it
 
-The provider contract should avoid arbitrary join-like query surfaces.
+The provider contract should avoid arbitrary join-like query surfaces and avoid provider-specific custom query methods.
 
 ### 2. Filters, ordering, and pagination
 
@@ -192,6 +215,8 @@ When cross-entity data is needed, the app should:
 2. collect related ids
 3. fetch related records in one or more additional steps
 4. assemble the read model in app logic
+
+Existing storage queries should be adapted to this model. If a current SQL query uses a join, prefer rewriting it into two or three smaller store calls rather than expanding the provider contract with custom query shapes.
 
 The rule for consistency is: **the app must complete all dependent writes before it considers the operation successful**.
 
@@ -278,6 +303,13 @@ Reasons:
 - smallest change from the current code
 - easiest way to freeze the current schema exactly
 - lowest abstraction overhead while the storage contract and provider lifecycle are still settling
+
+If it improves maintainability, split the SQLite provider implementation across several files, for example:
+
+- one provider entrypoint / bootstrap file
+- one file per repo implementation
+- one file for shared SQLite helpers
+- one file for SQLite migration logic
 
 ### Possible post-v1 evolution
 
