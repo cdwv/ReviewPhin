@@ -527,7 +527,10 @@ function buildScopeSummary(
   selectedChangeCount: number,
 ) {
   if (input.mode === "follow-up-thread") {
-    return `Focus on the target bot-owned thread${input.targetThread ? ` "${input.targetThread.title}"` : ""} and the ${selectedChangeCount} directly related changed file(s).`;
+    const threadTitle = input.targetThread
+      ? ` "${input.targetThread.title}"`
+      : "";
+    return `Focus on the target bot-owned thread${threadTitle} and the ${selectedChangeCount} directly related changed file(s).`;
   }
 
   if (input.mode === "incremental-rereview") {
