@@ -9,7 +9,7 @@ The current storage layer already exposes a useful `Storage` TypeScript contract
 - legacy schema repair / ad hoc alignment logic
 - application startup readiness
 
-That makes schema evolution hard to reason about and makes future adapter work harder because the app currently depends on one SQLite-specific implementation owning too much behavior.
+That makes schema evolution hard to reason about and makes future provider work harder because the app currently depends on one SQLite-specific implementation owning too much behavior.
 
 ## Agreed direction
 
@@ -17,201 +17,33 @@ That makes schema evolution hard to reason about and makes future adapter work h
 - Do **not** redesign existing tables as part of this refactor.
 - Add **migration tracking** on top of the current schema.
 - The first formal migration should represent the current schema as a baseline and mark it as applied after ensuring the current tables exist with the same shape.
-- From that point forward, every schema change must be a proper migration tracked by the storage adapter.
-- Optimize the first milestone for **SQLite-first with clean adapter and migration boundaries**.
+- From that point forward, every schema change must be a proper migration tracked by the provider.
+- Optimize the first milestone for **SQLite-first with clean provider and migration boundaries**.
 - The core app should expose a **shared storage contract in TypeScript**, while each provider owns its own physical schema and migrations.
 - Third-party providers should be loadable from a **user-specified JS module path or package name** at runtime.
+- For now, require an **exact storage contract revision match** between the app and provider.
 
-## Proposed approach
+## Proposed architecture
 
 ### 1. Split storage into three layers
 
-1. **Domain storage contracts**
-   - TypeScript record types, input types, and repository/query result types used by the app
-   - No adapter-specific SQL or table knowledge leaked outside the adapter package
-2. **Adapter runtime**
-   - Open connection / client
-   - Expose repositories implementing the domain contracts
-   - Expose readiness / preparation capabilities
+1. **Domain storage contract**
+   - TypeScript record types, input types, repository interfaces, filter types, ordering types, and pagination types used by the app
+   - no adapter-specific SQL or table knowledge leaked outside the provider package
+2. **Provider runtime**
+   - open connection / client
+   - expose repositories implementing the shared contract
+   - expose readiness / preparation behavior
 3. **Provider-owned migration runtime**
-   - Read applied migration state from provider-owned metadata storage
-   - Run pending provider migrations in order
-   - Fail startup if any provider migration fails
+   - read applied migration state from provider-owned metadata storage
+   - run pending provider migrations in order
+   - fail startup if provider preparation fails
 
-### 2. Keep a canonical app-facing contract, not a universal ORM abstraction
+### 2. Provider module contract
 
-The app should depend on repository-style interfaces and app-shaped query results, with a strong **no-join provider policy**. Provider-facing repositories should stay close to CRUD object contracts, for example:
+Dynamic providers should be loaded from a module that exports a single entrypoint function returning a provider object.
 
-- `tenantStore`
-- `modelProfileStore`
-- `interactionJobStore`
-- `interactionRunStore`
-- `reviewFindingStore`
-- `discussionMappingStore`
-
-Preferred provider-facing operations:
-
-- `get(id)`
-- `getMany(ids)`
-- `find(filters)` for a single full object by indexed/unique fields
-- `list(filters, order, pagination)` for multiple full objects
-- `upsert(...)` or `replace(...)`
-- `update(id, patch)` where supported by the contract
-- `delete(id)` / `deleteMany(ids)`
-
-The provider contract should avoid arbitrary join-like query surfaces. When the app needs cross-entity or pre-joined views, it should model them explicitly as stored **read models / projections / denormalized records** instead of leaking custom joins into provider APIs.
-
-### Query model potholes to cover
-
-The no-join direction is sound, but the plan should explicitly account for these risks:
-
-1. **N+1 read storms**
-   - If a workflow repeatedly fetches related objects one by one, provider portability improves but runtime efficiency can collapse.
-   - Mitigation: add `getMany(ids)` and use explicit projections for recurring cross-entity views.
-
-2. **Overpowered generic filters**
-   - A generic `find(filters)` can quietly become a custom query language.
-   - Mitigation: keep filters strongly typed per entity and limited to indexed or documented fields.
-
-3. **Pagination drift**
-   - `list(filters, order, pagination)` needs stable ordering rules or providers will return inconsistent pages.
-   - Mitigation: define deterministic sort semantics using the domain-appropriate lifecycle timestamp first, such as `created_at`, `enqueued_at`, or `started_at`, with a stable secondary tie-breaker such as `id`.
-
-4. **Lost updates**
-   - "Always full objects" can cause write races if two writers replace the same record.
-   - Mitigation: decide whether updates are replace-style, patch-style, or guarded by version/updatedAt checks.
-
-5. **Bulk workflows**
-   - CRUD-only contracts are painful without batch operations.
-   - Mitigation: include `getMany`, `deleteMany`, and possibly `upsertMany` where the app genuinely needs them.
-
-6. **Uniqueness and index expectations**
-   - Providers need to know which fields are expected to be unique or efficiently queryable.
-   - Mitigation: document those expectations in contract revision metadata.
-
-7. **Cross-entity consistency**
-   - Some operations touch multiple records that should move together.
-   - Mitigation: define provider capabilities for transactions or document acceptable eventual-consistency behavior for projections.
-
-### 3. Freeze current SQLite schema as baseline migration
-
-Introduce an adapter-owned migration tracking table, for example:
-
-- `storage_migrations`
-  - `adapter_name`
-  - `migration_id`
-  - `applied_at`
-  - optional checksum / metadata
-
-Then define a baseline migration like `sqlite:0001_v0_baseline` that:
-
-- creates `storage_migrations` if needed
-- executes `CREATE TABLE IF NOT EXISTS ...` for the **current exact schema**
-- creates the current indexes
-- records itself as applied
-
-This migration is not meant to reshape live data. It only formalizes the current state as the starting point for future tracked migrations.
-
-### 4. Remove ad hoc schema repair from normal startup path
-
-The current one-off helpers in `sqlite-storage.ts` such as:
-
-- legacy table renames
-- column existence patches
-- review findings normalization / rebuild
-- dedupe repair logic
-
-should stop being implicit startup behavior. If any of that still needs to exist, it should move into explicit migrations or be dropped if it only served old drift that is no longer supported.
-
-### 5. Gate app startup on provider preparation
-
-Startup should become:
-
-1. load config
-2. resolve and load storage provider module
-3. create provider from config
-4. open provider
-5. run provider preparation (including migrations if needed)
-6. construct repositories / registry / worker
-7. start Fastify
-
-If provider preparation fails, the process should exit before the webhook server starts listening.
-
-## Library / implementation options
-
-### Recommended boundary
-
-Keep the **migration orchestration and repository interfaces custom**, and use a library only inside SQL adapters.
-
-### SQLite adapter options
-
-1. **Stay on `node:sqlite` + custom migration runner**
-   - smallest change from current code
-   - easiest way to freeze current schema exactly
-   - requires more handwritten repository/query code
-2. **Kysely inside the SQLite adapter**
-   - good typed query builder
-   - keeps SQL explicit
-   - less ORM-like than Drizzle, but flexible
-3. **Drizzle inside the SQLite adapter**
-   - strong TS schema definitions
-   - nice if you want SQL schema represented directly in TS
-   - still should stay adapter-internal, not become the app contract
-
-### Recommendation for this repo
-
-For this codebase, the safest first step is either:
-
-- **`node:sqlite` + custom migration runtime**, if minimizing moving parts matters most, or
-- **Kysely inside the SQLite adapter**, if you want typed SQL helpers without overcommitting to ORM patterns
-
-I would avoid making a SQL ORM the top-level abstraction for the whole system, because future non-SQL adapters like Flotiq will not map cleanly to ORM expectations anyway.
-
-## Provider extensibility notes
-
-- Future providers will likely need **provider-specific migrations and fixes**. That is normal and acceptable.
-- What should be shared is the **storage contract**, readiness lifecycle, and compatibility expectations.
-- A good common contract is:
-  - `getProviderId()`
-  - `getSupportedStorageContract()`
-  - `open()`
-  - `prepare()`
-  - `createRepositories()`
-  - `close()`
-- Each provider can decide whether preparation means SQL migrations, API calls, content model provisioning, index repair, cached view rebuilds, or some other backend-native work.
-
-For non-SQL backends, not every repository capability may be equally efficient. If needed later, define adapter capability flags explicitly rather than hiding major behavioral differences.
-
-## Storage contract and compatibility model
-
-### Recommendation: central contract, provider-owned evolution
-
-Do not force third-party providers into a central migration abstraction. Instead:
-
-- the core app publishes the storage contract as TypeScript types and repository interfaces
-- providers implement that contract
-- providers own their internal schema/content model and all migrations or fixes needed to satisfy the contract
-- the app checks compatibility at startup before serving traffic
-
-This keeps custom provider authoring realistic and preserves the ability for users to drop in their own JS module without participating in core-managed migration authoring.
-
-### Two classes of change
-
-1. **Provider-internal change**
-   - index changes
-   - backend-specific normalization
-   - physical layout optimizations
-   - local data repair or backfill
-   These should remain invisible to the core app as long as the shared contract stays the same.
-
-2. **Storage contract change**
-   - new persisted concept the app depends on
-   - new required field in a record
-   - changed repository method semantics
-   - removed or renamed app-visible storage concept
-   These require a contract update and corresponding provider updates.
-
-### Suggested provider shape
+Conceptually:
 
 ```ts
 interface StorageProvider {
@@ -233,24 +65,54 @@ interface StorageProvider {
 - cache rebuilds
 - one-off provider-local repairs
 
-The core does not need to understand those details.
+`prepare()` should be treated as:
 
-### Contract versioning
+- startup-blocking
+- safe to call repeatedly
+- idempotent
+- responsible for any provider-local readiness work needed before the server starts
 
-The shared contract should use a deliberately separate **storage contract revision id**, not app semver and ideally not dates. A simple monotonic scheme is clearer, for example:
+If a provider call throws, surface that error in logs and propagate it. Do not add a special provider error taxonomy yet.
+
+### 3. Storage contract and compatibility model
+
+Do not force third-party providers into a central migration abstraction. Instead:
+
+- the core app publishes the storage contract as TypeScript types and repository interfaces
+- providers implement that contract
+- providers own their internal schema/content model and all migrations or fixes needed to satisfy the contract
+- the app checks compatibility at startup before serving traffic
+
+There are two classes of change:
+
+1. **Provider-internal change**
+   - index changes
+   - backend-specific normalization
+   - physical layout optimizations
+   - local data repair or backfill
+   These remain invisible to the core app as long as the shared contract stays the same.
+
+2. **Storage contract change**
+   - new persisted concept the app depends on
+   - new required field in a record
+   - changed repository method semantics
+   - removed or renamed app-visible storage concept
+   These require a contract revision and corresponding provider updates.
+
+### 4. Contract versioning and history
+
+The shared contract should use a deliberately separate **storage contract revision id**, not app semver and not dates. Use a simple monotonic scheme such as:
 
 - `storage-v000`
 - `storage-v001`
 - `storage-v002`
 
-This avoids confusion with application release versions while still making ordering and compatibility checks obvious.
-
 Recommended structure:
 
 - `src\storage\contract\current.ts` for the canonical current contract
 - `src\storage\contract\history\storage-v000.d.ts` for the baseline snapshot
-- `src\storage\contract\history\storage-v001.d.ts` for the next contract revision snapshot
-- `src\storage\contract\history\index.ts` for machine-readable revision metadata and human-readable change summaries
+- `src\storage\contract\history\storage-v001.d.ts` for later contract snapshots
+- `src\storage\contract\history\index.ts` for revision metadata and change summaries
 
 Each contract revision entry should document:
 
@@ -263,29 +125,182 @@ Each contract revision entry should document:
   - index strongly recommended
   - backfill expected during provider preparation if supported
 
-Providers declare the storage contract revision they support. Startup should fail clearly if the loaded provider does not satisfy the required revision.
+The history snapshots are for provider authors, compatibility checks, and documentation. They should not replace the single canonical current contract as the main source of truth for runtime code.
 
-The history snapshots are primarily for provider authors, compatibility checks, and documentation. They should not replace the single canonical current contract as the main source of truth for runtime code.
+## Query and repository model
 
-### Dynamic provider loading
+### 1. No-join provider policy
 
-The app should support loading official or third-party providers by:
+The app should depend on repository-style interfaces and app-shaped query results, with a strong **no-join provider policy**. Provider-facing repositories should stay close to CRUD object contracts, for example:
 
-- package name
-- absolute module path
-- possibly relative module path resolved from the working directory
+- `tenantStore`
+- `modelProfileStore`
+- `interactionJobStore`
+- `interactionRunStore`
+- `reviewFindingStore`
+- `discussionMappingStore`
 
-That allows OSS users to ship custom storage implementations without waiting for changes in the core repository.
+Preferred provider-facing operations:
 
-### Official provider guidance
+- `get(id)`
+- `getMany(ids)`
+- `find(filters)` for a single full object by indexed or unique fields
+- `list(filters, order, page, pageSize)` for multiple full objects
+- `upsert(...)`
+- `replace(...)`
+- `update(...)`
+- `patch(...)`
+- `delete(id)`
+- `deleteMany(ids)`
+- optionally `upsertMany(...)` if the app genuinely needs it
 
-The repository should provide:
+The provider contract should avoid arbitrary join-like query surfaces.
 
-- one or more first-class official providers
-- provider examples showing migration patterns
-- a compatibility test suite or contract tests that third-party providers can run
+### 2. Filters, ordering, and pagination
 
-For example, a Flotiq provider may update content type descriptors and backfill objects during `prepare()`, while a SQLite provider may run SQL migrations and data rewrites. Both are valid as long as they satisfy the same app-facing contract.
+Use classical pagination:
+
+- `page`
+- `pageSize`
+
+Filters should be:
+
+- typed per entity
+- limited to documented indexed or otherwise approved fields
+- limited to the operators currently needed:
+  - equality
+  - greater than / less than
+  - greater than or equal / less than or equal
+  - empty
+  - not empty
+
+Default ordering should be deterministic and based on the domain lifecycle timestamp first, such as:
+
+- `created_at`
+- `enqueued_at`
+- `started_at`
+
+with a stable secondary tie-breaker such as `id`.
+
+### 3. Read-model ownership
+
+Read models are built by the app, not by providers.
+
+When cross-entity data is needed, the app should:
+
+1. fetch records by ids or indexed fields
+2. collect related ids
+3. fetch related records in one or more additional steps
+4. assemble the read model in app logic
+
+The rule for consistency is: **the app must complete all dependent writes before it considers the operation successful**.
+
+### 4. Query model potholes to cover
+
+The no-join direction is sound, but the implementation should guard against:
+
+1. **N+1 read storms**
+   - Mitigation: support `getMany(ids)` and add explicit read models for recurring cross-entity views.
+2. **Overpowered generic filters**
+   - Mitigation: keep filters strongly typed per entity and limited to documented fields.
+3. **Pagination drift**
+   - Mitigation: always apply deterministic timestamp-based ordering plus a stable tie-breaker.
+4. **Lost updates**
+   - Mitigation: define `replace`, `update`, and `patch` semantics clearly, and decide later whether optimistic concurrency is needed.
+5. **Cross-record consistency**
+   - Mitigation: keep app write sequencing explicit rather than assuming hidden provider transactions.
+
+## Value and serialization rules
+
+- Use the basic app-level types already present in the system.
+- `Date` objects are allowed at the contract boundary.
+- Providers are responsible for mapping unsupported native backend types into their own storage representation.
+- Provider guidance should recommend UTC-based serialization where backend-native date support is unavailable.
+
+## SQLite baseline and startup flow
+
+### 1. Freeze current SQLite schema as baseline migration
+
+Introduce a provider-owned migration tracking table, for example:
+
+- `storage_migrations`
+  - `adapter_name`
+  - `migration_id`
+  - `applied_at`
+  - optional checksum / metadata
+
+Then define a baseline migration like `sqlite:0001_v0_baseline` that:
+
+- creates `storage_migrations` if needed
+- executes `CREATE TABLE IF NOT EXISTS ...` for the **current exact schema**
+- creates the current indexes
+- records itself as applied
+
+This migration is not meant to reshape live data. It only formalizes the current state as the starting point for future tracked migrations.
+
+### 2. Remove ad hoc schema repair from normal startup path
+
+The current one-off helpers in `sqlite-storage.ts` such as:
+
+- legacy table renames
+- column existence patches
+- review findings normalization / rebuild
+- dedupe repair logic
+
+should stop being implicit startup behavior. If any of that still needs to exist, it should move into explicit migrations or be dropped if it only served old drift that is no longer supported.
+
+### 3. Gate app startup on provider preparation
+
+Startup should become:
+
+1. load config
+2. resolve and load storage provider module
+3. create provider from config
+4. open provider
+5. run provider preparation
+6. construct repositories / registry / worker
+7. start Fastify
+
+If provider preparation fails, the process should exit before the webhook server starts listening.
+
+## Library and implementation guidance
+
+### Recommended boundary
+
+Keep the **provider lifecycle and repository interfaces custom**, and use libraries only inside official providers.
+
+### SQLite provider choice for v1
+
+Use **`node:sqlite` + custom migration/runtime code** for v1.
+
+Reasons:
+
+- smallest change from the current code
+- easiest way to freeze the current schema exactly
+- lowest abstraction overhead while the storage contract and provider lifecycle are still settling
+
+### Possible post-v1 evolution
+
+If handwritten SQLite query code becomes too heavy later, the SQLite provider may migrate to **Kysely** outside v1:
+
+- good typed query builder
+- keeps SQL explicit
+- stays provider-internal rather than becoming the app contract
+
+### Recommendation for this repo
+
+For this codebase, the v1 recommendation is **`node:sqlite` + custom migration/runtime code**.
+
+Avoid making a SQL ORM the top-level abstraction for the whole system, because future non-SQL providers like Flotiq will not map cleanly to ORM expectations anyway.
+
+## Official scope
+
+- Start with SQLite only.
+- Organize the directory structure so more first-class providers can be added cleanly later.
+- The repository should eventually provide:
+  - one or more first-class official providers
+  - provider examples showing migration patterns
+  - a compatibility test suite or contract tests that third-party providers can run
 
 ## Todos
 
@@ -296,11 +311,4 @@ For example, a Flotiq provider may update content type descriptors and backfill 
 5. Refactor SQLite startup so schema setup happens through provider preparation instead of ad hoc initialization helpers.
 6. Standardize read/write access behind repository methods or typed query objects so app code stops depending on custom joins.
 7. Gate server startup on successful provider preparation completion.
-8. Add/update tests around baseline migration, repeat startup, failed provider preparation behavior, and provider contract compatibility.
-
-## Notes
-
-- Because the current schema is being frozen, the initial migration should preserve current table names, columns, and indexes exactly.
-- This refactor can be delivered incrementally: first formalize migration tracking and startup gating, then improve repository boundaries and query standardization.
-- The existing `Storage` interface is a strong starting point, but it will likely need to be split into smaller repositories to keep providers manageable.
-- Core-managed migration abstractions should stay minimal; provider-local fixes and optimizations should remain provider-internal unless they change the shared contract.
+8. Add or update tests around baseline migration, repeat startup, failed provider preparation behavior, and provider contract compatibility.
