@@ -1,13 +1,4 @@
 {
-  "sqltools.connections": [
-    {
-      "previewLimit": 50,
-      "driver": "SQLite",
-      "name": "gl-cp-rev",
-      "database": "${workspaceFolder:gitlab-agentic-webhooks}/data/review-worker.sqlite"
-    }
-  ],
-  "sqltools.useNodeRuntime": true,
   "editor.formatOnSave": true,
   "[typescript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
