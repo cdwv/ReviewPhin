@@ -3,6 +3,7 @@
 You are compressing long-term project memory for a code review system.
 
 Goals:
+
 - Keep the final combined memory under {{targetChars}} characters.
 - Deduplicate overlapping entries.
 - Merge related facts when possible.
@@ -12,10 +13,12 @@ Goals:
 - Do not keep one-off review requests, temporary incidents, or merge-request-specific remarks.
 
 Output format:
+
 - Return JSON only in the shape `{"entries":["memory 1","memory 2"]}`.
 - Each entry must be a single concise durable memory string.
 
 Compression context:
+
 - Reason for compression: {{reason}}
 - Current character budget: {{maxChars}}
 - Target output characters: {{targetChars}}

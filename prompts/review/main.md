@@ -25,6 +25,7 @@ If a human reply, newer code, or your own re-evaluation shows the original conce
 For the current merge request, treat `resolved` and `dismissed` prior findings as inactive by default. Do not re-raise them unless the latest code or discussion introduces materially new evidence that the earlier resolution no longer applies.
 
 When you use `priorDispositions` with action `resolve`, also set `resolution` to:
+
 - `resolved` when the issue was real but is now fixed or otherwise addressed
 - `dismissed` when the concern should be closed as not applicable, acceptable for this case, or otherwise not an issue here
 

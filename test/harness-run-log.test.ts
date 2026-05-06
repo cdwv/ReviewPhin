@@ -8,7 +8,9 @@ import { HarnessRunLog } from "../src/harness/run-log.js";
 
 describe("HarnessRunLog", () => {
   it("writes prompt, events, response, and error details to disk", async () => {
-    const logDir = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-logs-"));
+    const logDir = await mkdtemp(
+      join(tmpdir(), "gitlab-agentic-webhooks-logs-"),
+    );
 
     const runLog = new HarnessRunLog({
       logDir,
@@ -18,12 +20,12 @@ describe("HarnessRunLog", () => {
         interactionRunId: "run_123",
         interactionJobId: "job_123",
         tenantId: "tenant_123",
-        sessionKind: "review"
+        sessionKind: "review",
       },
       metadata: {
         mergeRequestIid: 7,
-        workspacePath: join("workspace", "review")
-      }
+        workspacePath: join("workspace", "review"),
+      },
     });
 
     runLog.setSessionId("session_123");
@@ -35,8 +37,8 @@ describe("HarnessRunLog", () => {
       ephemeral: true,
       data: {
         messageId: "message_1",
-        deltaContent: "{\"overview\":"
-      }
+        deltaContent: '{"overview":',
+      },
     });
     runLog.setResponse({
       id: "event_2",
@@ -44,12 +46,15 @@ describe("HarnessRunLog", () => {
       timestamp: new Date().toISOString(),
       type: "assistant.message",
       data: {
-        content: "{\"overview\":{\"summary\":\"ok\",\"overallSeverity\":\"low\"},\"findings\":[],\"priorDispositions\":[]}",
+        content:
+          '{"overview":{"summary":"ok","overallSeverity":"low"},"findings":[],"priorDispositions":[]}',
         messageId: "message_1",
-        requestId: "req_123"
-      }
+        requestId: "req_123",
+      },
     } as never);
-    runLog.setError(new Error("Timeout after 60000ms waiting for session.idle"));
+    runLog.setError(
+      new Error("Timeout after 60000ms waiting for session.idle"),
+    );
 
     const logPath = await runLog.flush();
     const written = JSON.parse(await readFile(logPath, "utf8"));
@@ -59,7 +64,7 @@ describe("HarnessRunLog", () => {
     expect(written.metadata.interactionRunId).toBe("run_123");
     expect(written.prompt).toBe("Return JSON only.");
     expect(written.events).toHaveLength(1);
-    expect(written.response.content).toContain("\"overview\"");
+    expect(written.response.content).toContain('"overview"');
     expect(written.error.message).toContain("Timeout after 60000ms");
   });
 });

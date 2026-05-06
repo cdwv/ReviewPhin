@@ -19,14 +19,15 @@ export const STORAGE_CONTRACT_HISTORY = [
       "interaction-runs",
       "interaction-run-metrics",
       "review-findings",
-      "discussion-mappings"
+      "discussion-mappings",
     ],
     providerNotes: [
       "Freeze the existing SQLite table shape as-is.",
       "Track migrations in provider-owned metadata storage.",
-      "Adapters must exactly match the current storage contract revision."
-    ]
-  }
+      "Adapters must exactly match the current storage contract revision.",
+    ],
+  },
 ] as const satisfies readonly StorageContractRevisionMetadata[];
 
-export type StorageContractRevisionId = (typeof STORAGE_CONTRACT_HISTORY)[number]["id"];
+export type StorageContractRevisionId =
+  (typeof STORAGE_CONTRACT_HISTORY)[number]["id"];

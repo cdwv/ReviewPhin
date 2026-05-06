@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { Logger } from "pino";
+import type { Logger } from "pino";
 
 export const SQLITE_BASELINE_MIGRATION_ID = "sqlite:0001_v0_baseline";
 
@@ -175,17 +175,27 @@ const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
         CREATE UNIQUE INDEX IF NOT EXISTS review_findings_interaction_run_identity_key_idx
         ON review_findings (interaction_run_id, identity_key);
       `);
-    }
-  }
+    },
+  },
 ];
 
-export function applySqliteMigrations(database: DatabaseSync, adapterName: string, logger?: Logger): readonly string[] {
+export function applySqliteMigrations(
+  database: DatabaseSync,
+  adapterName: string,
+  logger?: Logger,
+): readonly string[] {
   ensureMigrationStateTable(database);
-  logger?.info(`Checking available SQLite migrations for adapter "${adapterName}"...`);
+  logger?.info(
+    `Checking available SQLite migrations for adapter "${adapterName}"...`,
+  );
   const appliedMigrationIds = new Set(
-    (database
-      .prepare("SELECT migration_id FROM storage_migrations WHERE adapter_name = ? ORDER BY migration_id ASC")
-      .all(adapterName) as Array<{ migration_id: string }>).map((row) => row.migration_id)
+    (
+      database
+        .prepare(
+          "SELECT migration_id FROM storage_migrations WHERE adapter_name = ? ORDER BY migration_id ASC",
+        )
+        .all(adapterName) as Array<{ migration_id: string }>
+    ).map((row) => row.migration_id),
   );
   const newlyAppliedMigrationIds: string[] = [];
 
@@ -198,19 +208,29 @@ export function applySqliteMigrations(database: DatabaseSync, adapterName: strin
     try {
       migration.apply(database);
       database
-        .prepare("INSERT INTO storage_migrations (adapter_name, migration_id, applied_at) VALUES (?, ?, ?)")
+        .prepare(
+          "INSERT INTO storage_migrations (adapter_name, migration_id, applied_at) VALUES (?, ?, ?)",
+        )
         .run(adapterName, migration.id, new Date().toISOString());
       database.exec("COMMIT");
       newlyAppliedMigrationIds.push(migration.id);
-      logger?.info(`Applied SQLite migration "${migration.id}" for adapter "${adapterName}".`);
+      logger?.info(
+        `Applied SQLite migration "${migration.id}" for adapter "${adapterName}".`,
+      );
     } catch (error) {
       database.exec("ROLLBACK");
-      logger?.error({ error }, `Failed to apply SQLite migration "${migration.id}" for adapter "${adapterName}".`);
+      logger?.error(
+        { error },
+        `Failed to apply SQLite migration "${migration.id}" for adapter "${adapterName}".`,
+      );
       throw error;
     }
   }
-  
-  logger?.info({newlyAppliedMigrationIds}, `Finished applying SQLite migrations for adapter "${adapterName}".}`);
+
+  logger?.info(
+    { newlyAppliedMigrationIds },
+    `Finished applying SQLite migrations for adapter "${adapterName}".}`,
+  );
 
   return newlyAppliedMigrationIds;
 }

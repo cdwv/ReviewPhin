@@ -13,7 +13,9 @@ describe("metrics CLI", () => {
   });
 
   it("prints per-run metrics and summary percentiles for existing session logs", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-metrics-"));
+    const workspace = await mkdtemp(
+      join(tmpdir(), "gitlab-agentic-webhooks-metrics-"),
+    );
     const runLogDir = join(workspace, "run-logs");
 
     await writeSessionLog(runLogDir, "run_001", {
@@ -22,7 +24,7 @@ describe("metrics CLI", () => {
       inputTokens: 100,
       outputTokens: 10,
       toolCalls: 4,
-      durationMs: 1000
+      durationMs: 1000,
     });
     await writeSessionLog(runLogDir, "run_002", {
       model: "claude-sonnet-4",
@@ -30,7 +32,7 @@ describe("metrics CLI", () => {
       inputTokens: 200,
       outputTokens: 20,
       toolCalls: 6,
-      durationMs: 2000
+      durationMs: 2000,
     });
     await writeSessionLog(runLogDir, "run_003", {
       model: "gpt-5.4",
@@ -38,16 +40,26 @@ describe("metrics CLI", () => {
       inputTokens: 300,
       outputTokens: 30,
       toolCalls: 8,
-      durationMs: 3000
+      durationMs: 3000,
     });
 
     let stdout = "";
-    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
-      stdout += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
-      return true;
-    });
+    vi.spyOn(process.stdout, "write").mockImplementation(
+      (chunk: string | Uint8Array) => {
+        stdout +=
+          typeof chunk === "string"
+            ? chunk
+            : Buffer.from(chunk).toString("utf8");
+        return true;
+      },
+    );
 
-    const exitCode = await runCli(["metrics", "sessions", "--run-log-dir", runLogDir]);
+    const exitCode = await runCli([
+      "metrics",
+      "sessions",
+      "--run-log-dir",
+      runLogDir,
+    ]);
 
     expect(exitCode).toBe(0);
 
@@ -56,11 +68,15 @@ describe("metrics CLI", () => {
       .split(/\r?\n/)
       .map((line) => line.trim().replaceAll(/\s+/g, " "));
 
-    expect(lines).toContain("run premiumRequests inputTokens outputTokens toolCalls durationMs");
+    expect(lines).toContain(
+      "run premiumRequests inputTokens outputTokens toolCalls durationMs",
+    );
     expect(lines).toContain("run_001 1 100 10 4 1000");
     expect(lines).toContain("run_002 2 200 20 6 2000");
     expect(lines).toContain("run_003 3 300 30 8 3000");
-    expect(lines).toContain("stat premiumRequests inputTokens outputTokens toolCalls durationMs");
+    expect(lines).toContain(
+      "stat premiumRequests inputTokens outputTokens toolCalls durationMs",
+    );
     expect(lines).toContain("min 1 100 10 4 1000");
     expect(lines).toContain("max 3 300 30 8 3000");
     expect(lines).toContain("avg 2 200 20 6 2000");
@@ -68,13 +84,17 @@ describe("metrics CLI", () => {
     expect(lines).toContain("p25 1.5 150 15 5 1500");
     expect(lines).toContain("p75 2.5 250 25 7 2500");
     expect(lines).toContain("p90 2.8 280 28 7.6 2800");
-    expect(lines).toContain("model runs premiumRequests min max avg p25 p50 p75 p90");
+    expect(lines).toContain(
+      "model runs premiumRequests min max avg p25 p50 p75 p90",
+    );
     expect(lines).toContain("gpt-5.4 2 4 1 3 2 1.5 2 2.5 2.8");
     expect(lines).toContain("claude-sonnet-4 1 2 2 2 2 2 2 2 2");
   });
 
   it("prefers reviewer session logs and skips runs without readable metrics", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-metrics-reviewer-"));
+    const workspace = await mkdtemp(
+      join(tmpdir(), "gitlab-agentic-webhooks-metrics-reviewer-"),
+    );
     const runLogDir = join(workspace, "run-logs");
 
     await writeSessionLog(
@@ -86,21 +106,37 @@ describe("metrics CLI", () => {
         inputTokens: 500,
         outputTokens: 50,
         toolCalls: 7,
-        durationMs: 5000
+        durationMs: 5000,
       },
-      ["copilot", "reviewer"]
+      ["copilot", "reviewer"],
     );
     await mkdir(join(runLogDir, "run_002"), { recursive: true });
-    await mkdir(join(runLogDir, "run_003", "copilot", "reviewer"), { recursive: true });
-    await writeFile(join(runLogDir, "run_003", "copilot", "reviewer", "session.json"), "{not-json", "utf8");
+    await mkdir(join(runLogDir, "run_003", "copilot", "reviewer"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(runLogDir, "run_003", "copilot", "reviewer", "session.json"),
+      "{not-json",
+      "utf8",
+    );
 
     let stdout = "";
-    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
-      stdout += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
-      return true;
-    });
+    vi.spyOn(process.stdout, "write").mockImplementation(
+      (chunk: string | Uint8Array) => {
+        stdout +=
+          typeof chunk === "string"
+            ? chunk
+            : Buffer.from(chunk).toString("utf8");
+        return true;
+      },
+    );
 
-    const exitCode = await runCli(["metrics", "sessions", "--run-log-dir", runLogDir]);
+    const exitCode = await runCli([
+      "metrics",
+      "sessions",
+      "--run-log-dir",
+      runLogDir,
+    ]);
 
     expect(exitCode).toBe(0);
 
@@ -126,7 +162,7 @@ async function writeSessionLog(
     toolCalls: number;
     durationMs: number;
   },
-  pathSegments: string[] = ["copilot"]
+  pathSegments: string[] = ["copilot"],
 ): Promise<void> {
   const copilotDir = join(runLogDir, runName, ...pathSegments);
   await mkdir(copilotDir, { recursive: true });
@@ -139,7 +175,7 @@ async function writeSessionLog(
       timestamp: new Date().toISOString(),
       type: "assistant.turn_start",
       ephemeral: false,
-      data: {}
+      data: {},
     },
     {
       id: `${runName}_usage_1`,
@@ -155,8 +191,8 @@ async function writeSessionLog(
         cacheWriteTokens: 0,
         reasoningTokens: 0,
         cost: metrics.premiumRequests,
-        duration: metrics.durationMs
-      }
+        duration: metrics.durationMs,
+      },
     },
     ...Array.from({ length: metrics.toolCalls }, (_, index) => ({
       id: `${runName}_tool_${index + 1}`,
@@ -167,10 +203,10 @@ async function writeSessionLog(
       data: {
         toolName: "view",
         arguments: {
-          path: repoPath("src", `file-${index + 1}.ts`)
-        }
-      }
-    }))
+          path: repoPath("src", `file-${index + 1}.ts`),
+        },
+      },
+    })),
   ];
 
   await writeFile(
@@ -186,16 +222,16 @@ async function writeSessionLog(
           tenantId: null,
           mergeRequestIid: 1,
           workspacePath,
-          requestedModel: metrics.model
+          requestedModel: metrics.model,
         },
         prompt: `Prompt for ${runName}`,
         response: null,
         error: null,
-        events
+        events,
       },
       null,
-      2
+      2,
     ),
-    "utf8"
+    "utf8",
   );
 }

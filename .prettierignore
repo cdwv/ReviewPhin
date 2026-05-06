@@ -1,0 +1,6 @@
+.chart/
+.gitlab-ci.yml
+node_modules/
+tmp/
+dist/
+coverage/

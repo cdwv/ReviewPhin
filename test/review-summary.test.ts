@@ -19,7 +19,7 @@ describe("review summary note", () => {
           botUsername: "review-bot",
           modelProfileName: null,
           createdAt: timestamp,
-          updatedAt: timestamp
+          updatedAt: timestamp,
         },
         job: {
           id: "job_1",
@@ -35,7 +35,7 @@ describe("review summary note", () => {
           lastError: null,
           enqueuedAt: timestamp,
           startedAt: timestamp,
-          finishedAt: timestamp
+          finishedAt: timestamp,
         },
         mergeRequest: {
           id: 7,
@@ -43,14 +43,15 @@ describe("review summary note", () => {
           project_id: 123,
           title: "Add ```worker```",
           description: "Adds the worker",
-          web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+          web_url:
+            "https://gitlab.example.com/group/project/-/merge_requests/7",
           source_branch: "feature",
           target_branch: "main",
           author: {
             id: 42,
             username: "developer",
-            name: "Dev User"
-          }
+            name: "Dev User",
+          },
         },
         changes: [
           {
@@ -58,8 +59,8 @@ describe("review summary note", () => {
             new_path: "src/worker.ts",
             new_file: false,
             renamed_file: false,
-            deleted_file: false
-          }
+            deleted_file: false,
+          },
         ],
         versions: [],
         latestVersion: null,
@@ -69,12 +70,12 @@ describe("review summary note", () => {
           rootPath: tmpPath("review-workspaces", "run_1"),
           cleanupRoot: tmpPath("review-workspaces", "run_1"),
           strategy: "git",
-          instructionFiles: []
+          instructionFiles: [],
         },
         projectMemory: {
           enabled: true,
           page: null,
-          entries: []
+          entries: [],
         },
         snapshot: {
           id: "snapshot_1",
@@ -85,34 +86,38 @@ describe("review summary note", () => {
           mergeRequestJson: "{}",
           versionsJson: "[]",
           changesJson: "[]",
-           notesJson: "[]",
-           discussionsJson: "[]",
-           instructionsJson: "[]",
-           projectMemoryJson: null,
-           workspaceStrategy: "git",
-           createdAt: timestamp
-         }
+          notesJson: "[]",
+          discussionsJson: "[]",
+          instructionsJson: "[]",
+          projectMemoryJson: null,
+          workspaceStrategy: "git",
+          createdAt: timestamp,
+        },
       },
       reviewResult: {
         overview: {
           summary: "One fix remains",
-          overallSeverity: "high"
+          overallSeverity: "high",
         },
         findings: [
           {
             title: "Escape fenced prompt content",
-            body: "Preserve content like ```ts\nconst status = \"blocked\";\n``` in the copied prompt.",
+            body: 'Preserve content like ```ts\nconst status = "blocked";\n``` in the copied prompt.',
             severity: "high",
-            category: "correctness"
-          }
+            category: "correctness",
+          },
         ],
-        priorDispositions: []
+        priorDispositions: [],
       },
-      reviewedAt: new Date(timestamp)
+      reviewedAt: new Date(timestamp),
     });
 
-    expect(note).toContain("<details><summary>Suggested fixes prompt</summary>");
-    expect(note).toContain("```md\nReview and fix the issues called out for merge request \"Add \\`\\`\\`worker\\`\\`\\`\"");
+    expect(note).toContain(
+      "<details><summary>Suggested fixes prompt</summary>",
+    );
+    expect(note).toContain(
+      '```md\nReview and fix the issues called out for merge request "Add \\`\\`\\`worker\\`\\`\\`"',
+    );
     expect(note).toContain("Preserve content like \\`\\`\\`ts");
     expect(note).toContain("\n```\n\n</details>");
   });
@@ -132,7 +137,7 @@ describe("review summary note", () => {
           botUsername: "review-bot",
           modelProfileName: null,
           createdAt: timestamp,
-          updatedAt: timestamp
+          updatedAt: timestamp,
         },
         job: {
           id: "job_1",
@@ -148,7 +153,7 @@ describe("review summary note", () => {
           lastError: null,
           enqueuedAt: timestamp,
           startedAt: timestamp,
-          finishedAt: timestamp
+          finishedAt: timestamp,
         },
         mergeRequest: {
           id: 7,
@@ -156,14 +161,15 @@ describe("review summary note", () => {
           project_id: 123,
           title: "Keep storage state visible",
           description: "Adds storage migration follow-up",
-          web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+          web_url:
+            "https://gitlab.example.com/group/project/-/merge_requests/7",
           source_branch: "feature",
           target_branch: "main",
           author: {
             id: 42,
             username: "developer",
-            name: "Dev User"
-          }
+            name: "Dev User",
+          },
         },
         changes: [],
         versions: [],
@@ -174,12 +180,12 @@ describe("review summary note", () => {
           rootPath: tmpPath("review-workspaces", "run_2"),
           cleanupRoot: tmpPath("review-workspaces", "run_2"),
           strategy: "git",
-          instructionFiles: []
+          instructionFiles: [],
         },
         projectMemory: {
           enabled: true,
           page: null,
-          entries: []
+          entries: [],
         },
         snapshot: {
           id: "snapshot_2",
@@ -195,36 +201,40 @@ describe("review summary note", () => {
           instructionsJson: "[]",
           projectMemoryJson: null,
           workspaceStrategy: "git",
-          createdAt: timestamp
-        }
+          createdAt: timestamp,
+        },
       },
       reviewResult: {
         overview: {
-          summary: "One thread was dismissed, but merge readiness still depends on an older open storage fix.",
+          summary:
+            "One thread was dismissed, but merge readiness still depends on an older open storage fix.",
           overallSeverity: "medium",
           mergeReadiness: {
             status: "needs_attention",
             confidence: "medium",
-            summary: "Ready to dismiss the targeted migration thread, but still needs the remaining storage correctness fix from the previous review."
-          }
+            summary:
+              "Ready to dismiss the targeted migration thread, but still needs the remaining storage correctness fix from the previous review.",
+          },
         },
         findings: [],
-        priorDispositions: []
+        priorDispositions: [],
       },
       activeFindings: [
         {
           title: "Keep latest completed finding status in sync",
           body: "Status writes should update the latest completed finding row so future re-reviews read the same state that reconciliation writes.",
           severity: "medium",
-          category: "correctness"
-        }
+          category: "correctness",
+        },
       ],
-      reviewedAt: new Date(timestamp)
+      reviewedAt: new Date(timestamp),
     });
 
     expect(note).toContain("- **Findings snapshot:** 1 finding (1 medium)");
     expect(note).toContain("Keep latest completed finding status in sync");
-    expect(note).toContain("Status writes should update the latest completed finding row");
+    expect(note).toContain(
+      "Status writes should update the latest completed finding row",
+    );
   });
 
   it("does not report ready when persisted open findings remain after a rerun", () => {
@@ -242,7 +252,7 @@ describe("review summary note", () => {
           botUsername: "review-bot",
           modelProfileName: null,
           createdAt: timestamp,
-          updatedAt: timestamp
+          updatedAt: timestamp,
         },
         job: {
           id: "job_1",
@@ -258,7 +268,7 @@ describe("review summary note", () => {
           lastError: null,
           enqueuedAt: timestamp,
           startedAt: timestamp,
-          finishedAt: timestamp
+          finishedAt: timestamp,
         },
         mergeRequest: {
           id: 7,
@@ -266,14 +276,15 @@ describe("review summary note", () => {
           project_id: 123,
           title: "Keep summary readiness aligned",
           description: "Resolves one thread",
-          web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+          web_url:
+            "https://gitlab.example.com/group/project/-/merge_requests/7",
           source_branch: "feature",
           target_branch: "main",
           author: {
             id: 42,
             username: "developer",
-            name: "Dev User"
-          }
+            name: "Dev User",
+          },
         },
         changes: [],
         versions: [],
@@ -284,12 +295,12 @@ describe("review summary note", () => {
           rootPath: tmpPath("review-workspaces", "run_3"),
           cleanupRoot: tmpPath("review-workspaces", "run_3"),
           strategy: "git",
-          instructionFiles: []
+          instructionFiles: [],
         },
         projectMemory: {
           enabled: true,
           page: null,
-          entries: []
+          entries: [],
         },
         snapshot: {
           id: "snapshot_3",
@@ -305,8 +316,8 @@ describe("review summary note", () => {
           instructionsJson: "[]",
           projectMemoryJson: null,
           workspaceStrategy: "git",
-          createdAt: timestamp
-        }
+          createdAt: timestamp,
+        },
       },
       reviewResult: {
         overview: {
@@ -316,30 +327,36 @@ describe("review summary note", () => {
           mergeReadiness: {
             status: "ready",
             confidence: "high",
-            summary: "No blocking issues were found in this rerun."
+            summary: "No blocking issues were found in this rerun.",
           },
-          highlights: ["The rerun resolved the directly requested thread."]
+          highlights: ["The rerun resolved the directly requested thread."],
         },
         findings: [],
-        priorDispositions: []
+        priorDispositions: [],
       },
       activeFindings: [
         {
           title: "Keep latest completed finding status in sync",
           body: "Status writes should update the latest completed finding row so future re-reviews read the same state that reconciliation writes.",
           severity: "medium",
-          category: "correctness"
-        }
+          category: "correctness",
+        },
       ],
-      reviewedAt: new Date(timestamp)
+      reviewedAt: new Date(timestamp),
     });
 
-    expect(note).toContain("Persisted open findings remain after reconciling the latest review");
+    expect(note).toContain(
+      "Persisted open findings remain after reconciling the latest review",
+    );
     expect(note).toContain("- **Status:** Needs attention");
     expect(note).toContain("- **Confidence:** Medium");
-    expect(note).toContain("- **Rationale:** Persisted open findings remain and should be reviewed before merge.");
+    expect(note).toContain(
+      "- **Rationale:** Persisted open findings remain and should be reviewed before merge.",
+    );
     expect(note).toContain("- **Overall severity:** Medium");
-    expect(note).toContain("<details><summary>Suggested fixes prompt</summary>");
+    expect(note).toContain(
+      "<details><summary>Suggested fixes prompt</summary>",
+    );
     expect(note).not.toContain("- **Status:** Ready");
   });
 });

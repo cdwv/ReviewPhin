@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitLabClient } from "../src/gitlab/client.js";
-import type { GitLabDiscussion, GitLabNoteHookPayload } from "../src/gitlab/types.js";
+import type {
+  GitLabDiscussion,
+  GitLabNoteHookPayload,
+} from "../src/gitlab/types.js";
 import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
 
@@ -18,17 +21,17 @@ const tenant = {
   botUsername: "review-bot",
   modelProfileName: null,
   createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString()
+  updatedAt: new Date().toISOString(),
 };
 
 const directMentionPayload: GitLabNoteHookPayload = {
   object_kind: "note",
   project: {
     id: 123,
-    web_url: "https://gitlab.example.com/group/project"
+    web_url: "https://gitlab.example.com/group/project",
   },
   repository: {
-    homepage: "https://gitlab.example.com/group/project"
+    homepage: "https://gitlab.example.com/group/project",
   },
   merge_request: {
     iid: 7,
@@ -37,21 +40,21 @@ const directMentionPayload: GitLabNoteHookPayload = {
     source_branch: "feature",
     target_branch: "main",
     last_commit: {
-      id: "abc123"
-    }
+      id: "abc123",
+    },
   },
   object_attributes: {
     id: 55,
     note: "@review-bot please review this",
     noteable_type: "MergeRequest",
-    url: "https://gitlab.example.com/group/project/-/merge_requests/7#note_55"
+    url: "https://gitlab.example.com/group/project/-/merge_requests/7#note_55",
   },
   user: {
     id: 42,
     username: "developer",
     name: "Dev User",
-    web_url: "https://gitlab.example.com/developer"
-  }
+    web_url: "https://gitlab.example.com/developer",
+  },
 };
 
 const followUpPayload: GitLabNoteHookPayload = {
@@ -60,8 +63,8 @@ const followUpPayload: GitLabNoteHookPayload = {
     id: 56,
     note: "Please make this more human.",
     noteable_type: "MergeRequest",
-    url: "https://gitlab.example.com/group/project/-/merge_requests/7#note_56"
-  }
+    url: "https://gitlab.example.com/group/project/-/merge_requests/7#note_56",
+  },
 };
 
 describe("GitLab reactions", () => {
@@ -73,267 +76,312 @@ describe("GitLab reactions", () => {
   });
 
   it("lists and creates merge request note award emojis", async () => {
-    const fetchMock = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      const url = String(input);
-      if (init?.method === "GET") {
-        expect(url).toBe(
-          "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/notes/55/award_emoji?page=1&per_page=100"
-        );
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      expect(init?.method).toBe("POST");
-      expect(url).toBe("https://gitlab.example.com/api/v4/projects/123/merge_requests/7/notes/55/award_emoji");
-      expect(new Headers(init?.headers).get("content-type")).toBe("application/x-www-form-urlencoded");
-      expect(String(init?.body)).toContain("name=eyes");
-
-      return new Response(
-        JSON.stringify({
-          id: 1,
-          name: "eyes",
-          user: {
-            id: 999,
-            username: "review-bot",
-            name: "Review Bot"
-          },
-          created_at: new Date().toISOString()
-        }),
-        {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "GET") {
+          expect(url).toBe(
+            "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/notes/55/award_emoji?page=1&per_page=100",
+          );
+          return new Response("[]", {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
         }
-      );
-    });
 
-    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+        expect(init?.method).toBe("POST");
+        expect(url).toBe(
+          "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/notes/55/award_emoji",
+        );
+        expect(new Headers(init?.headers).get("content-type")).toBe(
+          "application/x-www-form-urlencoded",
+        );
+        expect(String(init?.body)).toContain("name=eyes");
+
+        return new Response(
+          JSON.stringify({
+            id: 1,
+            name: "eyes",
+            user: {
+              id: 999,
+              username: "review-bot",
+              name: "Review Bot",
+            },
+            created_at: new Date().toISOString(),
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    );
+
+    globalThis.fetch = fetchMock;
 
     const client = new GitLabClient({
       baseUrl: "https://gitlab.example.com",
       apiToken: "token",
-      logger: createLogger("silent")
+      logger: createLogger("silent"),
     });
 
     const existing = await client.listMergeRequestNoteAwardEmojis(123, 7, 55);
     expect(existing).toEqual([]);
 
-    const created = await client.createMergeRequestNoteAwardEmoji(123, 7, 55, "eyes");
+    const created = await client.createMergeRequestNoteAwardEmoji(
+      123,
+      7,
+      55,
+      "eyes",
+    );
     expect(created.name).toBe("eyes");
   });
 
   it("adds reactions to direct mention trigger notes when a review starts and completes", async () => {
-    const fetchMock = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      const url = String(input);
-      if (init?.method === "GET" && url.includes("/discussions?")) {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      if (init?.method === "GET" && url.includes("/notes/55/award_emoji")) {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      const body = String(init?.body);
-      const reactionName = body.includes("white_check_mark") ? "white_check_mark" : "eyes";
-      return new Response(
-        JSON.stringify({
-          id: reactionName === "eyes" ? 1 : 2,
-          name: reactionName,
-          user: {
-            id: 999,
-            username: "review-bot",
-            name: "Review Bot"
-          },
-          created_at: new Date().toISOString()
-        }),
-        {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "GET" && url.includes("/discussions?")) {
+          return new Response("[]", {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
         }
-      );
-    });
-    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+        if (init?.method === "GET" && url.includes("/notes/55/award_emoji")) {
+          return new Response("[]", {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
+        }
+
+        const body = String(init?.body);
+        const reactionName = body.includes("white_check_mark")
+          ? "white_check_mark"
+          : "eyes";
+        return new Response(
+          JSON.stringify({
+            id: reactionName === "eyes" ? 1 : 2,
+            name: reactionName,
+            user: {
+              id: 999,
+              username: "review-bot",
+              name: "Review Bot",
+            },
+            created_at: new Date().toISOString(),
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    );
+    globalThis.fetch = fetchMock;
 
     const worker = createWorker({
       payload: directMentionPayload,
-      discussions: []
+      discussions: [],
     });
 
     await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
       kind: "direct-mention",
       note: {
         kind: "merge-request-note",
-        noteId: 55
-      }
+        noteId: 55,
+      },
     });
     await worker.processJob("job_1");
 
     const postedUrls = fetchMock.mock.calls
-      .filter(([input, init]) => init?.method === "POST" && String(input).includes("/award_emoji"))
+      .filter(
+        ([input, init]) =>
+          init?.method === "POST" && String(input).includes("/award_emoji"),
+      )
       .map(([input]) => String(input));
     const postedBodies = fetchMock.mock.calls
-      .filter(([input, init]) => init?.method === "POST" && String(input).includes("/award_emoji"))
+      .filter(
+        ([input, init]) =>
+          init?.method === "POST" && String(input).includes("/award_emoji"),
+      )
       .map(([, init]) => String(init?.body));
 
-    expect(postedUrls.every((url) => url.includes("/merge_requests/7/notes/55/award_emoji"))).toBe(true);
+    expect(
+      postedUrls.every((url) =>
+        url.includes("/merge_requests/7/notes/55/award_emoji"),
+      ),
+    ).toBe(true);
     expect(postedBodies.some((body) => body.includes("name=eyes"))).toBe(true);
-    expect(postedBodies.some((body) => body.includes("name=white_check_mark"))).toBe(true);
+    expect(
+      postedBodies.some((body) => body.includes("name=white_check_mark")),
+    ).toBe(true);
   });
 
   it("adds a friendly failure reaction to direct mention trigger notes on terminal failure", async () => {
-    const fetchMock = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      const url = String(input);
-      if (init?.method === "GET" && url.includes("/discussions?")) {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      if (init?.method === "GET" && url.includes("/notes/55/award_emoji")) {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      const body = String(init?.body);
-      const reactionName = body.includes("confounded") ? "confounded" : "eyes";
-      return new Response(
-        JSON.stringify({
-          id: reactionName === "eyes" ? 1 : 2,
-          name: reactionName,
-          user: {
-            id: 999,
-            username: "review-bot",
-            name: "Review Bot"
-          },
-          created_at: new Date().toISOString()
-        }),
-        {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "GET" && url.includes("/discussions?")) {
+          return new Response("[]", {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
         }
-      );
-    });
-    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+        if (init?.method === "GET" && url.includes("/notes/55/award_emoji")) {
+          return new Response("[]", {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
+        }
+
+        const body = String(init?.body);
+        const reactionName = body.includes("confounded")
+          ? "confounded"
+          : "eyes";
+        return new Response(
+          JSON.stringify({
+            id: reactionName === "eyes" ? 1 : 2,
+            name: reactionName,
+            user: {
+              id: 999,
+              username: "review-bot",
+              name: "Review Bot",
+            },
+            created_at: new Date().toISOString(),
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    );
+    globalThis.fetch = fetchMock;
 
     const worker = createWorker({
       payload: directMentionPayload,
       discussions: [],
       jobRetryCount: 3,
-      reviewError: new Error("final failure")
+      reviewError: new Error("final failure"),
     });
 
     await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
       kind: "direct-mention",
       note: {
         kind: "merge-request-note",
-        noteId: 55
-      }
+        noteId: 55,
+      },
     });
 
     await expect(worker.processJob("job_1")).rejects.toThrow("final failure");
 
     const postedBodies = fetchMock.mock.calls
-      .filter(([input, init]) => init?.method === "POST" && String(input).includes("/award_emoji"))
+      .filter(
+        ([input, init]) =>
+          init?.method === "POST" && String(input).includes("/award_emoji"),
+      )
       .map(([, init]) => String(init?.body));
 
     expect(postedBodies.some((body) => body.includes("name=eyes"))).toBe(true);
-    expect(postedBodies.some((body) => body.includes("name=confounded"))).toBe(true);
-    expect(postedBodies.some((body) => body.includes("name=white_check_mark"))).toBe(false);
+    expect(postedBodies.some((body) => body.includes("name=confounded"))).toBe(
+      true,
+    );
+    expect(
+      postedBodies.some((body) => body.includes("name=white_check_mark")),
+    ).toBe(false);
   });
 
   it("does not add the failure reaction while retries remain", async () => {
-    const fetchMock = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      const url = String(input);
-      if (init?.method === "GET" && url.includes("/discussions?")) {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      if (init?.method === "GET" && url.includes("/notes/55/award_emoji")) {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      return new Response(
-        JSON.stringify({
-          id: 1,
-          name: "eyes",
-          user: {
-            id: 999,
-            username: "review-bot",
-            name: "Review Bot"
-          },
-          created_at: new Date().toISOString()
-        }),
-        {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "GET" && url.includes("/discussions?")) {
+          return new Response("[]", {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
         }
-      );
-    });
-    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+        if (init?.method === "GET" && url.includes("/notes/55/award_emoji")) {
+          return new Response("[]", {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
+        }
+
+        return new Response(
+          JSON.stringify({
+            id: 1,
+            name: "eyes",
+            user: {
+              id: 999,
+              username: "review-bot",
+              name: "Review Bot",
+            },
+            created_at: new Date().toISOString(),
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    );
+    globalThis.fetch = fetchMock;
 
     const worker = createWorker({
       payload: directMentionPayload,
       discussions: [],
       jobRetryCount: 0,
-      reviewError: new Error("retryable failure")
+      reviewError: new Error("retryable failure"),
     });
 
     await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
       kind: "direct-mention",
       note: {
         kind: "merge-request-note",
-        noteId: 55
-      }
+        noteId: 55,
+      },
     });
 
     await expect(worker.processJob("job_1")).resolves.toEqual({
-      requeueAfterMs: 5000
+      requeueAfterMs: 5000,
     });
 
     const postedBodies = fetchMock.mock.calls
-      .filter(([input, init]) => init?.method === "POST" && String(input).includes("/award_emoji"))
+      .filter(
+        ([input, init]) =>
+          init?.method === "POST" && String(input).includes("/award_emoji"),
+      )
       .map(([, init]) => String(init?.body));
 
     expect(postedBodies.some((body) => body.includes("name=eyes"))).toBe(true);
-    expect(postedBodies.some((body) => body.includes("name=confounded"))).toBe(false);
+    expect(postedBodies.some((body) => body.includes("name=confounded"))).toBe(
+      false,
+    );
   });
 
   it("skips reactions for follow-up discussion notes", async () => {
@@ -349,7 +397,7 @@ describe("GitLab reactions", () => {
             author: { id: 999, username: "review-bot", name: "Review Bot" },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            system: false
+            system: false,
           },
           {
             id: 56,
@@ -358,49 +406,53 @@ describe("GitLab reactions", () => {
             author: { id: 42, username: "developer", name: "Dev User" },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            system: false
-          }
-        ]
-      }
+            system: false,
+          },
+        ],
+      },
     ] satisfies GitLabDiscussion[];
 
-    const fetchMock = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      const url = String(input);
-      if (init?.method === "GET" && url.includes("/discussions?")) {
-        return new Response(JSON.stringify(discussions), {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      const body = String(init?.body);
-      const reactionName = body.includes("white_check_mark") ? "white_check_mark" : "eyes";
-      return new Response(
-        JSON.stringify({
-          id: reactionName === "eyes" ? 1 : 2,
-          name: reactionName,
-          user: {
-            id: 999,
-            username: "review-bot",
-            name: "Review Bot"
-          },
-          created_at: new Date().toISOString()
-        }),
-        {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "GET" && url.includes("/discussions?")) {
+          return new Response(JSON.stringify(discussions), {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
         }
-      );
-    });
-    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+        const body = String(init?.body);
+        const reactionName = body.includes("white_check_mark")
+          ? "white_check_mark"
+          : "eyes";
+        return new Response(
+          JSON.stringify({
+            id: reactionName === "eyes" ? 1 : 2,
+            name: reactionName,
+            user: {
+              id: 999,
+              username: "review-bot",
+              name: "Review Bot",
+            },
+            created_at: new Date().toISOString(),
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    );
+    globalThis.fetch = fetchMock;
 
     const worker = createWorker({
       payload: followUpPayload,
-      discussions
+      discussions,
     });
 
     await worker.createInteractionJobFromWebhook(followUpPayload, tenant, {
@@ -408,12 +460,14 @@ describe("GitLab reactions", () => {
       note: {
         kind: "discussion-note",
         discussionId: "disc_1",
-        noteId: 56
-      }
+        noteId: 56,
+      },
     });
     await worker.processJob("job_1");
 
-    const awardEmojiRequests = fetchMock.mock.calls.filter(([input]) => String(input).includes("/award_emoji"));
+    const awardEmojiRequests = fetchMock.mock.calls.filter(([input]) =>
+      String(input).includes("/award_emoji"),
+    );
 
     expect(awardEmojiRequests).toEqual([]);
   });
@@ -439,25 +493,25 @@ function createWorker(input: {
     lastError: null,
     enqueuedAt: new Date().toISOString(),
     startedAt: null,
-    finishedAt: null
+    finishedAt: null,
   };
 
   const storage = {
     stores: {
       interactionJobs: {
-        get: vi.fn(async () => job)
+        get: vi.fn(async () => job),
       },
       discussionMappings: {
-        list: vi.fn(async () => [])
+        list: vi.fn(async () => []),
       },
       modelProfiles: {
         get: vi.fn(async () => null),
-        find: vi.fn(async () => null)
-      }
+        find: vi.fn(async () => null),
+      },
     },
     createOrGetInteractionJob: vi.fn(async () => ({
       job,
-      created: true
+      created: true,
     })),
     getInteractionJobById: vi.fn(async () => job),
     markJobInProgress: vi.fn(async () => {}),
@@ -476,7 +530,7 @@ function createWorker(input: {
       resultJson: null,
       error: null,
       startedAt: new Date().toISOString(),
-      finishedAt: null
+      finishedAt: null,
     })),
     getModelProfileByName: vi.fn(async () => null),
     getDefaultModelProfile: vi.fn(async () => null),
@@ -487,13 +541,13 @@ function createWorker(input: {
     markJobCompleted: vi.fn(async () => {}),
     failInteractionRun: vi.fn(async () => {}),
     markJobQueued: vi.fn(async () => {}),
-    markJobFailed: vi.fn(async () => {})
+    markJobFailed: vi.fn(async () => {}),
   };
 
   return new ReviewWorker({
     storage: storage as never,
     tenantRegistry: {
-      getTenantById: vi.fn(async () => tenant)
+      getTenantById: vi.fn(async () => tenant),
     } as never,
     hydrator: {
       loadRoutingContext: vi.fn(async () => ({
@@ -505,14 +559,15 @@ function createWorker(input: {
           project_id: tenant.projectId,
           title: "Add worker",
           description: "Adds the worker",
-          web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+          web_url:
+            "https://gitlab.example.com/group/project/-/merge_requests/7",
           source_branch: "feature",
           target_branch: "main",
           author: {
             id: 42,
             username: "developer",
-            name: "Dev User"
-          }
+            name: "Dev User",
+          },
         },
         changes: [],
         notes: [],
@@ -521,13 +576,13 @@ function createWorker(input: {
           rootPath: join("tmp", "workspace-routing"),
           cleanupRoot: join("tmp", "cleanup-routing"),
           strategy: "git",
-          instructionFiles: []
+          instructionFiles: [],
         },
         projectMemory: {
           enabled: true,
           page: null,
-          entries: []
-        }
+          entries: [],
+        },
       })),
       hydrate: vi.fn(async () => ({
         tenant,
@@ -538,14 +593,15 @@ function createWorker(input: {
           project_id: tenant.projectId,
           title: "Add worker",
           description: "Adds the worker",
-          web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+          web_url:
+            "https://gitlab.example.com/group/project/-/merge_requests/7",
           source_branch: "feature",
           target_branch: "main",
           author: {
             id: 42,
             username: "developer",
-            name: "Dev User"
-          }
+            name: "Dev User",
+          },
         },
         versions: [],
         latestVersion: null,
@@ -556,12 +612,12 @@ function createWorker(input: {
           rootPath: join("tmp", "workspace"),
           cleanupRoot: join("tmp", "cleanup"),
           strategy: "targeted-files",
-          instructionFiles: []
+          instructionFiles: [],
         },
         projectMemory: {
           enabled: true,
           page: null,
-          entries: []
+          entries: [],
         },
         snapshot: {
           id: "snapshot_1",
@@ -577,12 +633,12 @@ function createWorker(input: {
           instructionsJson: "[]",
           projectMemoryJson: null,
           workspaceStrategy: "targeted-files",
-          createdAt: new Date().toISOString()
-        }
-      }))
+          createdAt: new Date().toISOString(),
+        },
+      })),
     } as never,
     workspaceMaterializer: {
-      cleanup: vi.fn(async () => {})
+      cleanup: vi.fn(async () => {}),
     } as never,
     reviewProviderFactory: {
       createProvider: vi.fn(() => ({
@@ -595,28 +651,28 @@ function createWorker(input: {
           return {
             overview: {
               summary: "Done",
-              overallSeverity: "low" as const
+              overallSeverity: "low" as const,
             },
             findings: [],
-            priorDispositions: []
+            priorDispositions: [],
           };
-        })
-      }))
+        }),
+      })),
     },
     chatterRunnerFactory: {
       createRunner: vi.fn(() => ({
         run: vi.fn(async () => ({
           memory: {
             status: "skipped" as const,
-            summary: "No durable memory detected."
+            summary: "No durable memory detected.",
           },
-          replies: []
+          replies: [],
         })),
         sessionPaths: {
           memory: ["copilot", "chatter", "memory"],
-          reply: ["copilot", "chatter", "reply"]
-        }
-      }))
+          reply: ["copilot", "chatter", "reply"],
+        },
+      })),
     } as never,
     reconciler: {
       reconcile: vi.fn(async () => ({
@@ -625,12 +681,12 @@ function createWorker(input: {
         replied: 0,
         resolved: 0,
         kept: 0,
-        summaryNoteAction: "created" as const
-      }))
+        summaryNoteAction: "created" as const,
+      })),
     } as never,
     logger: createLogger("silent"),
     runLogDir: join("tmp", "run-logs"),
     maxJobRetries: 3,
-    retryBackoffMs: 5000
+    retryBackoffMs: 5000,
   });
 }

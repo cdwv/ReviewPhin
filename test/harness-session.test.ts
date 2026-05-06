@@ -1,27 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-  createSessionMock,
-  stopMock
-} = vi.hoisted(() => ({
+const { createSessionMock, stopMock } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
-  stopMock: vi.fn()
+  stopMock: vi.fn(),
 }));
 
 vi.mock("@github/copilot-sdk", () => ({
   CopilotClient: vi.fn().mockImplementation(() => ({
     createSession: createSessionMock,
-    stop: stopMock
+    stop: stopMock,
   })),
   defineTool: (name: string, definition: object) => ({
     name,
-    ...definition
-  })
+    ...definition,
+  }),
 }));
 
 import { CopilotClient } from "@github/copilot-sdk";
 import { HarnessSessionRuntime } from "../src/harness/session.js";
-import type { HarnessModelConfig, HarnessTenantContext } from "../src/harness/types.js";
+import type {
+  HarnessModelConfig,
+  HarnessTenantContext,
+} from "../src/harness/types.js";
 import { tmpPath } from "./test-paths.js";
 
 describe("HarnessSessionRuntime", () => {
@@ -35,12 +35,12 @@ describe("HarnessSessionRuntime", () => {
     const load = vi.fn(async () => ({
       enabled: true,
       page: null,
-      entries: []
+      entries: [],
     }));
     const saveEntries = vi.fn(async () => ({
       enabled: true,
       page: null,
-      entries: [{ text: "Remember this." }]
+      entries: [{ text: "Remember this." }],
     }));
     createSessionMock.mockResolvedValue(createSession());
     stopMock.mockResolvedValue(undefined);
@@ -50,13 +50,13 @@ describe("HarnessSessionRuntime", () => {
       projectMemoryBackendFactory: {
         createForHarnessRun: vi.fn(() => ({
           load,
-          saveEntries
+          saveEntries,
         })),
-        createForGitLabClient: vi.fn()
+        createForGitLabClient: vi.fn(),
       },
       runLogDir: tmpPath(),
       timeoutMs: 1_000,
-      maxPromptMemoryChars: 5_000
+      maxPromptMemoryChars: 5_000,
     });
 
     await runtime.run({
@@ -67,23 +67,36 @@ describe("HarnessSessionRuntime", () => {
       tenant: createTenant(),
       tools: ["glob", "rg", "view", "add_memory_entry"],
       subagents: ["context-analyst", "review-author"],
-      agent: "review-author"
+      agent: "review-author",
     });
 
     const sessionOptions = createSessionMock.mock.calls[0]?.[0];
-    expect(sessionOptions.availableTools).toEqual(["glob", "rg", "view", "add_memory_entry"]);
-    expect(sessionOptions.customAgents[0].tools).toEqual(["glob", "rg", "view"]);
-    expect(sessionOptions.customAgents[1].tools).toEqual(["glob", "rg", "view"]);
+    expect(sessionOptions.availableTools).toEqual([
+      "glob",
+      "rg",
+      "view",
+      "add_memory_entry",
+    ]);
+    expect(sessionOptions.customAgents[0].tools).toEqual([
+      "glob",
+      "rg",
+      "view",
+    ]);
+    expect(sessionOptions.customAgents[1].tools).toEqual([
+      "glob",
+      "rg",
+      "view",
+    ]);
 
     await sessionOptions.tools[0].handler({
       memory: "Remember this.",
       rationale: "Durable policy",
-      supersedes: []
+      supersedes: [],
     });
 
     expect(load).toHaveBeenCalledOnce();
     expect(saveEntries).toHaveBeenCalledWith([{ text: "Remember this." }], {
-      baseEntries: []
+      baseEntries: [],
     });
   });
 
@@ -95,11 +108,11 @@ describe("HarnessSessionRuntime", () => {
       logger: createLogger(),
       projectMemoryBackendFactory: {
         createForHarnessRun: vi.fn(),
-        createForGitLabClient: vi.fn()
+        createForGitLabClient: vi.fn(),
       },
       runLogDir: tmpPath(),
       timeoutMs: 1_000,
-      maxPromptMemoryChars: 5_000
+      maxPromptMemoryChars: 5_000,
     });
 
     await runtime.run({
@@ -108,18 +121,18 @@ describe("HarnessSessionRuntime", () => {
         ...createModelConfig(),
         provider: {
           baseUrl: "http://llm.internal/v1",
-          type: "openai"
-        }
+          type: "openai",
+        },
       },
       model: "custom-review",
       tools: ["glob", "rg", "view"],
-      subagents: []
+      subagents: [],
     });
 
     const sessionOptions = createSessionMock.mock.calls[0]?.[0];
     expect(sessionOptions.provider).toEqual({
       baseUrl: "http://llm.internal/v1",
-      type: "openai"
+      type: "openai",
     });
     expect(sessionOptions.enableConfigDiscovery).toBe(false);
   });
@@ -132,26 +145,26 @@ describe("HarnessSessionRuntime", () => {
       logger: createLogger(),
       projectMemoryBackendFactory: {
         createForHarnessRun: vi.fn(),
-        createForGitLabClient: vi.fn()
+        createForGitLabClient: vi.fn(),
       },
       runLogDir: tmpPath(),
       timeoutMs: 1_000,
-      maxPromptMemoryChars: 5_000
+      maxPromptMemoryChars: 5_000,
     });
 
     await runtime.run({
       prompt: "Review this.",
       modelConfig: {
         ...createModelConfig(),
-        authToken: "github-token"
+        authToken: "github-token",
       },
       model: "gpt-5.4",
       tools: ["glob", "rg", "view"],
-      subagents: []
+      subagents: [],
     });
 
     expect(CopilotClient).toHaveBeenCalledWith({
-      gitHubToken: "github-token"
+      gitHubToken: "github-token",
     });
   });
 });
@@ -165,14 +178,14 @@ function createSession() {
         content: JSON.stringify({
           overview: {
             summary: "Looks good",
-            overallSeverity: "low"
+            overallSeverity: "low",
           },
           findings: [],
-          priorDispositions: []
-        })
-      }
+          priorDispositions: [],
+        }),
+      },
     })),
-    disconnect: vi.fn(async () => {})
+    disconnect: vi.fn(async () => {}),
   };
 }
 
@@ -180,7 +193,7 @@ function createLogger() {
   return {
     warn: vi.fn(),
     error: vi.fn(),
-    child: vi.fn(() => createLogger())
+    child: vi.fn(() => createLogger()),
   } as never;
 }
 
@@ -193,7 +206,7 @@ function createModelConfig(): HarnessModelConfig {
     authToken: null,
     provider: undefined,
     providerBaseUrl: null,
-    providerType: null
+    providerType: null,
   };
 }
 
@@ -203,6 +216,6 @@ function createTenant(): HarnessTenantContext {
     baseUrl: "https://gitlab.example.com",
     projectId: 1085,
     apiToken: "token",
-    memoryEnabled: true
+    memoryEnabled: true,
   };
 }

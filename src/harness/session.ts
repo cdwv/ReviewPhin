@@ -4,7 +4,7 @@ import {
   CopilotClient,
   type AssistantMessageEvent,
   type PermissionHandler,
-  type SessionEvent
+  type SessionEvent,
 } from "@github/copilot-sdk";
 import type { Logger } from "pino";
 
@@ -22,7 +22,14 @@ interface HarnessSessionRuntimeOptions {
   runLogDir: string;
   timeoutMs: number;
   maxPromptMemoryChars: number;
-  sdkLogLevel?: "none" | "error" | "warning" | "info" | "debug" | "all" | undefined;
+  sdkLogLevel?:
+    | "none"
+    | "error"
+    | "warning"
+    | "info"
+    | "debug"
+    | "all"
+    | undefined;
   cliPath?: string | undefined;
 }
 
@@ -45,7 +52,7 @@ export class HarnessSessionRuntime {
     this.sdkLogLevel = options.sdkLogLevel;
     this.cliPath = options.cliPath;
     this.memoryConsolidator = new ProjectMemoryConsolidator({
-      runSession: async (spec) => this.run(spec)
+      runSession: async (spec) => this.run(spec),
     });
   }
 
@@ -55,7 +62,7 @@ export class HarnessSessionRuntime {
         ? { gitHubToken: spec.modelConfig.authToken }
         : {}),
       ...(this.sdkLogLevel ? { logLevel: this.sdkLogLevel } : {}),
-      ...(this.cliPath ? { cliPath: this.cliPath } : {})
+      ...(this.cliPath ? { cliPath: this.cliPath } : {}),
     });
 
     const runLog = new HarnessRunLog({
@@ -63,7 +70,7 @@ export class HarnessSessionRuntime {
       prompt: spec.prompt,
       model: spec.model,
       logging: spec.logging,
-      metadata: spec.metadata
+      metadata: spec.metadata,
     });
 
     const permissionHandler: PermissionHandler = (request) => {
@@ -79,7 +86,7 @@ export class HarnessSessionRuntime {
         ? this.projectMemoryBackendFactory.createForHarnessRun({
             tenant: spec.tenant,
             logger: this.logger,
-            logging: spec.logging
+            logging: spec.logging,
           })
         : null;
     const memoryService =
@@ -89,14 +96,14 @@ export class HarnessSessionRuntime {
               interactionRunId: spec.logging?.interactionRunId ?? null,
               interactionJobId: spec.logging?.interactionJobId ?? null,
               tenantId: spec.logging?.tenantId ?? spec.tenant.id,
-              component: "project-memory-service"
+              component: "project-memory-service",
             }),
             backend: memoryBackend,
             consolidator: this.memoryConsolidator,
             modelConfig: spec.modelConfig,
             tenant: spec.tenant,
             logging: spec.logging,
-            maxPromptMemoryChars: this.maxPromptMemoryChars
+            maxPromptMemoryChars: this.maxPromptMemoryChars,
           })
         : null;
 
@@ -104,20 +111,25 @@ export class HarnessSessionRuntime {
     const events: SessionEvent[] = [];
 
     try {
-      const { registeredTools, availableTools, enabledToolIds } = resolveHarnessTools(spec.tools, {
-        memoryService
-      });
+      const { registeredTools, availableTools, enabledToolIds } =
+        resolveHarnessTools(spec.tools, {
+          memoryService,
+        });
 
       const session = await client.createSession({
         onPermissionRequest: permissionHandler,
-        ...(spec.workingDirectory ? { workingDirectory: spec.workingDirectory } : {}),
+        ...(spec.workingDirectory
+          ? { workingDirectory: spec.workingDirectory }
+          : {}),
         ...(spec.model ? { model: spec.model } : {}),
-        ...(spec.modelConfig.provider ? { provider: spec.modelConfig.provider } : {}),
+        ...(spec.modelConfig.provider
+          ? { provider: spec.modelConfig.provider }
+          : {}),
         ...(spec.modelConfig.provider ? { enableConfigDiscovery: false } : {}),
         tools: registeredTools,
         availableTools,
         customAgents: resolveHarnessSubagents(spec.subagents, enabledToolIds),
-        ...(spec.agent ? { agent: spec.agent } : {})
+        ...(spec.agent ? { agent: spec.agent } : {}),
       });
       runLog.setSessionId(session.sessionId);
 
@@ -127,16 +139,17 @@ export class HarnessSessionRuntime {
       });
 
       try {
-        const response: AssistantMessageEvent | undefined = await session.sendAndWait(
-          {
-            prompt: spec.prompt
-          },
-          spec.timeoutMs ?? this.timeoutMs
-        );
+        const response: AssistantMessageEvent | undefined =
+          await session.sendAndWait(
+            {
+              prompt: spec.prompt,
+            },
+            spec.timeoutMs ?? this.timeoutMs,
+          );
         runLog.setResponse(response);
         return {
           response,
-          events
+          events,
         };
       } finally {
         unsubscribe();
@@ -149,7 +162,10 @@ export class HarnessSessionRuntime {
     } finally {
       const logPath = await flushRunLog(runLog, this.logger);
       if (caughtError) {
-        this.logger.error({ err: caughtError, copilotLogPath: logPath }, "harness session failed");
+        this.logger.error(
+          { err: caughtError, copilotLogPath: logPath },
+          "harness session failed",
+        );
       }
       await client.stop();
     }
@@ -168,11 +184,17 @@ function resolveLogDir(baseLogDir: string, spec: HarnessRunSpec): string {
   return join(spec.logging?.runDirectory ?? baseLogDir, ...pathSegments);
 }
 
-async function flushRunLog(runLog: HarnessRunLog, logger: Logger): Promise<string | null> {
+async function flushRunLog(
+  runLog: HarnessRunLog,
+  logger: Logger,
+): Promise<string | null> {
   try {
     return await runLog.flush();
   } catch (error) {
-    logger.warn({ err: error, copilotLogPath: runLog.path }, "failed to write Copilot run log");
+    logger.warn(
+      { err: error, copilotLogPath: runLog.path },
+      "failed to write Copilot run log",
+    );
     return null;
   }
 }

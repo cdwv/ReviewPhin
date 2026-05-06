@@ -1,13 +1,16 @@
 export function normalizeGitLabBaseUrl(value: string): string {
   const parsed = new URL(value);
-  const normalizedPath = stripTrailingSlashes(parsed.pathname).replace(/\/api\/v4$/i, "");
+  const normalizedPath = stripTrailingSlashes(parsed.pathname).replace(
+    /\/api\/v4$/i,
+    "",
+  );
   return `${parsed.origin}${normalizedPath}`;
 }
 
 export function buildGitLabApiUrl(
   baseUrl: string,
   path: string,
-  query: Record<string, string | number | undefined> = {}
+  query: Record<string, string | number | undefined> = {},
 ): URL {
   const normalizedBaseUrl = normalizeGitLabBaseUrl(baseUrl);
   const parsedBaseUrl = new URL(normalizedBaseUrl);
@@ -27,7 +30,10 @@ export function buildGitLabApiUrl(
   return url;
 }
 
-export function urlMatchesGitLabBase(candidateUrl: string, baseUrl: string): boolean {
+export function urlMatchesGitLabBase(
+  candidateUrl: string,
+  baseUrl: string,
+): boolean {
   const candidate = new URL(candidateUrl);
   const normalizedBase = new URL(normalizeGitLabBaseUrl(baseUrl));
   if (candidate.origin !== normalizedBase.origin) {

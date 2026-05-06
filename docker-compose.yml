@@ -10,7 +10,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "const http = require('node:http'); const req = http.get({ host: '127.0.0.1', port: Number(process.env.PORT ?? '3000'), path: '/healthz', timeout: 4000, agent: false }, (res) => { res.resume(); res.on('end', () => process.exit(res.statusCode === 200 ? 0 : 1)); }); req.on('timeout', () => { req.destroy(new Error('timeout')); }); req.on('error', () => process.exit(1));"
+          "const http = require('node:http'); const req = http.get({ host: '127.0.0.1', port: Number(process.env.PORT ?? '3000'), path: '/healthz', timeout: 4000, agent: false }, (res) => { res.resume(); res.on('end', () => process.exit(res.statusCode === 200 ? 0 : 1)); }); req.on('timeout', () => { req.destroy(new Error('timeout')); }); req.on('error', () => process.exit(1));",
         ]
       interval: 30s
       timeout: 10s

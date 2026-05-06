@@ -1,7 +1,10 @@
 import type { Logger } from "pino";
 
 import type { StorageHelpers } from "../storage/storage-helpers.js";
-import type { TenantRecord, InteractionJobRecord } from "../storage/contract/index.js";
+import type {
+  TenantRecord,
+  InteractionJobRecord,
+} from "../storage/contract/index.js";
 import type { ProjectMemoryBackendFactory } from "../memory/backend.js";
 import { GitLabProjectMemoryBackendFactory } from "../memory/gitlab-wiki-backend.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
@@ -9,9 +12,9 @@ import type { GitLabClient } from "./client.js";
 import type {
   HydratedMergeRequestContext,
   LightweightMergeRequestContext,
-  MaterializedMergeRequestContext
+  MaterializedMergeRequestContext,
 } from "./types.js";
-import { WorkspaceMaterializer } from "./workspace.js";
+import type { WorkspaceMaterializer } from "./workspace.js";
 
 interface MergeRequestContextHydratorOptions {
   storage: StorageHelpers;
@@ -33,7 +36,9 @@ export class MergeRequestContextHydrator {
     this.workspaceMaterializer = options.workspaceMaterializer;
     this.memoryEnabled = options.memoryEnabled;
     this.logger = options.logger;
-    this.projectMemoryBackendFactory = options.projectMemoryBackendFactory ?? new GitLabProjectMemoryBackendFactory();
+    this.projectMemoryBackendFactory =
+      options.projectMemoryBackendFactory ??
+      new GitLabProjectMemoryBackendFactory();
   }
 
   public async hydrate(input: {
@@ -44,15 +49,19 @@ export class MergeRequestContextHydrator {
   }): Promise<HydratedMergeRequestContext> {
     const { tenant, job, client } = input;
     const [materializedContext, versions] = await Promise.all([
-      input.context ? Promise.resolve(input.context) : this.loadMaterializedContext(input),
-      client.listMergeRequestVersions(tenant.projectId, job.mergeRequestIid)
+      input.context
+        ? Promise.resolve(input.context)
+        : this.loadMaterializedContext(input),
+      client.listMergeRequestVersions(tenant.projectId, job.mergeRequestIid),
     ]);
 
     const latestVersion =
       versions
         .slice()
         .sort(
-          (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+          (left, right) =>
+            new Date(right.created_at).getTime() -
+            new Date(left.created_at).getTime(),
         )[0] ?? null;
 
     const snapshot = await this.storage.createMergeRequestSnapshot({
@@ -65,9 +74,11 @@ export class MergeRequestContextHydrator {
       changesJson: JSON.stringify(materializedContext.changes),
       notesJson: JSON.stringify(materializedContext.notes),
       discussionsJson: JSON.stringify(materializedContext.discussions),
-      instructionsJson: JSON.stringify(materializedContext.workspace.instructionFiles),
+      instructionsJson: JSON.stringify(
+        materializedContext.workspace.instructionFiles,
+      ),
       projectMemoryJson: JSON.stringify(materializedContext.projectMemory),
-      workspaceStrategy: materializedContext.workspace.strategy
+      workspaceStrategy: materializedContext.workspace.strategy,
     });
 
     this.logger.info(
@@ -78,16 +89,16 @@ export class MergeRequestContextHydrator {
         changedFiles: materializedContext.changes.length,
         discussionCount: materializedContext.discussions.length,
         noteCount: materializedContext.notes.length,
-        workspaceStrategy: materializedContext.workspace.strategy
+        workspaceStrategy: materializedContext.workspace.strategy,
       },
-      "hydrated merge request context"
+      "hydrated merge request context",
     );
 
     return {
       ...materializedContext,
       versions,
       latestVersion,
-      snapshot
+      snapshot,
     };
   }
 
@@ -109,7 +120,7 @@ export class MergeRequestContextHydrator {
       client.getMergeRequest(tenant.projectId, job.mergeRequestIid),
       client.getMergeRequestChanges(tenant.projectId, job.mergeRequestIid),
       client.listMergeRequestNotes(tenant.projectId, job.mergeRequestIid),
-      client.listMergeRequestDiscussions(tenant.projectId, job.mergeRequestIid)
+      client.listMergeRequestDiscussions(tenant.projectId, job.mergeRequestIid),
     ]);
     const [workspace, projectMemory] = await Promise.all([
       this.workspaceMaterializer.materialize({
@@ -118,13 +129,13 @@ export class MergeRequestContextHydrator {
         projectId: tenant.projectId,
         mergeRequestIid: job.mergeRequestIid,
         headSha: job.headSha,
-        changes
+        changes,
       }),
       this.loadProjectMemorySafely({
         client,
         tenant,
-        job
-      })
+        job,
+      }),
     ]);
 
     return {
@@ -135,7 +146,7 @@ export class MergeRequestContextHydrator {
       notes,
       discussions,
       workspace,
-      projectMemory
+      projectMemory,
     };
   }
 
@@ -145,25 +156,27 @@ export class MergeRequestContextHydrator {
     job: InteractionJobRecord;
   }): Promise<ProjectMemoryContext> {
     try {
-      return await this.projectMemoryBackendFactory.createForGitLabClient({
-        client: input.client,
-        projectId: input.tenant.projectId,
-        enabled: this.memoryEnabled
-      }).load();
+      return await this.projectMemoryBackendFactory
+        .createForGitLabClient({
+          client: input.client,
+          projectId: input.tenant.projectId,
+          enabled: this.memoryEnabled,
+        })
+        .load();
     } catch (error) {
       this.logger.warn(
         {
           err: error,
           tenantId: input.tenant.id,
           interactionJobId: input.job.id,
-          projectId: input.tenant.projectId
+          projectId: input.tenant.projectId,
         },
-        "project memory unavailable; continuing review without wiki-backed memory"
+        "project memory unavailable; continuing review without wiki-backed memory",
       );
       return {
         enabled: false,
         page: null,
-        entries: []
+        entries: [],
       };
     }
   }

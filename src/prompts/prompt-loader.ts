@@ -17,7 +17,9 @@ export function loadPromptContent(file: string): string {
 }
 
 function resolvePromptPath(file: string): string {
-  const candidates = getProjectRootCandidates().map((projectRoot) => join(projectRoot, "prompts", ...file.split("/")));
+  const candidates = getProjectRootCandidates().map((projectRoot) =>
+    join(projectRoot, "prompts", ...file.split("/")),
+  );
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
@@ -29,6 +31,10 @@ function resolvePromptPath(file: string): string {
 }
 
 function getProjectRootCandidates(): string[] {
-  const moduleRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const moduleRoot = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+  );
   return Array.from(new Set([resolve(process.cwd()), moduleRoot]));
 }

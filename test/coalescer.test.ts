@@ -8,14 +8,14 @@ describe("ProjectMemoryConsolidator", () => {
       response: {
         data: {
           content: JSON.stringify({
-            entries: ["Use explicit return types."]
-          })
-        }
+            entries: ["Use explicit return types."],
+          }),
+        },
       },
-      events: []
+      events: [],
     }));
     const consolidator = new ProjectMemoryConsolidator({
-      runSession: runSession as never
+      runSession: runSession as never,
     });
 
     const result = await consolidator.coalesce({
@@ -27,14 +27,14 @@ describe("ProjectMemoryConsolidator", () => {
         authToken: null,
         provider: undefined,
         providerBaseUrl: null,
-        providerType: null
+        providerType: null,
       },
       coalesceInput: {
         entries: [{ text: "Use explicit return types." }],
         maxChars: 5_000,
         targetChars: 4_000,
-        reason: "prompt-budget"
-      }
+        reason: "prompt-budget",
+      },
     });
 
     expect(result).toEqual([{ text: "Use explicit return types." }]);
@@ -42,8 +42,8 @@ describe("ProjectMemoryConsolidator", () => {
       expect.objectContaining({
         model: "gpt-5.4-mini",
         tools: [],
-        subagents: []
-      })
+        subagents: [],
+      }),
     );
   });
 });

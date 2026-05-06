@@ -19,7 +19,9 @@ export interface ProjectMemoryCoalesceInput {
   reason: ProjectMemoryCoalesceReason;
 }
 
-export type ProjectMemoryCoalescer = (input: ProjectMemoryCoalesceInput) => Promise<ProjectMemoryEntry[]>;
+export type ProjectMemoryCoalescer = (
+  input: ProjectMemoryCoalesceInput,
+) => Promise<ProjectMemoryEntry[]>;
 
 export interface ProjectMemoryContext {
   enabled: boolean;
@@ -39,10 +41,12 @@ const projectMemoryToolTextSchema = z
 export const projectMemoryToolInputSchema = z.object({
   memory: projectMemoryToolTextSchema,
   rationale: projectMemoryToolTextSchema,
-  supersedes: z.array(projectMemoryToolTextSchema).max(10).default([])
+  supersedes: z.array(projectMemoryToolTextSchema).max(10).default([]),
 });
 
-export type ProjectMemoryToolInput = z.infer<typeof projectMemoryToolInputSchema>;
+export type ProjectMemoryToolInput = z.infer<
+  typeof projectMemoryToolInputSchema
+>;
 
 export interface ProjectMemoryUpdateResult {
   changed: boolean;

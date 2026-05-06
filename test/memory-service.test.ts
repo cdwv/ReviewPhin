@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ProjectMemoryConsolidator } from "../src/memory/consolidator.js";
+import type { ProjectMemoryConsolidator } from "../src/memory/consolidator.js";
 import { ProjectMemoryService } from "../src/memory/service.js";
 
 interface MemoryServiceTestLogger {
@@ -13,30 +13,30 @@ describe("ProjectMemoryService", () => {
     const load = vi.fn(async () => ({
       enabled: true,
       page: null,
-      entries: []
+      entries: [],
     }));
     const saveEntries = vi.fn(async () => ({
       enabled: true,
       page: null,
-      entries: [{ text: "Remember this." }]
+      entries: [{ text: "Remember this." }],
     }));
     const service = createService({
       backend: {
         load,
-        saveEntries
-      }
+        saveEntries,
+      },
     });
 
     const result = await service.addEntry({
       memory: "Remember this.",
       rationale: "Durable policy",
-      supersedes: []
+      supersedes: [],
     });
 
     expect(result.action).toBe("created");
     expect(load).toHaveBeenCalledOnce();
     expect(saveEntries).toHaveBeenCalledWith([{ text: "Remember this." }], {
-      baseEntries: []
+      baseEntries: [],
     });
   });
 
@@ -49,9 +49,9 @@ describe("ProjectMemoryService", () => {
           title: "Reviewphin memory",
           slug: "reviewphin-memory",
           format: "markdown",
-          content: ""
+          content: "",
         },
-        entries: [{ text: "Use Vitest for tests." }]
+        entries: [{ text: "Use Vitest for tests." }],
       })
       .mockResolvedValueOnce({
         enabled: true,
@@ -59,9 +59,12 @@ describe("ProjectMemoryService", () => {
           title: "Reviewphin memory",
           slug: "reviewphin-memory",
           format: "markdown",
-          content: ""
+          content: "",
         },
-        entries: [{ text: "Use Vitest for tests." }, { text: "Remember this." }]
+        entries: [
+          { text: "Use Vitest for tests." },
+          { text: "Remember this." },
+        ],
       });
     const service = createService({
       backend: {
@@ -71,35 +74,38 @@ describe("ProjectMemoryService", () => {
             title: "Reviewphin memory",
             slug: "reviewphin-memory",
             format: "markdown",
-            content: ""
+            content: "",
           },
-          entries: [{ text: "Use Jest for tests." }]
+          entries: [{ text: "Use Jest for tests." }],
         })),
-        saveEntries
-      }
+        saveEntries,
+      },
     });
 
     const result = await service.addEntry({
       memory: "Remember this.",
       rationale: "Durable policy",
-      supersedes: []
+      supersedes: [],
     });
 
     expect(saveEntries).toHaveBeenNthCalledWith(
       1,
       [{ text: "Use Jest for tests." }, { text: "Remember this." }],
       {
-        baseEntries: [{ text: "Use Jest for tests." }]
-      }
+        baseEntries: [{ text: "Use Jest for tests." }],
+      },
     );
     expect(saveEntries).toHaveBeenNthCalledWith(
       2,
       [{ text: "Use Vitest for tests." }, { text: "Remember this." }],
       {
-        baseEntries: [{ text: "Use Vitest for tests." }]
-      }
+        baseEntries: [{ text: "Use Vitest for tests." }],
+      },
     );
-    expect(result.memory.entries).toEqual([{ text: "Use Vitest for tests." }, { text: "Remember this." }]);
+    expect(result.memory.entries).toEqual([
+      { text: "Use Vitest for tests." },
+      { text: "Remember this." },
+    ]);
   });
 
   it("serializes concurrent writes for the same tenant so additions are not lost", async () => {
@@ -110,16 +116,16 @@ describe("ProjectMemoryService", () => {
         title: "Reviewphin memory",
         slug: "reviewphin-memory",
         format: "markdown" as const,
-        content: ""
+        content: "",
       },
-      entries: [] as Array<{ text: string }>
+      entries: [] as Array<{ text: string }>,
     };
     let saveCallCount = 0;
     const backend = {
       load: vi.fn(async () => ({
         enabled: true,
         page: sharedState.page,
-        entries: sharedState.entries.map((entry) => ({ ...entry }))
+        entries: sharedState.entries.map((entry) => ({ ...entry })),
       })),
       saveEntries: vi.fn(async (entries) => {
         const callIndex = saveCallCount;
@@ -129,13 +135,15 @@ describe("ProjectMemoryService", () => {
           await releaseFirstSave.promise;
         }
 
-        sharedState.entries = entries.map((entry: { text: string }) => ({ ...entry }));
+        sharedState.entries = entries.map((entry: { text: string }) => ({
+          ...entry,
+        }));
         return {
           enabled: true,
           page: sharedState.page,
-          entries: sharedState.entries.map((entry) => ({ ...entry }))
+          entries: sharedState.entries.map((entry) => ({ ...entry })),
         };
-      })
+      }),
     };
     const serviceA = createService({
       tenant: {
@@ -143,9 +151,9 @@ describe("ProjectMemoryService", () => {
         baseUrl: "https://gitlab.example.com",
         projectId: 1085,
         apiToken: "token",
-        memoryEnabled: true
+        memoryEnabled: true,
       },
-      backend
+      backend,
     });
     const serviceB = createService({
       tenant: {
@@ -153,22 +161,22 @@ describe("ProjectMemoryService", () => {
         baseUrl: "https://gitlab.example.com",
         projectId: 1085,
         apiToken: "token",
-        memoryEnabled: true
+        memoryEnabled: true,
       },
-      backend
+      backend,
     });
 
     const firstWrite = serviceA.addEntry({
       memory: "Remember A.",
       rationale: "Durable policy",
-      supersedes: []
+      supersedes: [],
     });
     await enteredFirstSave.promise;
 
     const secondWrite = serviceB.addEntry({
       memory: "Remember B.",
       rationale: "Durable policy",
-      supersedes: []
+      supersedes: [],
     });
     await Promise.resolve();
     await Promise.resolve();
@@ -183,17 +191,20 @@ describe("ProjectMemoryService", () => {
       1,
       [{ text: "Remember A." }],
       {
-        baseEntries: []
-      }
+        baseEntries: [],
+      },
     );
     expect(backend.saveEntries).toHaveBeenNthCalledWith(
       2,
       [{ text: "Remember A." }, { text: "Remember B." }],
       {
-        baseEntries: [{ text: "Remember A." }]
-      }
+        baseEntries: [{ text: "Remember A." }],
+      },
     );
-    expect(secondResult.memory.entries).toEqual([{ text: "Remember A." }, { text: "Remember B." }]);
+    expect(secondResult.memory.entries).toEqual([
+      { text: "Remember A." },
+      { text: "Remember B." },
+    ]);
   });
 
   it("keeps the durable write when inline consolidation fails", async () => {
@@ -203,12 +214,9 @@ describe("ProjectMemoryService", () => {
         title: "Reviewphin memory",
         slug: "reviewphin-memory",
         format: "markdown",
-        content: ""
+        content: "",
       },
-      entries: [
-        { text: "A".repeat(4_800) },
-        { text: "Remember this." }
-      ]
+      entries: [{ text: "A".repeat(4_800) }, { text: "Remember this." }],
     }));
     const logger = createLogger();
     const service = createService({
@@ -220,23 +228,23 @@ describe("ProjectMemoryService", () => {
             title: "Reviewphin memory",
             slug: "reviewphin-memory",
             format: "markdown",
-            content: ""
+            content: "",
           },
-          entries: [{ text: "A".repeat(4_800) }]
+          entries: [{ text: "A".repeat(4_800) }],
         })),
-        saveEntries
+        saveEntries,
       },
       consolidator: {
         coalesce: vi.fn(async () => {
           throw new Error("boom");
-        })
-      } as never
+        }),
+      } as never,
     });
 
     const result = await service.addEntry({
       memory: "Remember this.",
       rationale: "Durable policy",
-      supersedes: []
+      supersedes: [],
     });
 
     expect(result.changed).toBe(true);
@@ -244,8 +252,8 @@ describe("ProjectMemoryService", () => {
     expect(saveEntries).toHaveBeenCalledWith(
       [{ text: "A".repeat(4_800) }, { text: "Remember this." }],
       {
-        baseEntries: [{ text: "A".repeat(4_800) }]
-      }
+        baseEntries: [{ text: "A".repeat(4_800) }],
+      },
     );
     expect(logger.warn).toHaveBeenCalledOnce();
   });
@@ -259,12 +267,9 @@ describe("ProjectMemoryService", () => {
           title: "Reviewphin memory",
           slug: "reviewphin-memory",
           format: "markdown",
-          content: ""
+          content: "",
         },
-        entries: [
-          { text: "A".repeat(4_800) },
-          { text: "Remember this." }
-        ]
+        entries: [{ text: "A".repeat(4_800) }, { text: "Remember this." }],
       })
       .mockResolvedValueOnce({
         enabled: true,
@@ -272,9 +277,9 @@ describe("ProjectMemoryService", () => {
           title: "Reviewphin memory",
           slug: "reviewphin-memory",
           format: "markdown",
-          content: ""
+          content: "",
         },
-        entries: [{ text: "Condensed memory." }]
+        entries: [{ text: "Condensed memory." }],
       });
     const coalesce = vi.fn(async () => [{ text: "Condensed memory." }]);
     const service = createService({
@@ -285,21 +290,21 @@ describe("ProjectMemoryService", () => {
             title: "Reviewphin memory",
             slug: "reviewphin-memory",
             format: "markdown",
-            content: ""
+            content: "",
           },
-          entries: [{ text: "A".repeat(4_800) }]
+          entries: [{ text: "A".repeat(4_800) }],
         })),
-        saveEntries
+        saveEntries,
       },
       consolidator: {
-        coalesce
-      } as never
+        coalesce,
+      } as never,
     });
 
     const result = await service.addEntry({
       memory: "Remember this.",
       rationale: "Durable policy",
-      supersedes: []
+      supersedes: [],
     });
 
     expect(coalesce).toHaveBeenCalledOnce();
@@ -307,15 +312,16 @@ describe("ProjectMemoryService", () => {
       1,
       [{ text: "A".repeat(4_800) }, { text: "Remember this." }],
       {
-        baseEntries: [{ text: "A".repeat(4_800) }]
-      }
+        baseEntries: [{ text: "A".repeat(4_800) }],
+      },
     );
-    expect(saveEntries).toHaveBeenNthCalledWith(2, [{ text: "Condensed memory." }], {
-      baseEntries: [
-        { text: "A".repeat(4_800) },
-        { text: "Remember this." }
-      ]
-    });
+    expect(saveEntries).toHaveBeenNthCalledWith(
+      2,
+      [{ text: "Condensed memory." }],
+      {
+        baseEntries: [{ text: "A".repeat(4_800) }, { text: "Remember this." }],
+      },
+    );
     expect(result.memory.entries).toEqual([{ text: "Condensed memory." }]);
   });
 });
@@ -337,21 +343,25 @@ function createService(input?: {
 }) {
   return new ProjectMemoryService({
     logger: (input?.logger ?? createLogger()) as never,
-    backend: (input?.backend ?? {
+    backend: input?.backend ?? {
       load: vi.fn(async () => ({
         enabled: true,
         page: null,
-        entries: []
+        entries: [],
       })),
       saveEntries: vi.fn(async (entries) => ({
         enabled: true,
         page: null,
-        entries
-      }))
-    }) as never,
-    consolidator: input?.consolidator ?? ({
-      coalesce: vi.fn(async (coalesceInput) => coalesceInput.coalesceInput.entries)
-    } as never),
+        entries,
+      })),
+    },
+    consolidator:
+      input?.consolidator ??
+      ({
+        coalesce: vi.fn(
+          async (coalesceInput) => coalesceInput.coalesceInput.entries,
+        ),
+      } as never),
     modelConfig: {
       modelProfileName: "default",
       selectionSource: "default",
@@ -360,28 +370,28 @@ function createService(input?: {
       authToken: null,
       provider: undefined,
       providerBaseUrl: null,
-      providerType: null
+      providerType: null,
     },
     tenant: input?.tenant ?? {
       id: "tenant_1",
       baseUrl: "https://gitlab.example.com",
       projectId: 1085,
       apiToken: "token",
-      memoryEnabled: true
+      memoryEnabled: true,
     },
     logging: {
       interactionRunId: "run_1",
       interactionJobId: "job_1",
-      tenantId: "tenant_1"
+      tenantId: "tenant_1",
     },
-    maxPromptMemoryChars: 5_000
+    maxPromptMemoryChars: 5_000,
   });
 }
 
 function createLogger() {
   return {
     warn: vi.fn(),
-    child: vi.fn()
+    child: vi.fn(),
   } satisfies MemoryServiceTestLogger;
 }
 
@@ -392,6 +402,6 @@ function createDeferred() {
   });
   return {
     promise,
-    resolve
+    resolve,
   };
 }

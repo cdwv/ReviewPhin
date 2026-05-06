@@ -1,9 +1,14 @@
 import type { HarnessModelConfig } from "../harness/types.js";
 import type { ProviderConfig } from "@github/copilot-sdk";
 import type { GitLabMergeRequest } from "../gitlab/types.js";
-import type { ModelProfileRecord, StorageStores, TenantRecord } from "../storage/contract/index.js";
+import type {
+  ModelProfileRecord,
+  StorageStores,
+  TenantRecord,
+} from "../storage/contract/index.js";
 
-const REVIEWPHIN_PROFILE_OVERRIDE_PATTERN = /(?:^|\r?\n)\s*\/reviewphin-profile\s+([A-Za-z0-9][A-Za-z0-9._-]*)\b/i;
+const REVIEWPHIN_PROFILE_OVERRIDE_PATTERN =
+  /(?:^|\r?\n)\s*\/reviewphin-profile\s+([A-Za-z0-9][A-Za-z0-9._-]*)\b/i;
 
 export class ModelProfileConfigurationError extends Error {
   public constructor(message: string) {
@@ -12,7 +17,9 @@ export class ModelProfileConfigurationError extends Error {
   }
 }
 
-export function extractMergeRequestModelProfileOverride(description: string): string | null {
+export function extractMergeRequestModelProfileOverride(
+  description: string,
+): string | null {
   const match = description.match(REVIEWPHIN_PROFILE_OVERRIDE_PATTERN);
   return match?.[1] ?? null;
 }
@@ -26,28 +33,36 @@ export async function resolveReviewProviderConfig(input: {
   tenant: TenantRecord;
   mergeRequest: Pick<GitLabMergeRequest, "description">;
 }): Promise<HarnessModelConfig> {
-  const overrideName = extractMergeRequestModelProfileOverride(input.mergeRequest.description);
+  const overrideName = extractMergeRequestModelProfileOverride(
+    input.mergeRequest.description,
+  );
   if (overrideName) {
     const profile = await input.storage.stores.modelProfiles.get(overrideName);
     if (!profile) {
-      throw new ModelProfileConfigurationError(`Merge request requested unknown model profile "${overrideName}"`);
+      throw new ModelProfileConfigurationError(
+        `Merge request requested unknown model profile "${overrideName}"`,
+      );
     }
 
     return mapResolvedProfile(profile, "merge-request-override");
   }
 
   if (input.tenant.modelProfileName) {
-    const profile = await input.storage.stores.modelProfiles.get(input.tenant.modelProfileName);
+    const profile = await input.storage.stores.modelProfiles.get(
+      input.tenant.modelProfileName,
+    );
     if (!profile) {
       throw new ModelProfileConfigurationError(
-        `Tenant ${input.tenant.key} references unknown model profile "${input.tenant.modelProfileName}"`
+        `Tenant ${input.tenant.key} references unknown model profile "${input.tenant.modelProfileName}"`,
       );
     }
 
     return mapResolvedProfile(profile, "tenant");
   }
 
-  const defaultProfile = await input.storage.stores.modelProfiles.find({ isDefault: { eq: true } });
+  const defaultProfile = await input.storage.stores.modelProfiles.find({
+    isDefault: { eq: true },
+  });
   if (defaultProfile) {
     return mapResolvedProfile(defaultProfile, "default");
   }
@@ -60,7 +75,7 @@ export async function resolveReviewProviderConfig(input: {
     authToken: null,
     provider: undefined,
     providerBaseUrl: null,
-    providerType: null
+    providerType: null,
   };
 }
 
@@ -78,7 +93,7 @@ export function maskSecret(value: string | null): string | null {
 
 function mapResolvedProfile(
   profile: ModelProfileRecord,
-  selectionSource: HarnessModelConfig["selectionSource"]
+  selectionSource: HarnessModelConfig["selectionSource"],
 ): HarnessModelConfig {
   validateModelProfile(profile);
 
@@ -90,11 +105,13 @@ function mapResolvedProfile(
     authToken: profile.authToken,
     provider: buildProviderConfig(profile),
     providerBaseUrl: profile.providerBaseUrl,
-    providerType: profile.providerType
+    providerType: profile.providerType,
   };
 }
 
-function buildProviderConfig(profile: ModelProfileRecord): ProviderConfig | undefined {
+function buildProviderConfig(
+  profile: ModelProfileRecord,
+): ProviderConfig | undefined {
   if (!profile.providerBaseUrl) {
     return undefined;
   }
@@ -103,7 +120,7 @@ function buildProviderConfig(profile: ModelProfileRecord): ProviderConfig | unde
     baseUrl: profile.providerBaseUrl,
     ...(profile.providerType ? { type: profile.providerType } : {}),
     wireApi: profile.wireApi ?? "responses",
-    ...(profile.authToken ? { apiKey: profile.authToken } : {})
+    ...(profile.authToken ? { apiKey: profile.authToken } : {}),
   };
 }
 
@@ -113,6 +130,8 @@ function validateModelProfile(profile: ModelProfileRecord): void {
   }
 
   if (!profile.reviewModel) {
-    throw new ModelProfileConfigurationError(`Model profile "${profile.name}" configures a provider base URL but no review model`);
+    throw new ModelProfileConfigurationError(
+      `Model profile "${profile.name}" configures a provider base URL but no review model`,
+    );
   }
 }

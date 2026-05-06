@@ -1,4 +1,7 @@
-import type { StorageProviderFactoryContext, StorageProvider } from "../../../src/storage/provider.js";
+import type {
+  StorageProviderFactoryContext,
+  StorageProvider,
+} from "../../../src/storage/provider.js";
 import { CURRENT_STORAGE_CONTRACT_REVISION } from "../../../src/storage/contract/index.js";
 import type { StorageStores } from "../../../src/storage/contract/index.js";
 
@@ -24,6 +27,8 @@ class FailingProvider implements StorageProvider {
   public async close(): Promise<void> {}
 }
 
-export function createStorageProvider(_context: StorageProviderFactoryContext): StorageProvider {
+export function createStorageProvider(
+  _context: StorageProviderFactoryContext,
+): StorageProvider {
   return new FailingProvider();
 }

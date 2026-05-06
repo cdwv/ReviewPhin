@@ -1,4 +1,8 @@
-import type { MergeRequestSnapshotRecord, InteractionJobRecord, TenantRecord } from "../storage/contract/index.js";
+import type {
+  MergeRequestSnapshotRecord,
+  InteractionJobRecord,
+  TenantRecord,
+} from "../storage/contract/index.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
 
 export interface GitLabUser {
@@ -122,18 +126,22 @@ export interface GitLabNoteHookPayload {
     id: number;
     web_url?: string | undefined;
   };
-  repository?: {
-    homepage?: string | undefined;
-  } | undefined;
+  repository?:
+    | {
+        homepage?: string | undefined;
+      }
+    | undefined;
   merge_request: {
     iid: number;
     title: string;
     description: string;
     source_branch: string;
     target_branch: string;
-    last_commit?: {
-      id: string;
-    } | undefined;
+    last_commit?:
+      | {
+          id: string;
+        }
+      | undefined;
     diff_refs?: GitLabDiffRefs | undefined;
   };
   object_attributes: {

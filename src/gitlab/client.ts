@@ -14,7 +14,7 @@ import type {
   GitLabNote,
   GitLabRepositoryTreeItem,
   GitLabWikiPage,
-  TriggerNoteReference
+  TriggerNoteReference,
 } from "./types.js";
 import { buildGitLabApiUrl, normalizeGitLabBaseUrl } from "./url.js";
 
@@ -22,9 +22,11 @@ interface GitLabClientOptions {
   baseUrl: string;
   apiToken: string;
   logger: Logger;
-  requestLogger?: {
-    log(entry: GitLabHttpLogEntry): Promise<void>;
-  } | undefined;
+  requestLogger?:
+    | {
+        log(entry: GitLabHttpLogEntry): Promise<void>;
+      }
+    | undefined;
 }
 
 export class GitLabApiError extends Error {
@@ -32,7 +34,12 @@ export class GitLabApiError extends Error {
   public readonly responseBody: string;
   public readonly requestUrl: string;
 
-  public constructor(message: string, status: number, responseBody: string, requestUrl: string) {
+  public constructor(
+    message: string,
+    status: number,
+    responseBody: string,
+    requestUrl: string,
+  ) {
     super(message);
     this.name = "GitLabApiError";
     this.status = status;
@@ -54,32 +61,44 @@ export class GitLabClient {
     this.requestLogger = options.requestLogger;
   }
 
-  public async getMergeRequest(projectId: number, mergeRequestIid: number): Promise<GitLabMergeRequest> {
+  public async getMergeRequest(
+    projectId: number,
+    mergeRequestIid: number,
+  ): Promise<GitLabMergeRequest> {
     return this.requestJson<GitLabMergeRequest>(
       "GET",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}`
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}`,
     );
   }
 
   public async getProject(projectId: number): Promise<GitLabProject> {
-    return this.requestJson<GitLabProject>("GET", `/projects/${encodeURIComponent(String(projectId))}`);
+    return this.requestJson<GitLabProject>(
+      "GET",
+      `/projects/${encodeURIComponent(String(projectId))}`,
+    );
   }
 
   public async listProjectWikiPages(
     projectId: number,
     options: {
       withContent?: boolean | undefined;
-    } = {}
+    } = {},
   ): Promise<GitLabWikiPage[]> {
-    return this.requestPaginated<GitLabWikiPage>(`/projects/${encodeURIComponent(String(projectId))}/wikis`, {
-      with_content: options.withContent ? 1 : undefined
-    });
+    return this.requestPaginated<GitLabWikiPage>(
+      `/projects/${encodeURIComponent(String(projectId))}/wikis`,
+      {
+        with_content: options.withContent ? 1 : undefined,
+      },
+    );
   }
 
-  public async getProjectWikiPage(projectId: number, slug: string): Promise<GitLabWikiPage> {
+  public async getProjectWikiPage(
+    projectId: number,
+    slug: string,
+  ): Promise<GitLabWikiPage> {
     return this.requestJson<GitLabWikiPage>(
       "GET",
-      `/projects/${encodeURIComponent(String(projectId))}/wikis/${encodeURIComponent(slug)}`
+      `/projects/${encodeURIComponent(String(projectId))}/wikis/${encodeURIComponent(slug)}`,
     );
   }
 
@@ -89,13 +108,17 @@ export class GitLabClient {
       title: string;
       content: string;
       format?: string | undefined;
-    }
+    },
   ): Promise<GitLabWikiPage> {
-    return this.requestForm<GitLabWikiPage>("POST", `/projects/${encodeURIComponent(String(projectId))}/wikis`, {
-      title: input.title,
-      content: input.content,
-      ...(input.format ? { format: input.format } : {})
-    });
+    return this.requestForm<GitLabWikiPage>(
+      "POST",
+      `/projects/${encodeURIComponent(String(projectId))}/wikis`,
+      {
+        title: input.title,
+        content: input.content,
+        ...(input.format ? { format: input.format } : {}),
+      },
+    );
   }
 
   public async updateProjectWikiPage(
@@ -105,32 +128,34 @@ export class GitLabClient {
       title?: string | undefined;
       content?: string | undefined;
       format?: string | undefined;
-    }
+    },
   ): Promise<GitLabWikiPage> {
     return this.requestForm<GitLabWikiPage>(
       "PUT",
       `/projects/${encodeURIComponent(String(projectId))}/wikis/${encodeURIComponent(slug)}`,
-      input
+      input,
     );
   }
 
   public async listMergeRequestVersions(
     projectId: number,
-    mergeRequestIid: number
+    mergeRequestIid: number,
   ): Promise<GitLabMergeRequestVersion[]> {
     return this.requestPaginated<GitLabMergeRequestVersion>(
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/versions`
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/versions`,
     );
   }
 
   public async getMergeRequestChanges(
     projectId: number,
-    mergeRequestIid: number
+    mergeRequestIid: number,
   ): Promise<GitLabMergeRequestChange[]> {
     try {
-      const response = await this.requestJson<{ changes: GitLabMergeRequestChange[] }>(
+      const response = await this.requestJson<{
+        changes: GitLabMergeRequestChange[];
+      }>(
         "GET",
-        `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/changes`
+        `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/changes`,
       );
       return response.changes;
     } catch (error) {
@@ -139,33 +164,36 @@ export class GitLabClient {
       }
 
       return this.requestPaginated<GitLabMergeRequestChange>(
-        `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/diffs`
+        `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/diffs`,
       );
     }
   }
 
-  public async listMergeRequestNotes(projectId: number, mergeRequestIid: number): Promise<GitLabNote[]> {
+  public async listMergeRequestNotes(
+    projectId: number,
+    mergeRequestIid: number,
+  ): Promise<GitLabNote[]> {
     return this.requestPaginated<GitLabNote>(
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes`
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes`,
     );
   }
 
   public async listMergeRequestDiscussions(
     projectId: number,
-    mergeRequestIid: number
+    mergeRequestIid: number,
   ): Promise<GitLabDiscussion[]> {
     return this.requestPaginated<GitLabDiscussion>(
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions`
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions`,
     );
   }
 
   public async listMergeRequestNoteAwardEmojis(
     projectId: number,
     mergeRequestIid: number,
-    noteId: number
+    noteId: number,
   ): Promise<GitLabAwardEmoji[]> {
     return this.requestPaginated<GitLabAwardEmoji>(
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes/${noteId}/award_emoji`
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes/${noteId}/award_emoji`,
     );
   }
 
@@ -173,10 +201,10 @@ export class GitLabClient {
     projectId: number,
     mergeRequestIid: number,
     discussionId: string,
-    noteId: number
+    noteId: number,
   ): Promise<GitLabAwardEmoji[]> {
     return this.requestPaginated<GitLabAwardEmoji>(
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${encodeURIComponent(discussionId)}/notes/${noteId}/award_emoji`
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${encodeURIComponent(discussionId)}/notes/${noteId}/award_emoji`,
     );
   }
 
@@ -184,12 +212,12 @@ export class GitLabClient {
     projectId: number,
     mergeRequestIid: number,
     noteId: number,
-    name: string
+    name: string,
   ): Promise<GitLabAwardEmoji> {
     return this.requestForm<GitLabAwardEmoji>(
       "POST",
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes/${noteId}/award_emoji`,
-      { name }
+      { name },
     );
   }
 
@@ -198,30 +226,39 @@ export class GitLabClient {
     mergeRequestIid: number,
     discussionId: string,
     noteId: number,
-    name: string
+    name: string,
   ): Promise<GitLabAwardEmoji> {
     return this.requestForm<GitLabAwardEmoji>(
       "POST",
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${encodeURIComponent(discussionId)}/notes/${noteId}/award_emoji`,
-      { name }
+      { name },
     );
   }
 
   public async listTriggerNoteAwardEmojis(
     projectId: number,
     mergeRequestIid: number,
-    note: TriggerNoteReference
+    note: TriggerNoteReference,
   ): Promise<GitLabAwardEmoji[]> {
     return note.kind === "discussion-note"
-      ? this.listMergeRequestDiscussionNoteAwardEmojis(projectId, mergeRequestIid, note.discussionId, note.noteId)
-      : this.listMergeRequestNoteAwardEmojis(projectId, mergeRequestIid, note.noteId);
+      ? this.listMergeRequestDiscussionNoteAwardEmojis(
+          projectId,
+          mergeRequestIid,
+          note.discussionId,
+          note.noteId,
+        )
+      : this.listMergeRequestNoteAwardEmojis(
+          projectId,
+          mergeRequestIid,
+          note.noteId,
+        );
   }
 
   public async createTriggerNoteAwardEmoji(
     projectId: number,
     mergeRequestIid: number,
     note: TriggerNoteReference,
-    name: string
+    name: string,
   ): Promise<GitLabAwardEmoji> {
     return note.kind === "discussion-note"
       ? this.createMergeRequestDiscussionNoteAwardEmoji(
@@ -229,15 +266,20 @@ export class GitLabClient {
           mergeRequestIid,
           note.discussionId,
           note.noteId,
-          name
+          name,
         )
-      : this.createMergeRequestNoteAwardEmoji(projectId, mergeRequestIid, note.noteId, name);
+      : this.createMergeRequestNoteAwardEmoji(
+          projectId,
+          mergeRequestIid,
+          note.noteId,
+          name,
+        );
   }
 
   public async createMergeRequestDiscussion(
     projectId: number,
     mergeRequestIid: number,
-    input: { body: string; position?: GitLabDiffPosition | null }
+    input: { body: string; position?: GitLabDiffPosition | null },
   ): Promise<GitLabDiscussion> {
     const payload: Record<string, unknown> = { body: input.body };
     if (input.position) {
@@ -247,15 +289,19 @@ export class GitLabClient {
     return this.requestForm<GitLabDiscussion>(
       "POST",
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions`,
-      payload
+      payload,
     );
   }
 
-  public async createMergeRequestNote(projectId: number, mergeRequestIid: number, body: string): Promise<GitLabNote> {
+  public async createMergeRequestNote(
+    projectId: number,
+    mergeRequestIid: number,
+    body: string,
+  ): Promise<GitLabNote> {
     return this.requestForm<GitLabNote>(
       "POST",
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes`,
-      { body }
+      { body },
     );
   }
 
@@ -263,12 +309,12 @@ export class GitLabClient {
     projectId: number,
     mergeRequestIid: number,
     noteId: number,
-    body: string
+    body: string,
   ): Promise<GitLabNote> {
     return this.requestForm<GitLabNote>(
       "PUT",
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes/${noteId}`,
-      { body }
+      { body },
     );
   }
 
@@ -276,12 +322,12 @@ export class GitLabClient {
     projectId: number,
     mergeRequestIid: number,
     discussionId: string,
-    body: string
+    body: string,
   ): Promise<GitLabNote> {
     return this.requestForm<GitLabNote>(
       "POST",
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${discussionId}/notes`,
-      { body }
+      { body },
     );
   }
 
@@ -290,12 +336,12 @@ export class GitLabClient {
     mergeRequestIid: number,
     discussionId: string,
     noteId: number,
-    body: string
+    body: string,
   ): Promise<GitLabNote> {
     return this.requestForm<GitLabNote>(
       "PUT",
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${discussionId}/notes/${noteId}`,
-      { body }
+      { body },
     );
   }
 
@@ -303,20 +349,23 @@ export class GitLabClient {
     projectId: number,
     mergeRequestIid: number,
     discussionId: string,
-    resolved: boolean
+    resolved: boolean,
   ): Promise<GitLabDiscussion> {
     return this.requestForm<GitLabDiscussion>(
       "PUT",
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${discussionId}`,
-      { resolved }
+      { resolved },
     );
   }
 
-  public async downloadRepositoryArchive(projectId: number, ref: string): Promise<Buffer> {
+  public async downloadRepositoryArchive(
+    projectId: number,
+    ref: string,
+  ): Promise<Buffer> {
     return this.requestBuffer(
       "GET",
       `/projects/${encodeURIComponent(String(projectId))}/repository/archive.tar.gz`,
-      { sha: ref }
+      { sha: ref },
     );
   }
 
@@ -324,22 +373,26 @@ export class GitLabClient {
     projectId: number,
     ref: string,
     path?: string,
-    recursive = false
+    recursive = false,
   ): Promise<GitLabRepositoryTreeItem[]> {
     return this.requestPaginated<GitLabRepositoryTreeItem>(
       `/projects/${encodeURIComponent(String(projectId))}/repository/tree`,
       {
         ref,
         recursive: recursive ? "true" : "false",
-        path
-      }
+        path,
+      },
     );
   }
 
-  public async getRawFile(projectId: number, filePath: string, ref: string): Promise<string> {
+  public async getRawFile(
+    projectId: number,
+    filePath: string,
+    ref: string,
+  ): Promise<string> {
     const requestUrl = this.buildUrl(
       `/projects/${encodeURIComponent(String(projectId))}/repository/files/${encodeURIComponent(filePath)}/raw`,
-      { ref }
+      { ref },
     );
     const requestId = randomUUID();
     const startedAt = Date.now();
@@ -353,19 +406,16 @@ export class GitLabClient {
       request: {
         query: { ref },
         headers: {
-          accept: "*/*"
-        }
-      }
+          accept: "*/*",
+        },
+      },
     });
-    const response = await fetch(
-      requestUrl,
-      {
-        method: "GET",
-        headers: this.buildHeaders({
-          accept: "*/*"
-        })
-      }
-    );
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers: this.buildHeaders({
+        accept: "*/*",
+      }),
+    });
 
     const responseBody = await response.text();
     if (!response.ok) {
@@ -380,14 +430,14 @@ export class GitLabClient {
         durationMs: Date.now() - startedAt,
         response: {
           headers: summarizeHeaders(response.headers),
-          body: truncateForLog(responseBody)
-        }
+          body: truncateForLog(responseBody),
+        },
       });
       throw new GitLabApiError(
         `GitLab raw file request failed for ${filePath} with ${response.status}`,
         response.status,
         responseBody,
-        requestUrl.toString()
+        requestUrl.toString(),
       );
     }
 
@@ -402,27 +452,29 @@ export class GitLabClient {
       durationMs: Date.now() - startedAt,
       response: {
         headers: summarizeHeaders(response.headers),
-        body: truncateForLog(responseBody)
-      }
+        body: truncateForLog(responseBody),
+      },
     });
     return responseBody;
   }
 
-  public buildGitAuthEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  public buildGitAuthEnv(
+    baseEnv: NodeJS.ProcessEnv = process.env,
+  ): NodeJS.ProcessEnv {
     return {
       ...baseEnv,
       GIT_TERMINAL_PROMPT: "0",
       GIT_LFS_SKIP_SMUDGE: "1",
       GIT_CONFIG_COUNT: "1",
       GIT_CONFIG_KEY_0: "http.extraHeader",
-      GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`oauth2:${this.apiToken}`).toString("base64")}`
+      GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`oauth2:${this.apiToken}`).toString("base64")}`,
     };
   }
 
   private async requestJson<T>(
     method: "GET" | "POST" | "PUT",
     path: string,
-    query?: Record<string, string | number | undefined>
+    query?: Record<string, string | number | undefined>,
   ): Promise<T> {
     const requestUrl = this.buildUrl(path, query);
     const requestId = randomUUID();
@@ -437,13 +489,13 @@ export class GitLabClient {
       request: {
         query,
         headers: {
-          accept: "application/json"
-        }
-      }
+          accept: "application/json",
+        },
+      },
     });
     const response = await fetch(requestUrl, {
       method,
-      headers: this.buildHeaders()
+      headers: this.buildHeaders(),
     });
 
     const responseBody = await response.text();
@@ -459,14 +511,14 @@ export class GitLabClient {
         durationMs: Date.now() - startedAt,
         response: {
           headers: summarizeHeaders(response.headers),
-          body: truncateForLog(responseBody)
-        }
+          body: truncateForLog(responseBody),
+        },
       });
       throw new GitLabApiError(
         `GitLab API request failed for ${method} ${path} with ${response.status}`,
         response.status,
         responseBody,
-        requestUrl.toString()
+        requestUrl.toString(),
       );
     }
 
@@ -481,8 +533,8 @@ export class GitLabClient {
       durationMs: Date.now() - startedAt,
       response: {
         headers: summarizeHeaders(response.headers),
-        body: truncateForLog(responseBody)
-      }
+        body: truncateForLog(responseBody),
+      },
     });
 
     return JSON.parse(responseBody) as T;
@@ -491,7 +543,7 @@ export class GitLabClient {
   private async requestBuffer(
     method: "GET",
     path: string,
-    query?: Record<string, string | number | undefined>
+    query?: Record<string, string | number | undefined>,
   ): Promise<Buffer> {
     const requestUrl = this.buildUrl(path, query);
     const requestId = randomUUID();
@@ -506,15 +558,15 @@ export class GitLabClient {
       request: {
         query,
         headers: {
-          accept: "application/octet-stream, application/x-gzip, */*"
-        }
-      }
+          accept: "application/octet-stream, application/x-gzip, */*",
+        },
+      },
     });
     const response = await fetch(requestUrl, {
       method,
       headers: this.buildHeaders({
-        accept: "application/octet-stream, application/x-gzip, */*"
-      })
+        accept: "application/octet-stream, application/x-gzip, */*",
+      }),
     });
 
     if (!response.ok) {
@@ -530,14 +582,14 @@ export class GitLabClient {
         durationMs: Date.now() - startedAt,
         response: {
           headers: summarizeHeaders(response.headers),
-          body: truncateForLog(responseBody)
-        }
+          body: truncateForLog(responseBody),
+        },
       });
       throw new GitLabApiError(
         `GitLab archive request failed for ${path} with ${response.status}`,
         response.status,
         responseBody,
-        requestUrl.toString()
+        requestUrl.toString(),
       );
     }
 
@@ -555,9 +607,9 @@ export class GitLabClient {
         headers: summarizeHeaders(response.headers),
         body: {
           kind: "binary",
-          size: arrayBuffer.byteLength
-        }
-      }
+          size: arrayBuffer.byteLength,
+        },
+      },
     });
     return Buffer.from(arrayBuffer);
   }
@@ -565,7 +617,7 @@ export class GitLabClient {
   private async requestForm<T>(
     method: "POST" | "PUT",
     path: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
   ): Promise<T> {
     const body = new URLSearchParams();
     appendFormValue(body, payload);
@@ -583,17 +635,17 @@ export class GitLabClient {
       request: {
         headers: {
           accept: "application/json",
-          "content-type": "application/x-www-form-urlencoded"
+          "content-type": "application/x-www-form-urlencoded",
         },
-        body: payload
-      }
+        body: payload,
+      },
     });
     const response = await fetch(requestUrl, {
       method,
       headers: this.buildHeaders({
-        "content-type": "application/x-www-form-urlencoded"
+        "content-type": "application/x-www-form-urlencoded",
       }),
-      body
+      body,
     });
 
     const responseBody = await response.text();
@@ -608,18 +660,18 @@ export class GitLabClient {
         status: response.status,
         durationMs: Date.now() - startedAt,
         request: {
-          body: payload
+          body: payload,
         },
         response: {
           headers: summarizeHeaders(response.headers),
-          body: truncateForLog(responseBody)
-        }
+          body: truncateForLog(responseBody),
+        },
       });
       throw new GitLabApiError(
         `GitLab form request failed for ${method} ${path} with ${response.status}`,
         response.status,
         responseBody,
-        requestUrl.toString()
+        requestUrl.toString(),
       );
     }
 
@@ -634,8 +686,8 @@ export class GitLabClient {
       durationMs: Date.now() - startedAt,
       response: {
         headers: summarizeHeaders(response.headers),
-        body: truncateForLog(responseBody)
-      }
+        body: truncateForLog(responseBody),
+      },
     });
 
     return JSON.parse(responseBody) as T;
@@ -643,7 +695,7 @@ export class GitLabClient {
 
   private async requestPaginated<T>(
     path: string,
-    query: Record<string, string | number | undefined> = {}
+    query: Record<string, string | number | undefined> = {},
   ): Promise<T[]> {
     const items: T[] = [];
     let page = 1;
@@ -652,7 +704,7 @@ export class GitLabClient {
       const requestUrl = this.buildUrl(path, {
         ...query,
         page,
-        per_page: 100
+        per_page: 100,
       });
       const requestId = randomUUID();
       const startedAt = Date.now();
@@ -667,20 +719,17 @@ export class GitLabClient {
           query: {
             ...query,
             page,
-            per_page: 100
+            per_page: 100,
           },
           headers: {
-            accept: "application/json"
-          }
-        }
+            accept: "application/json",
+          },
+        },
       });
-      const response = await fetch(
-        requestUrl,
-        {
-          method: "GET",
-          headers: this.buildHeaders()
-        }
-      );
+      const response = await fetch(requestUrl, {
+        method: "GET",
+        headers: this.buildHeaders(),
+      });
 
       const responseBody = await response.text();
       if (!response.ok) {
@@ -695,14 +744,14 @@ export class GitLabClient {
           durationMs: Date.now() - startedAt,
           response: {
             headers: summarizeHeaders(response.headers),
-            body: truncateForLog(responseBody)
-          }
+            body: truncateForLog(responseBody),
+          },
         });
         throw new GitLabApiError(
           `GitLab paginated request failed for ${path} with ${response.status}`,
           response.status,
           responseBody,
-          requestUrl.toString()
+          requestUrl.toString(),
         );
       }
 
@@ -717,8 +766,8 @@ export class GitLabClient {
         durationMs: Date.now() - startedAt,
         response: {
           headers: summarizeHeaders(response.headers),
-          body: truncateForLog(responseBody)
-        }
+          body: truncateForLog(responseBody),
+        },
       });
 
       const pageItems = JSON.parse(responseBody) as T[];
@@ -736,7 +785,10 @@ export class GitLabClient {
     }
   }
 
-  private buildUrl(path: string, query: Record<string, string | number | undefined> = {}): URL {
+  private buildUrl(
+    path: string,
+    query: Record<string, string | number | undefined> = {},
+  ): URL {
     return buildGitLabApiUrl(this.baseUrl, path, query);
   }
 
@@ -744,7 +796,7 @@ export class GitLabClient {
     return new Headers({
       "private-token": this.apiToken,
       accept: "application/json",
-      ...additional
+      ...additional,
     });
   }
 
@@ -756,7 +808,10 @@ export class GitLabClient {
     try {
       await this.requestLogger.log(entry);
     } catch (error) {
-      this.logger.warn({ err: error, requestId: entry.requestId, path: entry.path }, "failed to persist GitLab request log");
+      this.logger.warn(
+        { err: error, requestId: entry.requestId, path: entry.path },
+        "failed to persist GitLab request log",
+      );
     }
   }
 }
@@ -764,11 +819,15 @@ export class GitLabClient {
 function appendFormValue(
   params: URLSearchParams,
   value: Record<string, unknown> | unknown[],
-  prefix?: string
+  prefix?: string,
 ): void {
   if (Array.isArray(value)) {
     value.forEach((entry, index) => {
-      appendUnknownFormValue(params, entry, prefix ? `${prefix}[${index}]` : String(index));
+      appendUnknownFormValue(
+        params,
+        entry,
+        prefix ? `${prefix}[${index}]` : String(index),
+      );
     });
     return;
   }
@@ -778,12 +837,20 @@ function appendFormValue(
   }
 }
 
-function appendUnknownFormValue(params: URLSearchParams, value: unknown, key: string): void {
+function appendUnknownFormValue(
+  params: URLSearchParams,
+  value: unknown,
+  key: string,
+): void {
   if (value === null || value === undefined) {
     return;
   }
 
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     params.append(key, String(value));
     return;
   }

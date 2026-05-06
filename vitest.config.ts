@@ -6,12 +6,12 @@ export default defineConfig({
     exclude: ["tmp/**", "dist/**", "node_modules/**"],
     reporters: ["default", "junit"],
     outputFile: {
-      junit: "./coverage/junit.xml"
+      junit: "./coverage/junit.xml",
     },
     coverage: {
       provider: "v8",
       reporter: ["text-summary", "json-summary", "cobertura"],
-      reportsDirectory: "./coverage"
-    }
-  }
+      reportsDirectory: "./coverage",
+    },
+  },
 });

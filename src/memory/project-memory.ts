@@ -5,12 +5,12 @@ import {
   REVIEWPHIN_MEMORY_PAGE_TITLE,
   REVIEWPHIN_MEMORY_SECTION_HEADING,
   type ProjectMemoryEntry,
-  type ProjectMemoryToolInput
+  type ProjectMemoryToolInput,
 } from "./types.js";
 
 export async function resolveProjectMemoryPage(
   client: GitLabClient,
-  projectId: number
+  projectId: number,
 ): Promise<GitLabWikiPage | null> {
   const attemptedSlugs = new Set<string>();
   for (const slug of buildWikiSlugCandidates(REVIEWPHIN_MEMORY_PAGE_TITLE)) {
@@ -25,7 +25,11 @@ export async function resolveProjectMemoryPage(
   }
 
   const pages = await client.listProjectWikiPages(projectId);
-  const exactMatch = pages.find((page) => normalizeWikiTitle(page.title) === normalizeWikiTitle(REVIEWPHIN_MEMORY_PAGE_TITLE));
+  const exactMatch = pages.find(
+    (page) =>
+      normalizeWikiTitle(page.title) ===
+      normalizeWikiTitle(REVIEWPHIN_MEMORY_PAGE_TITLE),
+  );
   if (!exactMatch) {
     return null;
   }
@@ -47,10 +51,11 @@ export async function resolveProjectMemoryPage(
 
     throw error;
   }
-
 }
 
-export function parseProjectMemoryContent(content: string): ProjectMemoryEntry[] {
+export function parseProjectMemoryContent(
+  content: string,
+): ProjectMemoryEntry[] {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   const entries: ProjectMemoryEntry[] = [];
   let inManagedSection = false;
@@ -58,7 +63,9 @@ export function parseProjectMemoryContent(content: string): ProjectMemoryEntry[]
   for (const line of lines) {
     const trimmed = line.trim();
     if (/^##\s+/.test(trimmed)) {
-      inManagedSection = trimmed.toLowerCase() === `## ${REVIEWPHIN_MEMORY_SECTION_HEADING}`.toLowerCase();
+      inManagedSection =
+        trimmed.toLowerCase() ===
+        `## ${REVIEWPHIN_MEMORY_SECTION_HEADING}`.toLowerCase();
       continue;
     }
 
@@ -96,28 +103,38 @@ export function renderProjectMemory(entries: ProjectMemoryEntry[]): string {
     "> This page is managed by Reviewphin and stores durable, project-specific context learned from user comments.",
     "",
     `## ${REVIEWPHIN_MEMORY_SECTION_HEADING}`,
-    dedupedEntries.length > 0 ? dedupedEntries.map((entry) => `- ${entry.text}`).join("\n") : "_No remembered project knowledge yet._",
+    dedupedEntries.length > 0
+      ? dedupedEntries.map((entry) => `- ${entry.text}`).join("\n")
+      : "_No remembered project knowledge yet._",
     "",
     "## Update policy",
     "- Keep durable project facts, team conventions, preferences, and long-term policies.",
-    "- Do not store merge-request-specific remarks, temporary incidents, or one-off review requests."
+    "- Do not store merge-request-specific remarks, temporary incidents, or one-off review requests.",
   ].join("\n");
 }
 
-export function getProjectMemoryContentLength(entries: ProjectMemoryEntry[]): number {
+export function getProjectMemoryContentLength(
+  entries: ProjectMemoryEntry[],
+): number {
   return renderProjectMemory(entries).length;
 }
 
 export function mergeProjectMemoryEntries(
   existingEntries: ProjectMemoryEntry[],
-  input: Pick<ProjectMemoryToolInput, "memory" | "supersedes">
+  input: Pick<ProjectMemoryToolInput, "memory" | "supersedes">,
 ): ProjectMemoryEntry[] {
   const nextEntries = existingEntries.map((entry) => ({ ...entry }));
   const supersededKeys = new Set(input.supersedes.map(normalizeMemoryText));
   const normalizedIncoming = normalizeProjectMemoryText(input.memory);
-  const earliestSupersededIndex = nextEntries.findIndex((entry) => supersededKeys.has(normalizeProjectMemoryText(entry.text)));
-  const filteredEntries = nextEntries.filter((entry) => !supersededKeys.has(normalizeProjectMemoryText(entry.text)));
-  const existingIndex = filteredEntries.findIndex((entry) => normalizeMemoryText(entry.text) === normalizedIncoming);
+  const earliestSupersededIndex = nextEntries.findIndex((entry) =>
+    supersededKeys.has(normalizeProjectMemoryText(entry.text)),
+  );
+  const filteredEntries = nextEntries.filter(
+    (entry) => !supersededKeys.has(normalizeProjectMemoryText(entry.text)),
+  );
+  const existingIndex = filteredEntries.findIndex(
+    (entry) => normalizeMemoryText(entry.text) === normalizedIncoming,
+  );
   const replacementEntry = { text: input.memory };
 
   if (existingIndex >= 0) {
@@ -134,7 +151,9 @@ export function mergeProjectMemoryEntries(
   return dedupeProjectMemoryEntries(filteredEntries);
 }
 
-export function dedupeProjectMemoryEntries(entries: ProjectMemoryEntry[]): ProjectMemoryEntry[] {
+export function dedupeProjectMemoryEntries(
+  entries: ProjectMemoryEntry[],
+): ProjectMemoryEntry[] {
   const dedupedEntries: ProjectMemoryEntry[] = [];
   const seen = new Set<string>();
 
@@ -161,8 +180,8 @@ function buildWikiSlugCandidates(title: string): string[] {
     new Set([
       REVIEWPHIN_MEMORY_PAGE_SLUG,
       title.replace(/\s+/g, "-"),
-      title.toLowerCase().replace(/\s+/g, "-")
-    ])
+      title.toLowerCase().replace(/\s+/g, "-"),
+    ]),
   );
 }
 

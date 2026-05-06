@@ -16,8 +16,8 @@ const mergeRequest = {
   author: {
     id: 42,
     username: "developer",
-    name: "Dev User"
-  }
+    name: "Dev User",
+  },
 };
 
 describe("buildScopedReviewContext", () => {
@@ -27,7 +27,7 @@ describe("buildScopedReviewContext", () => {
       mergeRequest,
       changes: [
         createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old"),
-        createChange("src\\delta.ts", "@@ -1 +1 @@\n-old\n+new")
+        createChange("src\\delta.ts", "@@ -1 +1 @@\n-old\n+new"),
       ],
       notes: [createNote(1, "Looks good")],
       discussions: [],
@@ -41,10 +41,21 @@ describe("buildScopedReviewContext", () => {
         targetThreadId: null,
         targetDiscussionId: null,
         targetThreadTitle: null,
-        responseTarget: createResponseTarget("direct-mention", 55, "@review-bot review", "review")
+        responseTarget: createResponseTarget(
+          "direct-mention",
+          55,
+          "@review-bot review",
+          "review",
+        ),
       },
       priorThreads: [
-        createThread("map_1", "disc_1", "Existing finding", "src\\existing.ts", false)
+        createThread(
+          "map_1",
+          "disc_1",
+          "Existing finding",
+          "src\\existing.ts",
+          false,
+        ),
       ],
       previousReview: {
         reviewRunId: "run_prev",
@@ -57,8 +68,8 @@ describe("buildScopedReviewContext", () => {
             mergeReadiness: {
               status: "needs_attention",
               confidence: "medium",
-              summary: "A prior issue remained open."
-            }
+              summary: "A prior issue remained open.",
+            },
           },
           findings: [
             {
@@ -70,21 +81,23 @@ describe("buildScopedReviewContext", () => {
                 path: "src\\existing.ts",
                 startLine: 1,
                 endLine: 1,
-                side: "new"
-              }
-            }
+                side: "new",
+              },
+            },
           ],
-          priorDispositions: []
+          priorDispositions: [],
         }),
-        changesJson: JSON.stringify([createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old")])
-      }
+        changesJson: JSON.stringify([
+          createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old"),
+        ]),
+      },
     });
 
     expect(scoped.scope.mode).toBe("incremental-rereview");
     expect(scoped.changes).toHaveLength(2);
     expect(scoped.changes.map((change) => change.new_path)).toEqual([
       "src\\existing.ts",
-      "src\\delta.ts"
+      "src\\delta.ts",
     ]);
     expect(scoped.scope.previousReview?.reviewRunId).toBe("run_prev");
     expect(scoped.scope.deltaSincePreviousReview?.changedFiles).toHaveLength(1);
@@ -96,7 +109,7 @@ describe("buildScopedReviewContext", () => {
       mergeRequest,
       changes: [
         createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old"),
-        createChange("src\\delta.ts", "@@ -1 +1 @@\n-old\n+new")
+        createChange("src\\delta.ts", "@@ -1 +1 @@\n-old\n+new"),
       ],
       notes: [],
       discussions: [],
@@ -110,7 +123,12 @@ describe("buildScopedReviewContext", () => {
         targetThreadId: null,
         targetDiscussionId: null,
         targetThreadTitle: null,
-        responseTarget: createResponseTarget("direct-mention", 57, "@review-bot review again", "review again")
+        responseTarget: createResponseTarget(
+          "direct-mention",
+          57,
+          "@review-bot review again",
+          "review again",
+        ),
       },
       priorThreads: [],
       priorFindings: [
@@ -126,13 +144,13 @@ describe("buildScopedReviewContext", () => {
             path: "src\\existing.ts",
             startLine: 1,
             endLine: 1,
-            side: "new"
+            side: "new",
           },
           suggestion: null,
           reviewRunId: "run_prev",
           reviewedAt: "2026-04-27T12:00:00.000Z",
-          headSha: "prevhead"
-        }
+          headSha: "prevhead",
+        },
       ],
       previousReview: {
         reviewRunId: "run_prev",
@@ -141,16 +159,21 @@ describe("buildScopedReviewContext", () => {
         resultJson: JSON.stringify({
           overview: {
             summary: "Needs work",
-            overallSeverity: "medium"
+            overallSeverity: "medium",
           },
           findings: [],
-          priorDispositions: []
+          priorDispositions: [],
         }),
-        changesJson: JSON.stringify([createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old")])
-      }
+        changesJson: JSON.stringify([
+          createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old"),
+        ]),
+      },
     });
 
-    expect(scoped.changes.map((change) => change.new_path)).toEqual(["src\\existing.ts", "src\\delta.ts"]);
+    expect(scoped.changes.map((change) => change.new_path)).toEqual([
+      "src\\existing.ts",
+      "src\\delta.ts",
+    ]);
     expect(scoped.scope.priorFindings).toHaveLength(1);
     expect(scoped.scope.priorFindings[0]?.status).toBe("open");
   });
@@ -168,7 +191,8 @@ describe("buildScopedReviewContext", () => {
         noteId: 90,
         authorUsername: "developer",
         body: "For future reference, prefer tasteful dolphin jokes in the overall assessment when they fit.",
-        instruction: "For future reference, prefer tasteful dolphin jokes in the overall assessment when they fit.",
+        instruction:
+          "For future reference, prefer tasteful dolphin jokes in the overall assessment when they fit.",
         targetThreadId: null,
         targetDiscussionId: null,
         targetThreadTitle: null,
@@ -177,8 +201,8 @@ describe("buildScopedReviewContext", () => {
           90,
           "For future reference, prefer tasteful dolphin jokes in the overall assessment when they fit.",
           "For future reference, prefer tasteful dolphin jokes in the overall assessment when they fit.",
-          "disc_summary"
-        )
+          "disc_summary",
+        ),
       },
       priorThreads: [],
       previousReview: {
@@ -188,17 +212,19 @@ describe("buildScopedReviewContext", () => {
         resultJson: JSON.stringify({
           overview: {
             summary: "Prior pass",
-            overallSeverity: "low"
+            overallSeverity: "low",
           },
           findings: [],
-          priorDispositions: []
+          priorDispositions: [],
         }),
-        changesJson: JSON.stringify([])
-      }
+        changesJson: JSON.stringify([]),
+      },
     });
 
     expect(scoped.scope.mode).toBe("incremental-rereview");
-    expect(scoped.scope.scopeSummary).toContain("summary note requested another review pass");
+    expect(scoped.scope.scopeSummary).toContain(
+      "summary note requested another review pass",
+    );
   });
 
   it("keeps current MR diffs for incremental re-reviews when there is no delta", () => {
@@ -207,7 +233,7 @@ describe("buildScopedReviewContext", () => {
       mergeRequest,
       changes: [
         createChange("src\\same-head-a.ts", "@@ -1 +1 @@\n-old-a\n+new-a"),
-        createChange("src\\same-head-b.ts", "@@ -1 +1 @@\n-old-b\n+new-b")
+        createChange("src\\same-head-b.ts", "@@ -1 +1 @@\n-old-b\n+new-b"),
       ],
       notes: [createNote(1, "Looks good")],
       discussions: [],
@@ -221,7 +247,12 @@ describe("buildScopedReviewContext", () => {
         targetThreadId: null,
         targetDiscussionId: null,
         targetThreadTitle: null,
-        responseTarget: createResponseTarget("direct-mention", 56, "@review-bot review again", "review again")
+        responseTarget: createResponseTarget(
+          "direct-mention",
+          56,
+          "@review-bot review again",
+          "review again",
+        ),
       },
       priorThreads: [],
       previousReview: {
@@ -231,48 +262,60 @@ describe("buildScopedReviewContext", () => {
         resultJson: JSON.stringify({
           overview: {
             summary: "Prior pass",
-            overallSeverity: "low"
+            overallSeverity: "low",
           },
           findings: [],
-          priorDispositions: []
+          priorDispositions: [],
         }),
         changesJson: JSON.stringify([
           createChange("src\\same-head-a.ts", "@@ -1 +1 @@\n-old-a\n+new-a"),
-          createChange("src\\same-head-b.ts", "@@ -1 +1 @@\n-old-b\n+new-b")
-        ])
-      }
+          createChange("src\\same-head-b.ts", "@@ -1 +1 @@\n-old-b\n+new-b"),
+        ]),
+      },
     });
 
     expect(scoped.scope.mode).toBe("incremental-rereview");
     expect(scoped.scope.deltaSincePreviousReview?.changedFiles).toEqual([]);
     expect(scoped.changes.map((change) => change.new_path)).toEqual([
       "src\\same-head-a.ts",
-      "src\\same-head-b.ts"
+      "src\\same-head-b.ts",
     ]);
   });
 
   it("keeps follow-up reviews focused on the target thread and related file", () => {
-    const targetThread = createThread("map_target", "disc_target", "Target finding", "src\\target.ts", false);
-    const otherThread = createThread("map_other", "disc_other", "Other finding", "src\\other.ts", false);
+    const targetThread = createThread(
+      "map_target",
+      "disc_target",
+      "Target finding",
+      "src\\target.ts",
+      false,
+    );
+    const otherThread = createThread(
+      "map_other",
+      "disc_other",
+      "Other finding",
+      "src\\other.ts",
+      false,
+    );
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
       mergeRequest,
       changes: [
         createChange("src\\target.ts", "@@ -1 +1 @@\n-old\n+new"),
-        createChange("src\\other.ts", "@@ -1 +1 @@\n-old\n+new")
+        createChange("src\\other.ts", "@@ -1 +1 @@\n-old\n+new"),
       ],
       notes: [createNote(1, "General MR note")],
       discussions: [
         {
           id: "disc_target",
           individual_note: false,
-          notes: [createDiscussionNote(10, "Target finding")]
+          notes: [createDiscussionNote(10, "Target finding")],
         },
         {
           id: "disc_other",
           individual_note: false,
-          notes: [createDiscussionNote(11, "Other finding")]
-        }
+          notes: [createDiscussionNote(11, "Other finding")],
+        },
       ],
       instructionFiles: [],
       trigger: {
@@ -289,11 +332,11 @@ describe("buildScopedReviewContext", () => {
           77,
           "Please reword this.",
           "Please reword this.",
-          "disc_target"
-        )
+          "disc_target",
+        ),
       },
       priorThreads: [targetThread, otherThread],
-      previousReview: null
+      previousReview: null,
     });
 
     expect(scoped.scope.mode).toBe("follow-up-thread");
@@ -304,7 +347,13 @@ describe("buildScopedReviewContext", () => {
   });
 
   it("keeps follow-up reviews pinned to focused files even when the target file is no longer in MR changes", () => {
-    const targetThread = createThread("map_target", "disc_target", "Target finding", "src\\target.ts", false);
+    const targetThread = createThread(
+      "map_target",
+      "disc_target",
+      "Target finding",
+      "src\\target.ts",
+      false,
+    );
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
       mergeRequest,
@@ -314,8 +363,8 @@ describe("buildScopedReviewContext", () => {
         {
           id: "disc_target",
           individual_note: false,
-          notes: [createDiscussionNote(10, "Target finding")]
-        }
+          notes: [createDiscussionNote(10, "Target finding")],
+        },
       ],
       instructionFiles: [],
       trigger: {
@@ -332,11 +381,11 @@ describe("buildScopedReviewContext", () => {
           78,
           "Please re-check the prior thread.",
           "Please re-check the prior thread.",
-          "disc_target"
-        )
+          "disc_target",
+        ),
       },
       priorThreads: [targetThread],
-      previousReview: null
+      previousReview: null,
     });
 
     expect(scoped.scope.mode).toBe("follow-up-thread");
@@ -351,7 +400,10 @@ describe("buildScopedReviewContext", () => {
       workspacePath: repoPath(),
       mergeRequest,
       changes: Array.from({ length: 16 }, (_, index) =>
-        createChange(`src\\feature-${index + 1}.ts`, `@@ -1 +1 @@\n-old-${index}\n+new-${index}`)
+        createChange(
+          `src\\feature-${index + 1}.ts`,
+          `@@ -1 +1 @@\n-old-${index}\n+new-${index}`,
+        ),
       ),
       notes: [],
       discussions: [],
@@ -365,10 +417,15 @@ describe("buildScopedReviewContext", () => {
         targetThreadId: null,
         targetDiscussionId: null,
         targetThreadTitle: null,
-        responseTarget: createResponseTarget("direct-mention", 88, "@review-bot review", "review")
+        responseTarget: createResponseTarget(
+          "direct-mention",
+          88,
+          "@review-bot review",
+          "review",
+        ),
       },
       priorThreads: [],
-      previousReview: null
+      previousReview: null,
     });
 
     expect(scoped.scope.mode).toBe("first-pass-full");
@@ -393,7 +450,12 @@ describe("buildScopedReviewContext", () => {
         targetThreadId: null,
         targetDiscussionId: null,
         targetThreadTitle: null,
-        responseTarget: createResponseTarget("direct-mention", 89, "@review-bot full rescan please", "full rescan please")
+        responseTarget: createResponseTarget(
+          "direct-mention",
+          89,
+          "@review-bot full rescan please",
+          "full rescan please",
+        ),
       },
       priorThreads: [],
       previousReview: {
@@ -403,13 +465,13 @@ describe("buildScopedReviewContext", () => {
         resultJson: JSON.stringify({
           overview: {
             summary: "Prior pass",
-            overallSeverity: "low"
+            overallSeverity: "low",
           },
           findings: [],
-          priorDispositions: []
+          priorDispositions: [],
         }),
-        changesJson: JSON.stringify([])
-      }
+        changesJson: JSON.stringify([]),
+      },
     });
 
     expect(scoped.scope.mode).toBe("first-pass-full");
@@ -423,7 +485,7 @@ function createChange(path: string, diff: string) {
     diff,
     new_file: false,
     renamed_file: false,
-    deleted_file: false
+    deleted_file: false,
   };
 }
 
@@ -432,7 +494,7 @@ function createResponseTarget(
   noteId: number,
   body: string,
   instruction: string,
-  discussionId?: string
+  discussionId?: string,
 ) {
   return {
     kind:
@@ -456,7 +518,7 @@ function createResponseTarget(
     discussionId,
     authorUsername: "developer",
     body,
-    instruction
+    instruction,
   } as const;
 }
 
@@ -467,18 +529,18 @@ function createNote(id: number, body: string) {
     author: {
       id: 42,
       username: "developer",
-      name: "Dev User"
+      name: "Dev User",
     },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    system: false
+    system: false,
   };
 }
 
 function createDiscussionNote(id: number, body: string) {
   return {
     ...createNote(id, body),
-    type: "DiscussionNote"
+    type: "DiscussionNote",
   };
 }
 
@@ -487,7 +549,7 @@ function createThread(
   discussionId: string,
   title: string,
   path: string,
-  resolved: boolean
+  resolved: boolean,
 ): ProviderThreadContext {
   return {
     threadId,
@@ -499,9 +561,9 @@ function createThread(
       path,
       startLine: 1,
       endLine: 1,
-      side: "new"
+      side: "new",
     },
     resolved,
-    humanReplies: []
+    humanReplies: [],
   };
 }

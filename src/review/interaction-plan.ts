@@ -1,4 +1,9 @@
-import type { PriorReviewFindingContext, ReplyStyle, ReviewTriggerContext, InteractionPlan } from "./types.js";
+import type {
+  PriorReviewFindingContext,
+  ReplyStyle,
+  ReviewTriggerContext,
+  InteractionPlan,
+} from "./types.js";
 
 interface BuildInteractionPlanInput {
   trigger: ReviewTriggerContext;
@@ -8,25 +13,40 @@ interface BuildInteractionPlanInput {
 
 const REVIEW_REQUEST_PATTERN =
   /\b(review|re-review|rereview|rerun|re-run|rescan|check again|look again|take another look|reassess)\b/i;
-const QUESTION_PATTERN = /[?]|^\s*(why|how|what|when|where|can|could|would|should|is|are|do|does)\b/i;
+const QUESTION_PATTERN =
+  /[?]|^\s*(why|how|what|when|where|can|could|would|should|is|are|do|does)\b/i;
 const MEMORY_PATTERN =
   /\b(for future reference|remember\b|please remember|going forward|in the future|team policy|stable preference|always prefer|please prefer)\b/i;
 const WORDING_PATTERN =
   /\b(reword|rewrite|wording|tone|summar(?:y|ize)|clarify|explain|human|friendlier|friendlier|shorter|longer)\b/i;
 
-export function buildInteractionPlan(input: BuildInteractionPlanInput): InteractionPlan {
-  const normalizedInstruction = normalizeInstruction(input.trigger.instruction ?? input.trigger.body);
-  const hasOpenPriorFindings = input.priorFindings.some((finding) => finding.status === "open");
+export function buildInteractionPlan(
+  input: BuildInteractionPlanInput,
+): InteractionPlan {
+  const normalizedInstruction = normalizeInstruction(
+    input.trigger.instruction ?? input.trigger.body,
+  );
+  const hasOpenPriorFindings = input.priorFindings.some(
+    (finding) => finding.status === "open",
+  );
   const reviewRequested = REVIEW_REQUEST_PATTERN.test(normalizedInstruction);
   const questionLike = QUESTION_PATTERN.test(normalizedInstruction);
   const memoryCandidate = MEMORY_PATTERN.test(normalizedInstruction);
   const wordingRequest = WORDING_PATTERN.test(normalizedInstruction);
-  const mentionOnlyNoise = input.trigger.kind === "direct-mention" && normalizedInstruction.length === 0;
-  const shouldRefineExistingReview = memoryCandidate && (input.previousReviewExists || hasOpenPriorFindings);
+  const mentionOnlyNoise =
+    input.trigger.kind === "direct-mention" &&
+    normalizedInstruction.length === 0;
+  const shouldRefineExistingReview =
+    memoryCandidate && (input.previousReviewExists || hasOpenPriorFindings);
 
   const reviewNeeded =
-    input.trigger.kind === "follow-up-comment" || reviewRequested || shouldRefineExistingReview;
-  const nonReviewReplyRequested = wordingRequest || memoryCandidate || input.trigger.kind === "summary-follow-up";
+    input.trigger.kind === "follow-up-comment" ||
+    reviewRequested ||
+    shouldRefineExistingReview;
+  const nonReviewReplyRequested =
+    wordingRequest ||
+    memoryCandidate ||
+    input.trigger.kind === "summary-follow-up";
   const replyNeeded =
     input.trigger.kind !== "follow-up-comment" &&
     !mentionOnlyNoise &&
@@ -36,7 +56,7 @@ export function buildInteractionPlan(input: BuildInteractionPlanInput): Interact
     replyNeeded,
     questionLike,
     wordingRequest,
-    memoryCandidate
+    memoryCandidate,
   });
   const responseTargets = replyNeeded ? [input.trigger.responseTarget] : [];
 
@@ -47,7 +67,7 @@ export function buildInteractionPlan(input: BuildInteractionPlanInput): Interact
       target,
       replyStyle,
       reviewNeeded,
-      memoryCandidate
+      memoryCandidate,
     })),
     memoryCandidate,
     reviewNeeded,
@@ -57,7 +77,7 @@ export function buildInteractionPlan(input: BuildInteractionPlanInput): Interact
       ? "memory-update"
       : reviewRequested
         ? "explicit-review-request"
-        : null
+        : null,
   };
 }
 

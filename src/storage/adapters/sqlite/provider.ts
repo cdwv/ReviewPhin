@@ -1,6 +1,9 @@
 import { type Logger } from "pino";
 import { CURRENT_STORAGE_CONTRACT_REVISION } from "../../contract/index.js";
-import type { StoragePreparationResult, StorageProvider } from "../../provider.js";
+import type {
+  StoragePreparationResult,
+  StorageProvider,
+} from "../../provider.js";
 import { SqliteStoreDatabase } from "./database.js";
 
 export interface SqliteStorageProviderOptions {
@@ -14,7 +17,7 @@ export class SqliteStorageProvider implements StorageProvider {
   public constructor(options: SqliteStorageProviderOptions) {
     this.storage = new SqliteStoreDatabase({
       databasePath: options.databasePath,
-      ...(options.logger && { logger: options.logger })
+      ...(options.logger && { logger: options.logger }),
     });
   }
 
@@ -35,7 +38,7 @@ export class SqliteStorageProvider implements StorageProvider {
     return {
       providerId: this.getProviderId(),
       storageContractRevision: this.getSupportedStorageContract(),
-      appliedMigrationIds
+      appliedMigrationIds,
     };
   }
 

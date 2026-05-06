@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { HarnessModelConfig, HarnessTenantContext } from "../src/harness/types.js";
+import type {
+  HarnessModelConfig,
+  HarnessTenantContext,
+} from "../src/harness/types.js";
 import { HarnessReviewProvider } from "../src/review/harness-review-provider.js";
 import type { ReviewContext } from "../src/review/types.js";
 import { repoPath, tmpPath } from "./test-paths.js";
@@ -11,18 +14,18 @@ describe("HarnessReviewProvider", () => {
       logger: createLogger(),
       modelConfig: createModelConfig(),
       harnessRuntime: {
-        run: vi.fn()
+        run: vi.fn(),
       } as never,
       memoryConsolidator: {
         coalesce: vi.fn(async () => {
           throw new Error("boom");
-        })
+        }),
       } as never,
-      maxPromptMemoryChars: 5_000
+      maxPromptMemoryChars: 5_000,
     });
 
     const mergedEntries = [
-      { text: "Team policy is to keep dolphin jokes tasteful and occasional." }
+      { text: "Team policy is to keep dolphin jokes tasteful and occasional." },
     ];
 
     const result = await (provider as any).coalesceProjectMemorySafely(
@@ -30,18 +33,18 @@ describe("HarnessReviewProvider", () => {
         entries: mergedEntries,
         maxChars: 5_000,
         targetChars: 3_750,
-        reason: "prompt-budget"
+        reason: "prompt-budget",
       },
       {
         logging: {
           interactionRunId: "run_1",
-          tenantId: "tenant_1"
+          tenantId: "tenant_1",
         },
-        workspacePath: repoPath()
+        workspacePath: repoPath(),
       },
       {
-        tenant: createTenantRuntimeContext()
-      }
+        tenant: createTenantRuntimeContext(),
+      },
     );
 
     expect(result).toEqual(mergedEntries);
@@ -54,30 +57,30 @@ describe("HarnessReviewProvider", () => {
           content: JSON.stringify({
             overview: {
               summary: "Looks good",
-              overallSeverity: "low"
+              overallSeverity: "low",
             },
             findings: [],
-            priorDispositions: []
-          })
-        }
+            priorDispositions: [],
+          }),
+        },
       },
-      events: []
+      events: [],
     }));
 
     const provider = new HarnessReviewProvider({
       logger: createLogger(),
       modelConfig: createModelConfig(),
       harnessRuntime: {
-        run
+        run,
       } as never,
       memoryConsolidator: {
-        coalesce: vi.fn(async (input) => input.coalesceInput.entries)
+        coalesce: vi.fn(async (input) => input.coalesceInput.entries),
       } as never,
-      maxPromptMemoryChars: 5_000
+      maxPromptMemoryChars: 5_000,
     });
 
     const result = await provider.review(createReviewContext(), {
-      tenant: createTenantRuntimeContext()
+      tenant: createTenantRuntimeContext(),
     });
 
     expect(result.overview.summary).toBe("Looks good");
@@ -87,8 +90,8 @@ describe("HarnessReviewProvider", () => {
         tenant: createTenantRuntimeContext(),
         tools: ["glob", "rg", "view"],
         subagents: ["context-analyst", "review-author"],
-        agent: "review-author"
-      })
+        agent: "review-author",
+      }),
     );
   });
 
@@ -99,15 +102,15 @@ describe("HarnessReviewProvider", () => {
           content: JSON.stringify({
             overview: {
               summary: "Looks good",
-              overallSeverity: "low"
+              overallSeverity: "low",
             },
             findings: [],
             priorDispositions: [
               {
                 threadId: "thread_1",
                 action: "resolve",
-                resolution: "dismissed"
-              }
+                resolution: "dismissed",
+              },
             ],
             replyHandoff: {
               summary: "   ",
@@ -116,49 +119,52 @@ describe("HarnessReviewProvider", () => {
                   kind: "discussion-reply",
                   noteId: 55,
                   discussionId: "disc_1",
-                  guidance: "The concern is not applicable because the value is validated before this path runs."
-                }
-              ]
-            }
-          })
-        }
+                  guidance:
+                    "The concern is not applicable because the value is validated before this path runs.",
+                },
+              ],
+            },
+          }),
+        },
       },
-      events: []
+      events: [],
     }));
 
     const provider = new HarnessReviewProvider({
       logger: createLogger(),
       modelConfig: createModelConfig(),
       harnessRuntime: {
-        run
+        run,
       } as never,
       memoryConsolidator: {
-        coalesce: vi.fn(async (input) => input.coalesceInput.entries)
+        coalesce: vi.fn(async (input) => input.coalesceInput.entries),
       } as never,
-      maxPromptMemoryChars: 5_000
+      maxPromptMemoryChars: 5_000,
     });
 
     const result = await provider.review(createReviewContext(), {
-      tenant: createTenantRuntimeContext()
+      tenant: createTenantRuntimeContext(),
     });
 
     expect(result.priorDispositions).toEqual([
       {
         threadId: "thread_1",
         action: "resolve",
-        resolution: "dismissed"
-      }
+        resolution: "dismissed",
+      },
     ]);
     expect(result.replyHandoff).toEqual({
-      summary: "The concern is not applicable because the value is validated before this path runs.",
+      summary:
+        "The concern is not applicable because the value is validated before this path runs.",
       targets: [
         {
           kind: "discussion-reply",
           noteId: 55,
           discussionId: "disc_1",
-          guidance: "The concern is not applicable because the value is validated before this path runs."
-        }
-      ]
+          guidance:
+            "The concern is not applicable because the value is validated before this path runs.",
+        },
+      ],
     });
   });
 
@@ -173,16 +179,17 @@ describe("HarnessReviewProvider", () => {
               mergeReadiness: {
                 status: "ready",
                 confidence: "high",
-                summary: "Everything needed for merge readiness is now addressed."
-              }
+                summary:
+                  "Everything needed for merge readiness is now addressed.",
+              },
             },
             findings: [],
             priorDispositions: [
               {
                 threadId: "thread_1",
                 action: "resolve",
-                resolution: "resolved"
-              }
+                resolution: "resolved",
+              },
             ],
             replyHandoff: {
               summary: "   ",
@@ -191,30 +198,30 @@ describe("HarnessReviewProvider", () => {
                   kind: "discussion-reply",
                   noteId: 55,
                   discussionId: "disc_1",
-                  guidance: "   "
-                }
-              ]
-            }
-          })
-        }
+                  guidance: "   ",
+                },
+              ],
+            },
+          }),
+        },
       },
-      events: []
+      events: [],
     }));
 
     const provider = new HarnessReviewProvider({
       logger: createLogger(),
       modelConfig: createModelConfig(),
       harnessRuntime: {
-        run
+        run,
       } as never,
       memoryConsolidator: {
-        coalesce: vi.fn(async (input) => input.coalesceInput.entries)
+        coalesce: vi.fn(async (input) => input.coalesceInput.entries),
       } as never,
-      maxPromptMemoryChars: 5_000
+      maxPromptMemoryChars: 5_000,
     });
 
     const result = await provider.review(createReviewContext(), {
-      tenant: createTenantRuntimeContext()
+      tenant: createTenantRuntimeContext(),
     });
 
     expect(result.replyHandoff).toEqual({
@@ -224,9 +231,9 @@ describe("HarnessReviewProvider", () => {
           kind: "discussion-reply",
           noteId: 55,
           discussionId: "disc_1",
-          guidance: "   "
-        }
-      ]
+          guidance: "   ",
+        },
+      ],
     });
   });
 });
@@ -235,7 +242,7 @@ function createLogger() {
   return {
     warn: vi.fn(),
     error: vi.fn(),
-    child: vi.fn(() => createLogger())
+    child: vi.fn(() => createLogger()),
   } as never;
 }
 
@@ -248,7 +255,7 @@ function createModelConfig(): HarnessModelConfig {
     authToken: null,
     provider: undefined,
     providerBaseUrl: null,
-    providerType: null
+    providerType: null,
   };
 }
 
@@ -258,7 +265,7 @@ function createTenantRuntimeContext(): HarnessTenantContext {
     baseUrl: "https://gitlab.example.com",
     projectId: 1085,
     apiToken: "token",
-    memoryEnabled: true
+    memoryEnabled: true,
   };
 }
 
@@ -277,8 +284,8 @@ function createReviewContext(): ReviewContext {
       author: {
         id: 1,
         username: "developer",
-        name: "Dev"
-      }
+        name: "Dev",
+      },
     },
     changes: [],
     notes: [],
@@ -290,9 +297,9 @@ function createReviewContext(): ReviewContext {
         title: "Reviewphin memory",
         slug: "Reviewphin-memory",
         format: "markdown",
-        content: ""
+        content: "",
       },
-      entries: []
+      entries: [],
     },
     trigger: {
       kind: "summary-follow-up",
@@ -311,8 +318,8 @@ function createReviewContext(): ReviewContext {
         discussionId: "disc_summary",
         authorUsername: "developer",
         body: "Please commit this to memory.",
-        instruction: "Please commit this to memory."
-      }
+        instruction: "Please commit this to memory.",
+      },
     },
     priorThreads: [],
     scope: {
@@ -324,13 +331,13 @@ function createReviewContext(): ReviewContext {
       targetThread: null,
       previousReview: null,
       priorFindings: [],
-      deltaSincePreviousReview: null
+      deltaSincePreviousReview: null,
     },
     logging: {
       interactionRunId: "run_1",
       interactionJobId: "job_1",
       tenantId: "tenant_1",
-      runDirectory: tmpPath()
-    }
+      runDirectory: tmpPath(),
+    },
   };
 }

@@ -1,6 +1,9 @@
 export const CURRENT_STORAGE_CONTRACT_REVISION = "storage-v000";
 
-export type { StorageContractRevisionId, StorageContractRevisionMetadata } from "./history/index.js";
+export type {
+  StorageContractRevisionId,
+  StorageContractRevisionMetadata,
+} from "./history/index.js";
 export { STORAGE_CONTRACT_HISTORY } from "./history/index.js";
 export type {
   CreateInteractionJobInput,
@@ -60,5 +63,5 @@ export type {
   TenantStore,
   UpsertDiscussionMappingInput,
   UpsertInteractionRunMetricsInput,
-  UpsertModelProfileInput
+  UpsertModelProfileInput,
 } from "./current.js";

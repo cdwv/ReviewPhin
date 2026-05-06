@@ -53,7 +53,13 @@ export type UpsertModelProfileInput = Pick<ModelProfileRecord, "name"> &
   Partial<
     Pick<
       ModelProfileRecord,
-      "providerBaseUrl" | "providerType" | "wireApi" | "authToken" | "reviewModel" | "textGenerationModel" | "isDefault"
+      | "providerBaseUrl"
+      | "providerType"
+      | "wireApi"
+      | "authToken"
+      | "reviewModel"
+      | "textGenerationModel"
+      | "isDefault"
     >
   >;
 
@@ -69,7 +75,11 @@ export interface TenantDeletionSummary {
   interactionRunIds: string[];
 }
 
-export type InteractionJobStatus = "queued" | "in_progress" | "completed" | "failed";
+export type InteractionJobStatus =
+  | "queued"
+  | "in_progress"
+  | "completed"
+  | "failed";
 
 export interface InteractionJobRecord {
   id: string;
@@ -90,7 +100,13 @@ export interface InteractionJobRecord {
 
 export type CreateInteractionJobInput = Omit<
   InteractionJobRecord,
-  "id" | "status" | "retryCount" | "lastError" | "enqueuedAt" | "startedAt" | "finishedAt"
+  | "id"
+  | "status"
+  | "retryCount"
+  | "lastError"
+  | "enqueuedAt"
+  | "startedAt"
+  | "finishedAt"
 >;
 
 export interface MergeRequestSnapshotRecord {
@@ -110,7 +126,10 @@ export interface MergeRequestSnapshotRecord {
   createdAt: string;
 }
 
-export type CreateMergeRequestSnapshotInput = Omit<MergeRequestSnapshotRecord, "id" | "createdAt">;
+export type CreateMergeRequestSnapshotInput = Omit<
+  MergeRequestSnapshotRecord,
+  "id" | "createdAt"
+>;
 
 export type InteractionRunStatus = "in_progress" | "completed" | "failed";
 
@@ -163,7 +182,10 @@ export interface InteractionRunMetricsRecord {
   updatedAt: string;
 }
 
-export type UpsertInteractionRunMetricsInput = Omit<InteractionRunMetricsRecord, "id" | "createdAt" | "updatedAt">;
+export type UpsertInteractionRunMetricsInput = Omit<
+  InteractionRunMetricsRecord,
+  "id" | "createdAt" | "updatedAt"
+>;
 
 export type ReviewFindingStatus = "open" | "resolved" | "dismissed";
 
@@ -181,7 +203,10 @@ export interface ReviewFindingRecord {
   createdAt: string;
 }
 
-export type CreateReviewFindingInput = Omit<ReviewFindingRecord, "id" | "createdAt">;
+export type CreateReviewFindingInput = Omit<
+  ReviewFindingRecord,
+  "id" | "createdAt"
+>;
 
 export interface PriorReviewFindingRecord {
   findingId: string;
@@ -234,7 +259,9 @@ export interface DiscussionMappingRecord {
   updatedAt: string;
 }
 
-export type UpsertDiscussionMappingInput = Partial<Pick<DiscussionMappingRecord, "id">> &
+export type UpsertDiscussionMappingInput = Partial<
+  Pick<DiscussionMappingRecord, "id">
+> &
   Omit<DiscussionMappingRecord, "id" | "createdAt" | "updatedAt">;
 
 export type SortDirection = "asc" | "desc";
@@ -286,13 +313,27 @@ export interface EntityStore<TEntity, TFilters, TOrder extends string> {
   deleteMany(ids: string[]): Promise<void>;
 }
 
-export type ModelProfileQueryField = "name" | "isDefault" | "createdAt" | "updatedAt";
+export type ModelProfileQueryField =
+  | "name"
+  | "isDefault"
+  | "createdAt"
+  | "updatedAt";
 
-export type ModelProfileFilters = StoreFilters<ModelProfileRecord, ModelProfileQueryField>;
+export type ModelProfileFilters = StoreFilters<
+  ModelProfileRecord,
+  ModelProfileQueryField
+>;
 
 export type ModelProfileOrderField = ModelProfileQueryField;
 
-export type TenantQueryField = "id" | "key" | "baseUrl" | "projectId" | "modelProfileName" | "createdAt" | "updatedAt";
+export type TenantQueryField =
+  | "id"
+  | "key"
+  | "baseUrl"
+  | "projectId"
+  | "modelProfileName"
+  | "createdAt"
+  | "updatedAt";
 
 export type TenantFilters = StoreFilters<TenantRecord, TenantQueryField>;
 
@@ -309,13 +350,24 @@ export type InteractionJobQueryField =
   | "startedAt"
   | "finishedAt";
 
-export type InteractionJobFilters = StoreFilters<InteractionJobRecord, InteractionJobQueryField>;
+export type InteractionJobFilters = StoreFilters<
+  InteractionJobRecord,
+  InteractionJobQueryField
+>;
 
 export type InteractionJobOrderField = InteractionJobQueryField;
 
-export type MergeRequestSnapshotQueryField = "id" | "interactionJobId" | "tenantId" | "mergeRequestIid" | "createdAt";
+export type MergeRequestSnapshotQueryField =
+  | "id"
+  | "interactionJobId"
+  | "tenantId"
+  | "mergeRequestIid"
+  | "createdAt";
 
-export type MergeRequestSnapshotFilters = StoreFilters<MergeRequestSnapshotRecord, MergeRequestSnapshotQueryField>;
+export type MergeRequestSnapshotFilters = StoreFilters<
+  MergeRequestSnapshotRecord,
+  MergeRequestSnapshotQueryField
+>;
 
 export type MergeRequestSnapshotOrderField = MergeRequestSnapshotQueryField;
 
@@ -328,19 +380,37 @@ export type InteractionRunQueryField =
   | "startedAt"
   | "finishedAt";
 
-export type InteractionRunFilters = StoreFilters<InteractionRunRecord, InteractionRunQueryField>;
+export type InteractionRunFilters = StoreFilters<
+  InteractionRunRecord,
+  InteractionRunQueryField
+>;
 
 export type InteractionRunOrderField = InteractionRunQueryField;
 
-export type InteractionRunMetricsQueryField = "id" | "interactionRunId" | "createdAt" | "updatedAt";
+export type InteractionRunMetricsQueryField =
+  | "id"
+  | "interactionRunId"
+  | "createdAt"
+  | "updatedAt";
 
-export type InteractionRunMetricsFilters = StoreFilters<InteractionRunMetricsRecord, InteractionRunMetricsQueryField>;
+export type InteractionRunMetricsFilters = StoreFilters<
+  InteractionRunMetricsRecord,
+  InteractionRunMetricsQueryField
+>;
 
 export type InteractionRunMetricsOrderField = InteractionRunMetricsQueryField;
 
-export type ReviewFindingQueryField = "id" | "interactionRunId" | "identityKey" | "status" | "createdAt";
+export type ReviewFindingQueryField =
+  | "id"
+  | "interactionRunId"
+  | "identityKey"
+  | "status"
+  | "createdAt";
 
-export type ReviewFindingFilters = StoreFilters<ReviewFindingRecord, ReviewFindingQueryField>;
+export type ReviewFindingFilters = StoreFilters<
+  ReviewFindingRecord,
+  ReviewFindingQueryField
+>;
 
 export type ReviewFindingOrderField = ReviewFindingQueryField;
 
@@ -354,25 +424,48 @@ export type DiscussionMappingQueryField =
   | "updatedAt"
   | "createdAt";
 
-export type DiscussionMappingFilters = StoreFilters<DiscussionMappingRecord, DiscussionMappingQueryField>;
+export type DiscussionMappingFilters = StoreFilters<
+  DiscussionMappingRecord,
+  DiscussionMappingQueryField
+>;
 
 export type DiscussionMappingOrderField = DiscussionMappingQueryField;
 
-export type ModelProfileStore = EntityStore<ModelProfileRecord, ModelProfileFilters, ModelProfileOrderField>;
-export type TenantStore = EntityStore<TenantRecord, TenantFilters, TenantOrderField>;
-export type InteractionJobStore = EntityStore<InteractionJobRecord, InteractionJobFilters, InteractionJobOrderField>;
+export type ModelProfileStore = EntityStore<
+  ModelProfileRecord,
+  ModelProfileFilters,
+  ModelProfileOrderField
+>;
+export type TenantStore = EntityStore<
+  TenantRecord,
+  TenantFilters,
+  TenantOrderField
+>;
+export type InteractionJobStore = EntityStore<
+  InteractionJobRecord,
+  InteractionJobFilters,
+  InteractionJobOrderField
+>;
 export type MergeRequestSnapshotStore = EntityStore<
   MergeRequestSnapshotRecord,
   MergeRequestSnapshotFilters,
   MergeRequestSnapshotOrderField
 >;
-export type InteractionRunStore = EntityStore<InteractionRunRecord, InteractionRunFilters, InteractionRunOrderField>;
+export type InteractionRunStore = EntityStore<
+  InteractionRunRecord,
+  InteractionRunFilters,
+  InteractionRunOrderField
+>;
 export type InteractionRunMetricsStore = EntityStore<
   InteractionRunMetricsRecord,
   InteractionRunMetricsFilters,
   InteractionRunMetricsOrderField
 >;
-export type ReviewFindingStore = EntityStore<ReviewFindingRecord, ReviewFindingFilters, ReviewFindingOrderField>;
+export type ReviewFindingStore = EntityStore<
+  ReviewFindingRecord,
+  ReviewFindingFilters,
+  ReviewFindingOrderField
+>;
 export type DiscussionMappingStore = EntityStore<
   DiscussionMappingRecord,
   DiscussionMappingFilters,
@@ -389,4 +482,3 @@ export interface StorageStores {
   readonly reviewFindings: ReviewFindingStore;
   readonly discussionMappings: DiscussionMappingStore;
 }
-

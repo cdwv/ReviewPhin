@@ -18,7 +18,7 @@ const tenant = {
   botUsername: "review-bot",
   modelProfileName: null,
   createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString()
+  updatedAt: new Date().toISOString(),
 };
 
 describe("review job dedupe", () => {
@@ -27,10 +27,10 @@ describe("review job dedupe", () => {
       object_kind: "note",
       project: {
         id: 123,
-        web_url: "https://gitlab.example.com/group/project"
+        web_url: "https://gitlab.example.com/group/project",
       },
       repository: {
-        homepage: "https://gitlab.example.com/group/project"
+        homepage: "https://gitlab.example.com/group/project",
       },
       merge_request: {
         iid: 7,
@@ -39,8 +39,8 @@ describe("review job dedupe", () => {
         source_branch: "feature",
         target_branch: "main",
         last_commit: {
-          id: "abc123"
-        }
+          id: "abc123",
+        },
       },
       object_attributes: {
         id: 55,
@@ -48,36 +48,38 @@ describe("review job dedupe", () => {
         noteable_type: "MergeRequest",
         action: "update",
         updated_at: "2026-04-27T11:00:00.000Z",
-        url: "https://gitlab.example.com/group/project/-/merge_requests/7#note_55"
+        url: "https://gitlab.example.com/group/project/-/merge_requests/7#note_55",
       },
       user: {
         id: 42,
         username: "developer",
         name: "Dev User",
-        web_url: "https://gitlab.example.com/developer"
-      }
+        web_url: "https://gitlab.example.com/developer",
+      },
     };
 
     const storage = {
-      createOrGetInteractionJob: vi.fn(async (input: CreateInteractionJobInput) => ({
-        job: {
-          id: "job_1",
-          tenantId: tenant.id,
-          dedupeKey: input.dedupeKey,
-          projectId: input.projectId,
-          mergeRequestIid: input.mergeRequestIid,
-          noteId: input.noteId,
-          headSha: input.headSha,
-          status: "queued" as const,
-          payloadJson: input.payloadJson,
-          retryCount: 0,
-          lastError: null,
-          enqueuedAt: new Date().toISOString(),
-          startedAt: null,
-          finishedAt: null
-        },
-        created: false
-      }))
+      createOrGetInteractionJob: vi.fn(
+        async (input: CreateInteractionJobInput) => ({
+          job: {
+            id: "job_1",
+            tenantId: tenant.id,
+            dedupeKey: input.dedupeKey,
+            projectId: input.projectId,
+            mergeRequestIid: input.mergeRequestIid,
+            noteId: input.noteId,
+            headSha: input.headSha,
+            status: "queued" as const,
+            payloadJson: input.payloadJson,
+            retryCount: 0,
+            lastError: null,
+            enqueuedAt: new Date().toISOString(),
+            startedAt: null,
+            finishedAt: null,
+          },
+          created: false,
+        }),
+      ),
     };
 
     const worker = new ReviewWorker({
@@ -91,15 +93,15 @@ describe("review job dedupe", () => {
       logger: createLogger("silent"),
       runLogDir: tmpPath("run-logs"),
       maxJobRetries: 3,
-      retryBackoffMs: 1000
+      retryBackoffMs: 1000,
     });
 
     await worker.createInteractionJobFromWebhook(payload, tenant, {
       kind: "direct-mention",
       note: {
         kind: "merge-request-note",
-        noteId: 55
-      }
+        noteId: 55,
+      },
     });
 
     expect(storage.createOrGetInteractionJob).toHaveBeenCalledWith(
@@ -111,11 +113,11 @@ describe("review job dedupe", () => {
           noteId: 55,
           noteAction: "update",
           noteUpdatedAt: "2026-04-27T11:00:00.000Z",
-          noteBody: "@review-bot please review this again"
+          noteBody: "@review-bot please review this again",
         }),
         headSha: "abc123",
-        noteId: 55
-      })
+        noteId: 55,
+      }),
     );
   });
 });

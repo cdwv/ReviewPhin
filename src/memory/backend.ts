@@ -1,7 +1,10 @@
 import type { Logger } from "pino";
 
 import type { GitLabClient } from "../gitlab/client.js";
-import type { HarnessRunLoggingContext, HarnessTenantContext } from "../harness/types.js";
+import type {
+  HarnessRunLoggingContext,
+  HarnessTenantContext,
+} from "../harness/types.js";
 import type { ProjectMemoryContext, ProjectMemoryEntry } from "./types.js";
 
 export interface ProjectMemorySaveOptions {
@@ -10,7 +13,10 @@ export interface ProjectMemorySaveOptions {
 
 export interface ProjectMemoryBackend {
   load(): Promise<ProjectMemoryContext>;
-  saveEntries(entries: ProjectMemoryEntry[], options?: ProjectMemorySaveOptions): Promise<ProjectMemoryContext>;
+  saveEntries(
+    entries: ProjectMemoryEntry[],
+    options?: ProjectMemorySaveOptions,
+  ): Promise<ProjectMemoryContext>;
 }
 
 export interface ProjectMemoryBackendFactory {

@@ -1,13 +1,21 @@
-import type { GitLabNote, HydratedMergeRequestContext } from "../gitlab/types.js";
-import type { ReviewFinding, ReviewMergeReadiness, ReviewResult } from "./types.js";
+import type {
+  GitLabNote,
+  HydratedMergeRequestContext,
+} from "../gitlab/types.js";
+import type {
+  ReviewFinding,
+  ReviewMergeReadiness,
+  ReviewResult,
+} from "./types.js";
 
-export const REVIEW_SUMMARY_NOTE_MARKER = "<!-- gitlab-agentic-review-summary -->";
+export const REVIEW_SUMMARY_NOTE_MARKER =
+  "<!-- gitlab-agentic-review-summary -->";
 
 const severityRank = {
   critical: 0,
   high: 1,
   medium: 2,
-  low: 3
+  low: 3,
 } as const;
 
 interface ResolvedReviewSummaryOverview {
@@ -17,7 +25,10 @@ interface ResolvedReviewSummaryOverview {
   highlights: string[];
 }
 
-type SummaryFinding = Pick<ReviewFinding, "title" | "body" | "severity" | "category">;
+type SummaryFinding = Pick<
+  ReviewFinding,
+  "title" | "body" | "severity" | "category"
+>;
 
 export function isReviewSummaryNoteBody(body: string): boolean {
   return body.includes(REVIEW_SUMMARY_NOTE_MARKER);
@@ -25,9 +36,11 @@ export function isReviewSummaryNoteBody(body: string): boolean {
 
 export function findLatestReviewSummaryNote(
   notes: GitLabNote[],
-  isBotAuthored: (note: GitLabNote) => boolean
+  isBotAuthored: (note: GitLabNote) => boolean,
 ): GitLabNote | null {
-  const summaryNotes = notes.filter((note) => isBotAuthored(note) && isReviewSummaryNoteBody(note.body));
+  const summaryNotes = notes.filter(
+    (note) => isBotAuthored(note) && isReviewSummaryNoteBody(note.body),
+  );
   if (summaryNotes.length === 0) {
     return null;
   }
@@ -43,7 +56,10 @@ export function buildReviewSummaryNote(input: {
 }): string {
   const reviewedAt = input.reviewedAt ?? new Date();
   const activeFindings = input.activeFindings ?? input.reviewResult.findings;
-  const overview = resolveSummaryOverview(input.reviewResult, input.activeFindings);
+  const overview = resolveSummaryOverview(
+    input.reviewResult,
+    input.activeFindings,
+  );
   const findingsSnapshot = formatFindingsSnapshot(activeFindings);
   const topFindings = activeFindings
     .slice()
@@ -69,7 +85,7 @@ export function buildReviewSummaryNote(input: {
     `- **Overall severity:** ${capitalize(overview.overallSeverity)}`,
     `- **Scope reviewed:** ${formatScopeReviewed(input.context)}`,
     `- **Findings snapshot:** ${findingsSnapshot}`,
-    `- **Last reviewed:** ${reviewedAt.toISOString()}`
+    `- **Last reviewed:** ${reviewedAt.toISOString()}`,
   ];
 
   if (overview.highlights.length > 0) {
@@ -82,22 +98,24 @@ export function buildReviewSummaryNote(input: {
   if (topFindings.length > 0) {
     lines.push("", "### Top findings", "");
     for (const finding of topFindings) {
-      lines.push(`- **${capitalize(finding.severity)}** - ${finding.title.trim()}`);
+      lines.push(
+        `- **${capitalize(finding.severity)}** - ${finding.title.trim()}`,
+      );
     }
   }
 
   if (shouldIncludeSuggestedFixesPrompt(overview)) {
-      lines.push(
-        "",
-        "<details><summary>Suggested fixes prompt</summary>",
-        "",
-        buildSuggestedFixesPromptBlock({
-          context: input.context,
-          overview,
-          findings: activeFindings
+    lines.push(
+      "",
+      "<details><summary>Suggested fixes prompt</summary>",
+      "",
+      buildSuggestedFixesPromptBlock({
+        context: input.context,
+        overview,
+        findings: activeFindings,
       }),
       "",
-      "</details>"
+      "</details>",
     );
   }
 
@@ -106,39 +124,42 @@ export function buildReviewSummaryNote(input: {
 
 function resolveSummaryOverview(
   reviewResult: ReviewResult,
-  activeFindings?: SummaryFinding[]
+  activeFindings?: SummaryFinding[],
 ): ResolvedReviewSummaryOverview {
   const effectiveFindings = activeFindings ?? reviewResult.findings;
   const findingsDifferFromCurrentRun =
-    activeFindings !== undefined && !areEquivalentFindings(activeFindings, reviewResult.findings);
+    activeFindings !== undefined &&
+    !areEquivalentFindings(activeFindings, reviewResult.findings);
   const providedMergeReadiness = reviewResult.overview.mergeReadiness;
   const derivedMergeReadiness = deriveMergeReadinessFromFindings(
     effectiveFindings,
-    findingsDifferFromCurrentRun ? "persisted" : "current"
+    findingsDifferFromCurrentRun ? "persisted" : "current",
   );
-  const useProvidedMergeReadiness = providedMergeReadiness?.status === derivedMergeReadiness.status;
+  const useProvidedMergeReadiness =
+    providedMergeReadiness?.status === derivedMergeReadiness.status;
 
   return {
     overallAssessment:
       findingsDifferFromCurrentRun && !useProvidedMergeReadiness
         ? deriveOverallAssessmentFromFindings(effectiveFindings)
-        : reviewResult.overview.overallAssessment ?? reviewResult.overview.summary,
-    mergeReadiness: useProvidedMergeReadiness ? providedMergeReadiness : derivedMergeReadiness,
-    overallSeverity:
-      findingsDifferFromCurrentRun
-        ? deriveOverallSeverityFromFindings(effectiveFindings, reviewResult.overview.overallSeverity)
-        : reviewResult.overview.overallSeverity,
-    highlights: reviewResult.overview.highlights ?? []
+        : (reviewResult.overview.overallAssessment ??
+          reviewResult.overview.summary),
+    mergeReadiness: useProvidedMergeReadiness
+      ? providedMergeReadiness
+      : derivedMergeReadiness,
+    overallSeverity: findingsDifferFromCurrentRun
+      ? deriveOverallSeverityFromFindings(
+          effectiveFindings,
+          reviewResult.overview.overallSeverity,
+        )
+      : reviewResult.overview.overallSeverity,
+    highlights: reviewResult.overview.highlights ?? [],
   };
-}
-
-function deriveMergeReadiness(reviewResult: ReviewResult): ReviewMergeReadiness {
-  return deriveMergeReadinessFromFindings(reviewResult.findings, "current");
 }
 
 function deriveMergeReadinessFromFindings(
   findings: ReadonlyArray<Pick<ReviewFinding, "severity">>,
-  source: "current" | "persisted"
+  source: "current" | "persisted",
 ): ReviewMergeReadiness {
   if (findings.length === 0) {
     return {
@@ -147,7 +168,7 @@ function deriveMergeReadinessFromFindings(
       summary:
         source === "persisted"
           ? "No actionable findings remain after reconciling the latest review with persisted finding history."
-          : "No actionable findings were identified in this review run."
+          : "No actionable findings were identified in this review run.",
     };
   }
 
@@ -158,7 +179,7 @@ function deriveMergeReadinessFromFindings(
       summary:
         source === "persisted"
           ? "Persisted open critical findings remain and should be resolved before merge."
-          : "Critical issues remain and should be resolved before merge."
+          : "Critical issues remain and should be resolved before merge.",
     };
   }
 
@@ -169,7 +190,7 @@ function deriveMergeReadinessFromFindings(
       summary:
         source === "persisted"
           ? "Persisted open high-severity findings remain and should be addressed before merge."
-          : "High-severity issues remain and should be addressed before merge."
+          : "High-severity issues remain and should be addressed before merge.",
     };
   }
 
@@ -179,11 +200,13 @@ function deriveMergeReadinessFromFindings(
     summary:
       source === "persisted"
         ? "Persisted open findings remain and should be reviewed before merge."
-        : "Actionable findings remain and should be reviewed before merge."
+        : "Actionable findings remain and should be reviewed before merge.",
   };
 }
 
-function deriveOverallAssessmentFromFindings(findings: ReadonlyArray<SummaryFinding>): string {
+function deriveOverallAssessmentFromFindings(
+  findings: ReadonlyArray<SummaryFinding>,
+): string {
   if (findings.length === 0) {
     return "No actionable findings remain after reconciling the latest review with persisted history.";
   }
@@ -201,14 +224,16 @@ function deriveOverallAssessmentFromFindings(findings: ReadonlyArray<SummaryFind
 
 function deriveOverallSeverityFromFindings(
   findings: ReadonlyArray<SummaryFinding>,
-  fallback: ReviewResult["overview"]["overallSeverity"]
+  fallback: ReviewResult["overview"]["overallSeverity"],
 ): ReviewResult["overview"]["overallSeverity"] {
-  return findings.slice().sort(compareFindingsBySeverity)[0]?.severity ?? fallback;
+  return (
+    findings.slice().sort(compareFindingsBySeverity)[0]?.severity ?? fallback
+  );
 }
 
 function areEquivalentFindings(
   left: ReadonlyArray<SummaryFinding>,
-  right: ReadonlyArray<SummaryFinding>
+  right: ReadonlyArray<SummaryFinding>,
 ): boolean {
   if (left.length !== right.length) {
     return false;
@@ -219,13 +244,15 @@ function areEquivalentFindings(
       title: finding.title.trim(),
       body: finding.body.trim(),
       severity: finding.severity,
-      category: finding.category
+      category: finding.category,
     });
 
   const normalizedLeft = left.map(normalize).sort();
   const normalizedRight = right.map(normalize).sort();
 
-  return normalizedLeft.every((value, index) => value === normalizedRight[index]);
+  return normalizedLeft.every(
+    (value, index) => value === normalizedRight[index],
+  );
 }
 
 function formatScopeReviewed(context: HydratedMergeRequestContext): string {
@@ -243,7 +270,7 @@ function formatFindingsSnapshot(findings: SummaryFinding[]): string {
     ["critical", 0],
     ["high", 0],
     ["medium", 0],
-    ["low", 0]
+    ["low", 0],
   ]);
 
   for (const finding of findings) {
@@ -258,15 +285,23 @@ function formatFindingsSnapshot(findings: SummaryFinding[]): string {
   return `${findings.length} ${findingLabel} (${parts.join(", ")})`;
 }
 
-function compareFindingsBySeverity(left: SummaryFinding, right: SummaryFinding): number {
+function compareFindingsBySeverity(
+  left: SummaryFinding,
+  right: SummaryFinding,
+): number {
   return severityRank[left.severity] - severityRank[right.severity];
 }
 
-function compareNotesByUpdatedAtDesc(left: GitLabNote, right: GitLabNote): number {
+function compareNotesByUpdatedAtDesc(
+  left: GitLabNote,
+  right: GitLabNote,
+): number {
   return Date.parse(right.updated_at) - Date.parse(left.updated_at);
 }
 
-function shouldIncludeSuggestedFixesPrompt(overview: ResolvedReviewSummaryOverview): boolean {
+function shouldIncludeSuggestedFixesPrompt(
+  overview: ResolvedReviewSummaryOverview,
+): boolean {
   return overview.mergeReadiness.status !== "ready";
 }
 
@@ -286,7 +321,7 @@ function buildSuggestedFixesPrompt(input: {
     `- Source branch: ${input.context.mergeRequest.source_branch}`,
     `- Target branch: ${input.context.mergeRequest.target_branch}`,
     `- Overall assessment: ${input.overview.overallAssessment}`,
-    `- Readiness rationale: ${input.overview.mergeReadiness.summary}`
+    `- Readiness rationale: ${input.overview.mergeReadiness.summary}`,
   ];
 
   if (input.overview.highlights.length > 0) {
@@ -298,10 +333,16 @@ function buildSuggestedFixesPrompt(input: {
 
   if (input.findings.length > 0) {
     lines.push("", "Findings to address (highest severity first):");
-    const sortedFindings = input.findings.slice().sort(compareFindingsBySeverity);
+    const sortedFindings = input.findings
+      .slice()
+      .sort(compareFindingsBySeverity);
     for (const [index, finding] of sortedFindings.entries()) {
-      lines.push(`${index + 1}. [${capitalize(finding.severity)} | ${finding.category}] ${finding.title.trim()}`);
-      lines.push(`   ${finding.body.trim().replace(/\r\n/g, "\n").replace(/\n/g, "\n   ")}`);
+      lines.push(
+        `${index + 1}. [${capitalize(finding.severity)} | ${finding.category}] ${finding.title.trim()}`,
+      );
+      lines.push(
+        `   ${finding.body.trim().replace(/\r\n/g, "\n").replace(/\n/g, "\n   ")}`,
+      );
     }
   }
 
@@ -310,7 +351,7 @@ function buildSuggestedFixesPrompt(input: {
     "When finished:",
     "- Keep unrelated changes untouched.",
     "- Update tests or documentation if the fix changes behavior or public expectations.",
-    "- Make sure the merge request is ready to re-review."
+    "- Make sure the merge request is ready to re-review.",
   );
 
   return lines.join("\n");
@@ -321,14 +362,20 @@ function buildSuggestedFixesPromptBlock(input: {
   overview: ResolvedReviewSummaryOverview;
   findings: SummaryFinding[];
 }): string {
-  return ["```md", escapeMarkdownCodeFenceContent(buildSuggestedFixesPrompt(input)), "```"].join("\n");
+  return [
+    "```md",
+    escapeMarkdownCodeFenceContent(buildSuggestedFixesPrompt(input)),
+    "```",
+  ].join("\n");
 }
 
 function escapeMarkdownCodeFenceContent(value: string): string {
   return value.replace(/`{3,}/g, (match) => match.replace(/`/g, "\\`"));
 }
 
-function formatMergeReadinessStatus(status: ReviewMergeReadiness["status"]): string {
+function formatMergeReadinessStatus(
+  status: ReviewMergeReadiness["status"],
+): string {
   switch (status) {
     case "ready":
       return "Ready";

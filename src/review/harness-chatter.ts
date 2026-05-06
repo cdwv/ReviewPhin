@@ -1,6 +1,6 @@
 import { buildChatterPrompt } from "../prompts/prompt-builders.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
-import { HarnessSessionRuntime } from "../harness/session.js";
+import type { HarnessSessionRuntime } from "../harness/session.js";
 import type { HarnessModelConfig } from "../harness/types.js";
 import type {
   ChatterBatchResult,
@@ -9,7 +9,7 @@ import type {
   ReviewContext,
   ReviewResult,
   ReviewTriggerContext,
-  ReviewerReplyHandoff
+  ReviewerReplyHandoff,
 } from "./types.js";
 import { chatterBatchResultSchema } from "./types.js";
 
@@ -22,12 +22,14 @@ export interface ChatterRunContext {
   reviewContext?: ReviewContext | null | undefined;
   reviewerReplyHandoff?: ReviewerReplyHandoff | null | undefined;
   reviewResult?: ReviewResult | null | undefined;
-  logging?: {
-    interactionRunId: string;
-    interactionJobId: string;
-    tenantId: string;
-    runDirectory?: string | undefined;
-  } | undefined;
+  logging?:
+    | {
+        interactionRunId: string;
+        interactionJobId: string;
+        tenantId: string;
+        runDirectory?: string | undefined;
+      }
+    | undefined;
 }
 
 export interface ChatterRuntimeContext {
@@ -54,7 +56,10 @@ export class HarnessChatterRunner {
     this.harnessRuntime = options.harnessRuntime;
   }
 
-  public async run(context: ChatterRunContext, runtime: ChatterRuntimeContext): Promise<ChatterBatchResult> {
+  public async run(
+    context: ChatterRunContext,
+    runtime: ChatterRuntimeContext,
+  ): Promise<ChatterBatchResult> {
     const prompt = buildChatterPrompt(context);
     const tools =
       context.phase === "memory" && runtime.tenant.memoryEnabled
@@ -63,7 +68,10 @@ export class HarnessChatterRunner {
     const response = await this.harnessRuntime.run({
       prompt,
       modelConfig: this.modelConfig,
-      model: this.modelConfig.textGenerationModel ?? this.modelConfig.reviewModel ?? undefined,
+      model:
+        this.modelConfig.textGenerationModel ??
+        this.modelConfig.reviewModel ??
+        undefined,
       workingDirectory: context.reviewContext?.workspacePath,
       tenant: runtime.tenant,
       tools: [...tools],
@@ -74,12 +82,12 @@ export class HarnessChatterRunner {
         tenantId: context.logging?.tenantId ?? runtime.tenant.id,
         runDirectory: context.logging?.runDirectory,
         pathSegments: ["copilot", "chatter", context.phase],
-        sessionKind: context.phase === "memory" ? "memory" : "reply"
+        sessionKind: context.phase === "memory" ? "memory" : "reply",
       },
       metadata: {
         mergeRequestIid: context.reviewContext?.mergeRequest.iid ?? null,
-        workspacePath: context.reviewContext?.workspacePath ?? null
-      }
+        workspacePath: context.reviewContext?.workspacePath ?? null,
+      },
     });
     const content = response.response?.data.content;
     if (!content) {
@@ -92,7 +100,7 @@ export class HarnessChatterRunner {
   public get sessionPaths(): { memory: string[]; reply: string[] } {
     return {
       memory: ["copilot", "chatter", "memory"],
-      reply: ["copilot", "chatter", "reply"]
+      reply: ["copilot", "chatter", "reply"],
     };
   }
 }
@@ -111,7 +119,7 @@ export class HarnessChatterRunnerFactory {
   public createRunner(modelConfig: HarnessModelConfig): HarnessChatterRunner {
     return new HarnessChatterRunner({
       modelConfig,
-      harnessRuntime: this.harnessRuntime
+      harnessRuntime: this.harnessRuntime,
     });
   }
 }

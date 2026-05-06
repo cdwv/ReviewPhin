@@ -29,8 +29,8 @@ export function createInteractionJobDedupeKey(input: {
       input.mergeRequestIid,
       input.noteId,
       input.noteAction ?? "create",
-      resolveInteractionJobNoteRevision(input)
-    ].join("::")
+      resolveInteractionJobNoteRevision(input),
+    ].join("::"),
   );
 }
 
@@ -49,8 +49,8 @@ export function createFindingIdentityKey(input: {
       normalizeForKey(input.path ?? ""),
       input.startLine ?? "",
       input.endLine ?? "",
-      normalizeForKey(input.side ?? "")
-    ].join("::")
+      normalizeForKey(input.side ?? ""),
+    ].join("::"),
   );
 }
 
@@ -63,8 +63,8 @@ export function createFindingFingerprint(input: {
     [
       input.identityKey,
       input.body.trim(),
-      input.suggestionReplacement?.trim() ?? ""
-    ].join("::")
+      input.suggestionReplacement?.trim() ?? "",
+    ].join("::"),
   );
 }
 

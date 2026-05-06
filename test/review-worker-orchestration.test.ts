@@ -17,17 +17,17 @@ const tenant = {
   botUsername: "review-bot",
   modelProfileName: null,
   createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString()
+  updatedAt: new Date().toISOString(),
 };
 
 const payload: GitLabNoteHookPayload = {
   object_kind: "note",
   project: {
     id: 123,
-    web_url: "https://gitlab.example.com/group/project"
+    web_url: "https://gitlab.example.com/group/project",
   },
   repository: {
-    homepage: "https://gitlab.example.com/group/project"
+    homepage: "https://gitlab.example.com/group/project",
   },
   merge_request: {
     iid: 7,
@@ -36,77 +36,79 @@ const payload: GitLabNoteHookPayload = {
     source_branch: "feature",
     target_branch: "main",
     last_commit: {
-      id: "abc123"
-    }
+      id: "abc123",
+    },
   },
   object_attributes: {
     id: 55,
     note: "@review-bot what changed here?",
-    noteable_type: "MergeRequest"
+    noteable_type: "MergeRequest",
   },
   user: {
     id: 42,
     username: "developer",
-    name: "Dev User"
-  }
+    name: "Dev User",
+  },
 };
 
 describe("ReviewWorker orchestration", () => {
   it("skips full hydration for chatter-only replies", async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      const requestUrl = String(input);
-      if (init?.method === "GET") {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
+    globalThis.fetch = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const requestUrl = String(input);
+        if (init?.method === "GET") {
+          return new Response("[]", {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
+        }
 
-      if (requestUrl.includes("/award_emoji")) {
+        if (requestUrl.includes("/award_emoji")) {
+          return new Response(
+            JSON.stringify({
+              id: 1,
+              name: "white_check_mark",
+              user: {
+                id: 999,
+                username: "review-bot",
+                name: "Review Bot",
+              },
+              created_at: new Date().toISOString(),
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
         return new Response(
           JSON.stringify({
-            id: 1,
-            name: "white_check_mark",
-            user: {
+            id: 500,
+            body: "Here is what changed.",
+            author: {
               id: 999,
               username: "review-bot",
-              name: "Review Bot"
+              name: "Review Bot",
             },
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            system: false,
           }),
           {
             status: 200,
             headers: {
-              "content-type": "application/json"
-            }
-          }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({
-          id: 500,
-          body: "Here is what changed.",
-          author: {
-            id: 999,
-            username: "review-bot",
-            name: "Review Bot"
+              "content-type": "application/json",
+            },
           },
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          system: false
-        }),
-        {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        }
-      );
-    }) as typeof globalThis.fetch;
+        );
+      },
+    );
 
     const job = {
       id: "job_1",
@@ -122,7 +124,7 @@ describe("ReviewWorker orchestration", () => {
       lastError: null,
       enqueuedAt: new Date().toISOString(),
       startedAt: null,
-      finishedAt: null
+      finishedAt: null,
     };
     const completeInteractionRun = vi.fn(async () => {});
     const hydrate = vi.fn(async () => {
@@ -131,32 +133,32 @@ describe("ReviewWorker orchestration", () => {
     const chatterRun = vi.fn(async () => ({
       memory: {
         status: "skipped" as const,
-        summary: "No durable memory detected."
+        summary: "No durable memory detected.",
       },
       replies: [
         {
           target: {
             kind: "merge-request-note" as const,
-            noteId: 55
+            noteId: 55,
           },
-          replyBody: "Here is what changed."
-        }
-      ]
+          replyBody: "Here is what changed.",
+        },
+      ],
     }));
 
     const worker = new ReviewWorker({
       storage: {
         stores: {
           interactionJobs: {
-            get: vi.fn(async () => job)
+            get: vi.fn(async () => job),
           },
           discussionMappings: {
-            list: vi.fn(async () => [])
+            list: vi.fn(async () => []),
           },
           modelProfiles: {
             get: vi.fn(async () => null),
-            find: vi.fn(async () => null)
-          }
+            find: vi.fn(async () => null),
+          },
         },
         getInteractionJobById: vi.fn(async () => job),
         markJobInProgress: vi.fn(async () => {}),
@@ -175,7 +177,7 @@ describe("ReviewWorker orchestration", () => {
           resultJson: null,
           error: null,
           startedAt: new Date().toISOString(),
-          finishedAt: null
+          finishedAt: null,
         })),
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
@@ -186,10 +188,10 @@ describe("ReviewWorker orchestration", () => {
         markJobCompleted: vi.fn(async () => {}),
         failInteractionRun: vi.fn(async () => {}),
         markJobQueued: vi.fn(async () => {}),
-        markJobFailed: vi.fn(async () => {})
+        markJobFailed: vi.fn(async () => {}),
       } as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant)
+        getTenantById: vi.fn(async () => tenant),
       } as never,
       hydrator: {
         loadRoutingContext: vi.fn(async () => ({
@@ -201,14 +203,15 @@ describe("ReviewWorker orchestration", () => {
             project_id: tenant.projectId,
             title: "Add worker",
             description: "Adds the worker",
-            web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+            web_url:
+              "https://gitlab.example.com/group/project/-/merge_requests/7",
             source_branch: "feature",
             target_branch: "main",
             author: {
               id: 42,
               username: "developer",
-              name: "Dev User"
-            }
+              name: "Dev User",
+            },
           },
           changes: [],
           notes: [],
@@ -217,41 +220,41 @@ describe("ReviewWorker orchestration", () => {
             rootPath: join("tmp", "workspace-routing"),
             cleanupRoot: join("tmp", "cleanup-routing"),
             strategy: "git",
-            instructionFiles: []
+            instructionFiles: [],
           },
           projectMemory: {
             enabled: true,
             page: null,
-            entries: []
-          }
+            entries: [],
+          },
         })),
-        hydrate
+        hydrate,
       } as never,
       workspaceMaterializer: {
-        cleanup: vi.fn(async () => {})
+        cleanup: vi.fn(async () => {}),
       } as never,
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
-          review: vi.fn()
-        }))
+          review: vi.fn(),
+        })),
       },
       chatterRunnerFactory: {
         createRunner: vi.fn(() => ({
           run: chatterRun,
           sessionPaths: {
             memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"]
-          }
-        }))
+            reply: ["copilot", "chatter", "reply"],
+          },
+        })),
       } as never,
       reconciler: {
-        reconcile: vi.fn()
+        reconcile: vi.fn(),
       } as never,
       logger: createLogger("silent"),
       runLogDir: join("tmp", "run-logs"),
       maxJobRetries: 3,
-      retryBackoffMs: 5000
+      retryBackoffMs: 5000,
     });
 
     await expect(worker.processJob("job_1")).resolves.toBeUndefined();
@@ -263,17 +266,17 @@ describe("ReviewWorker orchestration", () => {
         reviewContext: expect.objectContaining({
           workspacePath: join("tmp", "workspace-routing"),
           mergeRequest: expect.objectContaining({
-            iid: 7
-          })
+            iid: 7,
+          }),
         }),
         responseTargets: [
           expect.objectContaining({
             kind: "merge-request-note",
-            noteId: 55
-          })
-        ]
+            noteId: 55,
+          }),
+        ],
       }),
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(completeInteractionRun).toHaveBeenCalledWith("run_1", null);
 
@@ -282,45 +285,47 @@ describe("ReviewWorker orchestration", () => {
 
   it("completes the run even when chatter reply publishing fails", async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      const requestUrl = String(input);
-      if (init?.method === "GET") {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      if (requestUrl.includes("/award_emoji")) {
-        return new Response(
-          JSON.stringify({
-            id: 1,
-            name: "white_check_mark",
-            user: {
-              id: 999,
-              username: "review-bot",
-              name: "Review Bot"
-            },
-            created_at: new Date().toISOString()
-          }),
-          {
+    globalThis.fetch = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const requestUrl = String(input);
+        if (init?.method === "GET") {
+          return new Response("[]", {
             status: 200,
             headers: {
-              "content-type": "application/json"
-            }
-          }
-        );
-      }
-
-      return new Response("boom", {
-        status: 500,
-        headers: {
-          "content-type": "text/plain"
+              "content-type": "application/json",
+            },
+          });
         }
-      });
-    }) as typeof globalThis.fetch;
+
+        if (requestUrl.includes("/award_emoji")) {
+          return new Response(
+            JSON.stringify({
+              id: 1,
+              name: "white_check_mark",
+              user: {
+                id: 999,
+                username: "review-bot",
+                name: "Review Bot",
+              },
+              created_at: new Date().toISOString(),
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        return new Response("boom", {
+          status: 500,
+          headers: {
+            "content-type": "text/plain",
+          },
+        });
+      },
+    );
 
     const job = {
       id: "job_2",
@@ -336,14 +341,14 @@ describe("ReviewWorker orchestration", () => {
         object_attributes: {
           ...payload.object_attributes,
           id: 56,
-          note: "@review-bot what changed here?"
-        }
+          note: "@review-bot what changed here?",
+        },
       }),
       retryCount: 0,
       lastError: null,
       enqueuedAt: new Date().toISOString(),
       startedAt: null,
-      finishedAt: null
+      finishedAt: null,
     };
     const completeInteractionRun = vi.fn(async () => {});
     const markJobCompleted = vi.fn(async () => {});
@@ -352,15 +357,15 @@ describe("ReviewWorker orchestration", () => {
       storage: {
         stores: {
           interactionJobs: {
-            get: vi.fn(async () => job)
+            get: vi.fn(async () => job),
           },
           discussionMappings: {
-            list: vi.fn(async () => [])
+            list: vi.fn(async () => []),
           },
           modelProfiles: {
             get: vi.fn(async () => null),
-            find: vi.fn(async () => null)
-          }
+            find: vi.fn(async () => null),
+          },
         },
         getInteractionJobById: vi.fn(async () => job),
         markJobInProgress: vi.fn(async () => {}),
@@ -379,7 +384,7 @@ describe("ReviewWorker orchestration", () => {
           resultJson: null,
           error: null,
           startedAt: new Date().toISOString(),
-          finishedAt: null
+          finishedAt: null,
         })),
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
@@ -390,10 +395,10 @@ describe("ReviewWorker orchestration", () => {
         markJobCompleted,
         failInteractionRun: vi.fn(async () => {}),
         markJobQueued: vi.fn(async () => {}),
-        markJobFailed: vi.fn(async () => {})
+        markJobFailed: vi.fn(async () => {}),
       } as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant)
+        getTenantById: vi.fn(async () => tenant),
       } as never,
       hydrator: {
         loadRoutingContext: vi.fn(async () => ({
@@ -405,14 +410,15 @@ describe("ReviewWorker orchestration", () => {
             project_id: tenant.projectId,
             title: "Add worker",
             description: "Adds the worker",
-            web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+            web_url:
+              "https://gitlab.example.com/group/project/-/merge_requests/7",
             source_branch: "feature",
             target_branch: "main",
             author: {
               id: 42,
               username: "developer",
-              name: "Dev User"
-            }
+              name: "Dev User",
+            },
           },
           changes: [],
           notes: [],
@@ -421,57 +427,57 @@ describe("ReviewWorker orchestration", () => {
             rootPath: join("tmp", "workspace-routing"),
             cleanupRoot: join("tmp", "cleanup-routing"),
             strategy: "git",
-            instructionFiles: []
+            instructionFiles: [],
           },
           projectMemory: {
             enabled: true,
             page: null,
-            entries: []
-          }
+            entries: [],
+          },
         })),
         hydrate: vi.fn(async () => {
           throw new Error("full hydration should be skipped");
-        })
+        }),
       } as never,
       workspaceMaterializer: {
-        cleanup: vi.fn(async () => {})
+        cleanup: vi.fn(async () => {}),
       } as never,
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
-          review: vi.fn()
-        }))
+          review: vi.fn(),
+        })),
       },
       chatterRunnerFactory: {
         createRunner: vi.fn(() => ({
           run: vi.fn(async () => ({
             memory: {
               status: "skipped" as const,
-              summary: "No durable memory detected."
+              summary: "No durable memory detected.",
             },
             replies: [
               {
                 target: {
                   kind: "merge-request-note" as const,
-                  noteId: 56
+                  noteId: 56,
                 },
-                replyBody: "Here is what changed."
-              }
-            ]
+                replyBody: "Here is what changed.",
+              },
+            ],
           })),
           sessionPaths: {
             memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"]
-          }
-        }))
+            reply: ["copilot", "chatter", "reply"],
+          },
+        })),
       } as never,
       reconciler: {
-        reconcile: vi.fn()
+        reconcile: vi.fn(),
       } as never,
       logger: createLogger("silent"),
       runLogDir: join("tmp", "run-logs"),
       maxJobRetries: 3,
-      retryBackoffMs: 5000
+      retryBackoffMs: 5000,
     });
 
     await expect(worker.processJob("job_2")).resolves.toBeUndefined();
@@ -484,68 +490,70 @@ describe("ReviewWorker orchestration", () => {
 
   it("publishes chatter replies into the existing discussion when the trigger note is threaded", async () => {
     const originalFetch = globalThis.fetch;
-    const fetchMock = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      const requestUrl = String(input);
-      if (init?.method === "GET") {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const requestUrl = String(input);
+        if (init?.method === "GET") {
+          return new Response("[]", {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
+        }
 
-      if (requestUrl.includes("/award_emoji")) {
+        if (requestUrl.includes("/award_emoji")) {
+          return new Response(
+            JSON.stringify({
+              id: 1,
+              name: "white_check_mark",
+              user: {
+                id: 999,
+                username: "review-bot",
+                name: "Review Bot",
+              },
+              created_at: new Date().toISOString(),
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
         return new Response(
           JSON.stringify({
-            id: 1,
-            name: "white_check_mark",
-            user: {
+            id: 501,
+            body: "Here is the explanation.",
+            author: {
               id: 999,
               username: "review-bot",
-              name: "Review Bot"
+              name: "Review Bot",
             },
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            system: false,
           }),
           {
             status: 200,
             headers: {
-              "content-type": "application/json"
-            }
-          }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({
-          id: 501,
-          body: "Here is the explanation.",
-          author: {
-            id: 999,
-            username: "review-bot",
-            name: "Review Bot"
+              "content-type": "application/json",
+            },
           },
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          system: false
-        }),
-        {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        }
-      );
-    });
-    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+        );
+      },
+    );
+    globalThis.fetch = fetchMock;
 
     const threadedPayload = {
       ...payload,
       object_attributes: {
         ...payload.object_attributes,
         id: 77,
-        note: "@review-bot can you explain this change?"
-      }
+        note: "@review-bot can you explain this change?",
+      },
     };
     const job = {
       id: "job_3",
@@ -561,22 +569,22 @@ describe("ReviewWorker orchestration", () => {
       lastError: null,
       enqueuedAt: new Date().toISOString(),
       startedAt: null,
-      finishedAt: null
+      finishedAt: null,
     };
 
     const worker = new ReviewWorker({
       storage: {
         stores: {
           interactionJobs: {
-            get: vi.fn(async () => job)
+            get: vi.fn(async () => job),
           },
           discussionMappings: {
-            list: vi.fn(async () => [])
+            list: vi.fn(async () => []),
           },
           modelProfiles: {
             get: vi.fn(async () => null),
-            find: vi.fn(async () => null)
-          }
+            find: vi.fn(async () => null),
+          },
         },
         getInteractionJobById: vi.fn(async () => job),
         markJobInProgress: vi.fn(async () => {}),
@@ -595,7 +603,7 @@ describe("ReviewWorker orchestration", () => {
           resultJson: null,
           error: null,
           startedAt: new Date().toISOString(),
-          finishedAt: null
+          finishedAt: null,
         })),
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
@@ -606,10 +614,10 @@ describe("ReviewWorker orchestration", () => {
         markJobCompleted: vi.fn(async () => {}),
         failInteractionRun: vi.fn(async () => {}),
         markJobQueued: vi.fn(async () => {}),
-        markJobFailed: vi.fn(async () => {})
+        markJobFailed: vi.fn(async () => {}),
       } as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant)
+        getTenantById: vi.fn(async () => tenant),
       } as never,
       hydrator: {
         loadRoutingContext: vi.fn(async () => ({
@@ -621,14 +629,15 @@ describe("ReviewWorker orchestration", () => {
             project_id: tenant.projectId,
             title: "Add worker",
             description: "Adds the worker",
-            web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+            web_url:
+              "https://gitlab.example.com/group/project/-/merge_requests/7",
             source_branch: "feature",
             target_branch: "main",
             author: {
               id: 42,
               username: "developer",
-              name: "Dev User"
-            }
+              name: "Dev User",
+            },
           },
           changes: [],
           notes: [],
@@ -643,71 +652,71 @@ describe("ReviewWorker orchestration", () => {
                   author: {
                     id: 42,
                     username: "developer",
-                    name: "Dev User"
+                    name: "Dev User",
                   },
                   created_at: new Date().toISOString(),
                   updated_at: new Date().toISOString(),
-                  system: false
-                }
-              ]
-            }
+                  system: false,
+                },
+              ],
+            },
           ],
           workspace: {
             rootPath: join("tmp", "workspace-routing"),
             cleanupRoot: join("tmp", "cleanup-routing"),
             strategy: "git",
-            instructionFiles: []
+            instructionFiles: [],
           },
           projectMemory: {
             enabled: true,
             page: null,
-            entries: []
-          }
+            entries: [],
+          },
         })),
         hydrate: vi.fn(async () => {
           throw new Error("full hydration should be skipped");
-        })
+        }),
       } as never,
       workspaceMaterializer: {
-        cleanup: vi.fn(async () => {})
+        cleanup: vi.fn(async () => {}),
       } as never,
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
-          review: vi.fn()
-        }))
+          review: vi.fn(),
+        })),
       },
       chatterRunnerFactory: {
         createRunner: vi.fn(() => ({
           run: vi.fn(async () => ({
             memory: {
               status: "skipped" as const,
-              summary: "No durable memory detected."
+              summary: "No durable memory detected.",
             },
             replies: [
               {
                 target: {
                   kind: "discussion-reply" as const,
                   noteId: 77,
-                  discussionId: "disc_individual"
+                  discussionId: "disc_individual",
                 },
-                replyBody: "Here is the explanation."
-              }
-            ]
+                replyBody: "Here is the explanation.",
+              },
+            ],
           })),
           sessionPaths: {
             memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"]
-          }
-        }))
+            reply: ["copilot", "chatter", "reply"],
+          },
+        })),
       } as never,
       reconciler: {
-        reconcile: vi.fn()
+        reconcile: vi.fn(),
       } as never,
       logger: createLogger("silent"),
       runLogDir: join("tmp", "run-logs"),
       maxJobRetries: 3,
-      retryBackoffMs: 5000
+      retryBackoffMs: 5000,
     });
 
     await expect(worker.processJob("job_3")).resolves.toBeUndefined();
@@ -716,8 +725,10 @@ describe("ReviewWorker orchestration", () => {
       fetchMock.mock.calls.some(
         ([input, init]) =>
           init?.method === "POST" &&
-          String(input).includes("/merge_requests/7/discussions/disc_individual/notes")
-      )
+          String(input).includes(
+            "/merge_requests/7/discussions/disc_individual/notes",
+          ),
+      ),
     ).toBe(true);
     expect(
       fetchMock.mock.calls.some(
@@ -725,8 +736,8 @@ describe("ReviewWorker orchestration", () => {
           init?.method === "POST" &&
           String(input).includes("/merge_requests/7/notes") &&
           !String(input).includes("/discussions/") &&
-          !String(input).includes("/award_emoji")
-      )
+          !String(input).includes("/award_emoji"),
+      ),
     ).toBe(false);
 
     globalThis.fetch = originalFetch;
@@ -734,45 +745,47 @@ describe("ReviewWorker orchestration", () => {
 
   it("syncs resolved discussion findings before starting review", async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      const requestUrl = String(input);
-      if (init?.method === "GET") {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      if (requestUrl.includes("/award_emoji")) {
-        return new Response(
-          JSON.stringify({
-            id: 1,
-            name: "white_check_mark",
-            user: {
-              id: 999,
-              username: "review-bot",
-              name: "Review Bot"
-            },
-            created_at: new Date().toISOString()
-          }),
-          {
+    globalThis.fetch = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const requestUrl = String(input);
+        if (init?.method === "GET") {
+          return new Response("[]", {
             status: 200,
             headers: {
-              "content-type": "application/json"
-            }
-          }
-        );
-      }
-
-      return new Response("{}", {
-        status: 200,
-        headers: {
-          "content-type": "application/json"
+              "content-type": "application/json",
+            },
+          });
         }
-      });
-    }) as typeof globalThis.fetch;
+
+        if (requestUrl.includes("/award_emoji")) {
+          return new Response(
+            JSON.stringify({
+              id: 1,
+              name: "white_check_mark",
+              user: {
+                id: 999,
+                username: "review-bot",
+                name: "Review Bot",
+              },
+              created_at: new Date().toISOString(),
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        return new Response("{}", {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        });
+      },
+    );
 
     const job = {
       id: "job_4",
@@ -788,14 +801,14 @@ describe("ReviewWorker orchestration", () => {
         object_attributes: {
           ...payload.object_attributes,
           id: 58,
-          note: "@review-bot please review again"
-        }
+          note: "@review-bot please review again",
+        },
       }),
       retryCount: 0,
       lastError: null,
       enqueuedAt: new Date().toISOString(),
       startedAt: null,
-      finishedAt: null
+      finishedAt: null,
     };
     const mappings = [
       {
@@ -820,8 +833,8 @@ describe("ReviewWorker orchestration", () => {
         status: "open" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
+        updatedAt: new Date().toISOString(),
+      },
     ];
     const priorFindings: Array<{
       findingId: string;
@@ -849,34 +862,45 @@ describe("ReviewWorker orchestration", () => {
         suggestion: null,
         interactionRunId: "run_old",
         reviewedAt: new Date().toISOString(),
-        headSha: "abc123"
-      }
+        headSha: "abc123",
+      },
     ];
-    const updateReviewFindingStatus = vi.fn(async (_tenantId: string, _mergeRequestIid: number, identityKey: string, status: "open" | "resolved") => {
-      for (const finding of priorFindings) {
-        if (finding.identityKey === identityKey) {
-          finding.status = status;
+    const updateReviewFindingStatus = vi.fn(
+      async (
+        _tenantId: string,
+        _mergeRequestIid: number,
+        identityKey: string,
+        status: "open" | "resolved",
+      ) => {
+        for (const finding of priorFindings) {
+          if (finding.identityKey === identityKey) {
+            finding.status = status;
+          }
         }
-      }
-      return true;
-    });
+        return true;
+      },
+    );
     const upsertDiscussionMapping = vi.fn(async (input) => {
       mappings[0] = {
         ...mappings[0],
         ...input,
         createdAt: mappings[0]?.createdAt ?? new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       };
       return mappings[0];
     });
-    const review = vi.fn(async (context: { scope: { priorFindings: Array<{ status: string }> } }) => ({
-      overview: {
-        summary: "No further issues found",
-        overallSeverity: "low" as const
-      },
-      findings: [],
-      priorDispositions: []
-    }));
+    const review = vi.fn(
+      async (_context: {
+        scope: { priorFindings: Array<{ status: string }> };
+      }) => ({
+        overview: {
+          summary: "No further issues found",
+          overallSeverity: "low" as const,
+        },
+        findings: [],
+        priorDispositions: [],
+      }),
+    );
 
     const routingContext = {
       tenant,
@@ -893,8 +917,8 @@ describe("ReviewWorker orchestration", () => {
         author: {
           id: 42,
           username: "developer",
-          name: "Dev User"
-        }
+          name: "Dev User",
+        },
       },
       changes: [],
       notes: [
@@ -904,12 +928,12 @@ describe("ReviewWorker orchestration", () => {
           author: {
             id: 42,
             username: "developer",
-            name: "Dev User"
+            name: "Dev User",
           },
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          system: false
-        }
+          system: false,
+        },
       ],
       discussions: [
         {
@@ -922,42 +946,42 @@ describe("ReviewWorker orchestration", () => {
               author: {
                 id: 999,
                 username: "review-bot",
-                name: "Review Bot"
+                name: "Review Bot",
               },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
               system: false,
-              resolved: true
-            }
-          ]
-        }
+              resolved: true,
+            },
+          ],
+        },
       ],
       workspace: {
         rootPath: join("tmp", "workspace-routing"),
         cleanupRoot: join("tmp", "cleanup-routing"),
         strategy: "git" as const,
-        instructionFiles: []
+        instructionFiles: [],
       },
       projectMemory: {
         enabled: true,
         page: null,
-        entries: []
-      }
+        entries: [],
+      },
     };
 
     const worker = new ReviewWorker({
       storage: {
         stores: {
           interactionJobs: {
-            get: vi.fn(async () => job)
+            get: vi.fn(async () => job),
           },
           discussionMappings: {
-            list: vi.fn(async () => mappings)
+            list: vi.fn(async () => mappings),
           },
           modelProfiles: {
             get: vi.fn(async () => null),
-            find: vi.fn(async () => null)
-          }
+            find: vi.fn(async () => null),
+          },
         },
         getInteractionJobById: vi.fn(async () => job),
         markJobInProgress: vi.fn(async () => {}),
@@ -975,7 +999,7 @@ describe("ReviewWorker orchestration", () => {
           resultJson: null,
           error: null,
           startedAt: new Date().toISOString(),
-          finishedAt: null
+          finishedAt: null,
         })),
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
@@ -988,38 +1012,38 @@ describe("ReviewWorker orchestration", () => {
         markJobCompleted: vi.fn(async () => {}),
         failInteractionRun: vi.fn(async () => {}),
         markJobQueued: vi.fn(async () => {}),
-        markJobFailed: vi.fn(async () => {})
+        markJobFailed: vi.fn(async () => {}),
       } as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant)
+        getTenantById: vi.fn(async () => tenant),
       } as never,
       hydrator: {
         loadRoutingContext: vi.fn(async () => routingContext),
-        hydrate: vi.fn(async () => routingContext)
+        hydrate: vi.fn(async () => routingContext),
       } as never,
       workspaceMaterializer: {
-        cleanup: vi.fn(async () => {})
+        cleanup: vi.fn(async () => {}),
       } as never,
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
-          review
-        }))
+          review,
+        })),
       },
       chatterRunnerFactory: {
         createRunner: vi.fn(() => ({
           run: vi.fn(async () => ({
             memory: {
               status: "skipped" as const,
-              summary: "No durable memory detected."
+              summary: "No durable memory detected.",
             },
-            replies: []
+            replies: [],
           })),
           sessionPaths: {
             memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"]
-          }
-        }))
+            reply: ["copilot", "chatter", "reply"],
+          },
+        })),
       } as never,
       reconciler: {
         reconcile: vi.fn(async () => ({
@@ -1028,13 +1052,13 @@ describe("ReviewWorker orchestration", () => {
           replied: 0,
           resolved: 0,
           kept: 0,
-          summaryNoteAction: null
-        }))
+          summaryNoteAction: null,
+        })),
       } as never,
       logger: createLogger("silent"),
       runLogDir: join("tmp", "run-logs"),
       maxJobRetries: 3,
-      retryBackoffMs: 5000
+      retryBackoffMs: 5000,
     });
 
     await expect(worker.processJob("job_4")).resolves.toBeUndefined();
@@ -1043,20 +1067,28 @@ describe("ReviewWorker orchestration", () => {
       expect.objectContaining({
         id: "map_1",
         gitlabDiscussionId: "disc_1",
-        status: "resolved"
-      })
+        status: "resolved",
+      }),
     );
-    expect(updateReviewFindingStatus).toHaveBeenCalledWith(tenant.id, 7, "identity_old", "resolved", {
-      currentStatuses: ["open", "resolved"]
-    });
+    expect(updateReviewFindingStatus).toHaveBeenCalledWith(
+      tenant.id,
+      7,
+      "identity_old",
+      "resolved",
+      {
+        currentStatuses: ["open", "resolved"],
+      },
+    );
     const reviewContext = review.mock.calls[0]?.[0];
     expect(reviewContext).toBeDefined();
     if (!reviewContext) {
       throw new Error("expected review context");
     }
     expect(reviewContext.scope.priorFindings[0]?.status).toBe("resolved");
-    expect((updateReviewFindingStatus.mock.invocationCallOrder[0] ?? 0)).toBeLessThan(
-      review.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER
+    expect(
+      updateReviewFindingStatus.mock.invocationCallOrder[0] ?? 0,
+    ).toBeLessThan(
+      review.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER,
     );
 
     globalThis.fetch = originalFetch;
@@ -1064,45 +1096,47 @@ describe("ReviewWorker orchestration", () => {
 
   it("preserves dismissed findings during pre-review status sync", async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      const requestUrl = String(input);
-      if (init?.method === "GET") {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      if (requestUrl.includes("/award_emoji")) {
-        return new Response(
-          JSON.stringify({
-            id: 1,
-            name: "white_check_mark",
-            user: {
-              id: 999,
-              username: "review-bot",
-              name: "Review Bot"
-            },
-            created_at: new Date().toISOString()
-          }),
-          {
+    globalThis.fetch = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const requestUrl = String(input);
+        if (init?.method === "GET") {
+          return new Response("[]", {
             status: 200,
             headers: {
-              "content-type": "application/json"
-            }
-          }
-        );
-      }
-
-      return new Response("{}", {
-        status: 200,
-        headers: {
-          "content-type": "application/json"
+              "content-type": "application/json",
+            },
+          });
         }
-      });
-    }) as typeof globalThis.fetch;
+
+        if (requestUrl.includes("/award_emoji")) {
+          return new Response(
+            JSON.stringify({
+              id: 1,
+              name: "white_check_mark",
+              user: {
+                id: 999,
+                username: "review-bot",
+                name: "Review Bot",
+              },
+              created_at: new Date().toISOString(),
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        return new Response("{}", {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        });
+      },
+    );
 
     const job = {
       id: "job_5",
@@ -1118,14 +1152,14 @@ describe("ReviewWorker orchestration", () => {
         object_attributes: {
           ...payload.object_attributes,
           id: 59,
-          note: "@review-bot please review again"
-        }
+          note: "@review-bot please review again",
+        },
       }),
       retryCount: 0,
       lastError: null,
       enqueuedAt: new Date().toISOString(),
       startedAt: null,
-      finishedAt: null
+      finishedAt: null,
     };
     const mappings = [
       {
@@ -1150,8 +1184,8 @@ describe("ReviewWorker orchestration", () => {
         status: "resolved" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
+        updatedAt: new Date().toISOString(),
+      },
     ];
     const priorFindings: Array<{
       findingId: string;
@@ -1179,8 +1213,8 @@ describe("ReviewWorker orchestration", () => {
         suggestion: null,
         interactionRunId: "run_old",
         reviewedAt: new Date().toISOString(),
-        headSha: "abc123"
-      }
+        headSha: "abc123",
+      },
     ];
     const updateReviewFindingStatus = vi.fn(
       async (
@@ -1188,7 +1222,9 @@ describe("ReviewWorker orchestration", () => {
         _mergeRequestIid: number,
         identityKey: string,
         status: "open" | "resolved",
-        options?: { currentStatuses?: ReadonlyArray<"open" | "resolved" | "dismissed"> }
+        options?: {
+          currentStatuses?: ReadonlyArray<"open" | "resolved" | "dismissed">;
+        },
       ) => {
         const allowedStatuses = options?.currentStatuses;
         let updated = false;
@@ -1203,25 +1239,29 @@ describe("ReviewWorker orchestration", () => {
           updated = true;
         }
         return updated;
-      }
+      },
     );
     const upsertDiscussionMapping = vi.fn(async (input) => {
       mappings[0] = {
         ...mappings[0],
         ...input,
         createdAt: mappings[0]?.createdAt ?? new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       };
       return mappings[0];
     });
-    const review = vi.fn(async (context: { scope: { priorFindings: Array<{ status: string }> } }) => ({
-      overview: {
-        summary: "No further issues found",
-        overallSeverity: "low" as const
-      },
-      findings: [],
-      priorDispositions: []
-    }));
+    const review = vi.fn(
+      async (_context: {
+        scope: { priorFindings: Array<{ status: string }> };
+      }) => ({
+        overview: {
+          summary: "No further issues found",
+          overallSeverity: "low" as const,
+        },
+        findings: [],
+        priorDispositions: [],
+      }),
+    );
 
     const routingContext = {
       tenant,
@@ -1238,8 +1278,8 @@ describe("ReviewWorker orchestration", () => {
         author: {
           id: 42,
           username: "developer",
-          name: "Dev User"
-        }
+          name: "Dev User",
+        },
       },
       changes: [],
       notes: [
@@ -1249,12 +1289,12 @@ describe("ReviewWorker orchestration", () => {
           author: {
             id: 42,
             username: "developer",
-            name: "Dev User"
+            name: "Dev User",
           },
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          system: false
-        }
+          system: false,
+        },
       ],
       discussions: [
         {
@@ -1267,42 +1307,42 @@ describe("ReviewWorker orchestration", () => {
               author: {
                 id: 999,
                 username: "review-bot",
-                name: "Review Bot"
+                name: "Review Bot",
               },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
               system: false,
-              resolved: false
-            }
-          ]
-        }
+              resolved: false,
+            },
+          ],
+        },
       ],
       workspace: {
         rootPath: join("tmp", "workspace-routing"),
         cleanupRoot: join("tmp", "cleanup-routing"),
         strategy: "git" as const,
-        instructionFiles: []
+        instructionFiles: [],
       },
       projectMemory: {
         enabled: true,
         page: null,
-        entries: []
-      }
+        entries: [],
+      },
     };
 
     const worker = new ReviewWorker({
       storage: {
         stores: {
           interactionJobs: {
-            get: vi.fn(async () => job)
+            get: vi.fn(async () => job),
           },
           discussionMappings: {
-            list: vi.fn(async () => mappings)
+            list: vi.fn(async () => mappings),
           },
           modelProfiles: {
             get: vi.fn(async () => null),
-            find: vi.fn(async () => null)
-          }
+            find: vi.fn(async () => null),
+          },
         },
         getInteractionJobById: vi.fn(async () => job),
         markJobInProgress: vi.fn(async () => {}),
@@ -1320,7 +1360,7 @@ describe("ReviewWorker orchestration", () => {
           resultJson: null,
           error: null,
           startedAt: new Date().toISOString(),
-          finishedAt: null
+          finishedAt: null,
         })),
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
@@ -1333,38 +1373,38 @@ describe("ReviewWorker orchestration", () => {
         markJobCompleted: vi.fn(async () => {}),
         failInteractionRun: vi.fn(async () => {}),
         markJobQueued: vi.fn(async () => {}),
-        markJobFailed: vi.fn(async () => {})
+        markJobFailed: vi.fn(async () => {}),
       } as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant)
+        getTenantById: vi.fn(async () => tenant),
       } as never,
       hydrator: {
         loadRoutingContext: vi.fn(async () => routingContext),
-        hydrate: vi.fn(async () => routingContext)
+        hydrate: vi.fn(async () => routingContext),
       } as never,
       workspaceMaterializer: {
-        cleanup: vi.fn(async () => {})
+        cleanup: vi.fn(async () => {}),
       } as never,
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
-          review
-        }))
+          review,
+        })),
       },
       chatterRunnerFactory: {
         createRunner: vi.fn(() => ({
           run: vi.fn(async () => ({
             memory: {
               status: "skipped" as const,
-              summary: "No durable memory detected."
+              summary: "No durable memory detected.",
             },
-            replies: []
+            replies: [],
           })),
           sessionPaths: {
             memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"]
-          }
-        }))
+            reply: ["copilot", "chatter", "reply"],
+          },
+        })),
       } as never,
       reconciler: {
         reconcile: vi.fn(async () => ({
@@ -1373,20 +1413,26 @@ describe("ReviewWorker orchestration", () => {
           replied: 0,
           resolved: 0,
           kept: 0,
-          summaryNoteAction: null
-        }))
+          summaryNoteAction: null,
+        })),
       } as never,
       logger: createLogger("silent"),
       runLogDir: join("tmp", "run-logs"),
       maxJobRetries: 3,
-      retryBackoffMs: 5000
+      retryBackoffMs: 5000,
     });
 
     await expect(worker.processJob("job_5")).resolves.toBeUndefined();
 
-    expect(updateReviewFindingStatus).toHaveBeenCalledWith(tenant.id, 7, "identity_dismissed", "open", {
-      currentStatuses: ["open", "resolved"]
-    });
+    expect(updateReviewFindingStatus).toHaveBeenCalledWith(
+      tenant.id,
+      7,
+      "identity_dismissed",
+      "open",
+      {
+        currentStatuses: ["open", "resolved"],
+      },
+    );
     expect(priorFindings[0]?.status).toBe("dismissed");
     const reviewContext = review.mock.calls[0]?.[0];
     expect(reviewContext).toBeDefined();

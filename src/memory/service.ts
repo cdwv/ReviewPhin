@@ -1,10 +1,21 @@
 import type { Logger } from "pino";
 
-import type { HarnessModelConfig, HarnessRunLoggingContext, HarnessTenantContext } from "../harness/types.js";
-import { getProjectMemoryContentLength, mergeProjectMemoryEntries } from "./project-memory.js";
+import type {
+  HarnessModelConfig,
+  HarnessRunLoggingContext,
+  HarnessTenantContext,
+} from "../harness/types.js";
+import {
+  getProjectMemoryContentLength,
+  mergeProjectMemoryEntries,
+} from "./project-memory.js";
 import type { ProjectMemoryBackend } from "./backend.js";
-import { ProjectMemoryConsolidator } from "./consolidator.js";
-import type { ProjectMemoryContext, ProjectMemoryToolInput, ProjectMemoryUpdateResult } from "./types.js";
+import type { ProjectMemoryConsolidator } from "./consolidator.js";
+import type {
+  ProjectMemoryContext,
+  ProjectMemoryToolInput,
+  ProjectMemoryUpdateResult,
+} from "./types.js";
 
 const MEMORY_SAVE_COALESCE_THRESHOLD_RATIO = 0.9;
 const MEMORY_COALESCE_TARGET_RATIO = 0.75;
@@ -42,33 +53,47 @@ export class ProjectMemoryService {
     return this.backend.load();
   }
 
-  public async addEntry(input: ProjectMemoryToolInput): Promise<ProjectMemoryUpdateResult> {
+  public async addEntry(
+    input: ProjectMemoryToolInput,
+  ): Promise<ProjectMemoryUpdateResult> {
     return this.runSerializedWrite(async () => {
       const currentMemory = await this.backend.load();
       if (!currentMemory.enabled) {
         throw new Error("Project memory is disabled");
       }
 
-      const nextEntries = mergeProjectMemoryEntries(currentMemory.entries, input);
+      const nextEntries = mergeProjectMemoryEntries(
+        currentMemory.entries,
+        input,
+      );
       if (areEntriesEqual(currentMemory.entries, nextEntries)) {
         return {
           changed: false,
           action: "unchanged",
           memory: {
             ...currentMemory,
-            entries: nextEntries
-          }
+            entries: nextEntries,
+          },
         };
       }
 
       const action = currentMemory.page === null ? "created" : "updated";
-      let memory = await this.saveEntryUpdate(currentMemory.entries, nextEntries, input);
+      let memory = await this.saveEntryUpdate(
+        currentMemory.entries,
+        nextEntries,
+        input,
+      );
 
-      if (!shouldCoalescePersistedMemory(memory.entries, this.maxPromptMemoryChars)) {
+      if (
+        !shouldCoalescePersistedMemory(
+          memory.entries,
+          this.maxPromptMemoryChars,
+        )
+      ) {
         return {
           changed: true,
           action,
-          memory
+          memory,
         };
       }
 
@@ -81,12 +106,14 @@ export class ProjectMemoryService {
           coalesceInput: {
             entries: baseEntries,
             maxChars: this.maxPromptMemoryChars,
-            targetChars: Math.floor(this.maxPromptMemoryChars * MEMORY_COALESCE_TARGET_RATIO),
-            reason: "save-threshold"
-          }
+            targetChars: Math.floor(
+              this.maxPromptMemoryChars * MEMORY_COALESCE_TARGET_RATIO,
+            ),
+            reason: "save-threshold",
+          },
         });
         memory = await this.backend.saveEntries(consolidatedEntries, {
-          baseEntries
+          baseEntries,
         });
       } catch (error) {
         this.logger.warn(
@@ -94,23 +121,24 @@ export class ProjectMemoryService {
             err: error,
             interactionRunId: this.logging?.interactionRunId ?? null,
             tenantId: this.logging?.tenantId ?? this.tenant.id,
-            reason: "save-threshold"
+            reason: "save-threshold",
           },
-          "project memory consolidation failed after durable write"
+          "project memory consolidation failed after durable write",
         );
       }
 
       return {
         changed: true,
         action,
-        memory
+        memory,
       };
     });
   }
 
   private async runSerializedWrite<T>(operation: () => Promise<T>): Promise<T> {
     const queueKey = createMemoryQueueKey(this.tenant);
-    const previous = ProjectMemoryService.tenantWriteQueues.get(queueKey) ?? Promise.resolve();
+    const previous =
+      ProjectMemoryService.tenantWriteQueues.get(queueKey) ?? Promise.resolve();
     let releaseCurrent!: () => void;
     const current = new Promise<void>((resolve) => {
       releaseCurrent = resolve;
@@ -132,14 +160,18 @@ export class ProjectMemoryService {
   private async saveEntryUpdate(
     baseEntries: ProjectMemoryContext["entries"],
     nextEntries: ProjectMemoryContext["entries"],
-    input: ProjectMemoryToolInput
+    input: ProjectMemoryToolInput,
   ): Promise<ProjectMemoryContext> {
     let attemptBaseEntries = baseEntries;
     let attemptEntries = nextEntries;
 
-    for (let attempt = 0; attempt < MEMORY_WRITE_CONFLICT_RETRY_LIMIT; attempt += 1) {
+    for (
+      let attempt = 0;
+      attempt < MEMORY_WRITE_CONFLICT_RETRY_LIMIT;
+      attempt += 1
+    ) {
       const memory = await this.backend.saveEntries(attemptEntries, {
-        baseEntries: attemptBaseEntries
+        baseEntries: attemptBaseEntries,
       });
       const reappliedEntries = mergeProjectMemoryEntries(memory.entries, input);
       if (areEntriesEqual(memory.entries, reappliedEntries)) {
@@ -150,7 +182,9 @@ export class ProjectMemoryService {
       attemptEntries = reappliedEntries;
     }
 
-    throw new Error("Project memory update conflict could not be resolved after retries");
+    throw new Error(
+      "Project memory update conflict could not be resolved after retries",
+    );
   }
 }
 
@@ -160,14 +194,17 @@ function createMemoryQueueKey(tenant: HarnessTenantContext): string {
 
 function shouldCoalescePersistedMemory(
   entries: ProjectMemoryContext["entries"],
-  maxPromptMemoryChars: number
+  maxPromptMemoryChars: number,
 ): boolean {
-  return getProjectMemoryContentLength(entries) > Math.floor(maxPromptMemoryChars * MEMORY_SAVE_COALESCE_THRESHOLD_RATIO);
+  return (
+    getProjectMemoryContentLength(entries) >
+    Math.floor(maxPromptMemoryChars * MEMORY_SAVE_COALESCE_THRESHOLD_RATIO)
+  );
 }
 
 function areEntriesEqual(
   left: ProjectMemoryContext["entries"],
-  right: ProjectMemoryContext["entries"]
+  right: ProjectMemoryContext["entries"],
 ): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }

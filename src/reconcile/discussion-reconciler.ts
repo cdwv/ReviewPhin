@@ -1,25 +1,40 @@
 import type { Logger } from "pino";
 
 import { isBotUser } from "../gitlab/bot-user.js";
-import { appendSuggestion, buildDiffPosition, renderSuggestionMarkdown } from "../gitlab/positions.js";
+import {
+  appendSuggestion,
+  buildDiffPosition,
+  renderSuggestionMarkdown,
+} from "../gitlab/positions.js";
 import { GitLabApiError, type GitLabClient } from "../gitlab/client.js";
 import type {
   GitLabDiscussion,
   GitLabDiffPosition,
   GitLabNote,
-  HydratedMergeRequestContext
+  HydratedMergeRequestContext,
 } from "../gitlab/types.js";
 import type { StorageHelpers } from "../storage/storage-helpers.js";
-import type { DiscussionMappingRecord, ReviewFindingStatus, TenantRecord } from "../storage/contract/index.js";
-import { createFindingFingerprint, createFindingIdentityKey } from "../utils/ids.js";
+import type {
+  DiscussionMappingRecord,
+  ReviewFindingStatus,
+  TenantRecord,
+} from "../storage/contract/index.js";
+import {
+  createFindingFingerprint,
+  createFindingIdentityKey,
+} from "../utils/ids.js";
 import { firstNonEmptyLine } from "../utils/text.js";
-import { buildReviewSummaryNote, findLatestReviewSummaryNote, isReviewSummaryNoteBody } from "../review/summary.js";
+import {
+  buildReviewSummaryNote,
+  findLatestReviewSummaryNote,
+  isReviewSummaryNoteBody,
+} from "../review/summary.js";
 import type {
   PriorDisposition,
   ProviderThreadContext,
   ReviewAnchor,
   ReviewFinding,
-  ReviewResult
+  ReviewResult,
 } from "../review/types.js";
 
 interface KnownThread {
@@ -53,7 +68,12 @@ interface DiscussionReconcilerOptions {
   logger: Logger;
 }
 
-type ThreadReconcileAction = "created" | "updated" | "replied" | "resolved" | "kept";
+type ThreadReconcileAction =
+  | "created"
+  | "updated"
+  | "replied"
+  | "resolved"
+  | "kept";
 
 export class DiscussionReconciler {
   private readonly storage: StorageHelpers;
@@ -75,12 +95,17 @@ export class DiscussionReconciler {
     const knownThreads = buildKnownThreads({
       tenant: input.tenant,
       discussions: input.context.discussions,
-      mappings: input.mappings
+      mappings: input.mappings,
     });
 
-    const threadById = new Map(knownThreads.map((thread) => [thread.threadId, thread]));
+    const threadById = new Map(
+      knownThreads.map((thread) => [thread.threadId, thread]),
+    );
     const dispositionByThreadId = new Map(
-      input.reviewResult.priorDispositions.map((disposition) => [disposition.threadId, disposition])
+      input.reviewResult.priorDispositions.map((disposition) => [
+        disposition.threadId,
+        disposition,
+      ]),
     );
 
     const summary: ReconcileSummary = {
@@ -89,25 +114,30 @@ export class DiscussionReconciler {
       replied: 0,
       resolved: 0,
       kept: 0,
-      summaryNoteAction: null
+      summaryNoteAction: null,
     };
 
-    const referencedThreadIds = collectReferencedThreadIds(input.reviewResult.findings, threadById);
+    const referencedThreadIds = collectReferencedThreadIds(
+      input.reviewResult.findings,
+      threadById,
+    );
     const projectedActiveFindings = await this.projectActiveFindings({
       tenant: input.tenant,
       mergeRequestIid: input.context.mergeRequest.iid,
       reviewResult: input.reviewResult,
       threadById,
-      referencedThreadIds
+      referencedThreadIds,
     });
 
     summary.summaryNoteAction = await this.syncSummaryNote({
       ...input,
-      activeFindings: projectedActiveFindings
+      activeFindings: projectedActiveFindings,
     });
 
     for (const finding of input.reviewResult.findings) {
-      const matchedThread = finding.priorThreadId ? threadById.get(finding.priorThreadId) ?? null : null;
+      const matchedThread = finding.priorThreadId
+        ? (threadById.get(finding.priorThreadId) ?? null)
+        : null;
       if (matchedThread) {
         const disposition = dispositionByThreadId.get(matchedThread.threadId);
         const action = await this.applyFindingToExistingThread({
@@ -117,7 +147,7 @@ export class DiscussionReconciler {
           interactionRunId: input.interactionRunId,
           thread: matchedThread,
           finding,
-          disposition
+          disposition,
         });
         summary[action] += 1;
         continue;
@@ -128,7 +158,7 @@ export class DiscussionReconciler {
         context: input.context,
         client: input.client,
         interactionRunId: input.interactionRunId,
-        finding
+        finding,
       });
       summary.created += 1;
     }
@@ -149,7 +179,7 @@ export class DiscussionReconciler {
             input.tenant.projectId,
             input.context.mergeRequest.iid,
             thread.discussionId,
-            true
+            true,
           );
         }
 
@@ -159,14 +189,16 @@ export class DiscussionReconciler {
           interactionRunId: input.interactionRunId,
           thread,
           note: thread.latestBotNote ?? thread.discussion.notes[0] ?? null,
-          identityKey: thread.mapping?.identityKey ?? createFindingIdentityKey({
-            title: thread.title,
-            category: thread.mapping?.category ?? "correctness",
-            path: thread.anchor?.path,
-            startLine: thread.anchor?.startLine,
-            endLine: thread.anchor?.endLine,
-            side: thread.anchor?.side
-          }),
+          identityKey:
+            thread.mapping?.identityKey ??
+            createFindingIdentityKey({
+              title: thread.title,
+              category: thread.mapping?.category ?? "correctness",
+              path: thread.anchor?.path,
+              startLine: thread.anchor?.startLine,
+              endLine: thread.anchor?.endLine,
+              side: thread.anchor?.side,
+            }),
           fingerprint:
             thread.mapping?.findingFingerprint ??
             createFindingFingerprint({
@@ -178,9 +210,9 @@ export class DiscussionReconciler {
                   path: thread.anchor?.path,
                   startLine: thread.anchor?.startLine,
                   endLine: thread.anchor?.endLine,
-                  side: thread.anchor?.side
+                  side: thread.anchor?.side,
                 }),
-              body: thread.body
+              body: thread.body,
             }),
           title: thread.title,
           body: thread.body,
@@ -188,7 +220,7 @@ export class DiscussionReconciler {
           category: thread.mapping?.category ?? "correctness",
           position: thread.discussion.notes[0]?.position ?? null,
           discussionStatus: "resolved",
-          findingStatus: disposition.resolution ?? "resolved"
+          findingStatus: disposition.resolution ?? "resolved",
         });
         summary.resolved += 1;
       } else if (disposition.action === "reply" && disposition.replyBody) {
@@ -196,7 +228,7 @@ export class DiscussionReconciler {
           input.tenant.projectId,
           input.context.mergeRequest.iid,
           thread.discussionId,
-          disposition.replyBody
+          disposition.replyBody,
         );
         await this.persistThreadState({
           tenant: input.tenant,
@@ -212,7 +244,7 @@ export class DiscussionReconciler {
               path: thread.anchor?.path,
               startLine: thread.anchor?.startLine,
               endLine: thread.anchor?.endLine,
-              side: thread.anchor?.side
+              side: thread.anchor?.side,
             }),
           fingerprint:
             thread.mapping?.findingFingerprint ??
@@ -225,17 +257,18 @@ export class DiscussionReconciler {
                   path: thread.anchor?.path,
                   startLine: thread.anchor?.startLine,
                   endLine: thread.anchor?.endLine,
-                  side: thread.anchor?.side
+                  side: thread.anchor?.side,
                 }),
-              body: disposition.replyBody
+              body: disposition.replyBody,
             }),
           title: thread.title,
           body: disposition.replyBody,
           severity: thread.mapping?.severity ?? "medium",
           category: thread.mapping?.category ?? "correctness",
-          position: note.position ?? thread.discussion.notes[0]?.position ?? null,
+          position:
+            note.position ?? thread.discussion.notes[0]?.position ?? null,
           discussionStatus: thread.resolved ? "resolved" : "open",
-          findingStatus: thread.resolved ? "resolved" : "open"
+          findingStatus: thread.resolved ? "resolved" : "open",
         });
         summary.replied += 1;
       }
@@ -260,12 +293,12 @@ export class DiscussionReconciler {
       path: input.finding.anchor?.path,
       startLine: input.finding.anchor?.startLine,
       endLine: input.finding.anchor?.endLine,
-      side: input.finding.anchor?.side
+      side: input.finding.anchor?.side,
     });
     const fingerprint = createFindingFingerprint({
       identityKey,
       body,
-      suggestionReplacement: input.finding.suggestion?.replacement
+      suggestionReplacement: input.finding.suggestion?.replacement,
     });
 
     const shouldReply =
@@ -274,13 +307,19 @@ export class DiscussionReconciler {
       !input.thread.latestBotNote ||
       input.thread.resolved;
 
-    if (input.thread.mapping?.findingFingerprint === fingerprint && !shouldReply) {
+    if (
+      input.thread.mapping?.findingFingerprint === fingerprint &&
+      !shouldReply
+    ) {
       await this.persistThreadState({
         tenant: input.tenant,
         context: input.context,
         interactionRunId: input.interactionRunId,
         thread: input.thread,
-        note: input.thread.latestBotNote ?? input.thread.discussion.notes[0] ?? null,
+        note:
+          input.thread.latestBotNote ??
+          input.thread.discussion.notes[0] ??
+          null,
         identityKey,
         fingerprint,
         title: input.finding.title,
@@ -289,7 +328,7 @@ export class DiscussionReconciler {
         category: input.finding.category,
         position: input.thread.discussion.notes[0]?.position ?? null,
         discussionStatus: "open",
-        findingStatus: "open"
+        findingStatus: "open",
       });
       return "kept";
     }
@@ -300,7 +339,7 @@ export class DiscussionReconciler {
           input.tenant.projectId,
           input.context.mergeRequest.iid,
           input.thread.discussionId,
-          false
+          false,
         );
       }
 
@@ -308,7 +347,7 @@ export class DiscussionReconciler {
         input.tenant.projectId,
         input.context.mergeRequest.iid,
         input.thread.discussionId,
-        input.disposition?.replyBody ?? body
+        input.disposition?.replyBody ?? body,
       );
       await this.persistThreadState({
         tenant: input.tenant,
@@ -322,16 +361,19 @@ export class DiscussionReconciler {
         body: input.disposition?.replyBody ?? body,
         severity: input.finding.severity,
         category: input.finding.category,
-        position: note.position ?? input.thread.discussion.notes[0]?.position ?? null,
+        position:
+          note.position ?? input.thread.discussion.notes[0]?.position ?? null,
         discussionStatus: "open",
-        findingStatus: "open"
+        findingStatus: "open",
       });
       return "replied";
     }
 
     const latestBotNote = input.thread.latestBotNote;
     if (!latestBotNote) {
-      throw new Error(`Expected a bot-authored note for discussion ${input.thread.discussionId}`);
+      throw new Error(
+        `Expected a bot-authored note for discussion ${input.thread.discussionId}`,
+      );
     }
 
     const updatedNote = await input.client.updateDiscussionNote(
@@ -339,7 +381,7 @@ export class DiscussionReconciler {
       input.context.mergeRequest.iid,
       input.thread.discussionId,
       latestBotNote.id,
-      body
+      body,
     );
     await this.persistThreadState({
       tenant: input.tenant,
@@ -353,9 +395,12 @@ export class DiscussionReconciler {
       body,
       severity: input.finding.severity,
       category: input.finding.category,
-      position: updatedNote.position ?? input.thread.discussion.notes[0]?.position ?? null,
+      position:
+        updatedNote.position ??
+        input.thread.discussion.notes[0]?.position ??
+        null,
       discussionStatus: "open",
-      findingStatus: "open"
+      findingStatus: "open",
     });
     return "updated";
   }
@@ -369,7 +414,11 @@ export class DiscussionReconciler {
   }): Promise<void> {
     const body = renderFindingBody(input.finding);
     const position = input.finding.anchor
-      ? buildDiffPosition(input.finding.anchor, input.context.changes, input.context.latestVersion)
+      ? buildDiffPosition(
+          input.finding.anchor,
+          input.context.changes,
+          input.context.latestVersion,
+        )
       : null;
     const createdThread = await this.createDiscussion({
       client: input.client,
@@ -378,13 +427,15 @@ export class DiscussionReconciler {
       interactionRunId: input.interactionRunId,
       finding: input.finding,
       body,
-      position
+      position,
     });
     const { discussion, position: persistedPosition } = createdThread;
 
     const note = discussion.notes[0];
     if (!note) {
-      throw new Error(`GitLab discussion ${discussion.id} did not include a root note`);
+      throw new Error(
+        `GitLab discussion ${discussion.id} did not include a root note`,
+      );
     }
 
     const identityKey = createFindingIdentityKey({
@@ -393,12 +444,12 @@ export class DiscussionReconciler {
       path: input.finding.anchor?.path,
       startLine: input.finding.anchor?.startLine,
       endLine: input.finding.anchor?.endLine,
-      side: input.finding.anchor?.side
+      side: input.finding.anchor?.side,
     });
     const fingerprint = createFindingFingerprint({
       identityKey,
       body,
-      suggestionReplacement: input.finding.suggestion?.replacement
+      suggestionReplacement: input.finding.suggestion?.replacement,
     });
 
     await this.storage.upsertDiscussionMapping({
@@ -413,20 +464,24 @@ export class DiscussionReconciler {
       body,
       gitlabDiscussionId: discussion.id,
       gitlabNoteId: note.id,
-      anchorJson: input.finding.anchor ? JSON.stringify(input.finding.anchor) : null,
-      positionJson: persistedPosition ? JSON.stringify(persistedPosition) : null,
+      anchorJson: input.finding.anchor
+        ? JSON.stringify(input.finding.anchor)
+        : null,
+      positionJson: persistedPosition
+        ? JSON.stringify(persistedPosition)
+        : null,
       botDiscussion: true,
       botNote: true,
       noteAuthorId: note.author.id,
       noteAuthorUsername: note.author.username,
       status: note.resolved ? "resolved" : "open",
-      lastInteractionRunId: input.interactionRunId
+      lastInteractionRunId: input.interactionRunId,
     });
     await this.storage.updateReviewFindingStatus(
       input.tenant.id,
       input.context.mergeRequest.iid,
       identityKey,
-      "open"
+      "open",
     );
   }
 
@@ -438,23 +493,34 @@ export class DiscussionReconciler {
     finding: ReviewFinding;
     body: string;
     position: GitLabDiffPosition | null;
-  }): Promise<{ discussion: GitLabDiscussion; position: GitLabDiffPosition | null }> {
+  }): Promise<{
+    discussion: GitLabDiscussion;
+    position: GitLabDiffPosition | null;
+  }> {
     if (!input.position) {
       return {
-        discussion: await input.client.createMergeRequestDiscussion(input.projectId, input.mergeRequestIid, {
-          body: input.body
-        }),
-        position: null
+        discussion: await input.client.createMergeRequestDiscussion(
+          input.projectId,
+          input.mergeRequestIid,
+          {
+            body: input.body,
+          },
+        ),
+        position: null,
       };
     }
 
     try {
       return {
-        discussion: await input.client.createMergeRequestDiscussion(input.projectId, input.mergeRequestIid, {
-          body: input.body,
-          position: input.position
-        }),
-        position: input.position
+        discussion: await input.client.createMergeRequestDiscussion(
+          input.projectId,
+          input.mergeRequestIid,
+          {
+            body: input.body,
+            position: input.position,
+          },
+        ),
+        position: input.position,
       };
     } catch (error) {
       if (!isInvalidDiffPositionError(error)) {
@@ -469,16 +535,20 @@ export class DiscussionReconciler {
           mergeRequestIid: input.mergeRequestIid,
           findingTitle: input.finding.title,
           anchor: input.finding.anchor,
-          position: input.position
+          position: input.position,
         },
-        "GitLab rejected diff note position; retrying as an overview thread"
+        "GitLab rejected diff note position; retrying as an overview thread",
       );
 
       return {
-        discussion: await input.client.createMergeRequestDiscussion(input.projectId, input.mergeRequestIid, {
-          body: input.body
-        }),
-        position: null
+        discussion: await input.client.createMergeRequestDiscussion(
+          input.projectId,
+          input.mergeRequestIid,
+          {
+            body: input.body,
+          },
+        ),
+        position: null,
       };
     }
   }
@@ -517,33 +587,36 @@ export class DiscussionReconciler {
       body: input.body,
       gitlabDiscussionId: input.thread.discussionId,
       gitlabNoteId: input.note.id,
-      anchorJson: input.thread.anchor ? JSON.stringify(input.thread.anchor) : null,
+      anchorJson: input.thread.anchor
+        ? JSON.stringify(input.thread.anchor)
+        : null,
       positionJson: input.position ? JSON.stringify(input.position) : null,
       botDiscussion: isBotUser(rootNote.author, input.tenant),
       botNote: isBotUser(input.note.author, input.tenant),
       noteAuthorId: input.note.author.id,
       noteAuthorUsername: input.note.author.username,
       status: input.discussionStatus,
-      lastInteractionRunId: input.interactionRunId
+      lastInteractionRunId: input.interactionRunId,
     });
 
     const updatedFinding = await this.storage.updateReviewFindingStatus(
       input.tenant.id,
       input.context.mergeRequest.iid,
       input.identityKey,
-      input.findingStatus
+      input.findingStatus,
     );
     const shouldWarnAboutFindingStatusUpdate =
-      input.findingStatus !== "open" || input.thread.mapping?.status === "resolved";
+      input.findingStatus !== "open" ||
+      input.thread.mapping?.status === "resolved";
     if (!updatedFinding && shouldWarnAboutFindingStatusUpdate) {
       this.logger.warn(
         {
           tenantId: input.tenant.id,
           mergeRequestIid: input.context.mergeRequest.iid,
           identityKey: input.identityKey,
-          findingStatus: input.findingStatus
+          findingStatus: input.findingStatus,
         },
-        "failed to update persisted review finding status"
+        "failed to update persisted review finding status",
       );
     }
 
@@ -551,7 +624,7 @@ export class DiscussionReconciler {
       tenantId: input.tenant.id,
       mergeRequestIid: input.context.mergeRequest.iid,
       previousIdentityKey: input.thread.mapping?.identityKey ?? null,
-      nextIdentityKey: input.identityKey
+      nextIdentityKey: input.identityKey,
     });
   }
 
@@ -566,21 +639,28 @@ export class DiscussionReconciler {
     const body = buildReviewSummaryNote({
       context: input.context,
       reviewResult: input.reviewResult,
-      activeFindings: input.activeFindings
+      activeFindings: input.activeFindings,
     });
-    const existingNote = findLatestReviewSummaryNote(input.context.notes, (note) => isBotUser(note.author, input.tenant));
+    const existingNote = findLatestReviewSummaryNote(
+      input.context.notes,
+      (note) => isBotUser(note.author, input.tenant),
+    );
 
     if (existingNote) {
       await input.client.updateMergeRequestNote(
         input.tenant.projectId,
         input.context.mergeRequest.iid,
         existingNote.id,
-        body
+        body,
       );
       return "updated";
     }
 
-    await input.client.createMergeRequestNote(input.tenant.projectId, input.context.mergeRequest.iid, body);
+    await input.client.createMergeRequestNote(
+      input.tenant.projectId,
+      input.context.mergeRequest.iid,
+      body,
+    );
     return "created";
   }
 
@@ -590,7 +670,10 @@ export class DiscussionReconciler {
     previousIdentityKey: string | null;
     nextIdentityKey: string;
   }): Promise<void> {
-    if (!input.previousIdentityKey || input.previousIdentityKey === input.nextIdentityKey) {
+    if (
+      !input.previousIdentityKey ||
+      input.previousIdentityKey === input.nextIdentityKey
+    ) {
       return;
     }
 
@@ -598,7 +681,7 @@ export class DiscussionReconciler {
       input.tenantId,
       input.mergeRequestIid,
       input.previousIdentityKey,
-      "resolved"
+      "resolved",
     );
     if (!retiredFinding) {
       this.logger.warn(
@@ -607,9 +690,9 @@ export class DiscussionReconciler {
           mergeRequestIid: input.mergeRequestIid,
           previousIdentityKey: input.previousIdentityKey,
           nextIdentityKey: input.nextIdentityKey,
-          findingStatus: "resolved"
+          findingStatus: "resolved",
         },
-        "failed to retire replaced review finding status"
+        "failed to retire replaced review finding status",
       );
     }
   }
@@ -622,7 +705,10 @@ export class DiscussionReconciler {
     referencedThreadIds: ReadonlySet<string>;
   }): Promise<SummaryFinding[]> {
     const activeFindings = new Map<string, SummaryFinding>();
-    const persistedFindings = await this.storage.listLatestReviewFindings(input.tenant.id, input.mergeRequestIid);
+    const persistedFindings = await this.storage.listLatestReviewFindings(
+      input.tenant.id,
+      input.mergeRequestIid,
+    );
 
     for (const finding of persistedFindings) {
       if (finding.status !== "open") {
@@ -633,7 +719,7 @@ export class DiscussionReconciler {
         title: finding.title,
         body: finding.body,
         severity: finding.severity as SummaryFinding["severity"],
-        category: finding.category as SummaryFinding["category"]
+        category: finding.category as SummaryFinding["category"],
       });
     }
 
@@ -644,9 +730,11 @@ export class DiscussionReconciler {
         path: finding.anchor?.path,
         startLine: finding.anchor?.startLine,
         endLine: finding.anchor?.endLine,
-        side: finding.anchor?.side
+        side: finding.anchor?.side,
       });
-      const matchedThread = finding.priorThreadId ? input.threadById.get(finding.priorThreadId) ?? null : null;
+      const matchedThread = finding.priorThreadId
+        ? (input.threadById.get(finding.priorThreadId) ?? null)
+        : null;
       if (matchedThread) {
         const previousIdentityKey = matchedThread.mapping?.identityKey ?? null;
         if (previousIdentityKey && previousIdentityKey !== nextIdentityKey) {
@@ -658,12 +746,15 @@ export class DiscussionReconciler {
         title: finding.title,
         body: finding.body,
         severity: finding.severity,
-        category: finding.category
+        category: finding.category,
       });
     }
 
     for (const disposition of input.reviewResult.priorDispositions) {
-      if (disposition.action !== "resolve" || input.referencedThreadIds.has(disposition.threadId)) {
+      if (
+        disposition.action !== "resolve" ||
+        input.referencedThreadIds.has(disposition.threadId)
+      ) {
         continue;
       }
 
@@ -680,7 +771,7 @@ export class DiscussionReconciler {
           path: thread.anchor?.path,
           startLine: thread.anchor?.startLine,
           endLine: thread.anchor?.endLine,
-          side: thread.anchor?.side
+          side: thread.anchor?.side,
         });
       activeFindings.delete(identityKey);
     }
@@ -689,13 +780,18 @@ export class DiscussionReconciler {
   }
 }
 
-type SummaryFinding = Pick<ReviewFinding, "title" | "body" | "severity" | "category">;
+type SummaryFinding = Pick<
+  ReviewFinding,
+  "title" | "body" | "severity" | "category"
+>;
 
 function isInvalidDiffPositionError(error: unknown): error is GitLabApiError {
   return (
     error instanceof GitLabApiError &&
     error.status === 400 &&
-    /\bline_code\b|\bvalid line code\b|\bposition\b[\s\S]*\b(?:invalid|incomplete)\b/i.test(error.responseBody)
+    /\bline_code\b|\bvalid line code\b|\bposition\b[\s\S]*\b(?:invalid|incomplete)\b/i.test(
+      error.responseBody,
+    )
   );
 }
 
@@ -712,7 +808,7 @@ export function buildProviderThreads(input: {
     body: thread.body,
     anchor: thread.anchor,
     resolved: thread.resolved,
-    humanReplies: thread.humanReplies
+    humanReplies: thread.humanReplies,
   }));
 }
 
@@ -722,7 +818,9 @@ function buildKnownThreads(input: {
   mappings: DiscussionMappingRecord[];
 }): KnownThread[] {
   const mappingByDiscussionId = new Map(
-    input.mappings.map((mapping) => [mapping.gitlabDiscussionId, mapping] as const)
+    input.mappings.map(
+      (mapping) => [mapping.gitlabDiscussionId, mapping] as const,
+    ),
   );
 
   const threads: KnownThread[] = [];
@@ -752,7 +850,12 @@ function buildKnownThreads(input: {
       ? (JSON.parse(mapping.anchorJson) as ReviewAnchor)
       : extractAnchorFromNote(latestBotNote ?? rootNote);
 
-    const threadTitle = stripTitleDecoration(mapping?.title ?? firstNonEmptyLine(mapping?.body ?? latestBotNote?.body ?? rootNote.body));
+    const threadTitle = stripTitleDecoration(
+      mapping?.title ??
+        firstNonEmptyLine(
+          mapping?.body ?? latestBotNote?.body ?? rootNote.body,
+        ),
+    );
     const threadBody = mapping?.body ?? latestBotNote?.body ?? rootNote.body;
 
     threads.push({
@@ -770,8 +873,8 @@ function buildKnownThreads(input: {
         .map((note) => ({
           noteId: note.id,
           authorUsername: note.author.username,
-          body: note.body
-        }))
+          body: note.body,
+        })),
     });
   }
 
@@ -779,8 +882,14 @@ function buildKnownThreads(input: {
 }
 
 function renderFindingBody(finding: ReviewFinding): string {
-  const suggestion = renderSuggestionMarkdown(finding.suggestion, finding.anchor ?? null);
-  return appendSuggestion(`**${finding.title.trim()}**\n\n${finding.body.trim()}`, suggestion);
+  const suggestion = renderSuggestionMarkdown(
+    finding.suggestion,
+    finding.anchor ?? null,
+  );
+  return appendSuggestion(
+    `**${finding.title.trim()}**\n\n${finding.body.trim()}`,
+    suggestion,
+  );
 }
 
 function extractAnchorFromNote(note: GitLabNote | null): ReviewAnchor | null {
@@ -794,7 +903,7 @@ function extractAnchorFromNote(note: GitLabNote | null): ReviewAnchor | null {
       oldPath: note.position.old_path,
       startLine: note.position.new_line,
       endLine: note.position.new_line,
-      side: "new"
+      side: "new",
     };
   }
 
@@ -804,7 +913,7 @@ function extractAnchorFromNote(note: GitLabNote | null): ReviewAnchor | null {
       oldPath: note.position.old_path,
       startLine: note.position.old_line,
       endLine: note.position.old_line,
-      side: "old"
+      side: "old",
     };
   }
 
@@ -817,7 +926,7 @@ function stripTitleDecoration(value: string): string {
 
 function collectReferencedThreadIds(
   findings: ReadonlyArray<ReviewFinding>,
-  threadById: ReadonlyMap<string, KnownThread>
+  threadById: ReadonlyMap<string, KnownThread>,
 ): Set<string> {
   const referencedThreadIds = new Set<string>();
 
@@ -831,4 +940,3 @@ function collectReferencedThreadIds(
 
   return referencedThreadIds;
 }
-

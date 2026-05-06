@@ -17,7 +17,7 @@ describe("Copilot run metrics", () => {
         mergeRequestIid: 7,
         workspacePath,
         requestedModel: "gpt-5.4",
-        sessionKind: "review"
+        sessionKind: "review",
       },
       prompt: "Review this merge request.",
       events: [
@@ -27,7 +27,7 @@ describe("Copilot run metrics", () => {
           timestamp: new Date().toISOString(),
           type: "assistant.turn_start",
           ephemeral: false,
-          data: {}
+          data: {},
         },
         {
           id: "usage_1",
@@ -43,8 +43,8 @@ describe("Copilot run metrics", () => {
             cacheWriteTokens: 0,
             reasoningTokens: 7,
             cost: 1,
-            duration: 1_500
-          }
+            duration: 1_500,
+          },
         },
         {
           id: "turn_2",
@@ -52,7 +52,7 @@ describe("Copilot run metrics", () => {
           timestamp: new Date().toISOString(),
           type: "assistant.turn_start",
           ephemeral: false,
-          data: {}
+          data: {},
         },
         {
           id: "usage_2",
@@ -68,8 +68,8 @@ describe("Copilot run metrics", () => {
             cacheWriteTokens: 5,
             reasoningTokens: 3,
             cost: 1,
-            duration: 2_500
-          }
+            duration: 2_500,
+          },
         },
         {
           id: "tool_1",
@@ -80,9 +80,9 @@ describe("Copilot run metrics", () => {
           data: {
             toolName: "view",
             arguments: {
-              path: alphaPath
-            }
-          }
+              path: alphaPath,
+            },
+          },
         },
         {
           id: "tool_2",
@@ -93,9 +93,9 @@ describe("Copilot run metrics", () => {
           data: {
             toolName: "view",
             arguments: {
-              path: alphaPath
-            }
-          }
+              path: alphaPath,
+            },
+          },
         },
         {
           id: "tool_3",
@@ -106,9 +106,9 @@ describe("Copilot run metrics", () => {
           data: {
             toolName: "view",
             arguments: {
-              path: betaPath
-            }
-          }
+              path: betaPath,
+            },
+          },
         },
         {
           id: "tool_4",
@@ -119,11 +119,11 @@ describe("Copilot run metrics", () => {
           data: {
             toolName: "glob",
             arguments: {
-              pattern: "src/**/*.ts"
-            }
-          }
-        }
-      ] as never
+              pattern: "src/**/*.ts",
+            },
+          },
+        },
+      ] as never,
     });
 
     expect(metrics.promptChars).toBe(26);
@@ -142,19 +142,19 @@ describe("Copilot run metrics", () => {
     expect(metrics.premiumRequestsByModel).toEqual([
       {
         model: "claude-sonnet-4",
-        premiumRequests: 1
+        premiumRequests: 1,
       },
       {
         model: "gpt-5.4",
-        premiumRequests: 1
-      }
+        premiumRequests: 1,
+      },
     ]);
     expect(metrics.repeatedViewReads).toBe(1);
     expect(metrics.repeatedViewPaths).toEqual([
       {
         path: alphaPath,
-        count: 2
-      }
+        count: 2,
+      },
     ]);
   });
 });

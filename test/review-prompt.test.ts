@@ -1,33 +1,38 @@
 import { describe, expect, it } from "vitest";
 
 import { renderPrompt } from "../src/prompts/instruction-renderer.js";
-import { buildChatterPrompt, buildReviewPrompt } from "../src/prompts/prompt-builders.js";
+import {
+  buildChatterPrompt,
+  buildReviewPrompt,
+} from "../src/prompts/prompt-builders.js";
 import type { ReviewContext } from "../src/review/types.js";
 import { repoPath } from "./test-paths.js";
 
 describe("buildReviewPrompt", () => {
   it("includes project memory in the serialized prompt context", () => {
     const prompt = buildReviewPrompt(createContext(), {
-      maxPromptMemoryChars: 5_000
+      maxPromptMemoryChars: 5_000,
     });
 
     expect(prompt).toContain('"projectMemory": {');
     expect(prompt).toContain('"totalEntryCount": 2');
     expect(prompt).toContain('"includedEntryCount": 2');
     expect(prompt).toContain("Team policy is to prefer pnpm scripts");
-    expect(prompt).toContain("For future reference, we generally avoid snapshot tests");
+    expect(prompt).toContain(
+      "For future reference, we generally avoid snapshot tests",
+    );
   });
 
   it("caps the amount of project memory included in the prompt context", () => {
     const prompt = buildReviewPrompt(
       createContext(
         Array.from({ length: 6 }, (_, index) => ({
-          text: `Long-lived memory ${index + 1}: ${"x".repeat(60)}`
-        }))
+          text: `Long-lived memory ${index + 1}: ${"x".repeat(60)}`,
+        })),
       ),
       {
-        maxPromptMemoryChars: 240
-      }
+        maxPromptMemoryChars: 240,
+      },
     );
 
     expect(prompt).toContain('"totalEntryCount": 6');
@@ -41,58 +46,94 @@ describe("buildReviewPrompt", () => {
   it("adds summary follow-up instructions from the markdown prompt file", () => {
     const prompt = buildReviewPrompt(createContext(null, "summary-follow-up"));
 
-    expect(prompt).toContain("The latest user instruction came from a reply to the bot's merge request summary note.");
+    expect(prompt).toContain(
+      "The latest user instruction came from a reply to the bot's merge request summary note.",
+    );
     expect(prompt).toContain('"kind": "summary-follow-up"');
   });
 
   it("nudges the reviewer to check for actionable unused code in the edited scope", () => {
     const prompt = buildReviewPrompt(createContext());
 
-    expect(prompt).toContain("unused locals, helper functions, imports, parameters, or computed values");
+    expect(prompt).toContain(
+      "unused locals, helper functions, imports, parameters, or computed values",
+    );
     expect(prompt).toContain("instruction precedence from lowest to highest");
-    expect(prompt).toContain("merge-request-level user comments, then the current `reviewTrigger`");
-    expect(prompt).toContain("prefer updating that existing thread/finding instead of creating a duplicate");
-    expect(renderPrompt("subagent.context-analyst", {})).toContain("unused locals, helper functions, imports, parameters, or assigned values");
-    expect(renderPrompt("subagent.context-analyst", {})).toContain("merge-request-level user comments, then the current request");
+    expect(prompt).toContain(
+      "merge-request-level user comments, then the current `reviewTrigger`",
+    );
+    expect(prompt).toContain(
+      "prefer updating that existing thread/finding instead of creating a duplicate",
+    );
+    expect(renderPrompt("subagent.context-analyst", {})).toContain(
+      "unused locals, helper functions, imports, parameters, or assigned values",
+    );
+    expect(renderPrompt("subagent.context-analyst", {})).toContain(
+      "merge-request-level user comments, then the current request",
+    );
     expect(renderPrompt("subagent.review-author", {})).not.toContain("unused");
   });
 
   it("uses the incremental summary-follow-up registered combination", () => {
-    const prompt = buildReviewPrompt(createContext(null, "summary-follow-up", "incremental-rereview"));
+    const prompt = buildReviewPrompt(
+      createContext(null, "summary-follow-up", "incremental-rereview"),
+    );
 
-    expect(prompt).toContain("This merge request has already been reviewed before.");
-    expect(prompt).toContain("The latest user instruction came from a reply to the bot's merge request summary note.");
+    expect(prompt).toContain(
+      "This merge request has already been reviewed before.",
+    );
+    expect(prompt).toContain(
+      "The latest user instruction came from a reply to the bot's merge request summary note.",
+    );
   });
 
   it("includes prior finding history with status and resolve resolution schema", () => {
-    const prompt = buildReviewPrompt(createContext(null, "direct-mention", "incremental-rereview"));
+    const prompt = buildReviewPrompt(
+      createContext(null, "direct-mention", "incremental-rereview"),
+    );
 
     expect(prompt).toContain('"priorFindings": [');
     expect(prompt).toContain('"status": "open"');
     expect(prompt).toContain('"identityKey": "finding:src/api.ts:12"');
-    expect(prompt).toContain("treat `resolved` and `dismissed` prior findings as inactive by default");
+    expect(prompt).toContain(
+      "treat `resolved` and `dismissed` prior findings as inactive by default",
+    );
     expect(prompt).toContain('"resolution": "optional resolved | dismissed"');
   });
 
   it("uses the follow-up-thread registered combination without the summary overlay", () => {
-    const prompt = buildReviewPrompt(createContext(null, "follow-up-comment", "follow-up-thread"));
+    const prompt = buildReviewPrompt(
+      createContext(null, "follow-up-comment", "follow-up-thread"),
+    );
 
-    expect(prompt).toContain("This is a focused follow-up on an existing bot-owned discussion thread.");
-    expect(prompt).not.toContain("The latest user instruction came from a reply to the bot's merge request summary note.");
+    expect(prompt).toContain(
+      "This is a focused follow-up on an existing bot-owned discussion thread.",
+    );
+    expect(prompt).not.toContain(
+      "The latest user instruction came from a reply to the bot's merge request summary note.",
+    );
   });
 
   it("renders registered standalone prompts and parameterized templates", () => {
-    expect(renderPrompt("subagent.context-analyst", {})).toContain("You are a read-only context analyst.");
-    expect(renderPrompt("subagent.review-author", {})).toContain("You are a review author.");
-    expect(renderPrompt("reply.direct-mention", {})).toContain("You are the lightweight interaction chatter");
-    expect(renderPrompt("reply.memory-update", {})).toContain("This phase runs before any optional reviewer pass.");
+    expect(renderPrompt("subagent.context-analyst", {})).toContain(
+      "You are a read-only context analyst.",
+    );
+    expect(renderPrompt("subagent.review-author", {})).toContain(
+      "You are a review author.",
+    );
+    expect(renderPrompt("reply.direct-mention", {})).toContain(
+      "You are the lightweight interaction chatter",
+    );
+    expect(renderPrompt("reply.memory-update", {})).toContain(
+      "This phase runs before any optional reviewer pass.",
+    );
     expect(
       renderPrompt("memory.coalesce", {
         entries: [{ text: "Keep pnpm usage consistent." }],
         maxChars: 100,
         targetChars: 80,
-        reason: "prompt-budget"
-      })
+        reason: "prompt-budget",
+      }),
     ).toContain("Reason for compression: prompt-budget");
   });
 
@@ -101,28 +142,31 @@ describe("buildReviewPrompt", () => {
       phase: "reply",
       replyStyle: "summary-follow-up",
       trigger: createContext(null, "summary-follow-up").trigger,
-      responseTargets: [createContext(null, "summary-follow-up").trigger.responseTarget],
+      responseTargets: [
+        createContext(null, "summary-follow-up").trigger.responseTarget,
+      ],
       projectMemory: createContext().projectMemory,
       reviewContext: createContext(),
       reviewResult: {
         overview: {
           summary: "Still needs one fix",
-          overallSeverity: "medium"
+          overallSeverity: "medium",
         },
         findings: [],
         priorDispositions: [],
         replyHandoff: {
-          summary: "The prior finding still applies because validation is missing.",
+          summary:
+            "The prior finding still applies because validation is missing.",
           targets: [
             {
               kind: "summary-discussion-reply",
               noteId: 55,
               discussionId: "disc_summary",
-              guidance: "Explain that schema validation is still absent."
-            }
-          ]
-        }
-      }
+              guidance: "Explain that schema validation is still absent.",
+            },
+          ],
+        },
+      },
     });
 
     expect(prompt).toContain('"phase": "reply"');
@@ -130,7 +174,9 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain('"author": "developer"');
     expect(prompt).toContain('"changedFiles": [');
     expect(prompt).toContain('"responseTargets": [');
-    expect(prompt).toContain("The prior finding still applies because validation is missing.");
+    expect(prompt).toContain(
+      "The prior finding still applies because validation is missing.",
+    );
   });
 });
 
@@ -139,10 +185,12 @@ function createContext(
     text: string;
   }> | null = [
     { text: "Team policy is to prefer pnpm scripts for local development." },
-    { text: "For future reference, we generally avoid snapshot tests for API responses." }
+    {
+      text: "For future reference, we generally avoid snapshot tests for API responses.",
+    },
   ],
   triggerKind: ReviewContext["trigger"]["kind"] = "direct-mention",
-  mode: ReviewContext["scope"]["mode"] = "first-pass-full"
+  mode: ReviewContext["scope"]["mode"] = "first-pass-full",
 ): ReviewContext {
   return {
     workspacePath: repoPath(),
@@ -158,8 +206,8 @@ function createContext(
       author: {
         id: 1,
         username: "developer",
-        name: "Dev"
-      }
+        name: "Dev",
+      },
     },
     changes: [
       {
@@ -168,8 +216,8 @@ function createContext(
         diff: "@@ -1,2 +1,4 @@\n-export function oldWorker() {}\n+export function worker() {\n+  return true;\n+}",
         new_file: false,
         renamed_file: true,
-        deleted_file: false
-      }
+        deleted_file: false,
+      },
     ],
     notes: [
       {
@@ -178,21 +226,21 @@ function createContext(
         author: {
           id: 2,
           username: "reviewer",
-          name: "Reviewer"
+          name: "Reviewer",
         },
         created_at: "2026-04-27T12:00:00.000Z",
         updated_at: "2026-04-27T12:00:00.000Z",
         system: false,
         resolvable: false,
-        resolved: false
-      }
+        resolved: false,
+      },
     ],
     discussions: [],
     instructionFiles: [
       {
         path: ".github/copilot-instructions.md",
-        content: "Prefer concise explanations."
-      }
+        content: "Prefer concise explanations.",
+      },
     ],
     projectMemory: {
       enabled: true,
@@ -200,12 +248,16 @@ function createContext(
         title: "Reviewphin memory",
         slug: "Reviewphin-memory",
         format: "markdown",
-        content: ""
+        content: "",
       },
       entries: entries ?? [
-        { text: "Team policy is to prefer pnpm scripts for local development." },
-        { text: "For future reference, we generally avoid snapshot tests for API responses." }
-      ]
+        {
+          text: "Team policy is to prefer pnpm scripts for local development.",
+        },
+        {
+          text: "For future reference, we generally avoid snapshot tests for API responses.",
+        },
+      ],
     },
     trigger: {
       kind: triggerKind,
@@ -223,11 +275,19 @@ function createContext(
       targetDiscussionId: null,
       targetThreadTitle: null,
       responseTarget: {
-        kind: triggerKind === "summary-follow-up" ? "summary-discussion-reply" : "merge-request-note",
-        locationType: triggerKind === "summary-follow-up" ? "summary-discussion" : "merge-request-note",
+        kind:
+          triggerKind === "summary-follow-up"
+            ? "summary-discussion-reply"
+            : "merge-request-note",
+        locationType:
+          triggerKind === "summary-follow-up"
+            ? "summary-discussion"
+            : "merge-request-note",
         triggerKind,
         noteId: 55,
-        ...(triggerKind === "summary-follow-up" ? { discussionId: "disc_summary" } : {}),
+        ...(triggerKind === "summary-follow-up"
+          ? { discussionId: "disc_summary" }
+          : {}),
         authorUsername: "developer",
         body:
           triggerKind === "summary-follow-up"
@@ -236,8 +296,8 @@ function createContext(
         instruction:
           triggerKind === "summary-follow-up"
             ? "In the future, please remember to throw in some dolphin related joke when it fits into the overall assessment."
-            : "review"
-      }
+            : "review",
+      },
     },
     priorThreads: [],
     scope: {
@@ -263,16 +323,16 @@ function createContext(
                   path: "src/api.ts",
                   startLine: 12,
                   endLine: 12,
-                  side: "new"
+                  side: "new",
                 },
                 suggestion: null,
                 reviewRunId: "run_prev",
                 reviewedAt: "2026-04-27T12:00:00.000Z",
-                headSha: "prevhead"
-              }
+                headSha: "prevhead",
+              },
             ]
           : [],
-      deltaSincePreviousReview: null
-    }
+      deltaSincePreviousReview: null,
+    },
   };
 }

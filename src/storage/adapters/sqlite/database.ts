@@ -20,28 +20,25 @@ import type {
   ModelProfileRecord,
   ModelProfileFilters,
   ModelProfileOrderField,
-  PriorReviewFindingRecord,
   ReviewFindingRecord,
   ReviewFindingFilters,
   ReviewFindingOrderField,
   ReviewFindingStatus,
   InteractionJobRecord,
   InteractionRunRecord,
-  ReviewAnchor,
   StorageStores,
   StoreListInput,
   StoreValueFilter,
   TenantFilters,
   TenantOrderField,
   TenantRecord,
-  ReviewSuggestion,
   StorageTenantInput,
   UpsertModelProfileInput,
   UpsertInteractionRunMetricsInput,
-  UpsertDiscussionMappingInput
+  UpsertDiscussionMappingInput,
 } from "../../contract/index.js";
 import { applySqliteMigrations } from "./migrations.js";
-import { Logger } from "pino";
+import type { Logger } from "pino";
 
 interface SqliteStoreDatabaseOptions {
   databasePath: string;
@@ -96,7 +93,7 @@ export class SqliteStoreDatabase {
         update: ({ value }) => this.replaceModelProfileRecord(value),
         patch: (input) => this.patchModelProfileRecord(input.id, input.value),
         delete: (id) => this.deleteModelProfileRecord(id),
-        deleteMany: (ids) => this.deleteModelProfileRecords(ids)
+        deleteMany: (ids) => this.deleteModelProfileRecords(ids),
       },
       tenants: {
         get: (id) => this.getTenantById(id),
@@ -108,7 +105,7 @@ export class SqliteStoreDatabase {
         update: ({ value }) => this.replaceTenantRecord(value),
         patch: (input) => this.patchTenantRecord(input.id, input.value),
         delete: (id) => this.deleteTenantRecord(id),
-        deleteMany: (ids) => this.deleteTenantRecords(ids)
+        deleteMany: (ids) => this.deleteTenantRecords(ids),
       },
       interactionJobs: {
         get: (id) => this.getInteractionJobById(id),
@@ -120,7 +117,7 @@ export class SqliteStoreDatabase {
         update: ({ value }) => this.replaceInteractionJobRecord(value),
         patch: (input) => this.patchInteractionJobRecord(input.id, input.value),
         delete: (id) => this.deleteInteractionJobRecord(id),
-        deleteMany: (ids) => this.deleteInteractionJobRecords(ids)
+        deleteMany: (ids) => this.deleteInteractionJobRecords(ids),
       },
       mergeRequestSnapshots: {
         get: (id) => this.getMergeRequestSnapshotRecord(id),
@@ -130,9 +127,10 @@ export class SqliteStoreDatabase {
         upsert: (entity) => this.upsertMergeRequestSnapshotRecord(entity),
         replace: (entity) => this.replaceMergeRequestSnapshotRecord(entity),
         update: ({ value }) => this.replaceMergeRequestSnapshotRecord(value),
-        patch: (input) => this.patchMergeRequestSnapshotRecord(input.id, input.value),
+        patch: (input) =>
+          this.patchMergeRequestSnapshotRecord(input.id, input.value),
         delete: (id) => this.deleteMergeRequestSnapshotRecord(id),
-        deleteMany: (ids) => this.deleteMergeRequestSnapshotRecords(ids)
+        deleteMany: (ids) => this.deleteMergeRequestSnapshotRecords(ids),
       },
       interactionRuns: {
         get: (id) => this.getInteractionRunRecord(id),
@@ -144,7 +142,7 @@ export class SqliteStoreDatabase {
         update: ({ value }) => this.replaceInteractionRunRecord(value),
         patch: (input) => this.patchInteractionRunRecord(input.id, input.value),
         delete: (id) => this.deleteInteractionRunRecord(id),
-        deleteMany: (ids) => this.deleteInteractionRunRecords(ids)
+        deleteMany: (ids) => this.deleteInteractionRunRecords(ids),
       },
       interactionRunMetrics: {
         get: (id) => this.getInteractionRunMetricsRecord(id),
@@ -154,9 +152,10 @@ export class SqliteStoreDatabase {
         upsert: (entity) => this.upsertInteractionRunMetricsRecord(entity),
         replace: (entity) => this.replaceInteractionRunMetricsRecord(entity),
         update: ({ value }) => this.replaceInteractionRunMetricsRecord(value),
-        patch: (input) => this.patchInteractionRunMetricsRecord(input.id, input.value),
+        patch: (input) =>
+          this.patchInteractionRunMetricsRecord(input.id, input.value),
         delete: (id) => this.deleteInteractionRunMetricsRecord(id),
-        deleteMany: (ids) => this.deleteInteractionRunMetricsRecords(ids)
+        deleteMany: (ids) => this.deleteInteractionRunMetricsRecords(ids),
       },
       reviewFindings: {
         get: (id) => this.getReviewFindingRecord(id),
@@ -168,7 +167,7 @@ export class SqliteStoreDatabase {
         update: ({ value }) => this.replaceReviewFindingRecord(value),
         patch: (input) => this.patchReviewFindingRecord(input.id, input.value),
         delete: (id) => this.deleteReviewFindingRecord(id),
-        deleteMany: (ids) => this.deleteReviewFindingRecords(ids)
+        deleteMany: (ids) => this.deleteReviewFindingRecords(ids),
       },
       discussionMappings: {
         get: (id) => this.getDiscussionMappingRecord(id),
@@ -178,31 +177,39 @@ export class SqliteStoreDatabase {
         upsert: (entity) => this.upsertDiscussionMappingRecord(entity),
         replace: (entity) => this.replaceDiscussionMappingRecord(entity),
         update: ({ value }) => this.replaceDiscussionMappingRecord(value),
-        patch: (input) => this.patchDiscussionMappingRecord(input.id, input.value),
+        patch: (input) =>
+          this.patchDiscussionMappingRecord(input.id, input.value),
         delete: (id) => this.deleteDiscussionMappingRecord(id),
-        deleteMany: (ids) => this.deleteDiscussionMappingRecords(ids)
-      }
+        deleteMany: (ids) => this.deleteDiscussionMappingRecords(ids),
+      },
     };
   }
 
-  private async upsertModelProfile(input: UpsertModelProfileInput): Promise<ModelProfileRecord> {
+  private async upsertModelProfile(
+    input: UpsertModelProfileInput,
+  ): Promise<ModelProfileRecord> {
     const database = this.getDb();
     const now = new Date().toISOString();
 
     database.exec("BEGIN IMMEDIATE");
     try {
-      const existingRow = database.prepare("SELECT * FROM model_profiles WHERE name = ?").get(input.name) as Row | undefined;
+      const existingRow = database
+        .prepare("SELECT * FROM model_profiles WHERE name = ?")
+        .get(input.name) as Row | undefined;
       const existing = existingRow ? mapModelProfileRow(existingRow) : null;
       const resolvedInput = resolveModelProfileUpsertInput(existing, input);
 
       if (resolvedInput.isDefault) {
         database
-          .prepare("UPDATE model_profiles SET is_default = 0, updated_at = ? WHERE is_default = 1 AND name != ?")
+          .prepare(
+            "UPDATE model_profiles SET is_default = 0, updated_at = ? WHERE is_default = 1 AND name != ?",
+          )
           .run(now, input.name);
       }
 
       database
-        .prepare(`
+        .prepare(
+          `
           INSERT INTO model_profiles (
             name,
             provider_base_url,
@@ -225,7 +232,8 @@ export class SqliteStoreDatabase {
             text_generation_model = excluded.text_generation_model,
             is_default = excluded.is_default,
             updated_at = excluded.updated_at
-        `)
+        `,
+        )
         .run(
           input.name,
           resolvedInput.providerBaseUrl,
@@ -236,10 +244,12 @@ export class SqliteStoreDatabase {
           resolvedInput.textGenerationModel,
           resolvedInput.isDefault ? 1 : 0,
           now,
-          now
+          now,
         );
 
-      const row = database.prepare("SELECT * FROM model_profiles WHERE name = ?").get(input.name) as Row | undefined;
+      const row = database
+        .prepare("SELECT * FROM model_profiles WHERE name = ?")
+        .get(input.name) as Row | undefined;
       if (!row) {
         throw new Error(`Failed to upsert model profile ${input.name}`);
       }
@@ -252,40 +262,57 @@ export class SqliteStoreDatabase {
     }
   }
 
-  private async getModelProfileByName(name: string): Promise<ModelProfileRecord | null> {
-    const row = this.getDb().prepare("SELECT * FROM model_profiles WHERE name = ?").get(name) as Row | undefined;
+  private async getModelProfileByName(
+    name: string,
+  ): Promise<ModelProfileRecord | null> {
+    const row = this.getDb()
+      .prepare("SELECT * FROM model_profiles WHERE name = ?")
+      .get(name) as Row | undefined;
     return row ? mapModelProfileRow(row) : null;
   }
 
-  private async deleteModelProfile(name: string): Promise<ModelProfileRecord | null> {
+  private async deleteModelProfile(
+    name: string,
+  ): Promise<ModelProfileRecord | null> {
     const database = this.getDb();
-    const existing = database.prepare("SELECT * FROM model_profiles WHERE name = ?").get(name) as Row | undefined;
+    const existing = database
+      .prepare("SELECT * FROM model_profiles WHERE name = ?")
+      .get(name) as Row | undefined;
     if (!existing) {
       return null;
     }
 
     const tenantReferenceCount = asNumber(
-      (database
-        .prepare("SELECT COUNT(*) AS count FROM tenants WHERE model_profile_name = ?")
-        .get(name) as Row).count
+      (
+        database
+          .prepare(
+            "SELECT COUNT(*) AS count FROM tenants WHERE model_profile_name = ?",
+          )
+          .get(name) as Row
+      ).count,
     );
     if (tenantReferenceCount > 0) {
-      throw new Error(`Cannot delete model profile "${name}" because ${tenantReferenceCount} tenant(s) still reference it`);
+      throw new Error(
+        `Cannot delete model profile "${name}" because ${tenantReferenceCount} tenant(s) still reference it`,
+      );
     }
 
     database.prepare("DELETE FROM model_profiles WHERE name = ?").run(name);
     return mapModelProfileRow(existing);
   }
 
-  private async upsertTenant(tenant: StorageTenantInput): Promise<TenantRecord> {
+  private async upsertTenant(
+    tenant: StorageTenantInput,
+  ): Promise<TenantRecord> {
     const database = this.getDb();
     const existingRow = database
       .prepare("SELECT * FROM tenants WHERE base_url = ? AND project_id = ?")
       .get(tenant.baseUrl, tenant.projectId) as Row | undefined;
     const existing = existingRow ? mapTenantRow(existingRow) : null;
-    const resolvedModelProfileName = tenant.modelProfileName === undefined
-      ? (existing?.modelProfileName ?? null)
-      : tenant.modelProfileName;
+    const resolvedModelProfileName =
+      tenant.modelProfileName === undefined
+        ? (existing?.modelProfileName ?? null)
+        : tenant.modelProfileName;
     if (resolvedModelProfileName) {
       assertModelProfileExists(database, resolvedModelProfileName);
     }
@@ -339,39 +366,52 @@ export class SqliteStoreDatabase {
       botUsername: tenant.botUsername ?? null,
       modelProfileName: resolvedModelProfileName,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     });
 
     const row = database
       .prepare("SELECT * FROM tenants WHERE base_url = ? AND project_id = ?")
       .get(tenant.baseUrl, tenant.projectId) as Row | undefined;
     if (!row) {
-      throw new Error(`Failed to upsert tenant ${tenant.baseUrl} project ${tenant.projectId}`);
+      throw new Error(
+        `Failed to upsert tenant ${tenant.baseUrl} project ${tenant.projectId}`,
+      );
     }
 
     return mapTenantRow(row);
   }
 
   private async getTenantById(tenantId: string): Promise<TenantRecord | null> {
-    const row = this.getDb().prepare("SELECT * FROM tenants WHERE id = ?").get(tenantId) as Row | undefined;
+    const row = this.getDb()
+      .prepare("SELECT * FROM tenants WHERE id = ?")
+      .get(tenantId) as Row | undefined;
     return row ? mapTenantRow(row) : null;
   }
 
-  private async getInteractionJobById(jobId: string): Promise<InteractionJobRecord | null> {
-    const row = this.getDb().prepare("SELECT * FROM interaction_jobs WHERE id = ?").get(jobId) as Row | undefined;
+  private async getInteractionJobById(
+    jobId: string,
+  ): Promise<InteractionJobRecord | null> {
+    const row = this.getDb()
+      .prepare("SELECT * FROM interaction_jobs WHERE id = ?")
+      .get(jobId) as Row | undefined;
     return row ? mapInteractionJobRow(row) : null;
   }
 
-  private async upsertInteractionRunMetrics(input: UpsertInteractionRunMetricsInput): Promise<InteractionRunMetricsRecord> {
+  private async upsertInteractionRunMetrics(
+    input: UpsertInteractionRunMetricsInput,
+  ): Promise<InteractionRunMetricsRecord> {
     const database = this.getDb();
-    const existing = database.prepare("SELECT * FROM interaction_run_metrics WHERE interaction_run_id = ?").get(input.interactionRunId) as
-      | Row
-      | undefined;
+    const existing = database
+      .prepare(
+        "SELECT * FROM interaction_run_metrics WHERE interaction_run_id = ?",
+      )
+      .get(input.interactionRunId) as Row | undefined;
     const id = existing ? asString(existing.id) : createId("metrics");
     const now = new Date().toISOString();
 
     database
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO interaction_run_metrics (
           id,
           interaction_run_id,
@@ -421,7 +461,8 @@ export class SqliteStoreDatabase {
           repeated_view_reads = excluded.repeated_view_reads,
           repeated_view_paths_json = excluded.repeated_view_paths_json,
           updated_at = excluded.updated_at
-      `)
+      `,
+      )
       .run(
         id,
         input.interactionRunId,
@@ -446,32 +487,43 @@ export class SqliteStoreDatabase {
         input.repeatedViewReads,
         input.repeatedViewPathsJson,
         existing ? asString(existing.created_at) : now,
-        now
+        now,
       );
 
-    const row = database.prepare("SELECT * FROM interaction_run_metrics WHERE interaction_run_id = ?").get(input.interactionRunId) as
-      | Row
-      | undefined;
+    const row = database
+      .prepare(
+        "SELECT * FROM interaction_run_metrics WHERE interaction_run_id = ?",
+      )
+      .get(input.interactionRunId) as Row | undefined;
     if (!row) {
-      throw new Error(`Failed to persist metrics for interaction run ${input.interactionRunId}`);
+      throw new Error(
+        `Failed to persist metrics for interaction run ${input.interactionRunId}`,
+      );
     }
 
     return mapInteractionRunMetricsRow(row);
   }
 
-  private async upsertDiscussionMapping(input: UpsertDiscussionMappingInput): Promise<DiscussionMappingRecord> {
+  private async upsertDiscussionMapping(
+    input: UpsertDiscussionMappingInput,
+  ): Promise<DiscussionMappingRecord> {
     const database = this.getDb();
     const existing = database
       .prepare(
-        "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND merge_request_iid = ? AND gitlab_discussion_id = ?"
+        "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND merge_request_iid = ? AND gitlab_discussion_id = ?",
       )
-      .get(input.tenantId, input.mergeRequestIid, input.gitlabDiscussionId) as Row | undefined;
+      .get(input.tenantId, input.mergeRequestIid, input.gitlabDiscussionId) as
+      | Row
+      | undefined;
 
-    const id = existing ? String(existing.id) : input.id ?? createId("mapping");
+    const id = existing
+      ? String(existing.id)
+      : (input.id ?? createId("mapping"));
     const now = new Date().toISOString();
 
     database
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO discussion_mappings (
           id,
           tenant_id,
@@ -514,7 +566,8 @@ export class SqliteStoreDatabase {
           status = excluded.status,
           last_interaction_run_id = excluded.last_interaction_run_id,
           updated_at = excluded.updated_at
-      `)
+      `,
+      )
       .run(
         id,
         input.tenantId,
@@ -537,35 +590,66 @@ export class SqliteStoreDatabase {
         input.status,
         input.lastInteractionRunId,
         existing ? String(existing.created_at) : now,
-        now
+        now,
       );
 
     const row = database
       .prepare(
-        "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND merge_request_iid = ? AND gitlab_discussion_id = ?"
+        "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND merge_request_iid = ? AND gitlab_discussion_id = ?",
       )
-      .get(input.tenantId, input.mergeRequestIid, input.gitlabDiscussionId) as Row | undefined;
+      .get(input.tenantId, input.mergeRequestIid, input.gitlabDiscussionId) as
+      | Row
+      | undefined;
 
     if (!row) {
-      throw new Error(`Failed to upsert discussion mapping for discussion ${input.gitlabDiscussionId}`);
+      throw new Error(
+        `Failed to upsert discussion mapping for discussion ${input.gitlabDiscussionId}`,
+      );
     }
 
     return mapDiscussionMappingRow(row);
   }
 
-  private async getModelProfilesByNames(names: string[]): Promise<ModelProfileRecord[]> {
-    return selectRowsByIds(this.getDb(), "model_profiles", "name", names, mapModelProfileRow);
+  private async getModelProfilesByNames(
+    names: string[],
+  ): Promise<ModelProfileRecord[]> {
+    return selectRowsByIds(
+      this.getDb(),
+      "model_profiles",
+      "name",
+      names,
+      mapModelProfileRow,
+    );
   }
 
-  private async findModelProfileRecord(filters: ModelProfileFilters): Promise<ModelProfileRecord | null> {
-    return findRow(this.getDb(), "model_profiles", filters, modelProfileFilterColumns, mapModelProfileRow);
+  private async findModelProfileRecord(
+    filters: ModelProfileFilters,
+  ): Promise<ModelProfileRecord | null> {
+    return findRow(
+      this.getDb(),
+      "model_profiles",
+      filters,
+      modelProfileFilterColumns,
+      mapModelProfileRow,
+    );
   }
 
-  private async listModelProfileRecords(input: StoreListInput<ModelProfileFilters, ModelProfileOrderField>): Promise<ModelProfileRecord[]> {
-    return listRows(this.getDb(), "model_profiles", input, modelProfileFilterColumns, modelProfileOrderColumns, mapModelProfileRow);
+  private async listModelProfileRecords(
+    input: StoreListInput<ModelProfileFilters, ModelProfileOrderField>,
+  ): Promise<ModelProfileRecord[]> {
+    return listRows(
+      this.getDb(),
+      "model_profiles",
+      input,
+      modelProfileFilterColumns,
+      modelProfileOrderColumns,
+      mapModelProfileRow,
+    );
   }
 
-  private async upsertModelProfileRecord(entity: ModelProfileRecord): Promise<ModelProfileRecord> {
+  private async upsertModelProfileRecord(
+    entity: ModelProfileRecord,
+  ): Promise<ModelProfileRecord> {
     return this.upsertModelProfile({
       name: entity.name,
       providerBaseUrl: entity.providerBaseUrl,
@@ -574,11 +658,13 @@ export class SqliteStoreDatabase {
       authToken: entity.authToken,
       reviewModel: entity.reviewModel,
       textGenerationModel: entity.textGenerationModel,
-      isDefault: entity.isDefault
+      isDefault: entity.isDefault,
     });
   }
 
-  private async replaceModelProfileRecord(entity: ModelProfileRecord): Promise<ModelProfileRecord> {
+  private async replaceModelProfileRecord(
+    entity: ModelProfileRecord,
+  ): Promise<ModelProfileRecord> {
     if (!(await this.getModelProfileByName(entity.name))) {
       throw new Error(`Unknown model profile ${entity.name}`);
     }
@@ -586,13 +672,20 @@ export class SqliteStoreDatabase {
     return this.upsertModelProfileRecord(entity);
   }
 
-  private async patchModelProfileRecord(name: string, value: Partial<ModelProfileRecord>): Promise<ModelProfileRecord> {
+  private async patchModelProfileRecord(
+    name: string,
+    value: Partial<ModelProfileRecord>,
+  ): Promise<ModelProfileRecord> {
     const existing = await this.getModelProfileByName(name);
     if (!existing) {
       throw new Error(`Unknown model profile ${name}`);
     }
 
-    return this.upsertModelProfileRecord({ ...existing, ...value, name: existing.name });
+    return this.upsertModelProfileRecord({
+      ...existing,
+      ...value,
+      name: existing.name,
+    });
   }
 
   private async deleteModelProfileRecord(name: string): Promise<void> {
@@ -609,15 +702,34 @@ export class SqliteStoreDatabase {
     return selectRowsByIds(this.getDb(), "tenants", "id", ids, mapTenantRow);
   }
 
-  private async findTenantRecord(filters: TenantFilters): Promise<TenantRecord | null> {
-    return findRow(this.getDb(), "tenants", filters, tenantFilterColumns, mapTenantRow);
+  private async findTenantRecord(
+    filters: TenantFilters,
+  ): Promise<TenantRecord | null> {
+    return findRow(
+      this.getDb(),
+      "tenants",
+      filters,
+      tenantFilterColumns,
+      mapTenantRow,
+    );
   }
 
-  private async listTenantRecords(input: StoreListInput<TenantFilters, TenantOrderField>): Promise<TenantRecord[]> {
-    return listRows(this.getDb(), "tenants", input, tenantFilterColumns, tenantOrderColumns, mapTenantRow);
+  private async listTenantRecords(
+    input: StoreListInput<TenantFilters, TenantOrderField>,
+  ): Promise<TenantRecord[]> {
+    return listRows(
+      this.getDb(),
+      "tenants",
+      input,
+      tenantFilterColumns,
+      tenantOrderColumns,
+      mapTenantRow,
+    );
   }
 
-  private async upsertTenantRecord(entity: TenantRecord): Promise<TenantRecord> {
+  private async upsertTenantRecord(
+    entity: TenantRecord,
+  ): Promise<TenantRecord> {
     return this.upsertTenant({
       baseUrl: entity.baseUrl,
       projectId: entity.projectId,
@@ -625,11 +737,13 @@ export class SqliteStoreDatabase {
       webhookSecret: entity.webhookSecret,
       botUserId: entity.botUserId ?? undefined,
       botUsername: entity.botUsername ?? "",
-      modelProfileName: entity.modelProfileName
+      modelProfileName: entity.modelProfileName,
     });
   }
 
-  private async replaceTenantRecord(entity: TenantRecord): Promise<TenantRecord> {
+  private async replaceTenantRecord(
+    entity: TenantRecord,
+  ): Promise<TenantRecord> {
     if (!(await this.getTenantById(entity.id))) {
       throw new Error(`Unknown tenant ${entity.id}`);
     }
@@ -637,13 +751,21 @@ export class SqliteStoreDatabase {
     return this.upsertTenantRecord(entity);
   }
 
-  private async patchTenantRecord(id: string, value: Partial<TenantRecord>): Promise<TenantRecord> {
+  private async patchTenantRecord(
+    id: string,
+    value: Partial<TenantRecord>,
+  ): Promise<TenantRecord> {
     const existing = await this.getTenantById(id);
     if (!existing) {
       throw new Error(`Unknown tenant ${id}`);
     }
 
-    return this.upsertTenantRecord({ ...existing, ...value, id: existing.id, key: existing.key });
+    return this.upsertTenantRecord({
+      ...existing,
+      ...value,
+      id: existing.id,
+      key: existing.key,
+    });
   }
 
   private async deleteTenantRecord(id: string): Promise<void> {
@@ -654,24 +776,50 @@ export class SqliteStoreDatabase {
     deleteRowsByIds(this.getDb(), "tenants", "id", ids);
   }
 
-  private async getInteractionJobRecordsByIds(ids: string[]): Promise<InteractionJobRecord[]> {
-    return selectRowsByIds(this.getDb(), "interaction_jobs", "id", ids, mapInteractionJobRow);
+  private async getInteractionJobRecordsByIds(
+    ids: string[],
+  ): Promise<InteractionJobRecord[]> {
+    return selectRowsByIds(
+      this.getDb(),
+      "interaction_jobs",
+      "id",
+      ids,
+      mapInteractionJobRow,
+    );
   }
 
-  private async findInteractionJobRecord(filters: InteractionJobFilters): Promise<InteractionJobRecord | null> {
-    return findRow(this.getDb(), "interaction_jobs", filters, interactionJobFilterColumns, mapInteractionJobRow);
+  private async findInteractionJobRecord(
+    filters: InteractionJobFilters,
+  ): Promise<InteractionJobRecord | null> {
+    return findRow(
+      this.getDb(),
+      "interaction_jobs",
+      filters,
+      interactionJobFilterColumns,
+      mapInteractionJobRow,
+    );
   }
 
   private async listInteractionJobRecords(
-    input: StoreListInput<InteractionJobFilters, InteractionJobOrderField>
+    input: StoreListInput<InteractionJobFilters, InteractionJobOrderField>,
   ): Promise<InteractionJobRecord[]> {
-    return listRows(this.getDb(), "interaction_jobs", input, interactionJobFilterColumns, interactionJobOrderColumns, mapInteractionJobRow);
+    return listRows(
+      this.getDb(),
+      "interaction_jobs",
+      input,
+      interactionJobFilterColumns,
+      interactionJobOrderColumns,
+      mapInteractionJobRow,
+    );
   }
 
-  private async upsertInteractionJobRecord(entity: InteractionJobRecord): Promise<InteractionJobRecord> {
+  private async upsertInteractionJobRecord(
+    entity: InteractionJobRecord,
+  ): Promise<InteractionJobRecord> {
     const database = this.getDb();
     database
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO interaction_jobs (
           id,
           tenant_id,
@@ -691,7 +839,8 @@ export class SqliteStoreDatabase {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(dedupe_key) DO UPDATE SET
           dedupe_key = interaction_jobs.dedupe_key
-      `)
+      `,
+      )
       .run(
         entity.id,
         entity.tenantId,
@@ -706,10 +855,12 @@ export class SqliteStoreDatabase {
         entity.lastError,
         entity.enqueuedAt,
         entity.startedAt,
-        entity.finishedAt
+        entity.finishedAt,
       );
 
-    const row = database.prepare("SELECT * FROM interaction_jobs WHERE dedupe_key = ?").get(entity.dedupeKey) as Row | undefined;
+    const row = database
+      .prepare("SELECT * FROM interaction_jobs WHERE dedupe_key = ?")
+      .get(entity.dedupeKey) as Row | undefined;
     if (!row) {
       throw new Error(`Failed to upsert interaction job ${entity.dedupeKey}`);
     }
@@ -717,15 +868,19 @@ export class SqliteStoreDatabase {
     return mapInteractionJobRow(row);
   }
 
-  private async replaceInteractionJobRecord(entity: InteractionJobRecord): Promise<InteractionJobRecord> {
+  private async replaceInteractionJobRecord(
+    entity: InteractionJobRecord,
+  ): Promise<InteractionJobRecord> {
     const database = this.getDb();
     const result = database
-      .prepare(`
+      .prepare(
+        `
         UPDATE interaction_jobs
         SET tenant_id = ?, dedupe_key = ?, project_id = ?, merge_request_iid = ?, note_id = ?, head_sha = ?,
             status = ?, payload_json = ?, retry_count = ?, last_error = ?, enqueued_at = ?, started_at = ?, finished_at = ?
         WHERE id = ?
-      `)
+      `,
+      )
       .run(
         entity.tenantId,
         entity.dedupeKey,
@@ -740,7 +895,7 @@ export class SqliteStoreDatabase {
         entity.enqueuedAt,
         entity.startedAt,
         entity.finishedAt,
-        entity.id
+        entity.id,
       );
     if (result.changes === 0) {
       throw new Error(`Unknown interaction job ${entity.id}`);
@@ -749,13 +904,20 @@ export class SqliteStoreDatabase {
     return (await this.getInteractionJobById(entity.id))!;
   }
 
-  private async patchInteractionJobRecord(id: string, value: Partial<InteractionJobRecord>): Promise<InteractionJobRecord> {
+  private async patchInteractionJobRecord(
+    id: string,
+    value: Partial<InteractionJobRecord>,
+  ): Promise<InteractionJobRecord> {
     const existing = await this.getInteractionJobById(id);
     if (!existing) {
       throw new Error(`Unknown interaction job ${id}`);
     }
 
-    return this.replaceInteractionJobRecord({ ...existing, ...value, id: existing.id });
+    return this.replaceInteractionJobRecord({
+      ...existing,
+      ...value,
+      id: existing.id,
+    });
   }
 
   private async deleteInteractionJobRecord(id: string): Promise<void> {
@@ -766,23 +928,44 @@ export class SqliteStoreDatabase {
     deleteRowsByIds(this.getDb(), "interaction_jobs", "id", ids);
   }
 
-  private async getMergeRequestSnapshotRecord(id: string): Promise<MergeRequestSnapshotRecord | null> {
-    const row = this.getDb().prepare("SELECT * FROM merge_request_snapshots WHERE id = ?").get(id) as Row | undefined;
+  private async getMergeRequestSnapshotRecord(
+    id: string,
+  ): Promise<MergeRequestSnapshotRecord | null> {
+    const row = this.getDb()
+      .prepare("SELECT * FROM merge_request_snapshots WHERE id = ?")
+      .get(id) as Row | undefined;
     return row ? mapMergeRequestSnapshotRow(row) : null;
   }
 
-  private async getMergeRequestSnapshotRecordsByIds(ids: string[]): Promise<MergeRequestSnapshotRecord[]> {
-    return selectRowsByIds(this.getDb(), "merge_request_snapshots", "id", ids, mapMergeRequestSnapshotRow);
+  private async getMergeRequestSnapshotRecordsByIds(
+    ids: string[],
+  ): Promise<MergeRequestSnapshotRecord[]> {
+    return selectRowsByIds(
+      this.getDb(),
+      "merge_request_snapshots",
+      "id",
+      ids,
+      mapMergeRequestSnapshotRow,
+    );
   }
 
   private async findMergeRequestSnapshotRecord(
-    filters: MergeRequestSnapshotFilters
+    filters: MergeRequestSnapshotFilters,
   ): Promise<MergeRequestSnapshotRecord | null> {
-    return findRow(this.getDb(), "merge_request_snapshots", filters, mergeRequestSnapshotFilterColumns, mapMergeRequestSnapshotRow);
+    return findRow(
+      this.getDb(),
+      "merge_request_snapshots",
+      filters,
+      mergeRequestSnapshotFilterColumns,
+      mapMergeRequestSnapshotRow,
+    );
   }
 
   private async listMergeRequestSnapshotRecords(
-    input: StoreListInput<MergeRequestSnapshotFilters, MergeRequestSnapshotOrderField>
+    input: StoreListInput<
+      MergeRequestSnapshotFilters,
+      MergeRequestSnapshotOrderField
+    >,
   ): Promise<MergeRequestSnapshotRecord[]> {
     return listRows(
       this.getDb(),
@@ -790,13 +973,16 @@ export class SqliteStoreDatabase {
       input,
       mergeRequestSnapshotFilterColumns,
       mergeRequestSnapshotOrderColumns,
-      mapMergeRequestSnapshotRow
+      mapMergeRequestSnapshotRow,
     );
   }
 
-  private async upsertMergeRequestSnapshotRecord(entity: MergeRequestSnapshotRecord): Promise<MergeRequestSnapshotRecord> {
+  private async upsertMergeRequestSnapshotRecord(
+    entity: MergeRequestSnapshotRecord,
+  ): Promise<MergeRequestSnapshotRecord> {
     this.getDb()
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO merge_request_snapshots (
           id,
           interaction_job_id,
@@ -828,7 +1014,8 @@ export class SqliteStoreDatabase {
           project_memory_json = excluded.project_memory_json,
           workspace_strategy = excluded.workspace_strategy,
           created_at = excluded.created_at
-      `)
+      `,
+      )
       .run(
         entity.id,
         entity.interactionJobId,
@@ -843,13 +1030,15 @@ export class SqliteStoreDatabase {
         entity.instructionsJson,
         entity.projectMemoryJson,
         entity.workspaceStrategy,
-        entity.createdAt
+        entity.createdAt,
       );
 
     return (await this.getMergeRequestSnapshotRecord(entity.id))!;
   }
 
-  private async replaceMergeRequestSnapshotRecord(entity: MergeRequestSnapshotRecord): Promise<MergeRequestSnapshotRecord> {
+  private async replaceMergeRequestSnapshotRecord(
+    entity: MergeRequestSnapshotRecord,
+  ): Promise<MergeRequestSnapshotRecord> {
     if (!(await this.getMergeRequestSnapshotRecord(entity.id))) {
       throw new Error(`Unknown merge request snapshot ${entity.id}`);
     }
@@ -859,46 +1048,84 @@ export class SqliteStoreDatabase {
 
   private async patchMergeRequestSnapshotRecord(
     id: string,
-    value: Partial<MergeRequestSnapshotRecord>
+    value: Partial<MergeRequestSnapshotRecord>,
   ): Promise<MergeRequestSnapshotRecord> {
     const existing = await this.getMergeRequestSnapshotRecord(id);
     if (!existing) {
       throw new Error(`Unknown merge request snapshot ${id}`);
     }
 
-    return this.replaceMergeRequestSnapshotRecord({ ...existing, ...value, id: existing.id });
+    return this.replaceMergeRequestSnapshotRecord({
+      ...existing,
+      ...value,
+      id: existing.id,
+    });
   }
 
   private async deleteMergeRequestSnapshotRecord(id: string): Promise<void> {
-    this.getDb().prepare("DELETE FROM merge_request_snapshots WHERE id = ?").run(id);
+    this.getDb()
+      .prepare("DELETE FROM merge_request_snapshots WHERE id = ?")
+      .run(id);
   }
 
-  private async deleteMergeRequestSnapshotRecords(ids: string[]): Promise<void> {
+  private async deleteMergeRequestSnapshotRecords(
+    ids: string[],
+  ): Promise<void> {
     deleteRowsByIds(this.getDb(), "merge_request_snapshots", "id", ids);
   }
 
-  private async getInteractionRunRecord(id: string): Promise<InteractionRunRecord | null> {
-    const row = this.getDb().prepare("SELECT * FROM interaction_runs WHERE id = ?").get(id) as Row | undefined;
+  private async getInteractionRunRecord(
+    id: string,
+  ): Promise<InteractionRunRecord | null> {
+    const row = this.getDb()
+      .prepare("SELECT * FROM interaction_runs WHERE id = ?")
+      .get(id) as Row | undefined;
     return row ? mapInteractionRunRow(row) : null;
   }
 
-  private async getInteractionRunRecordsByIds(ids: string[]): Promise<InteractionRunRecord[]> {
-    return selectRowsByIds(this.getDb(), "interaction_runs", "id", ids, mapInteractionRunRow);
+  private async getInteractionRunRecordsByIds(
+    ids: string[],
+  ): Promise<InteractionRunRecord[]> {
+    return selectRowsByIds(
+      this.getDb(),
+      "interaction_runs",
+      "id",
+      ids,
+      mapInteractionRunRow,
+    );
   }
 
-  private async findInteractionRunRecord(filters: InteractionRunFilters): Promise<InteractionRunRecord | null> {
-    return findRow(this.getDb(), "interaction_runs", filters, interactionRunFilterColumns, mapInteractionRunRow);
+  private async findInteractionRunRecord(
+    filters: InteractionRunFilters,
+  ): Promise<InteractionRunRecord | null> {
+    return findRow(
+      this.getDb(),
+      "interaction_runs",
+      filters,
+      interactionRunFilterColumns,
+      mapInteractionRunRow,
+    );
   }
 
   private async listInteractionRunRecords(
-    input: StoreListInput<InteractionRunFilters, InteractionRunOrderField>
+    input: StoreListInput<InteractionRunFilters, InteractionRunOrderField>,
   ): Promise<InteractionRunRecord[]> {
-    return listRows(this.getDb(), "interaction_runs", input, interactionRunFilterColumns, interactionRunOrderColumns, mapInteractionRunRow);
+    return listRows(
+      this.getDb(),
+      "interaction_runs",
+      input,
+      interactionRunFilterColumns,
+      interactionRunOrderColumns,
+      mapInteractionRunRow,
+    );
   }
 
-  private async upsertInteractionRunRecord(entity: InteractionRunRecord): Promise<InteractionRunRecord> {
+  private async upsertInteractionRunRecord(
+    entity: InteractionRunRecord,
+  ): Promise<InteractionRunRecord> {
     this.getDb()
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO interaction_runs (
           id,
           interaction_job_id,
@@ -930,7 +1157,8 @@ export class SqliteStoreDatabase {
           error = excluded.error,
           started_at = excluded.started_at,
           finished_at = excluded.finished_at
-      `)
+      `,
+      )
       .run(
         entity.id,
         entity.interactionJobId,
@@ -945,13 +1173,15 @@ export class SqliteStoreDatabase {
         entity.resultJson,
         entity.error,
         entity.startedAt,
-        entity.finishedAt
+        entity.finishedAt,
       );
 
     return (await this.getInteractionRunRecord(entity.id))!;
   }
 
-  private async replaceInteractionRunRecord(entity: InteractionRunRecord): Promise<InteractionRunRecord> {
+  private async replaceInteractionRunRecord(
+    entity: InteractionRunRecord,
+  ): Promise<InteractionRunRecord> {
     if (!(await this.getInteractionRunRecord(entity.id))) {
       throw new Error(`Unknown interaction run ${entity.id}`);
     }
@@ -959,13 +1189,20 @@ export class SqliteStoreDatabase {
     return this.upsertInteractionRunRecord(entity);
   }
 
-  private async patchInteractionRunRecord(id: string, value: Partial<InteractionRunRecord>): Promise<InteractionRunRecord> {
+  private async patchInteractionRunRecord(
+    id: string,
+    value: Partial<InteractionRunRecord>,
+  ): Promise<InteractionRunRecord> {
     const existing = await this.getInteractionRunRecord(id);
     if (!existing) {
       throw new Error(`Unknown interaction run ${id}`);
     }
 
-    return this.replaceInteractionRunRecord({ ...existing, ...value, id: existing.id });
+    return this.replaceInteractionRunRecord({
+      ...existing,
+      ...value,
+      id: existing.id,
+    });
   }
 
   private async deleteInteractionRunRecord(id: string): Promise<void> {
@@ -976,23 +1213,44 @@ export class SqliteStoreDatabase {
     deleteRowsByIds(this.getDb(), "interaction_runs", "id", ids);
   }
 
-  private async getInteractionRunMetricsRecord(id: string): Promise<InteractionRunMetricsRecord | null> {
-    const row = this.getDb().prepare("SELECT * FROM interaction_run_metrics WHERE id = ?").get(id) as Row | undefined;
+  private async getInteractionRunMetricsRecord(
+    id: string,
+  ): Promise<InteractionRunMetricsRecord | null> {
+    const row = this.getDb()
+      .prepare("SELECT * FROM interaction_run_metrics WHERE id = ?")
+      .get(id) as Row | undefined;
     return row ? mapInteractionRunMetricsRow(row) : null;
   }
 
-  private async getInteractionRunMetricsRecordsByIds(ids: string[]): Promise<InteractionRunMetricsRecord[]> {
-    return selectRowsByIds(this.getDb(), "interaction_run_metrics", "id", ids, mapInteractionRunMetricsRow);
+  private async getInteractionRunMetricsRecordsByIds(
+    ids: string[],
+  ): Promise<InteractionRunMetricsRecord[]> {
+    return selectRowsByIds(
+      this.getDb(),
+      "interaction_run_metrics",
+      "id",
+      ids,
+      mapInteractionRunMetricsRow,
+    );
   }
 
   private async findInteractionRunMetricsRecord(
-    filters: InteractionRunMetricsFilters
+    filters: InteractionRunMetricsFilters,
   ): Promise<InteractionRunMetricsRecord | null> {
-    return findRow(this.getDb(), "interaction_run_metrics", filters, interactionRunMetricsFilterColumns, mapInteractionRunMetricsRow);
+    return findRow(
+      this.getDb(),
+      "interaction_run_metrics",
+      filters,
+      interactionRunMetricsFilterColumns,
+      mapInteractionRunMetricsRow,
+    );
   }
 
   private async listInteractionRunMetricsRecords(
-    input: StoreListInput<InteractionRunMetricsFilters, InteractionRunMetricsOrderField>
+    input: StoreListInput<
+      InteractionRunMetricsFilters,
+      InteractionRunMetricsOrderField
+    >,
   ): Promise<InteractionRunMetricsRecord[]> {
     return listRows(
       this.getDb(),
@@ -1000,11 +1258,13 @@ export class SqliteStoreDatabase {
       input,
       interactionRunMetricsFilterColumns,
       interactionRunMetricsOrderColumns,
-      mapInteractionRunMetricsRow
+      mapInteractionRunMetricsRow,
     );
   }
 
-  private async upsertInteractionRunMetricsRecord(entity: InteractionRunMetricsRecord): Promise<InteractionRunMetricsRecord> {
+  private async upsertInteractionRunMetricsRecord(
+    entity: InteractionRunMetricsRecord,
+  ): Promise<InteractionRunMetricsRecord> {
     return this.upsertInteractionRunMetrics({
       interactionRunId: entity.interactionRunId,
       triggerKind: entity.triggerKind,
@@ -1026,11 +1286,13 @@ export class SqliteStoreDatabase {
       apiDurationMs: entity.apiDurationMs,
       premiumRequests: entity.premiumRequests,
       repeatedViewReads: entity.repeatedViewReads,
-      repeatedViewPathsJson: entity.repeatedViewPathsJson
+      repeatedViewPathsJson: entity.repeatedViewPathsJson,
     });
   }
 
-  private async replaceInteractionRunMetricsRecord(entity: InteractionRunMetricsRecord): Promise<InteractionRunMetricsRecord> {
+  private async replaceInteractionRunMetricsRecord(
+    entity: InteractionRunMetricsRecord,
+  ): Promise<InteractionRunMetricsRecord> {
     if (!(await this.getInteractionRunMetricsRecord(entity.id))) {
       throw new Error(`Unknown interaction run metrics ${entity.id}`);
     }
@@ -1040,46 +1302,84 @@ export class SqliteStoreDatabase {
 
   private async patchInteractionRunMetricsRecord(
     id: string,
-    value: Partial<InteractionRunMetricsRecord>
+    value: Partial<InteractionRunMetricsRecord>,
   ): Promise<InteractionRunMetricsRecord> {
     const existing = await this.getInteractionRunMetricsRecord(id);
     if (!existing) {
       throw new Error(`Unknown interaction run metrics ${id}`);
     }
 
-    return this.upsertInteractionRunMetricsRecord({ ...existing, ...value, id: existing.id });
+    return this.upsertInteractionRunMetricsRecord({
+      ...existing,
+      ...value,
+      id: existing.id,
+    });
   }
 
   private async deleteInteractionRunMetricsRecord(id: string): Promise<void> {
-    this.getDb().prepare("DELETE FROM interaction_run_metrics WHERE id = ?").run(id);
+    this.getDb()
+      .prepare("DELETE FROM interaction_run_metrics WHERE id = ?")
+      .run(id);
   }
 
-  private async deleteInteractionRunMetricsRecords(ids: string[]): Promise<void> {
+  private async deleteInteractionRunMetricsRecords(
+    ids: string[],
+  ): Promise<void> {
     deleteRowsByIds(this.getDb(), "interaction_run_metrics", "id", ids);
   }
 
-  private async getReviewFindingRecord(id: string): Promise<ReviewFindingRecord | null> {
-    const row = this.getDb().prepare("SELECT * FROM review_findings WHERE id = ?").get(id) as Row | undefined;
+  private async getReviewFindingRecord(
+    id: string,
+  ): Promise<ReviewFindingRecord | null> {
+    const row = this.getDb()
+      .prepare("SELECT * FROM review_findings WHERE id = ?")
+      .get(id) as Row | undefined;
     return row ? mapReviewFindingRow(row) : null;
   }
 
-  private async getReviewFindingRecordsByIds(ids: string[]): Promise<ReviewFindingRecord[]> {
-    return selectRowsByIds(this.getDb(), "review_findings", "id", ids, mapReviewFindingRow);
+  private async getReviewFindingRecordsByIds(
+    ids: string[],
+  ): Promise<ReviewFindingRecord[]> {
+    return selectRowsByIds(
+      this.getDb(),
+      "review_findings",
+      "id",
+      ids,
+      mapReviewFindingRow,
+    );
   }
 
-  private async findReviewFindingRecord(filters: ReviewFindingFilters): Promise<ReviewFindingRecord | null> {
-    return findRow(this.getDb(), "review_findings", filters, reviewFindingFilterColumns, mapReviewFindingRow);
+  private async findReviewFindingRecord(
+    filters: ReviewFindingFilters,
+  ): Promise<ReviewFindingRecord | null> {
+    return findRow(
+      this.getDb(),
+      "review_findings",
+      filters,
+      reviewFindingFilterColumns,
+      mapReviewFindingRow,
+    );
   }
 
   private async listReviewFindingRecords(
-    input: StoreListInput<ReviewFindingFilters, ReviewFindingOrderField>
+    input: StoreListInput<ReviewFindingFilters, ReviewFindingOrderField>,
   ): Promise<ReviewFindingRecord[]> {
-    return listRows(this.getDb(), "review_findings", input, reviewFindingFilterColumns, reviewFindingOrderColumns, mapReviewFindingRow);
+    return listRows(
+      this.getDb(),
+      "review_findings",
+      input,
+      reviewFindingFilterColumns,
+      reviewFindingOrderColumns,
+      mapReviewFindingRow,
+    );
   }
 
-  private async upsertReviewFindingRecord(entity: ReviewFindingRecord): Promise<ReviewFindingRecord> {
+  private async upsertReviewFindingRecord(
+    entity: ReviewFindingRecord,
+  ): Promise<ReviewFindingRecord> {
     this.getDb()
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO review_findings (
           id,
           interaction_run_id,
@@ -1105,7 +1405,8 @@ export class SqliteStoreDatabase {
           suggestion_json = excluded.suggestion_json,
           status = excluded.status,
           created_at = excluded.created_at
-      `)
+      `,
+      )
       .run(
         entity.id,
         entity.interactionRunId,
@@ -1117,13 +1418,15 @@ export class SqliteStoreDatabase {
         entity.anchorJson,
         entity.suggestionJson,
         entity.status,
-        entity.createdAt
+        entity.createdAt,
       );
 
     return (await this.getReviewFindingRecord(entity.id))!;
   }
 
-  private async replaceReviewFindingRecord(entity: ReviewFindingRecord): Promise<ReviewFindingRecord> {
+  private async replaceReviewFindingRecord(
+    entity: ReviewFindingRecord,
+  ): Promise<ReviewFindingRecord> {
     if (!(await this.getReviewFindingRecord(entity.id))) {
       throw new Error(`Unknown review finding ${entity.id}`);
     }
@@ -1131,13 +1434,20 @@ export class SqliteStoreDatabase {
     return this.upsertReviewFindingRecord(entity);
   }
 
-  private async patchReviewFindingRecord(id: string, value: Partial<ReviewFindingRecord>): Promise<ReviewFindingRecord> {
+  private async patchReviewFindingRecord(
+    id: string,
+    value: Partial<ReviewFindingRecord>,
+  ): Promise<ReviewFindingRecord> {
     const existing = await this.getReviewFindingRecord(id);
     if (!existing) {
       throw new Error(`Unknown review finding ${id}`);
     }
 
-    return this.replaceReviewFindingRecord({ ...existing, ...value, id: existing.id });
+    return this.replaceReviewFindingRecord({
+      ...existing,
+      ...value,
+      id: existing.id,
+    });
   }
 
   private async deleteReviewFindingRecord(id: string): Promise<void> {
@@ -1148,21 +1458,44 @@ export class SqliteStoreDatabase {
     deleteRowsByIds(this.getDb(), "review_findings", "id", ids);
   }
 
-  private async getDiscussionMappingRecord(id: string): Promise<DiscussionMappingRecord | null> {
-    const row = this.getDb().prepare("SELECT * FROM discussion_mappings WHERE id = ?").get(id) as Row | undefined;
+  private async getDiscussionMappingRecord(
+    id: string,
+  ): Promise<DiscussionMappingRecord | null> {
+    const row = this.getDb()
+      .prepare("SELECT * FROM discussion_mappings WHERE id = ?")
+      .get(id) as Row | undefined;
     return row ? mapDiscussionMappingRow(row) : null;
   }
 
-  private async getDiscussionMappingRecordsByIds(ids: string[]): Promise<DiscussionMappingRecord[]> {
-    return selectRowsByIds(this.getDb(), "discussion_mappings", "id", ids, mapDiscussionMappingRow);
+  private async getDiscussionMappingRecordsByIds(
+    ids: string[],
+  ): Promise<DiscussionMappingRecord[]> {
+    return selectRowsByIds(
+      this.getDb(),
+      "discussion_mappings",
+      "id",
+      ids,
+      mapDiscussionMappingRow,
+    );
   }
 
-  private async findDiscussionMappingRecord(filters: DiscussionMappingFilters): Promise<DiscussionMappingRecord | null> {
-    return findRow(this.getDb(), "discussion_mappings", filters, discussionMappingFilterColumns, mapDiscussionMappingRow);
+  private async findDiscussionMappingRecord(
+    filters: DiscussionMappingFilters,
+  ): Promise<DiscussionMappingRecord | null> {
+    return findRow(
+      this.getDb(),
+      "discussion_mappings",
+      filters,
+      discussionMappingFilterColumns,
+      mapDiscussionMappingRow,
+    );
   }
 
   private async listDiscussionMappingRecords(
-    input: StoreListInput<DiscussionMappingFilters, DiscussionMappingOrderField>
+    input: StoreListInput<
+      DiscussionMappingFilters,
+      DiscussionMappingOrderField
+    >,
   ): Promise<DiscussionMappingRecord[]> {
     return listRows(
       this.getDb(),
@@ -1170,11 +1503,13 @@ export class SqliteStoreDatabase {
       input,
       discussionMappingFilterColumns,
       discussionMappingOrderColumns,
-      mapDiscussionMappingRow
+      mapDiscussionMappingRow,
     );
   }
 
-  private async upsertDiscussionMappingRecord(entity: DiscussionMappingRecord): Promise<DiscussionMappingRecord> {
+  private async upsertDiscussionMappingRecord(
+    entity: DiscussionMappingRecord,
+  ): Promise<DiscussionMappingRecord> {
     return this.upsertDiscussionMapping({
       id: entity.id,
       tenantId: entity.tenantId,
@@ -1195,11 +1530,13 @@ export class SqliteStoreDatabase {
       noteAuthorId: entity.noteAuthorId,
       noteAuthorUsername: entity.noteAuthorUsername,
       status: entity.status,
-      lastInteractionRunId: entity.lastInteractionRunId
+      lastInteractionRunId: entity.lastInteractionRunId,
     });
   }
 
-  private async replaceDiscussionMappingRecord(entity: DiscussionMappingRecord): Promise<DiscussionMappingRecord> {
+  private async replaceDiscussionMappingRecord(
+    entity: DiscussionMappingRecord,
+  ): Promise<DiscussionMappingRecord> {
     if (!(await this.getDiscussionMappingRecord(entity.id))) {
       throw new Error(`Unknown discussion mapping ${entity.id}`);
     }
@@ -1209,18 +1546,24 @@ export class SqliteStoreDatabase {
 
   private async patchDiscussionMappingRecord(
     id: string,
-    value: Partial<DiscussionMappingRecord>
+    value: Partial<DiscussionMappingRecord>,
   ): Promise<DiscussionMappingRecord> {
     const existing = await this.getDiscussionMappingRecord(id);
     if (!existing) {
       throw new Error(`Unknown discussion mapping ${id}`);
     }
 
-    return this.upsertDiscussionMappingRecord({ ...existing, ...value, id: existing.id });
+    return this.upsertDiscussionMappingRecord({
+      ...existing,
+      ...value,
+      id: existing.id,
+    });
   }
 
   private async deleteDiscussionMappingRecord(id: string): Promise<void> {
-    this.getDb().prepare("DELETE FROM discussion_mappings WHERE id = ?").run(id);
+    this.getDb()
+      .prepare("DELETE FROM discussion_mappings WHERE id = ?")
+      .run(id);
   }
 
   private async deleteDiscussionMappingRecords(ids: string[]): Promise<void> {
@@ -1240,14 +1583,14 @@ const modelProfileFilterColumns: Record<keyof ModelProfileFilters, string> = {
   name: "name",
   isDefault: "is_default",
   createdAt: "created_at",
-  updatedAt: "updated_at"
+  updatedAt: "updated_at",
 };
 
 const modelProfileOrderColumns: Record<ModelProfileOrderField, string> = {
   name: "name",
   isDefault: "is_default",
   createdAt: "created_at",
-  updatedAt: "updated_at"
+  updatedAt: "updated_at",
 };
 
 const tenantFilterColumns: Record<keyof TenantFilters, string> = {
@@ -1257,7 +1600,7 @@ const tenantFilterColumns: Record<keyof TenantFilters, string> = {
   projectId: "project_id",
   modelProfileName: "model_profile_name",
   createdAt: "created_at",
-  updatedAt: "updated_at"
+  updatedAt: "updated_at",
 };
 
 const tenantOrderColumns: Record<TenantOrderField, string> = {
@@ -1267,20 +1610,21 @@ const tenantOrderColumns: Record<TenantOrderField, string> = {
   projectId: "project_id",
   modelProfileName: "model_profile_name",
   createdAt: "created_at",
-  updatedAt: "updated_at"
+  updatedAt: "updated_at",
 };
 
-const interactionJobFilterColumns: Record<keyof InteractionJobFilters, string> = {
-  id: "id",
-  tenantId: "tenant_id",
-  dedupeKey: "dedupe_key",
-  projectId: "project_id",
-  mergeRequestIid: "merge_request_iid",
-  status: "status",
-  enqueuedAt: "enqueued_at",
-  startedAt: "started_at",
-  finishedAt: "finished_at"
-};
+const interactionJobFilterColumns: Record<keyof InteractionJobFilters, string> =
+  {
+    id: "id",
+    tenantId: "tenant_id",
+    dedupeKey: "dedupe_key",
+    projectId: "project_id",
+    mergeRequestIid: "merge_request_iid",
+    status: "status",
+    enqueuedAt: "enqueued_at",
+    startedAt: "started_at",
+    finishedAt: "finished_at",
+  };
 
 const interactionJobOrderColumns: Record<InteractionJobOrderField, string> = {
   tenantId: "tenant_id",
@@ -1291,34 +1635,41 @@ const interactionJobOrderColumns: Record<InteractionJobOrderField, string> = {
   enqueuedAt: "enqueued_at",
   startedAt: "started_at",
   finishedAt: "finished_at",
-  id: "id"
-};
-
-const mergeRequestSnapshotFilterColumns: Record<keyof MergeRequestSnapshotFilters, string> = {
   id: "id",
-  interactionJobId: "interaction_job_id",
-  tenantId: "tenant_id",
-  mergeRequestIid: "merge_request_iid",
-  createdAt: "created_at"
 };
 
-const mergeRequestSnapshotOrderColumns: Record<MergeRequestSnapshotOrderField, string> = {
+const mergeRequestSnapshotFilterColumns: Record<
+  keyof MergeRequestSnapshotFilters,
+  string
+> = {
+  id: "id",
   interactionJobId: "interaction_job_id",
   tenantId: "tenant_id",
   mergeRequestIid: "merge_request_iid",
   createdAt: "created_at",
-  id: "id"
 };
 
-const interactionRunFilterColumns: Record<keyof InteractionRunFilters, string> = {
-  id: "id",
+const mergeRequestSnapshotOrderColumns: Record<
+  MergeRequestSnapshotOrderField,
+  string
+> = {
   interactionJobId: "interaction_job_id",
   tenantId: "tenant_id",
-  status: "status",
-  resultJson: "result_json",
-  startedAt: "started_at",
-  finishedAt: "finished_at"
+  mergeRequestIid: "merge_request_iid",
+  createdAt: "created_at",
+  id: "id",
 };
+
+const interactionRunFilterColumns: Record<keyof InteractionRunFilters, string> =
+  {
+    id: "id",
+    interactionJobId: "interaction_job_id",
+    tenantId: "tenant_id",
+    status: "status",
+    resultJson: "result_json",
+    startedAt: "started_at",
+    finishedAt: "finished_at",
+  };
 
 const interactionRunOrderColumns: Record<InteractionRunOrderField, string> = {
   interactionJobId: "interaction_job_id",
@@ -1327,21 +1678,27 @@ const interactionRunOrderColumns: Record<InteractionRunOrderField, string> = {
   resultJson: "result_json",
   startedAt: "started_at",
   finishedAt: "finished_at",
-  id: "id"
+  id: "id",
 };
 
-const interactionRunMetricsFilterColumns: Record<keyof InteractionRunMetricsFilters, string> = {
+const interactionRunMetricsFilterColumns: Record<
+  keyof InteractionRunMetricsFilters,
+  string
+> = {
   id: "id",
   interactionRunId: "interaction_run_id",
   createdAt: "created_at",
-  updatedAt: "updated_at"
+  updatedAt: "updated_at",
 };
 
-const interactionRunMetricsOrderColumns: Record<InteractionRunMetricsOrderField, string> = {
+const interactionRunMetricsOrderColumns: Record<
+  InteractionRunMetricsOrderField,
+  string
+> = {
   interactionRunId: "interaction_run_id",
   createdAt: "created_at",
   updatedAt: "updated_at",
-  id: "id"
+  id: "id",
 };
 
 const reviewFindingFilterColumns: Record<keyof ReviewFindingFilters, string> = {
@@ -1349,7 +1706,7 @@ const reviewFindingFilterColumns: Record<keyof ReviewFindingFilters, string> = {
   interactionRunId: "interaction_run_id",
   identityKey: "identity_key",
   status: "status",
-  createdAt: "created_at"
+  createdAt: "created_at",
 };
 
 const reviewFindingOrderColumns: Record<ReviewFindingOrderField, string> = {
@@ -1357,10 +1714,13 @@ const reviewFindingOrderColumns: Record<ReviewFindingOrderField, string> = {
   identityKey: "identity_key",
   status: "status",
   createdAt: "created_at",
-  id: "id"
+  id: "id",
 };
 
-const discussionMappingFilterColumns: Record<keyof DiscussionMappingFilters, string> = {
+const discussionMappingFilterColumns: Record<
+  keyof DiscussionMappingFilters,
+  string
+> = {
   id: "id",
   tenantId: "tenant_id",
   mergeRequestIid: "merge_request_iid",
@@ -1368,10 +1728,13 @@ const discussionMappingFilterColumns: Record<keyof DiscussionMappingFilters, str
   identityKey: "identity_key",
   status: "status",
   updatedAt: "updated_at",
-  createdAt: "created_at"
+  createdAt: "created_at",
 };
 
-const discussionMappingOrderColumns: Record<DiscussionMappingOrderField, string> = {
+const discussionMappingOrderColumns: Record<
+  DiscussionMappingOrderField,
+  string
+> = {
   tenantId: "tenant_id",
   mergeRequestIid: "merge_request_iid",
   gitlabDiscussionId: "gitlab_discussion_id",
@@ -1379,7 +1742,7 @@ const discussionMappingOrderColumns: Record<DiscussionMappingOrderField, string>
   status: "status",
   updatedAt: "updated_at",
   createdAt: "created_at",
-  id: "id"
+  id: "id",
 };
 
 function selectRowsByIds<TEntity>(
@@ -1387,28 +1750,41 @@ function selectRowsByIds<TEntity>(
   tableName: string,
   idColumn: string,
   ids: string[],
-  mapRow: (row: Row) => TEntity
+  mapRow: (row: Row) => TEntity,
 ): TEntity[] {
   if (ids.length === 0) {
     return [];
   }
 
   const rows = database
-    .prepare(`SELECT * FROM ${tableName} WHERE ${idColumn} IN (${buildSqlPlaceholders(ids.length)})`)
+    .prepare(
+      `SELECT * FROM ${tableName} WHERE ${idColumn} IN (${buildSqlPlaceholders(ids.length)})`,
+    )
     .all(...ids) as Row[];
-  const byId = new Map(rows.map((row) => [asString(row[idColumn]), mapRow(row)]));
+  const byId = new Map(
+    rows.map((row) => [asString(row[idColumn]), mapRow(row)]),
+  );
   return ids.flatMap((id) => {
     const entity = byId.get(id);
     return entity ? [entity] : [];
   });
 }
 
-function deleteRowsByIds(database: DatabaseSync, tableName: string, idColumn: string, ids: string[]): void {
+function deleteRowsByIds(
+  database: DatabaseSync,
+  tableName: string,
+  idColumn: string,
+  ids: string[],
+): void {
   if (ids.length === 0) {
     return;
   }
 
-  database.prepare(`DELETE FROM ${tableName} WHERE ${idColumn} IN (${buildSqlPlaceholders(ids.length)})`).run(...ids);
+  database
+    .prepare(
+      `DELETE FROM ${tableName} WHERE ${idColumn} IN (${buildSqlPlaceholders(ids.length)})`,
+    )
+    .run(...ids);
 }
 
 function findRow<TEntity, TFilters extends object>(
@@ -1416,7 +1792,7 @@ function findRow<TEntity, TFilters extends object>(
   tableName: string,
   filters: TFilters,
   filterColumns: Record<keyof TFilters, string>,
-  mapRow: (row: Row) => TEntity
+  mapRow: (row: Row) => TEntity,
 ): TEntity | null {
   const rows = listRows(
     database,
@@ -1424,38 +1800,37 @@ function findRow<TEntity, TFilters extends object>(
     { filters, page: 1, pageSize: 1 },
     filterColumns,
     {} as Record<never, string>,
-    mapRow
+    mapRow,
   );
   return rows[0] ?? null;
 }
 
-function listRows<
-  TEntity,
-  TFilters extends object,
-  TOrder extends string
->(
+function listRows<TEntity, TFilters extends object, TOrder extends string>(
   database: DatabaseSync,
   tableName: string,
   input: StoreListInput<TFilters, TOrder>,
   filterColumns: Record<keyof TFilters, string>,
   orderColumns: Record<TOrder, string>,
-  mapRow: (row: Row) => TEntity
+  mapRow: (row: Row) => TEntity,
 ): TEntity[] {
   const { clause, params } = buildWhereClause(input.filters, filterColumns);
-  const orderClause = input.order && input.order.length > 0
-    ? ` ORDER BY ${input.order.map((entry) => `${orderColumns[entry.field]} ${entry.direction.toUpperCase()}`).join(", ")}`
-    : "";
+  const orderClause =
+    input.order && input.order.length > 0
+      ? ` ORDER BY ${input.order.map((entry) => `${orderColumns[entry.field]} ${entry.direction.toUpperCase()}`).join(", ")}`
+      : "";
   const limit = Math.max(1, input.pageSize);
   const offset = Math.max(0, (input.page - 1) * input.pageSize);
   const rows = database
-    .prepare(`SELECT * FROM ${tableName}${clause}${orderClause} LIMIT ? OFFSET ?`)
+    .prepare(
+      `SELECT * FROM ${tableName}${clause}${orderClause} LIMIT ? OFFSET ?`,
+    )
     .all(...params, limit, offset) as Row[];
   return rows.map(mapRow);
 }
 
 function buildWhereClause<TFilters extends object>(
   filters: TFilters | undefined,
-  filterColumns: Record<keyof TFilters, string>
+  filterColumns: Record<keyof TFilters, string>,
 ): { clause: string; params: SqlValue[] } {
   if (!filters) {
     return { clause: "", params: [] };
@@ -1464,7 +1839,9 @@ function buildWhereClause<TFilters extends object>(
   const clauses: string[] = [];
   const params: SqlValue[] = [];
 
-  for (const [field, filter] of Object.entries(filters) as Array<[keyof TFilters, StoreValueFilter<unknown> | undefined]>) {
+  for (const [field, filter] of Object.entries(filters) as Array<
+    [keyof TFilters, StoreValueFilter<unknown> | undefined]
+  >) {
     if (!filter) {
       continue;
     }
@@ -1496,20 +1873,28 @@ function buildWhereClause<TFilters extends object>(
       if (filter.in.length === 0) {
         clauses.push("1 = 0");
       } else {
-        clauses.push(`${column} IN (${buildSqlPlaceholders(filter.in.length)})`);
+        clauses.push(
+          `${column} IN (${buildSqlPlaceholders(filter.in.length)})`,
+        );
         params.push(...filter.in.map(toSqlValue));
       }
     }
 
-    if ("notIn" in filter && filter.notIn !== undefined && filter.notIn.length > 0) {
-      clauses.push(`${column} NOT IN (${buildSqlPlaceholders(filter.notIn.length)})`);
+    if (
+      "notIn" in filter &&
+      filter.notIn !== undefined &&
+      filter.notIn.length > 0
+    ) {
+      clauses.push(
+        `${column} NOT IN (${buildSqlPlaceholders(filter.notIn.length)})`,
+      );
       params.push(...filter.notIn.map(toSqlValue));
     }
   }
 
   return {
     clause: clauses.length > 0 ? ` WHERE ${clauses.join(" AND ")}` : "",
-    params
+    params,
   };
 }
 
@@ -1518,7 +1903,11 @@ function toSqlValue(value: unknown): SqlValue {
     return value ? 1 : 0;
   }
 
-  if (typeof value === "number" || typeof value === "string" || value === null) {
+  if (
+    typeof value === "number" ||
+    typeof value === "string" ||
+    value === null
+  ) {
     return value;
   }
 
@@ -1536,13 +1925,13 @@ function mapModelProfileRow(row: Row): ModelProfileRecord {
     textGenerationModel: asNullableString(row.text_generation_model),
     isDefault: asBoolean(row.is_default),
     createdAt: asString(row.created_at),
-    updatedAt: asString(row.updated_at)
+    updatedAt: asString(row.updated_at),
   };
 }
 
 function resolveModelProfileUpsertInput(
   existing: ModelProfileRecord | null,
-  input: UpsertModelProfileInput
+  input: UpsertModelProfileInput,
 ): {
   name: string;
   providerBaseUrl: string | null;
@@ -1553,23 +1942,38 @@ function resolveModelProfileUpsertInput(
   textGenerationModel: string | null;
   isDefault: boolean;
 } {
-  const providerBaseUrl = input.providerBaseUrl !== undefined
-    ? input.providerBaseUrl
-    : (existing?.providerBaseUrl ?? null);
-  const providerType = providerBaseUrl === null && input.providerType === undefined
-    ? null
-    : (input.providerType !== undefined ? input.providerType : (existing?.providerType ?? null));
+  const providerBaseUrl =
+    input.providerBaseUrl !== undefined
+      ? input.providerBaseUrl
+      : (existing?.providerBaseUrl ?? null);
+  const providerType =
+    providerBaseUrl === null && input.providerType === undefined
+      ? null
+      : input.providerType !== undefined
+        ? input.providerType
+        : (existing?.providerType ?? null);
   const resolved = {
     name: input.name,
     providerBaseUrl,
     providerType,
-    wireApi: input.wireApi !== undefined ? input.wireApi : (existing?.wireApi ?? null),
-    authToken: input.authToken !== undefined ? input.authToken : (existing?.authToken ?? null),
-    reviewModel: input.reviewModel !== undefined ? input.reviewModel : (existing?.reviewModel ?? null),
-    textGenerationModel: input.textGenerationModel !== undefined
-      ? input.textGenerationModel
-      : (existing?.textGenerationModel ?? null),
-    isDefault: input.isDefault !== undefined ? input.isDefault : (existing?.isDefault ?? false)
+    wireApi:
+      input.wireApi !== undefined ? input.wireApi : (existing?.wireApi ?? null),
+    authToken:
+      input.authToken !== undefined
+        ? input.authToken
+        : (existing?.authToken ?? null),
+    reviewModel:
+      input.reviewModel !== undefined
+        ? input.reviewModel
+        : (existing?.reviewModel ?? null),
+    textGenerationModel:
+      input.textGenerationModel !== undefined
+        ? input.textGenerationModel
+        : (existing?.textGenerationModel ?? null),
+    isDefault:
+      input.isDefault !== undefined
+        ? input.isDefault
+        : (existing?.isDefault ?? false),
   };
 
   if (!resolved.providerBaseUrl && resolved.providerType) {
@@ -1599,7 +2003,7 @@ function mapTenantRow(row: Row): TenantRecord {
     botUsername: asNullableString(row.bot_username),
     modelProfileName: asNullableString(row.model_profile_name),
     createdAt: asString(row.created_at),
-    updatedAt: asString(row.updated_at)
+    updatedAt: asString(row.updated_at),
   };
 }
 
@@ -1618,7 +2022,7 @@ function mapInteractionJobRow(row: Row): InteractionJobRecord {
     lastError: asNullableString(row.last_error),
     enqueuedAt: asString(row.enqueued_at),
     startedAt: asNullableString(row.started_at),
-    finishedAt: asNullableString(row.finished_at)
+    finishedAt: asNullableString(row.finished_at),
   };
 }
 
@@ -1645,7 +2049,7 @@ function mapDiscussionMappingRow(row: Row): DiscussionMappingRecord {
     status: asString(row.status) as DiscussionMappingRecord["status"],
     lastInteractionRunId: asNullableString(row.last_interaction_run_id),
     createdAt: asString(row.created_at),
-    updatedAt: asString(row.updated_at)
+    updatedAt: asString(row.updated_at),
   };
 }
 
@@ -1664,7 +2068,7 @@ function mapMergeRequestSnapshotRow(row: Row): MergeRequestSnapshotRecord {
     instructionsJson: asString(row.instructions_json),
     projectMemoryJson: asNullableString(row.project_memory_json),
     workspaceStrategy: asString(row.workspace_strategy),
-    createdAt: asString(row.created_at)
+    createdAt: asString(row.created_at),
   };
 }
 
@@ -1693,24 +2097,7 @@ function mapInteractionRunMetricsRow(row: Row): InteractionRunMetricsRecord {
     repeatedViewReads: asNumber(row.repeated_view_reads),
     repeatedViewPathsJson: asString(row.repeated_view_paths_json),
     createdAt: asString(row.created_at),
-    updatedAt: asString(row.updated_at)
-  };
-}
-
-function mapPriorReviewFindingRow(row: Row): PriorReviewFindingRecord {
-  return {
-    findingId: asString(row.id),
-    identityKey: asString(row.identity_key),
-    status: asString(row.status) as ReviewFindingStatus,
-    title: asString(row.title),
-    body: asString(row.body),
-    severity: asString(row.severity),
-    category: asString(row.category),
-    anchor: parseAnchor(row.anchor_json),
-    suggestion: parseSuggestion(row.suggestion_json),
-    interactionRunId: asString(row.interaction_run_id),
-    reviewedAt: asString(row.reviewed_at),
-    headSha: asString(row.head_sha)
+    updatedAt: asString(row.updated_at),
   };
 }
 
@@ -1750,7 +2137,9 @@ function asNullableNumber(value: unknown): number | null {
   return asNumber(value);
 }
 
-function asNullableProviderType(value: unknown): "openai" | "azure" | "anthropic" | null {
+function asNullableProviderType(
+  value: unknown,
+): "openai" | "azure" | "anthropic" | null {
   const parsed = asNullableString(value);
   if (parsed === null) {
     return null;
@@ -1781,7 +2170,9 @@ function asBoolean(value: unknown): boolean {
 }
 
 function assertModelProfileExists(database: DatabaseSync, name: string): void {
-  const row = database.prepare("SELECT name FROM model_profiles WHERE name = ?").get(name) as Row | undefined;
+  const row = database
+    .prepare("SELECT name FROM model_profiles WHERE name = ?")
+    .get(name) as Row | undefined;
   if (!row) {
     throw new Error(`Unknown model profile ${name}`);
   }
@@ -1802,7 +2193,7 @@ function mapInteractionRunRow(row: Row): InteractionRunRecord {
     resultJson: asNullableString(row.result_json),
     error: asNullableString(row.error),
     startedAt: asString(row.started_at),
-    finishedAt: asNullableString(row.finished_at)
+    finishedAt: asNullableString(row.finished_at),
   };
 }
 
@@ -1818,61 +2209,10 @@ function mapReviewFindingRow(row: Row): ReviewFindingRecord {
     anchorJson: asNullableString(row.anchor_json),
     suggestionJson: asNullableString(row.suggestion_json),
     status: asString(row.status) as ReviewFindingStatus,
-    createdAt: asString(row.created_at)
+    createdAt: asString(row.created_at),
   };
 }
 
 function buildSqlPlaceholders(count: number): string {
   return Array.from({ length: count }, () => "?").join(", ");
-}
-
-function parseAnchor(value: unknown): ReviewAnchor | null {
-  const anchorJson = asNullableString(value);
-  if (!anchorJson) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(anchorJson) as ReviewAnchor;
-    if (
-      typeof parsed?.path === "string" &&
-      typeof parsed?.startLine === "number" &&
-      typeof parsed?.endLine === "number" &&
-      (parsed?.side === "new" || parsed?.side === "old")
-    ) {
-      return {
-        path: parsed.path,
-        ...(typeof parsed.oldPath === "string" ? { oldPath: parsed.oldPath } : {}),
-        startLine: parsed.startLine,
-        endLine: parsed.endLine,
-        side: parsed.side
-      };
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-function parseSuggestion(value: unknown): ReviewSuggestion | null {
-  const suggestionJson = asNullableString(value);
-  if (!suggestionJson) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(suggestionJson) as ReviewSuggestion;
-    if (
-      typeof parsed?.replacement === "string" &&
-      typeof parsed?.startLine === "number" &&
-      typeof parsed?.endLine === "number"
-    ) {
-      return parsed;
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
 }

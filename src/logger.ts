@@ -11,9 +11,9 @@ export function createLogger(level: string): Logger {
         "apiToken",
         "webhookSecret",
         "headers.authorization",
-        "headers.private-token"
+        "headers.private-token",
       ],
-      censor: "[redacted]"
-    }
+      censor: "[redacted]",
+    },
   });
 }

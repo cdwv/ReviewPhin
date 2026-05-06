@@ -7,7 +7,9 @@ import type { ProjectMemoryCoalesceInput } from "../memory/types.js";
 
 const DEFAULT_MAX_PROMPT_MEMORY_CHARS = 5_000;
 
-export function buildProjectMemoryCoalescePrompt(input: ProjectMemoryCoalesceInput): string {
+export function buildProjectMemoryCoalescePrompt(
+  input: ProjectMemoryCoalesceInput,
+): string {
   return renderPrompt("memory.coalesce", input);
 }
 
@@ -15,9 +17,10 @@ export function buildReviewPrompt(
   context: ReviewContext,
   options: {
     maxPromptMemoryChars?: number;
-  } = {}
+  } = {},
 ): string {
-  const maxPromptMemoryChars = options.maxPromptMemoryChars ?? DEFAULT_MAX_PROMPT_MEMORY_CHARS;
+  const maxPromptMemoryChars =
+    options.maxPromptMemoryChars ?? DEFAULT_MAX_PROMPT_MEMORY_CHARS;
   return [
     renderPrompt(getPromptTemplateId(context), {}),
     "",
@@ -25,7 +28,11 @@ export function buildReviewPrompt(
     JSON.stringify(reviewResponseSchema, null, 2),
     "",
     "Context:",
-    JSON.stringify(buildCompactReviewContext(context, maxPromptMemoryChars), null, 2)
+    JSON.stringify(
+      buildCompactReviewContext(context, maxPromptMemoryChars),
+      null,
+      2,
+    ),
   ].join("\n");
 }
 
@@ -38,12 +45,16 @@ export function buildChatterPrompt(context: ChatterRunContext): string {
     JSON.stringify(chatterResponseSchema, null, 2),
     "",
     "Context:",
-    JSON.stringify(buildCompactChatterContext(context, maxPromptMemoryChars), null, 2)
+    JSON.stringify(
+      buildCompactChatterContext(context, maxPromptMemoryChars),
+      null,
+      2,
+    ),
   ].join("\n");
 }
 
 function getPromptTemplateId(
-  context: ReviewContext
+  context: ReviewContext,
 ): Extract<PromptTemplateId, `review.${string}`> {
   if (context.scope.mode === "follow-up-thread") {
     return "review.follow-up-thread";
@@ -61,22 +72,26 @@ function getPromptTemplateId(
 }
 
 function getChatterPromptTemplateId(
-  context: ChatterRunContext
+  context: ChatterRunContext,
 ): Extract<PromptTemplateId, `reply.${string}`> {
   if (context.phase === "memory") {
     return "reply.memory-update";
   }
 
   if (context.trigger.kind === "summary-follow-up") {
-    return context.reviewResult ? "reply.summary-follow-up.after-review" : "reply.summary-follow-up";
+    return context.reviewResult
+      ? "reply.summary-follow-up.after-review"
+      : "reply.summary-follow-up";
   }
 
-  return context.reviewResult ? "reply.direct-mention.after-review" : "reply.direct-mention";
+  return context.reviewResult
+    ? "reply.direct-mention.after-review"
+    : "reply.direct-mention";
 }
 
 export function buildCompactReviewContext(
   context: ReviewContext,
-  maxPromptMemoryChars: number
+  maxPromptMemoryChars: number,
 ) {
   return {
     reviewMode: context.scope.mode,
@@ -92,7 +107,7 @@ export function buildCompactReviewContext(
             discussionId: context.scope.targetThread.discussionId,
             title: context.scope.targetThread.title,
             anchor: context.scope.targetThread.anchor,
-            resolved: context.scope.targetThread.resolved
+            resolved: context.scope.targetThread.resolved,
           }
         : null,
       previousReview: context.scope.previousReview
@@ -101,34 +116,38 @@ export function buildCompactReviewContext(
             reviewedAt: context.scope.previousReview.reviewedAt,
             headSha: context.scope.previousReview.headSha,
             overviewSummary: context.scope.previousReview.overviewSummary,
-            mergeReadiness: context.scope.previousReview.mergeReadiness
+            mergeReadiness: context.scope.previousReview.mergeReadiness,
           }
         : null,
-      priorFindings: context.scope.priorFindings.slice(0, 25).map((finding) => ({
-        findingId: finding.findingId,
-        identityKey: finding.identityKey,
-        status: finding.status,
-        title: finding.title,
-        body: truncate(finding.body, 1_500),
-        severity: finding.severity,
-        category: finding.category,
-        anchor: finding.anchor,
-        suggestion: finding.suggestion,
-        reviewRunId: finding.reviewRunId,
-        reviewedAt: finding.reviewedAt,
-        headSha: finding.headSha
-      })),
-      deltaSincePreviousReview: context.scope.deltaSincePreviousReview
+      priorFindings: context.scope.priorFindings
+        .slice(0, 25)
+        .map((finding) => ({
+          findingId: finding.findingId,
+          identityKey: finding.identityKey,
+          status: finding.status,
+          title: finding.title,
+          body: truncate(finding.body, 1_500),
+          severity: finding.severity,
+          category: finding.category,
+          anchor: finding.anchor,
+          suggestion: finding.suggestion,
+          reviewRunId: finding.reviewRunId,
+          reviewedAt: finding.reviewedAt,
+          headSha: finding.headSha,
+        })),
+      deltaSincePreviousReview: context.scope.deltaSincePreviousReview,
     },
     reviewTrigger: {
       kind: context.trigger.kind,
       noteId: context.trigger.noteId,
       authorUsername: context.trigger.authorUsername,
       body: truncate(context.trigger.body, 1_500),
-      instruction: context.trigger.instruction ? truncate(context.trigger.instruction, 1_000) : null,
+      instruction: context.trigger.instruction
+        ? truncate(context.trigger.instruction, 1_000)
+        : null,
       targetThreadId: context.trigger.targetThreadId,
       targetDiscussionId: context.trigger.targetDiscussionId,
-      targetThreadTitle: context.trigger.targetThreadTitle
+      targetThreadTitle: context.trigger.targetThreadTitle,
     },
     mergeRequest: {
       iid: context.mergeRequest.iid,
@@ -137,9 +156,12 @@ export function buildCompactReviewContext(
       webUrl: context.mergeRequest.web_url,
       author: context.mergeRequest.author.username,
       sourceBranch: context.mergeRequest.source_branch,
-      targetBranch: context.mergeRequest.target_branch
+      targetBranch: context.mergeRequest.target_branch,
     },
-    projectMemory: buildPromptProjectMemory(context.projectMemory, maxPromptMemoryChars),
+    projectMemory: buildPromptProjectMemory(
+      context.projectMemory,
+      maxPromptMemoryChars,
+    ),
     instructionFiles: context.instructionFiles.map((file) => file.path),
     changedFiles: context.changes.map((change) => ({
       oldPath: change.old_path,
@@ -147,7 +169,7 @@ export function buildCompactReviewContext(
       newFile: change.new_file,
       renamedFile: change.renamed_file,
       deletedFile: change.deleted_file,
-      diff: truncate(change.diff ?? "", 6_000)
+      diff: truncate(change.diff ?? "", 6_000),
     })),
     additionalChangedFiles: context.scope.omittedChangedFiles.slice(0, 40),
     mergeRequestNotes: context.notes
@@ -158,7 +180,7 @@ export function buildCompactReviewContext(
         author: note.author.username,
         body: truncate(note.body, 1_500),
         resolvable: note.resolvable ?? false,
-        resolved: note.resolved ?? false
+        resolved: note.resolved ?? false,
       })),
     priorThreads: context.priorThreads.map((thread) => ({
       threadId: thread.threadId,
@@ -171,15 +193,15 @@ export function buildCompactReviewContext(
       humanReplies: thread.humanReplies.map((reply) => ({
         noteId: reply.noteId,
         authorUsername: reply.authorUsername,
-        body: truncate(reply.body, 1_500)
-      }))
-    }))
+        body: truncate(reply.body, 1_500),
+      })),
+    })),
   };
 }
 
 function buildPromptProjectMemory(
   projectMemory: ReviewContext["projectMemory"],
-  maxPromptMemoryChars: number
+  maxPromptMemoryChars: number,
 ):
   | {
       enabled: false;
@@ -195,7 +217,7 @@ function buildPromptProjectMemory(
     } {
   if (!projectMemory.enabled) {
     return {
-      enabled: false
+      enabled: false,
     };
   }
 
@@ -225,8 +247,11 @@ function buildPromptProjectMemory(
     pageSlug: projectMemory.page?.slug ?? null,
     totalEntryCount: projectMemory.entries.length,
     includedEntryCount: entries.length,
-    omittedEntryCount: Math.max(0, projectMemory.entries.length - entries.length),
-    entries
+    omittedEntryCount: Math.max(
+      0,
+      projectMemory.entries.length - entries.length,
+    ),
+    entries,
   };
 }
 
@@ -238,9 +263,9 @@ const reviewResponseSchema = {
     mergeReadiness: {
       status: "ready | needs_attention | blocked",
       confidence: "low | medium | high",
-      summary: "string"
+      summary: "string",
     },
-    highlights: ["optional string"]
+    highlights: ["optional string"],
   },
   findings: [
     {
@@ -255,23 +280,23 @@ const reviewResponseSchema = {
         oldPath: "optional string",
         startLine: 1,
         endLine: 1,
-        side: "new | old"
+        side: "new | old",
       },
       suggestion: {
         replacement: "string",
         startLine: 1,
-        endLine: 1
+        endLine: 1,
       },
-      replyInDiscussion: false
-    }
+      replyInDiscussion: false,
+    },
   ],
   priorDispositions: [
     {
       threadId: "string",
       action: "keep | update | resolve | reply",
       replyBody: "optional string",
-      resolution: "optional resolved | dismissed"
-    }
+      resolution: "optional resolved | dismissed",
+    },
   ],
   replyHandoff: {
     summary: "string",
@@ -279,31 +304,36 @@ const reviewResponseSchema = {
       {
         kind: "merge-request-note | discussion-reply | summary-discussion-reply | finding-thread-reply",
         noteId: 1,
-        discussionId: "required for threaded reply kinds; optional for merge-request-note",
-        guidance: "string"
-      }
-    ]
-  }
+        discussionId:
+          "required for threaded reply kinds; optional for merge-request-note",
+        guidance: "string",
+      },
+    ],
+  },
 };
 
 const chatterResponseSchema = {
   memory: {
     status: "written | skipped",
-    summary: "string"
+    summary: "string",
   },
   replies: [
     {
       target: {
         kind: "merge-request-note | discussion-reply | summary-discussion-reply | finding-thread-reply",
         noteId: 1,
-        discussionId: "required for threaded reply kinds; optional for merge-request-note"
+        discussionId:
+          "required for threaded reply kinds; optional for merge-request-note",
       },
-      replyBody: "string"
-    }
-  ]
+      replyBody: "string",
+    },
+  ],
 };
 
-function buildCompactChatterContext(context: ChatterRunContext, maxPromptMemoryChars: number) {
+function buildCompactChatterContext(
+  context: ChatterRunContext,
+  maxPromptMemoryChars: number,
+) {
   const sharedReviewContext = context.reviewContext
     ? buildCompactReviewContext(context.reviewContext, maxPromptMemoryChars)
     : null;
@@ -312,10 +342,12 @@ function buildCompactChatterContext(context: ChatterRunContext, maxPromptMemoryC
     noteId: context.trigger.noteId,
     authorUsername: context.trigger.authorUsername,
     body: truncate(context.trigger.body, 1_500),
-    instruction: context.trigger.instruction ? truncate(context.trigger.instruction, 1_000) : null,
+    instruction: context.trigger.instruction
+      ? truncate(context.trigger.instruction, 1_000)
+      : null,
     targetThreadId: context.trigger.targetThreadId,
     targetDiscussionId: context.trigger.targetDiscussionId,
-    targetThreadTitle: context.trigger.targetThreadTitle
+    targetThreadTitle: context.trigger.targetThreadTitle,
   };
 
   return {
@@ -327,34 +359,39 @@ function buildCompactChatterContext(context: ChatterRunContext, maxPromptMemoryC
     mergeRequest: sharedReviewContext?.mergeRequest ?? null,
     trigger: {
       ...compactTrigger,
-      responseTarget: context.trigger.responseTarget
+      responseTarget: context.trigger.responseTarget,
     },
     responseTargets: context.responseTargets.map((target) => ({
       ...target,
       body: truncate(target.body, 1_500),
-      instruction: target.instruction ? truncate(target.instruction, 1_000) : null
+      instruction: target.instruction
+        ? truncate(target.instruction, 1_000)
+        : null,
     })),
     projectMemory:
-      sharedReviewContext?.projectMemory ?? buildPromptProjectMemory(context.projectMemory, maxPromptMemoryChars),
+      sharedReviewContext?.projectMemory ??
+      buildPromptProjectMemory(context.projectMemory, maxPromptMemoryChars),
     instructionFiles: sharedReviewContext?.instructionFiles ?? [],
     changedFiles: sharedReviewContext?.changedFiles ?? [],
     additionalChangedFiles: sharedReviewContext?.additionalChangedFiles ?? [],
     mergeRequestNotes: sharedReviewContext?.mergeRequestNotes ?? [],
     priorThreads: sharedReviewContext?.priorThreads ?? [],
-    reviewResult:
-      context.reviewResult
-        ? {
-            overview: context.reviewResult.overview,
-            findings: context.reviewResult.findings.map((finding) => ({
-              title: finding.title,
-              body: truncate(finding.body, 1_000),
-              severity: finding.severity,
-              category: finding.category,
-              anchor: finding.anchor
-            })),
-            replyHandoff: context.reviewResult.replyHandoff ?? context.reviewerReplyHandoff ?? null
-          }
-        : null,
-    reviewerReplyHandoff: context.reviewerReplyHandoff ?? null
+    reviewResult: context.reviewResult
+      ? {
+          overview: context.reviewResult.overview,
+          findings: context.reviewResult.findings.map((finding) => ({
+            title: finding.title,
+            body: truncate(finding.body, 1_000),
+            severity: finding.severity,
+            category: finding.category,
+            anchor: finding.anchor,
+          })),
+          replyHandoff:
+            context.reviewResult.replyHandoff ??
+            context.reviewerReplyHandoff ??
+            null,
+        }
+      : null,
+    reviewerReplyHandoff: context.reviewerReplyHandoff ?? null,
   };
 }

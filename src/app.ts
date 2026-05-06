@@ -15,11 +15,11 @@ interface AppOptions {
 
 export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: false
+    logger: false,
   });
 
   app.get("/healthz", async () => ({
-    status: "ok"
+    status: "ok",
   }));
 
   app.post("/webhooks/gitlab/note", async (request, reply) => {
@@ -27,30 +27,46 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
     try {
       payload = parseGitLabNoteHook(request.body);
     } catch (error) {
-      options.logger.warn({ err: error }, "received invalid GitLab note hook payload");
+      options.logger.warn(
+        { err: error },
+        "received invalid GitLab note hook payload",
+      );
       return reply.code(400).send({
-        error: "invalid-payload"
+        error: "invalid-payload",
       });
     }
 
     const secretHeader = request.headers["x-gitlab-token"];
-    const webhookSecret = Array.isArray(secretHeader) ? secretHeader[0] : secretHeader;
-    const tenant = await options.tenantRegistry.resolveWebhookTenant(payload, webhookSecret);
+    const webhookSecret = Array.isArray(secretHeader)
+      ? secretHeader[0]
+      : secretHeader;
+    const tenant = await options.tenantRegistry.resolveWebhookTenant(
+      payload,
+      webhookSecret,
+    );
     if (!tenant) {
       return reply.code(401).send({
-        error: "unauthorized"
+        error: "unauthorized",
       });
     }
 
-    const trigger = await options.reviewWorker.classifyWebhookTrigger(payload, tenant);
+    const trigger = await options.reviewWorker.classifyWebhookTrigger(
+      payload,
+      tenant,
+    );
     if (!trigger) {
       return reply.code(202).send({
         accepted: false,
-        reason: "no-trigger"
+        reason: "no-trigger",
       });
     }
 
-    const { job, created } = await options.reviewWorker.createInteractionJobFromWebhook(payload, tenant, trigger);
+    const { job, created } =
+      await options.reviewWorker.createInteractionJobFromWebhook(
+        payload,
+        tenant,
+        trigger,
+      );
     if (created) {
       options.queue.enqueue(job.id);
     }
@@ -58,7 +74,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
     return reply.code(202).send({
       accepted: true,
       jobId: job.id,
-      deduplicated: !created
+      deduplicated: !created,
     });
   });
 

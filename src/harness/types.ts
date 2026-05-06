@@ -1,6 +1,14 @@
-import type { AssistantMessageEvent, ProviderConfig, SessionEvent } from "@github/copilot-sdk";
+import type {
+  AssistantMessageEvent,
+  ProviderConfig,
+  SessionEvent,
+} from "@github/copilot-sdk";
 
-export type HarnessSelectionSource = "merge-request-override" | "tenant" | "default" | "fallback";
+export type HarnessSelectionSource =
+  | "merge-request-override"
+  | "tenant"
+  | "default"
+  | "fallback";
 export type HarnessProviderType = "openai" | "azure" | "anthropic" | null;
 export type HarnessToolId = "glob" | "rg" | "view" | "add_memory_entry";
 export type HarnessSubagentId = "context-analyst" | "review-author";

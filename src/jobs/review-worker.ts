@@ -3,31 +3,56 @@ import { join } from "node:path";
 
 import { isBotUser } from "../gitlab/bot-user.js";
 import { GitLabClient } from "../gitlab/client.js";
-import type { GitLabDiscussion, GitLabNoteHookPayload, MaterializedWorkspace, TriggerNoteReference } from "../gitlab/types.js";
+import type {
+  GitLabDiscussion,
+  GitLabNoteHookPayload,
+  MaterializedWorkspace,
+  TriggerNoteReference,
+} from "../gitlab/types.js";
 import { parseGitLabNoteHook } from "../gitlab/webhook.js";
 import { extractWebhookHeadSha } from "../gitlab/webhook.js";
 import type { MergeRequestContextHydrator } from "../gitlab/hydrator.js";
 import type { WorkspaceMaterializer } from "../gitlab/workspace.js";
-import { buildProviderThreads, type ReconcileSummary, DiscussionReconciler } from "../reconcile/discussion-reconciler.js";
-import { HarnessChatterRunnerFactory } from "../review/harness-chatter.js";
+import type { DiscussionReconciler } from "../reconcile/discussion-reconciler.js";
+import {
+  buildProviderThreads,
+  type ReconcileSummary,
+} from "../reconcile/discussion-reconciler.js";
+import type { HarnessChatterRunnerFactory } from "../review/harness-chatter.js";
 import { buildInteractionPlan } from "../review/interaction-plan.js";
 import { readHarnessRunMetrics } from "../harness/run-metrics.js";
-import { ModelProfileConfigurationError, resolveReviewProviderConfig } from "../review/model-profiles.js";
+import {
+  ModelProfileConfigurationError,
+  resolveReviewProviderConfig,
+} from "../review/model-profiles.js";
 import type { ReviewProviderFactory } from "../review/provider.js";
 import { InteractionRunArtifacts } from "../review/run-artifacts.js";
 import { buildScopedReviewContext } from "../review/review-scope.js";
-import { buildReviewTriggerContext, classifyWebhookTrigger, locateTriggerNoteReference } from "../review/trigger.js";
-import type { ChatterBatchResult, ResponseTarget, ReviewContext, ReviewResult, WebhookReviewTrigger } from "../review/types.js";
+import {
+  buildReviewTriggerContext,
+  classifyWebhookTrigger,
+  locateTriggerNoteReference,
+} from "../review/trigger.js";
+import type {
+  ChatterBatchResult,
+  ResponseTarget,
+  ReviewContext,
+  ReviewResult,
+  WebhookReviewTrigger,
+} from "../review/types.js";
 import type {
   CreateReviewFindingInput,
   DiscussionMappingRecord,
   InteractionJobRecord,
   PreviousCompletedInteractionRecord,
-  TenantRecord
+  TenantRecord,
 } from "../storage/contract/index.js";
 import { listAll, type StorageHelpers } from "../storage/storage-helpers.js";
 import type { TenantRegistry } from "../tenants/tenant-registry.js";
-import { createInteractionJobDedupeKey, createFindingIdentityKey } from "../utils/ids.js";
+import {
+  createInteractionJobDedupeKey,
+  createFindingIdentityKey,
+} from "../utils/ids.js";
 
 const REVIEW_STARTED_REACTION = "eyes";
 const REVIEW_COMPLETED_REACTION = "white_check_mark";
@@ -77,7 +102,7 @@ export class ReviewWorker {
   public async createInteractionJobFromWebhook(
     payload: GitLabNoteHookPayload,
     tenant: TenantRecord,
-    trigger: WebhookReviewTrigger
+    trigger: WebhookReviewTrigger,
   ): Promise<{
     job: InteractionJobRecord;
     created: boolean;
@@ -92,13 +117,13 @@ export class ReviewWorker {
         noteId: payload.object_attributes.id,
         noteAction: payload.object_attributes.action,
         noteUpdatedAt: payload.object_attributes.updated_at,
-        noteBody: payload.object_attributes.note
+        noteBody: payload.object_attributes.note,
       }),
       projectId: tenant.projectId,
       mergeRequestIid: payload.merge_request.iid,
       noteId: payload.object_attributes.id,
       headSha,
-      payloadJson: JSON.stringify(payload)
+      payloadJson: JSON.stringify(payload),
     });
 
     if (createdJob.created) {
@@ -109,7 +134,7 @@ export class ReviewWorker {
         createdJob.job.mergeRequestIid,
         trigger.note,
         REVIEW_STARTED_REACTION,
-        createdJob.job.id
+        createdJob.job.id,
       );
     }
 
@@ -118,20 +143,28 @@ export class ReviewWorker {
 
   public async classifyWebhookTrigger(
     payload: GitLabNoteHookPayload,
-    tenant: TenantRecord
+    tenant: TenantRecord,
   ): Promise<WebhookReviewTrigger | null> {
-    const client = this.createGitLabClient(tenant, `webhook-note-${payload.object_attributes.id}`);
+    const client = this.createGitLabClient(
+      tenant,
+      `webhook-note-${payload.object_attributes.id}`,
+    );
     return classifyWebhookTrigger({
       payload,
       tenant,
-      client
+      client,
     });
   }
 
-  public async processJob(jobId: string): Promise<{ requeueAfterMs?: number } | void> {
+  public async processJob(
+    jobId: string,
+  ): Promise<{ requeueAfterMs?: number } | void> {
     const job = await this.storage.stores.interactionJobs.get(jobId);
     if (!job) {
-      this.logger.warn({ interactionJobId: jobId }, "interaction job not found");
+      this.logger.warn(
+        { interactionJobId: jobId },
+        "interaction job not found",
+      );
       return;
     }
 
@@ -162,18 +195,25 @@ export class ReviewWorker {
       let routingContext = await this.hydrator.loadRoutingContext({
         tenant,
         job,
-        client
+        client,
       });
       workspacesToCleanup.push(routingContext.workspace);
-      triggerNote = locateTriggerNoteReference(routingContext.discussions, job.noteId);
+      triggerNote = locateTriggerNoteReference(
+        routingContext.discussions,
+        job.noteId,
+      );
 
       const resolvedProviderConfig = await resolveReviewProviderConfig({
         storage: this.storage,
         tenant,
-        mergeRequest: routingContext.mergeRequest
+        mergeRequest: routingContext.mergeRequest,
       });
-      const reviewProvider = this.reviewProviderFactory.createProvider(resolvedProviderConfig);
-      const chatterRunner = this.chatterRunnerFactory.createRunner(resolvedProviderConfig);
+      const reviewProvider = this.reviewProviderFactory.createProvider(
+        resolvedProviderConfig,
+      );
+      const chatterRunner = this.chatterRunnerFactory.createRunner(
+        resolvedProviderConfig,
+      );
       const interactionRun = await this.storage.createInteractionRun({
         interactionJobId: job.id,
         tenantId: tenant.id,
@@ -182,12 +222,20 @@ export class ReviewWorker {
         modelProfileName: resolvedProviderConfig.modelProfileName,
         providerBaseUrl: resolvedProviderConfig.providerBaseUrl,
         providerType: resolvedProviderConfig.providerType,
-        textGenerationModel: resolvedProviderConfig.textGenerationModel
+        textGenerationModel: resolvedProviderConfig.textGenerationModel,
       });
       interactionRunId = interactionRun.id;
-      runArtifacts = new InteractionRunArtifacts(this.runLogDir, interactionRun.id);
+      runArtifacts = new InteractionRunArtifacts(
+        this.runLogDir,
+        interactionRun.id,
+      );
       await runArtifacts.initialize();
-      client = this.createGitLabClient(tenant, job.id, interactionRun.id, runArtifacts);
+      client = this.createGitLabClient(
+        tenant,
+        job.id,
+        interactionRun.id,
+        runArtifacts,
+      );
 
       await this.logRunEvent(runArtifacts, "info", "interaction run started", {
         interactionJobId: job.id,
@@ -198,35 +246,40 @@ export class ReviewWorker {
         reviewModel: resolvedProviderConfig.reviewModel,
         textGenerationModel: resolvedProviderConfig.textGenerationModel,
         providerBaseUrl: resolvedProviderConfig.providerBaseUrl,
-        providerType: resolvedProviderConfig.providerType
+        providerType: resolvedProviderConfig.providerType,
       });
 
-      await this.logRunEvent(runArtifacts, "info", "lightweight routing context loaded", {
-        interactionJobId: job.id,
-        mergeRequestIid: job.mergeRequestIid,
-        changedFiles: routingContext.changes.length,
-        noteCount: routingContext.notes.length,
-        discussionCount: routingContext.discussions.length,
-        workspaceStrategy: routingContext.workspace.strategy
-      });
+      await this.logRunEvent(
+        runArtifacts,
+        "info",
+        "lightweight routing context loaded",
+        {
+          interactionJobId: job.id,
+          mergeRequestIid: job.mergeRequestIid,
+          changedFiles: routingContext.changes.length,
+          noteCount: routingContext.notes.length,
+          discussionCount: routingContext.discussions.length,
+          workspaceStrategy: routingContext.workspace.strategy,
+        },
+      );
 
       let mappings = await listAll(this.storage.stores.discussionMappings, {
         filters: {
           tenantId: { eq: tenant.id },
-          mergeRequestIid: { eq: routingContext.mergeRequest.iid }
+          mergeRequestIid: { eq: routingContext.mergeRequest.iid },
         },
-        order: [{ field: "updatedAt", direction: "desc" }]
+        order: [{ field: "updatedAt", direction: "desc" }],
       });
       mappings = await this.syncDiscussionFindingStatuses({
         tenant,
         mergeRequestIid: routingContext.mergeRequest.iid,
         discussions: routingContext.discussions,
-        mappings
+        mappings,
       });
       const priorThreads = buildProviderThreads({
         tenant,
         discussions: routingContext.discussions,
-        mappings
+        mappings,
       });
       await this.ensureTriggerNoteReaction(
         client,
@@ -234,21 +287,26 @@ export class ReviewWorker {
         job.mergeRequestIid,
         triggerNote,
         REVIEW_STARTED_REACTION,
-        job.id
+        job.id,
       );
 
       const trigger = buildReviewTriggerContext({
         payload: parsedPayload,
         tenant,
         discussions: routingContext.discussions,
-        priorThreads
+        priorThreads,
       });
-      const previousInteraction = await this.storage.getLatestCompletedInteractionForMergeRequest(
+      const previousInteraction =
+        await this.storage.getLatestCompletedInteractionForMergeRequest(
+          tenant.id,
+          routingContext.mergeRequest.iid,
+          job.id,
+        );
+      let priorFindings = await this.storage.listPriorReviewFindings(
         tenant.id,
         routingContext.mergeRequest.iid,
-        job.id
+        job.id,
       );
-      let priorFindings = await this.storage.listPriorReviewFindings(tenant.id, routingContext.mergeRequest.iid, job.id);
       let chatterContext = this.buildPromptContext({
         interactionRunId: interactionRun.id,
         tenant,
@@ -258,15 +316,18 @@ export class ReviewWorker {
         context: routingContext,
         mappings,
         priorFindings,
-        previousInteraction
+        previousInteraction,
       });
       const interactionPlan = buildInteractionPlan({
         trigger,
         previousReviewExists: previousInteraction !== null,
-        priorFindings
+        priorFindings,
       });
 
-      await runArtifacts.writeJsonArtifact(join("orchestration", "plan.json"), interactionPlan);
+      await runArtifacts.writeJsonArtifact(
+        join("orchestration", "plan.json"),
+        interactionPlan,
+      );
       await this.logRunEvent(runArtifacts, "info", "interaction plan created", {
         interactionRunId: interactionRun.id,
         triggerKind: trigger.kind,
@@ -274,7 +335,7 @@ export class ReviewWorker {
         replyNeeded: interactionPlan.replyNeeded,
         memoryCandidate: interactionPlan.memoryCandidate,
         responseTargetCount: interactionPlan.responseTargets.length,
-        rerunReason: interactionPlan.rerunReason
+        rerunReason: interactionPlan.rerunReason,
       });
 
       const harnessTenantContext = {
@@ -282,7 +343,7 @@ export class ReviewWorker {
         baseUrl: tenant.baseUrl,
         projectId: tenant.projectId,
         apiToken: tenant.apiToken,
-        memoryEnabled: routingContext.projectMemory.enabled
+        memoryEnabled: routingContext.projectMemory.enabled,
       };
 
       if (interactionPlan.memoryCandidate) {
@@ -298,27 +359,32 @@ export class ReviewWorker {
               interactionRunId: interactionRun.id,
               interactionJobId: job.id,
               tenantId: tenant.id,
-              runDirectory: runArtifacts.runDirectory
-            }
+              runDirectory: runArtifacts.runDirectory,
+            },
           },
           {
-            tenant: harnessTenantContext
-          }
+            tenant: harnessTenantContext,
+          },
         );
-        await runArtifacts.writeJsonArtifact(join("orchestration", "memory-result.json"), memoryResult);
+        await runArtifacts.writeJsonArtifact(
+          join("orchestration", "memory-result.json"),
+          memoryResult,
+        );
         metricsContext = {
-          sessionLogPath: runArtifacts.getCopilotSessionLogPath(chatterRunner.sessionPaths.memory),
+          sessionLogPath: runArtifacts.getCopilotSessionLogPath(
+            chatterRunner.sessionPaths.memory,
+          ),
           triggerKind: trigger.kind,
           promptMode: "memory",
           promptContextChangedFiles: chatterContext.changes.length,
           promptContextPriorThreads: chatterContext.priorThreads.length,
-          promptContextNotes: chatterContext.notes.length
+          promptContextNotes: chatterContext.notes.length,
         };
 
         routingContext = await this.hydrator.loadRoutingContext({
           tenant,
           job,
-          client
+          client,
         });
         workspacesToCleanup.push(routingContext.workspace);
         chatterContext = this.buildPromptContext({
@@ -330,7 +396,7 @@ export class ReviewWorker {
           context: routingContext,
           mappings,
           priorFindings,
-          previousInteraction
+          previousInteraction,
         });
       }
 
@@ -343,16 +409,20 @@ export class ReviewWorker {
           tenant,
           job,
           client,
-          context: routingContext
+          context: routingContext,
         });
         workspacesToCleanup.push(hydratedContext.workspace);
         mappings = await this.syncDiscussionFindingStatuses({
           tenant,
           mergeRequestIid: hydratedContext.mergeRequest.iid,
           discussions: hydratedContext.discussions,
-          mappings
+          mappings,
         });
-        priorFindings = await this.storage.listPriorReviewFindings(tenant.id, hydratedContext.mergeRequest.iid, job.id);
+        priorFindings = await this.storage.listPriorReviewFindings(
+          tenant.id,
+          hydratedContext.mergeRequest.iid,
+          job.id,
+        );
         reviewContext = this.buildPromptContext({
           interactionRunId: interactionRun.id,
           tenant,
@@ -362,25 +432,33 @@ export class ReviewWorker {
           context: hydratedContext,
           mappings,
           priorFindings,
-          previousInteraction
+          previousInteraction,
         });
 
-        await this.logRunEvent(runArtifacts, "info", "starting reviewer session", {
-          interactionRunId: interactionRun.id,
-          workspacePath: hydratedContext.workspace.rootPath,
-          changedFiles: hydratedContext.changes.length,
-          promptMode: reviewContext.scope.mode,
-          triggerKind: reviewContext.trigger.kind,
-          promptContextChangedFiles: reviewContext.changes.length
-        });
+        await this.logRunEvent(
+          runArtifacts,
+          "info",
+          "starting reviewer session",
+          {
+            interactionRunId: interactionRun.id,
+            workspacePath: hydratedContext.workspace.rootPath,
+            changedFiles: hydratedContext.changes.length,
+            promptMode: reviewContext.scope.mode,
+            triggerKind: reviewContext.trigger.kind,
+            promptContextChangedFiles: reviewContext.changes.length,
+          },
+        );
 
         reviewResult = await reviewProvider.review(reviewContext, {
           tenant: {
             ...harnessTenantContext,
-            memoryEnabled: hydratedContext.projectMemory.enabled
-          }
+            memoryEnabled: hydratedContext.projectMemory.enabled,
+          },
         });
-        await runArtifacts.writeJsonArtifact(join("orchestration", "review-result.json"), reviewResult);
+        await runArtifacts.writeJsonArtifact(
+          join("orchestration", "review-result.json"),
+          reviewResult,
+        );
 
         await this.storage.replaceReviewFindings(
           interactionRun.id,
@@ -391,7 +469,7 @@ export class ReviewWorker {
               path: finding.anchor?.path,
               startLine: finding.anchor?.startLine,
               endLine: finding.anchor?.endLine,
-              side: finding.anchor?.side
+              side: finding.anchor?.side,
             });
             return {
               interactionRunId: interactionRun.id,
@@ -400,11 +478,15 @@ export class ReviewWorker {
               category: finding.category,
               title: finding.title,
               body: finding.body,
-              anchorJson: finding.anchor ? JSON.stringify(finding.anchor) : null,
-              suggestionJson: finding.suggestion ? JSON.stringify(finding.suggestion) : null,
-              status: "open"
+              anchorJson: finding.anchor
+                ? JSON.stringify(finding.anchor)
+                : null,
+              suggestionJson: finding.suggestion
+                ? JSON.stringify(finding.suggestion)
+                : null,
+              status: "open",
             };
-          })
+          }),
         );
 
         reconcileSummary = await this.reconciler.reconcile({
@@ -413,22 +495,30 @@ export class ReviewWorker {
           mappings,
           interactionRunId: interactionRun.id,
           reviewResult,
-          client
+          client,
         });
 
         metricsContext = {
-          sessionLogPath: runArtifacts.getCopilotSessionLogPath(["copilot", "reviewer"]),
+          sessionLogPath: runArtifacts.getCopilotSessionLogPath([
+            "copilot",
+            "reviewer",
+          ]),
           triggerKind: reviewContext.trigger.kind,
           promptMode: reviewContext.scope.mode,
           promptContextChangedFiles: reviewContext.changes.length,
           promptContextPriorThreads: reviewContext.priorThreads.length,
-          promptContextNotes: reviewContext.notes.length
+          promptContextNotes: reviewContext.notes.length,
         };
 
-        await this.logRunEvent(runArtifacts, "info", "reconciled review result into GitLab", {
-          interactionRunId: interactionRun.id,
-          summary: reconcileSummary
-        });
+        await this.logRunEvent(
+          runArtifacts,
+          "info",
+          "reconciled review result into GitLab",
+          {
+            interactionRunId: interactionRun.id,
+            summary: reconcileSummary,
+          },
+        );
       }
 
       if (interactionPlan.replyNeeded) {
@@ -436,7 +526,8 @@ export class ReviewWorker {
           {
             trigger,
             responseTargets: interactionPlan.responseTargets,
-            projectMemory: reviewContext?.projectMemory ?? chatterContext.projectMemory,
+            projectMemory:
+              reviewContext?.projectMemory ?? chatterContext.projectMemory,
             replyStyle: interactionPlan.replyStyle,
             phase: "reply",
             reviewContext: reviewContext ?? chatterContext,
@@ -446,47 +537,72 @@ export class ReviewWorker {
               interactionRunId: interactionRun.id,
               interactionJobId: job.id,
               tenantId: tenant.id,
-              runDirectory: runArtifacts.runDirectory
-            }
+              runDirectory: runArtifacts.runDirectory,
+            },
           },
           {
             tenant: {
               ...harnessTenantContext,
-              memoryEnabled: reviewContext?.projectMemory.enabled ?? routingContext.projectMemory.enabled
-            }
-          }
+              memoryEnabled:
+                reviewContext?.projectMemory.enabled ??
+                routingContext.projectMemory.enabled,
+            },
+          },
         );
-        await runArtifacts.writeJsonArtifact(join("orchestration", "reply-result.json"), replyResult);
+        await runArtifacts.writeJsonArtifact(
+          join("orchestration", "reply-result.json"),
+          replyResult,
+        );
 
         const publishOutcomes = await this.publishChatterReplies({
           tenant,
           mergeRequestIid: routingContext.mergeRequest.iid,
           client,
           result: replyResult,
-          plannedTargets: interactionPlan.responseTargets
+          plannedTargets: interactionPlan.responseTargets,
         });
-        await runArtifacts.writeJsonArtifact(join("orchestration", "reply-publish-outcomes.json"), publishOutcomes);
-        const failedPublishOutcomes = publishOutcomes.filter((outcome) => outcome.status === "failed");
+        await runArtifacts.writeJsonArtifact(
+          join("orchestration", "reply-publish-outcomes.json"),
+          publishOutcomes,
+        );
+        const failedPublishOutcomes = publishOutcomes.filter(
+          (outcome) => outcome.status === "failed",
+        );
         if (failedPublishOutcomes.length > 0) {
-          await this.logRunEvent(runArtifacts, "warn", "some chatter replies failed to publish", {
-            interactionRunId: interactionRun.id,
-            failedReplyCount: failedPublishOutcomes.length,
-            publishedReplyCount: publishOutcomes.length - failedPublishOutcomes.length,
-            publishOutcomes
-          });
+          await this.logRunEvent(
+            runArtifacts,
+            "warn",
+            "some chatter replies failed to publish",
+            {
+              interactionRunId: interactionRun.id,
+              failedReplyCount: failedPublishOutcomes.length,
+              publishedReplyCount:
+                publishOutcomes.length - failedPublishOutcomes.length,
+              publishOutcomes,
+            },
+          );
         }
 
         metricsContext = {
-          sessionLogPath: runArtifacts.getCopilotSessionLogPath(chatterRunner.sessionPaths.reply),
+          sessionLogPath: runArtifacts.getCopilotSessionLogPath(
+            chatterRunner.sessionPaths.reply,
+          ),
           triggerKind: trigger.kind,
           promptMode: "reply",
-          promptContextChangedFiles: reviewContext?.changes.length ?? chatterContext.changes.length,
-          promptContextPriorThreads: reviewContext?.priorThreads.length ?? chatterContext.priorThreads.length,
-          promptContextNotes: reviewContext?.notes.length ?? chatterContext.notes.length
+          promptContextChangedFiles:
+            reviewContext?.changes.length ?? chatterContext.changes.length,
+          promptContextPriorThreads:
+            reviewContext?.priorThreads.length ??
+            chatterContext.priorThreads.length,
+          promptContextNotes:
+            reviewContext?.notes.length ?? chatterContext.notes.length,
         };
       }
 
-      await this.storage.completeInteractionRun(interactionRun.id, reviewResult ? JSON.stringify(reviewResult) : null);
+      await this.storage.completeInteractionRun(
+        interactionRun.id,
+        reviewResult ? JSON.stringify(reviewResult) : null,
+      );
       await this.storage.markJobCompleted(job.id);
       await this.ensureTriggerNoteReaction(
         client,
@@ -494,44 +610,63 @@ export class ReviewWorker {
         job.mergeRequestIid,
         triggerNote,
         REVIEW_COMPLETED_REACTION,
-        job.id
+        job.id,
       );
       this.logger.info(
         {
           interactionJobId: job.id,
           interactionRunId: interactionRun.id,
-          summary: reconcileSummary
+          summary: reconcileSummary,
         },
-        "interaction job completed"
+        "interaction job completed",
       );
     } catch (error) {
       if (interactionRunId) {
-        await this.storage.failInteractionRun(interactionRunId, getErrorMessage(error));
+        await this.storage.failInteractionRun(
+          interactionRunId,
+          getErrorMessage(error),
+        );
       }
 
       if (runArtifacts) {
-        await this.logRunEvent(runArtifacts, "error", "interaction job failed", {
-          interactionJobId: job.id,
-          interactionRunId,
-          error: serializeError(error)
-        });
+        await this.logRunEvent(
+          runArtifacts,
+          "error",
+          "interaction job failed",
+          {
+            interactionJobId: job.id,
+            interactionRunId,
+            error: serializeError(error),
+          },
+        );
       }
 
       const nextRetryCount = job.retryCount + 1;
-      if (!isNonRetryableReviewError(error) && nextRetryCount <= this.maxJobRetries) {
-        await this.storage.markJobQueued(job.id, nextRetryCount, getErrorMessage(error));
+      if (
+        !isNonRetryableReviewError(error) &&
+        nextRetryCount <= this.maxJobRetries
+      ) {
+        await this.storage.markJobQueued(
+          job.id,
+          nextRetryCount,
+          getErrorMessage(error),
+        );
         this.logger.warn(
           {
             err: error,
             interactionJobId: job.id,
-            retryCount: nextRetryCount
+            retryCount: nextRetryCount,
           },
-          "interaction job failed and will be retried"
+          "interaction job failed and will be retried",
         );
         return { requeueAfterMs: this.retryBackoffMs * nextRetryCount };
       }
 
-      await this.storage.markJobFailed(job.id, nextRetryCount, getErrorMessage(error));
+      await this.storage.markJobFailed(
+        job.id,
+        nextRetryCount,
+        getErrorMessage(error),
+      );
       if (client && triggerNote) {
         await this.ensureTriggerNoteReaction(
           client,
@@ -539,7 +674,7 @@ export class ReviewWorker {
           job.mergeRequestIid,
           triggerNote,
           REVIEW_FAILED_REACTION,
-          job.id
+          job.id,
         );
       }
       throw error;
@@ -547,28 +682,37 @@ export class ReviewWorker {
       if (interactionRunId && runArtifacts && metricsContext) {
         await this.persistInteractionRunMetrics({
           interactionRunId,
-          ...metricsContext
+          ...metricsContext,
         });
       }
 
-      for (const workspace of Array.from(new Map(workspacesToCleanup.map((entry) => [entry.cleanupRoot, entry])).values()).reverse()) {
+      for (const workspace of Array.from(
+        new Map(
+          workspacesToCleanup.map((entry) => [entry.cleanupRoot, entry]),
+        ).values(),
+      ).reverse()) {
         try {
           await this.workspaceMaterializer.cleanup(workspace);
         } catch (error) {
           if (runArtifacts) {
-            await this.logRunEvent(runArtifacts, "warn", "workspace cleanup failed after interaction completion", {
-              interactionJobId: job.id,
-              cleanupRoot: workspace.cleanupRoot,
-              error: serializeError(error)
-            });
+            await this.logRunEvent(
+              runArtifacts,
+              "warn",
+              "workspace cleanup failed after interaction completion",
+              {
+                interactionJobId: job.id,
+                cleanupRoot: workspace.cleanupRoot,
+                error: serializeError(error),
+              },
+            );
           }
           this.logger.warn(
             {
               err: error,
               interactionJobId: job.id,
-              cleanupRoot: workspace.cleanupRoot
+              cleanupRoot: workspace.cleanupRoot,
             },
-            "workspace cleanup failed after interaction completion"
+            "workspace cleanup failed after interaction completion",
           );
         }
       }
@@ -579,7 +723,7 @@ export class ReviewWorker {
     tenant: TenantRecord,
     interactionJobId: string,
     interactionRunId?: string,
-    runArtifacts?: InteractionRunArtifacts
+    runArtifacts?: InteractionRunArtifacts,
   ): GitLabClient {
     return new GitLabClient({
       baseUrl: tenant.baseUrl,
@@ -587,15 +731,15 @@ export class ReviewWorker {
       logger: this.logger.child({
         tenantId: tenant.id,
         interactionJobId,
-        ...(interactionRunId ? { interactionRunId } : {})
+        ...(interactionRunId ? { interactionRunId } : {}),
       }),
       ...(runArtifacts
         ? {
             requestLogger: {
-              log: (entry) => runArtifacts.appendGitLabHttpLog(entry)
-            }
+              log: (entry) => runArtifacts.appendGitLabHttpLog(entry),
+            },
           }
-        : {})
+        : {}),
     });
   }
 
@@ -605,20 +749,31 @@ export class ReviewWorker {
     mergeRequestIid: number,
     note: TriggerNoteReference,
     reactionName: string,
-    interactionJobId: string
+    interactionJobId: string,
   ): Promise<void> {
     if (note.kind === "discussion-note") {
       return;
     }
 
     try {
-      const existing = await client.listTriggerNoteAwardEmojis(tenant.projectId, mergeRequestIid, note);
-      const hasReaction = existing.some((award) => award.name === reactionName && isBotUser(award.user, tenant));
+      const existing = await client.listTriggerNoteAwardEmojis(
+        tenant.projectId,
+        mergeRequestIid,
+        note,
+      );
+      const hasReaction = existing.some(
+        (award) => award.name === reactionName && isBotUser(award.user, tenant),
+      );
       if (hasReaction) {
         return;
       }
 
-      await client.createTriggerNoteAwardEmoji(tenant.projectId, mergeRequestIid, note, reactionName);
+      await client.createTriggerNoteAwardEmoji(
+        tenant.projectId,
+        mergeRequestIid,
+        note,
+        reactionName,
+      );
     } catch (error) {
       this.logger.warn(
         {
@@ -627,9 +782,9 @@ export class ReviewWorker {
           interactionJobId,
           mergeRequestIid,
           note,
-          reactionName
+          reactionName,
         },
-        "failed to synchronize trigger-note reaction"
+        "failed to synchronize trigger-note reaction",
       );
     }
   }
@@ -638,7 +793,7 @@ export class ReviewWorker {
     runArtifacts: InteractionRunArtifacts,
     level: "debug" | "info" | "warn" | "error",
     message: string,
-    data: Record<string, unknown>
+    data: Record<string, unknown>,
   ): Promise<void> {
     this.logger[level](data, message);
     try {
@@ -646,10 +801,13 @@ export class ReviewWorker {
         timestamp: new Date().toISOString(),
         level,
         message,
-        data
+        data,
       });
     } catch (error) {
-      this.logger.warn({ err: error, message }, "failed to persist run app log");
+      this.logger.warn(
+        { err: error, message },
+        "failed to persist run app log",
+      );
     }
   }
 
@@ -659,7 +817,11 @@ export class ReviewWorker {
     discussions: GitLabDiscussion[];
     mappings: DiscussionMappingRecord[];
   }): Promise<DiscussionMappingRecord[]> {
-    const discussionById = new Map(input.discussions.map((discussion) => [discussion.id, discussion] as const));
+    const discussionById = new Map(
+      input.discussions.map(
+        (discussion) => [discussion.id, discussion] as const,
+      ),
+    );
     const syncedMappings = [...input.mappings];
     let synchronizedCount = 0;
 
@@ -669,7 +831,9 @@ export class ReviewWorker {
         continue;
       }
 
-      const liveStatus = discussion.notes.some((note) => note.resolved === true) ? "resolved" : "open";
+      const liveStatus = discussion.notes.some((note) => note.resolved === true)
+        ? "resolved"
+        : "open";
       if (mapping.status === liveStatus) {
         continue;
       }
@@ -693,7 +857,7 @@ export class ReviewWorker {
         noteAuthorId: mapping.noteAuthorId,
         noteAuthorUsername: mapping.noteAuthorUsername,
         status: liveStatus,
-        lastInteractionRunId: mapping.lastInteractionRunId
+        lastInteractionRunId: mapping.lastInteractionRunId,
       });
 
       const findingStatusUpdated = await this.storage.updateReviewFindingStatus(
@@ -702,8 +866,8 @@ export class ReviewWorker {
         mapping.identityKey,
         liveStatus,
         {
-          currentStatuses: ["open", "resolved"]
-        }
+          currentStatuses: ["open", "resolved"],
+        },
       );
       if (!findingStatusUpdated) {
         this.logger.warn(
@@ -712,9 +876,9 @@ export class ReviewWorker {
             mergeRequestIid: input.mergeRequestIid,
             discussionId: mapping.gitlabDiscussionId,
             identityKey: mapping.identityKey,
-            findingStatus: liveStatus
+            findingStatus: liveStatus,
           },
-          "failed to synchronize persisted review finding status from live discussion"
+          "failed to synchronize persisted review finding status from live discussion",
         );
       }
 
@@ -726,9 +890,9 @@ export class ReviewWorker {
         {
           tenantId: input.tenant.id,
           mergeRequestIid: input.mergeRequestIid,
-          synchronizedCount
+          synchronizedCount,
         },
-        "synchronized persisted discussion findings from live discussions"
+        "synchronized persisted discussion findings from live discussions",
       );
     }
 
@@ -743,10 +907,17 @@ export class ReviewWorker {
     trigger: ReviewContext["trigger"];
     context: Pick<
       Awaited<ReturnType<MergeRequestContextHydrator["hydrate"]>>,
-      "workspace" | "mergeRequest" | "changes" | "notes" | "discussions" | "projectMemory"
+      | "workspace"
+      | "mergeRequest"
+      | "changes"
+      | "notes"
+      | "discussions"
+      | "projectMemory"
     >;
     mappings: DiscussionMappingRecord[];
-    priorFindings: Awaited<ReturnType<StorageHelpers["listPriorReviewFindings"]>>;
+    priorFindings: Awaited<
+      ReturnType<StorageHelpers["listPriorReviewFindings"]>
+    >;
     previousInteraction: PreviousCompletedInteractionRecord | null;
   }): ReviewContext {
     return buildScopedReviewContext({
@@ -761,7 +932,7 @@ export class ReviewWorker {
       priorThreads: buildProviderThreads({
         tenant: input.tenant,
         discussions: input.context.discussions,
-        mappings: input.mappings
+        mappings: input.mappings,
       }),
       priorFindings: input.priorFindings.map((finding) => ({
         findingId: finding.findingId,
@@ -769,13 +940,15 @@ export class ReviewWorker {
         status: finding.status,
         title: finding.title,
         body: finding.body,
-        severity: finding.severity as ReviewContext["scope"]["priorFindings"][number]["severity"],
-        category: finding.category as ReviewContext["scope"]["priorFindings"][number]["category"],
+        severity:
+          finding.severity as ReviewContext["scope"]["priorFindings"][number]["severity"],
+        category:
+          finding.category as ReviewContext["scope"]["priorFindings"][number]["category"],
         anchor: finding.anchor,
         suggestion: finding.suggestion,
         reviewRunId: finding.interactionRunId,
         reviewedAt: finding.reviewedAt,
-        headSha: finding.headSha
+        headSha: finding.headSha,
       })),
       previousReview: input.previousInteraction
         ? {
@@ -783,15 +956,15 @@ export class ReviewWorker {
             finishedAt: input.previousInteraction.finishedAt,
             headSha: input.previousInteraction.headSha,
             resultJson: input.previousInteraction.resultJson,
-            changesJson: input.previousInteraction.snapshot.changesJson
+            changesJson: input.previousInteraction.snapshot.changesJson,
           }
         : null,
       logging: {
         interactionRunId: input.interactionRunId,
         interactionJobId: input.job.id,
         tenantId: input.tenant.id,
-        runDirectory: input.runArtifacts.runDirectory
-      }
+        runDirectory: input.runArtifacts.runDirectory,
+      },
     });
   }
 
@@ -809,7 +982,9 @@ export class ReviewWorker {
       error?: string | undefined;
     }>
   > {
-    const plannedTargetKeySet = new Set(input.plannedTargets.map((target) => this.responseTargetKey(target)));
+    const plannedTargetKeySet = new Set(
+      input.plannedTargets.map((target) => this.responseTargetKey(target)),
+    );
     const outcomes: Array<{
       target: ResponseTarget;
       status: "published" | "failed";
@@ -818,31 +993,41 @@ export class ReviewWorker {
     }> = [];
     for (const reply of input.result.replies) {
       const matchingTarget =
-        input.plannedTargets.find((target) => this.responseTargetKey(target) === this.responseTargetKey(reply.target)) ?? null;
-      if (!matchingTarget || !plannedTargetKeySet.has(this.responseTargetKey(matchingTarget))) {
+        input.plannedTargets.find(
+          (target) =>
+            this.responseTargetKey(target) ===
+            this.responseTargetKey(reply.target),
+        ) ?? null;
+      if (
+        !matchingTarget ||
+        !plannedTargetKeySet.has(this.responseTargetKey(matchingTarget))
+      ) {
         continue;
       }
 
       try {
-        const published =
-          matchingTarget.discussionId
-            ? await input.client.replyToDiscussion(
-                input.tenant.projectId,
-                input.mergeRequestIid,
-                matchingTarget.discussionId,
-                reply.replyBody
-              )
-            : await input.client.createMergeRequestNote(input.tenant.projectId, input.mergeRequestIid, reply.replyBody);
+        const published = matchingTarget.discussionId
+          ? await input.client.replyToDiscussion(
+              input.tenant.projectId,
+              input.mergeRequestIid,
+              matchingTarget.discussionId,
+              reply.replyBody,
+            )
+          : await input.client.createMergeRequestNote(
+              input.tenant.projectId,
+              input.mergeRequestIid,
+              reply.replyBody,
+            );
         outcomes.push({
           target: matchingTarget,
           status: "published",
-          noteId: published.id
+          noteId: published.id,
         });
       } catch (error) {
         outcomes.push({
           target: matchingTarget,
           status: "failed",
-          error: getErrorMessage(error)
+          error: getErrorMessage(error),
         });
       }
     }
@@ -850,21 +1035,21 @@ export class ReviewWorker {
     return outcomes;
   }
 
-  private responseTargetKey(target: Pick<ResponseTarget, "kind" | "noteId" | "discussionId">): string {
+  private responseTargetKey(
+    target: Pick<ResponseTarget, "kind" | "noteId" | "discussionId">,
+  ): string {
     return `${target.kind}::${target.noteId}::${target.discussionId ?? ""}`;
   }
 
-  private async persistInteractionRunMetrics(
-    input: {
-      interactionRunId: string;
-      sessionLogPath: string;
-      triggerKind: string | null;
-      promptMode: string | null;
-      promptContextChangedFiles: number;
-      promptContextPriorThreads: number;
-      promptContextNotes: number;
-    }
-  ): Promise<void> {
+  private async persistInteractionRunMetrics(input: {
+    interactionRunId: string;
+    sessionLogPath: string;
+    triggerKind: string | null;
+    promptMode: string | null;
+    promptContextChangedFiles: number;
+    promptContextPriorThreads: number;
+    promptContextNotes: number;
+  }): Promise<void> {
     try {
       const metrics = await readHarnessRunMetrics(input.sessionLogPath);
       if (!metrics) {
@@ -892,10 +1077,13 @@ export class ReviewWorker {
         apiDurationMs: metrics.apiDurationMs,
         premiumRequests: metrics.premiumRequests,
         repeatedViewReads: metrics.repeatedViewReads,
-        repeatedViewPathsJson: JSON.stringify(metrics.repeatedViewPaths)
+        repeatedViewPathsJson: JSON.stringify(metrics.repeatedViewPaths),
       });
     } catch (error) {
-      this.logger.warn({ err: error, interactionRunId: input.interactionRunId }, "failed to persist interaction run metrics");
+      this.logger.warn(
+        { err: error, interactionRunId: input.interactionRunId },
+        "failed to persist interaction run metrics",
+      );
     }
   }
 }
@@ -913,12 +1101,12 @@ function serializeError(error: unknown): Record<string, unknown> {
     return {
       name: error.name,
       message: error.message,
-      stack: error.stack
+      stack: error.stack,
     };
   }
 
   return {
-    message: String(error)
+    message: String(error),
   };
 }
 

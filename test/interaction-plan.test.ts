@@ -6,9 +6,14 @@ import type { ReviewTriggerContext } from "../src/review/types.js";
 describe("buildInteractionPlan", () => {
   it("routes follow-up finding-thread comments to reviewer-only flow", () => {
     const plan = buildInteractionPlan({
-      trigger: createTrigger("follow-up-comment", "Please reword this.", "Please reword this.", "disc_1"),
+      trigger: createTrigger(
+        "follow-up-comment",
+        "Please reword this.",
+        "Please reword this.",
+        "disc_1",
+      ),
       previousReviewExists: true,
-      priorFindings: []
+      priorFindings: [],
     });
 
     expect(plan.reviewNeeded).toBe(true);
@@ -18,9 +23,13 @@ describe("buildInteractionPlan", () => {
 
   it("routes direct questions to chatter without review", () => {
     const plan = buildInteractionPlan({
-      trigger: createTrigger("direct-mention", "@review-bot what changed here?", "what changed here?"),
+      trigger: createTrigger(
+        "direct-mention",
+        "@review-bot what changed here?",
+        "what changed here?",
+      ),
       previousReviewExists: false,
-      priorFindings: []
+      priorFindings: [],
     });
 
     expect(plan.reviewNeeded).toBe(false);
@@ -31,9 +40,13 @@ describe("buildInteractionPlan", () => {
 
   it("keeps pure review commands review-only", () => {
     const plan = buildInteractionPlan({
-      trigger: createTrigger("direct-mention", "@review-bot please review again", "please review again"),
+      trigger: createTrigger(
+        "direct-mention",
+        "@review-bot please review again",
+        "please review again",
+      ),
       previousReviewExists: true,
-      priorFindings: []
+      priorFindings: [],
     });
 
     expect(plan.reviewNeeded).toBe(true);
@@ -43,9 +56,13 @@ describe("buildInteractionPlan", () => {
 
   it("keeps question-shaped review requests review-only", () => {
     const plan = buildInteractionPlan({
-      trigger: createTrigger("direct-mention", "@review-bot can you review this?", "can you review this?"),
+      trigger: createTrigger(
+        "direct-mention",
+        "@review-bot can you review this?",
+        "can you review this?",
+      ),
       previousReviewExists: false,
-      priorFindings: []
+      priorFindings: [],
     });
 
     expect(plan.reviewNeeded).toBe(true);
@@ -61,10 +78,10 @@ describe("buildInteractionPlan", () => {
         "summary-follow-up",
         "For future reference, please remember our tone should stay concise.",
         "For future reference, please remember our tone should stay concise.",
-        "disc_summary"
+        "disc_summary",
       ),
       previousReviewExists: true,
-      priorFindings: [{ status: "open" }]
+      priorFindings: [{ status: "open" }],
     });
 
     expect(plan.memoryCandidate).toBe(true);
@@ -72,7 +89,9 @@ describe("buildInteractionPlan", () => {
     expect(plan.replyNeeded).toBe(true);
     expect(plan.replyStyle).toBe("summary-follow-up");
     expect(plan.responseTargets).toHaveLength(1);
-    expect(plan.plannedResponses[0]?.target.kind).toBe("summary-discussion-reply");
+    expect(plan.plannedResponses[0]?.target.kind).toBe(
+      "summary-discussion-reply",
+    );
   });
 
   it("routes wording refinements to chatter without forcing review", () => {
@@ -80,10 +99,10 @@ describe("buildInteractionPlan", () => {
       trigger: createTrigger(
         "direct-mention",
         "@review-bot please rewrite the explanation in a friendlier tone",
-        "please rewrite the explanation in a friendlier tone"
+        "please rewrite the explanation in a friendlier tone",
       ),
       previousReviewExists: true,
-      priorFindings: []
+      priorFindings: [],
     });
 
     expect(plan.reviewNeeded).toBe(false);
@@ -95,7 +114,7 @@ describe("buildInteractionPlan", () => {
     const plan = buildInteractionPlan({
       trigger: createTrigger("direct-mention", "@review-bot", ""),
       previousReviewExists: false,
-      priorFindings: []
+      priorFindings: [],
     });
 
     expect(plan.reviewNeeded).toBe(false);
@@ -108,10 +127,10 @@ describe("buildInteractionPlan", () => {
       trigger: createTrigger(
         "direct-mention",
         "@review-bot for future reference, always validate webhook inputs",
-        "for future reference, always validate webhook inputs"
+        "for future reference, always validate webhook inputs",
       ),
       previousReviewExists: false,
-      priorFindings: [{ status: "open" }]
+      priorFindings: [{ status: "open" }],
     });
 
     expect(plan.memoryCandidate).toBe(true);
@@ -125,7 +144,7 @@ function createTrigger(
   kind: ReviewTriggerContext["kind"],
   body: string,
   instruction: string,
-  discussionId?: string
+  discussionId?: string,
 ): ReviewTriggerContext {
   return {
     kind,
@@ -158,7 +177,7 @@ function createTrigger(
       discussionId,
       authorUsername: "developer",
       body,
-      instruction
-    }
+      instruction,
+    },
   };
 }

@@ -1,10 +1,22 @@
 import { isBotUser } from "../gitlab/bot-user.js";
 import type { GitLabClient } from "../gitlab/client.js";
-import type { GitLabDiscussion, TriggerNoteReference, GitLabNoteHookPayload } from "../gitlab/types.js";
-import { containsBotMention, extractBotMentionInstruction } from "../gitlab/webhook.js";
+import type {
+  GitLabDiscussion,
+  TriggerNoteReference,
+  GitLabNoteHookPayload,
+} from "../gitlab/types.js";
+import {
+  containsBotMention,
+  extractBotMentionInstruction,
+} from "../gitlab/webhook.js";
 import type { TenantRecord } from "../storage/contract/index.js";
 import { isReviewSummaryNoteBody } from "./summary.js";
-import type { ProviderThreadContext, ResponseTarget, ReviewTriggerContext, WebhookReviewTrigger } from "./types.js";
+import type {
+  ProviderThreadContext,
+  ResponseTarget,
+  ReviewTriggerContext,
+  WebhookReviewTrigger,
+} from "./types.js";
 
 export async function classifyWebhookTrigger(input: {
   payload: GitLabNoteHookPayload;
@@ -24,22 +36,37 @@ export async function classifyWebhookTrigger(input: {
     return null;
   }
 
-  const discussions = await client.listMergeRequestDiscussions(tenant.projectId, payload.merge_request.iid);
-  const note = locateTriggerNoteReference(discussions, payload.object_attributes.id);
+  const discussions = await client.listMergeRequestDiscussions(
+    tenant.projectId,
+    payload.merge_request.iid,
+  );
+  const note = locateTriggerNoteReference(
+    discussions,
+    payload.object_attributes.id,
+  );
   if (note.kind === "discussion-note") {
-    const discussion = discussions.find((entry) => entry.id === note.discussionId) ?? null;
+    const discussion =
+      discussions.find((entry) => entry.id === note.discussionId) ?? null;
     const rootNote = discussion?.notes[0];
-    if (rootNote && isBotUser(rootNote.author, tenant) && !isReviewSummaryNoteBody(rootNote.body)) {
+    if (
+      rootNote &&
+      isBotUser(rootNote.author, tenant) &&
+      !isReviewSummaryNoteBody(rootNote.body)
+    ) {
       return {
         kind: "follow-up-comment",
-        note
+        note,
       };
     }
 
-    if (rootNote && isBotUser(rootNote.author, tenant) && isReviewSummaryNoteBody(rootNote.body)) {
+    if (
+      rootNote &&
+      isBotUser(rootNote.author, tenant) &&
+      isReviewSummaryNoteBody(rootNote.body)
+    ) {
       return {
         kind: "summary-follow-up",
-        note
+        note,
       };
     }
   }
@@ -50,7 +77,7 @@ export async function classifyWebhookTrigger(input: {
 
   return {
     kind: "direct-mention",
-    note
+    note,
   };
 }
 
@@ -60,20 +87,37 @@ export function buildReviewTriggerContext(input: {
   discussions: GitLabDiscussion[];
   priorThreads: ProviderThreadContext[];
 }): ReviewTriggerContext {
-  const note = locateTriggerNoteReference(input.discussions, input.payload.object_attributes.id);
-  const responseTargetNote = locateResponseTargetReference(input.discussions, input.payload.object_attributes.id);
+  const note = locateTriggerNoteReference(
+    input.discussions,
+    input.payload.object_attributes.id,
+  );
+  const responseTargetNote = locateResponseTargetReference(
+    input.discussions,
+    input.payload.object_attributes.id,
+  );
   const targetThread =
-    input.priorThreads.find((thread) => thread.humanReplies.some((reply) => reply.noteId === input.payload.object_attributes.id)) ??
-    null;
+    input.priorThreads.find((thread) =>
+      thread.humanReplies.some(
+        (reply) => reply.noteId === input.payload.object_attributes.id,
+      ),
+    ) ?? null;
   const kind =
     targetThread !== null
       ? "follow-up-comment"
-      : note.kind === "discussion-note" && isSummaryDiscussionReply(input.discussions, note.discussionId, input.tenant)
+      : note.kind === "discussion-note" &&
+          isSummaryDiscussionReply(
+            input.discussions,
+            note.discussionId,
+            input.tenant,
+          )
         ? "summary-follow-up"
         : "direct-mention";
   const instruction =
     kind === "direct-mention"
-      ? extractBotMentionInstruction(input.payload.object_attributes.note, input.tenant.botUsername)
+      ? extractBotMentionInstruction(
+          input.payload.object_attributes.note,
+          input.tenant.botUsername,
+        )
       : input.payload.object_attributes.note.trim();
 
   return {
@@ -90,24 +134,29 @@ export function buildReviewTriggerContext(input: {
       note: responseTargetNote,
       authorUsername: input.payload.user?.username ?? null,
       body: input.payload.object_attributes.note,
-      instruction
-    })
+      instruction,
+    }),
   };
 }
 
 function isSummaryDiscussionReply(
   discussions: GitLabDiscussion[],
   discussionId: string,
-  tenant: TenantRecord
+  tenant: TenantRecord,
 ): boolean {
-  const discussion = discussions.find((entry) => entry.id === discussionId) ?? null;
+  const discussion =
+    discussions.find((entry) => entry.id === discussionId) ?? null;
   const rootNote = discussion?.notes[0];
-  return Boolean(rootNote && isBotUser(rootNote.author, tenant) && isReviewSummaryNoteBody(rootNote.body));
+  return Boolean(
+    rootNote &&
+    isBotUser(rootNote.author, tenant) &&
+    isReviewSummaryNoteBody(rootNote.body),
+  );
 }
 
 export function locateTriggerNoteReference(
   discussions: GitLabDiscussion[],
-  noteId: number
+  noteId: number,
 ): TriggerNoteReference {
   for (const discussion of discussions) {
     if (!discussion.notes.some((note) => note.id === noteId)) {
@@ -118,34 +167,34 @@ export function locateTriggerNoteReference(
       return {
         kind: "discussion-note",
         discussionId: discussion.id,
-        noteId
+        noteId,
       };
     }
   }
 
   return {
     kind: "merge-request-note",
-    noteId
+    noteId,
   };
 }
 
 function locateResponseTargetReference(
   discussions: GitLabDiscussion[],
-  noteId: number
+  noteId: number,
 ): TriggerNoteReference {
   for (const discussion of discussions) {
     if (discussion.notes.some((note) => note.id === noteId)) {
       return {
         kind: "discussion-note",
         discussionId: discussion.id,
-        noteId
+        noteId,
       };
     }
   }
 
   return {
     kind: "merge-request-note",
-    noteId
+    noteId,
   };
 }
 
@@ -162,10 +211,13 @@ function buildResponseTarget(input: {
       locationType: "summary-discussion",
       triggerKind: input.kind,
       noteId: input.note.noteId,
-      discussionId: input.note.kind === "discussion-note" ? input.note.discussionId : undefined,
+      discussionId:
+        input.note.kind === "discussion-note"
+          ? input.note.discussionId
+          : undefined,
       authorUsername: input.authorUsername,
       body: input.body,
-      instruction: input.instruction
+      instruction: input.instruction,
     };
   }
 
@@ -175,21 +227,33 @@ function buildResponseTarget(input: {
       locationType: "finding-thread",
       triggerKind: input.kind,
       noteId: input.note.noteId,
-      discussionId: input.note.kind === "discussion-note" ? input.note.discussionId : undefined,
+      discussionId:
+        input.note.kind === "discussion-note"
+          ? input.note.discussionId
+          : undefined,
       authorUsername: input.authorUsername,
       body: input.body,
-      instruction: input.instruction
+      instruction: input.instruction,
     };
   }
 
   return {
-    kind: input.note.kind === "discussion-note" ? "discussion-reply" : "merge-request-note",
-    locationType: input.note.kind === "discussion-note" ? "discussion-note" : "merge-request-note",
+    kind:
+      input.note.kind === "discussion-note"
+        ? "discussion-reply"
+        : "merge-request-note",
+    locationType:
+      input.note.kind === "discussion-note"
+        ? "discussion-note"
+        : "merge-request-note",
     triggerKind: input.kind,
     noteId: input.note.noteId,
-    discussionId: input.note.kind === "discussion-note" ? input.note.discussionId : undefined,
+    discussionId:
+      input.note.kind === "discussion-note"
+        ? input.note.discussionId
+        : undefined,
     authorUsername: input.authorUsername,
     body: input.body,
-    instruction: input.instruction
+    instruction: input.instruction,
   };
 }

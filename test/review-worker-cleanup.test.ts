@@ -17,17 +17,17 @@ const tenant = {
   botUsername: "review-bot",
   modelProfileName: null,
   createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString()
+  updatedAt: new Date().toISOString(),
 };
 
 const payload: GitLabNoteHookPayload = {
   object_kind: "note",
   project: {
     id: 123,
-    web_url: "https://gitlab.example.com/group/project"
+    web_url: "https://gitlab.example.com/group/project",
   },
   repository: {
-    homepage: "https://gitlab.example.com/group/project"
+    homepage: "https://gitlab.example.com/group/project",
   },
   merge_request: {
     iid: 7,
@@ -36,54 +36,56 @@ const payload: GitLabNoteHookPayload = {
     source_branch: "feature",
     target_branch: "main",
     last_commit: {
-      id: "abc123"
-    }
+      id: "abc123",
+    },
   },
   object_attributes: {
     id: 55,
     note: "@review-bot review",
-    noteable_type: "MergeRequest"
+    noteable_type: "MergeRequest",
   },
   user: {
     id: 42,
     username: "developer",
-    name: "Dev User"
-  }
+    name: "Dev User",
+  },
 };
 
 describe("ReviewWorker cleanup", () => {
   it("does not fail a completed job when workspace cleanup throws", async () => {
     const originalFetch = globalThis.fetch;
-    const fetchMock = vi.fn(async (_input: URL | RequestInfo, init?: RequestInit) => {
-      if (init?.method === "GET") {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      return new Response(
-        JSON.stringify({
-          id: 1,
-          name: "white_check_mark",
-          user: {
-            id: 999,
-            username: "review-bot",
-            name: "Review Bot"
-          },
-          created_at: new Date().toISOString()
-        }),
-        {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
+    const fetchMock = vi.fn(
+      async (_input: URL | RequestInfo, init?: RequestInit) => {
+        if (init?.method === "GET") {
+          return new Response("[]", {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
         }
-      );
-    });
-    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+        return new Response(
+          JSON.stringify({
+            id: 1,
+            name: "white_check_mark",
+            user: {
+              id: 999,
+              username: "review-bot",
+              name: "Review Bot",
+            },
+            created_at: new Date().toISOString(),
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    );
+    globalThis.fetch = fetchMock;
 
     const job = {
       id: "job_1",
@@ -99,21 +101,21 @@ describe("ReviewWorker cleanup", () => {
       lastError: null,
       enqueuedAt: new Date().toISOString(),
       startedAt: null,
-      finishedAt: null
+      finishedAt: null,
     };
 
     const storage = {
       stores: {
         interactionJobs: {
-          get: vi.fn(async () => job)
+          get: vi.fn(async () => job),
         },
         discussionMappings: {
-          list: vi.fn(async () => [])
+          list: vi.fn(async () => []),
         },
         modelProfiles: {
           get: vi.fn(async () => null),
-          find: vi.fn(async () => null)
-        }
+          find: vi.fn(async () => null),
+        },
       },
       getInteractionJobById: vi.fn(async () => job),
       markJobInProgress: vi.fn(async () => {}),
@@ -132,7 +134,7 @@ describe("ReviewWorker cleanup", () => {
         resultJson: null,
         error: null,
         startedAt: new Date().toISOString(),
-        finishedAt: null
+        finishedAt: null,
       })),
       getModelProfileByName: vi.fn(async () => null),
       getDefaultModelProfile: vi.fn(async () => null),
@@ -143,13 +145,13 @@ describe("ReviewWorker cleanup", () => {
       markJobCompleted: vi.fn(async () => {}),
       failInteractionRun: vi.fn(async () => {}),
       markJobQueued: vi.fn(async () => {}),
-      markJobFailed: vi.fn(async () => {})
+      markJobFailed: vi.fn(async () => {}),
     };
 
     const worker = new ReviewWorker({
       storage: storage as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant)
+        getTenantById: vi.fn(async () => tenant),
       } as never,
       hydrator: {
         loadRoutingContext: vi.fn(async () => ({
@@ -161,14 +163,15 @@ describe("ReviewWorker cleanup", () => {
             project_id: tenant.projectId,
             title: "Add worker",
             description: "Adds the worker",
-            web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+            web_url:
+              "https://gitlab.example.com/group/project/-/merge_requests/7",
             source_branch: "feature",
             target_branch: "main",
             author: {
               id: 42,
               username: "developer",
-              name: "Dev User"
-            }
+              name: "Dev User",
+            },
           },
           changes: [],
           notes: [],
@@ -177,13 +180,13 @@ describe("ReviewWorker cleanup", () => {
             rootPath: join("tmp", "workspace-routing"),
             cleanupRoot: join("tmp", "cleanup-routing"),
             strategy: "git",
-            instructionFiles: []
+            instructionFiles: [],
           },
           projectMemory: {
             enabled: true,
             page: null,
-            entries: []
-          }
+            entries: [],
+          },
         })),
         hydrate: vi.fn(async () => ({
           tenant,
@@ -194,14 +197,15 @@ describe("ReviewWorker cleanup", () => {
             project_id: tenant.projectId,
             title: "Add worker",
             description: "Adds the worker",
-            web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+            web_url:
+              "https://gitlab.example.com/group/project/-/merge_requests/7",
             source_branch: "feature",
             target_branch: "main",
             author: {
               id: 42,
               username: "developer",
-              name: "Dev User"
-            }
+              name: "Dev User",
+            },
           },
           versions: [],
           latestVersion: null,
@@ -212,12 +216,12 @@ describe("ReviewWorker cleanup", () => {
             rootPath: join("tmp", "workspace"),
             cleanupRoot: join("tmp", "cleanup"),
             strategy: "git",
-            instructionFiles: []
+            instructionFiles: [],
           },
           projectMemory: {
             enabled: true,
             page: null,
-            entries: []
+            entries: [],
           },
           snapshot: {
             id: "snapshot_1",
@@ -233,14 +237,14 @@ describe("ReviewWorker cleanup", () => {
             instructionsJson: "[]",
             projectMemoryJson: null,
             workspaceStrategy: "git",
-            createdAt: new Date().toISOString()
-          }
-        }))
+            createdAt: new Date().toISOString(),
+          },
+        })),
       } as never,
       workspaceMaterializer: {
         cleanup: vi.fn(async () => {
           throw Object.assign(new Error("busy"), { code: "EBUSY" });
-        })
+        }),
       } as never,
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
@@ -248,27 +252,27 @@ describe("ReviewWorker cleanup", () => {
           review: vi.fn(async () => ({
             overview: {
               summary: "Done",
-              overallSeverity: "low" as const
+              overallSeverity: "low" as const,
             },
             findings: [],
-            priorDispositions: []
-          }))
-        }))
+            priorDispositions: [],
+          })),
+        })),
       },
       chatterRunnerFactory: {
         createRunner: vi.fn(() => ({
           run: vi.fn(async () => ({
             memory: {
               status: "skipped" as const,
-              summary: "No durable memory detected."
+              summary: "No durable memory detected.",
             },
-            replies: []
+            replies: [],
           })),
           sessionPaths: {
             memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"]
-          }
-        }))
+            reply: ["copilot", "chatter", "reply"],
+          },
+        })),
       } as never,
       reconciler: {
         reconcile: vi.fn(async () => ({
@@ -277,13 +281,13 @@ describe("ReviewWorker cleanup", () => {
           replied: 0,
           resolved: 0,
           kept: 0,
-          summaryNoteAction: "created" as const
-        }))
+          summaryNoteAction: "created" as const,
+        })),
       } as never,
       logger: createLogger("silent"),
       runLogDir: join("tmp", "run-logs"),
       maxJobRetries: 3,
-      retryBackoffMs: 5000
+      retryBackoffMs: 5000,
     });
 
     await expect(worker.processJob("job_1")).resolves.toBeUndefined();
@@ -296,36 +300,38 @@ describe("ReviewWorker cleanup", () => {
 
   it("fails immediately without retry when profile resolution is invalid", async () => {
     const originalFetch = globalThis.fetch;
-    const fetchMock = vi.fn(async (_input: URL | RequestInfo, init?: RequestInit) => {
-      if (init?.method === "GET") {
-        return new Response("[]", {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        });
-      }
-
-      return new Response(
-        JSON.stringify({
-          id: 1,
-          name: "confounded",
-          user: {
-            id: 999,
-            username: "review-bot",
-            name: "Review Bot"
-          },
-          created_at: new Date().toISOString()
-        }),
-        {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
+    const fetchMock = vi.fn(
+      async (_input: URL | RequestInfo, init?: RequestInit) => {
+        if (init?.method === "GET") {
+          return new Response("[]", {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
         }
-      );
-    });
-    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+        return new Response(
+          JSON.stringify({
+            id: 1,
+            name: "confounded",
+            user: {
+              id: 999,
+              username: "review-bot",
+              name: "Review Bot",
+            },
+            created_at: new Date().toISOString(),
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    );
+    globalThis.fetch = fetchMock;
 
     const job = {
       id: "job_1",
@@ -341,21 +347,21 @@ describe("ReviewWorker cleanup", () => {
       lastError: null,
       enqueuedAt: new Date().toISOString(),
       startedAt: null,
-      finishedAt: null
+      finishedAt: null,
     };
 
     const storage = {
       stores: {
         interactionJobs: {
-          get: vi.fn(async () => job)
+          get: vi.fn(async () => job),
         },
         discussionMappings: {
-          list: vi.fn(async () => [])
+          list: vi.fn(async () => []),
         },
         modelProfiles: {
           get: vi.fn(async () => null),
-          find: vi.fn(async () => null)
-        }
+          find: vi.fn(async () => null),
+        },
       },
       getInteractionJobById: vi.fn(async () => job),
       markJobInProgress: vi.fn(async () => {}),
@@ -374,7 +380,7 @@ describe("ReviewWorker cleanup", () => {
         resultJson: null,
         error: null,
         startedAt: new Date().toISOString(),
-        finishedAt: null
+        finishedAt: null,
       })),
       getModelProfileByName: vi.fn(async () => null),
       getDefaultModelProfile: vi.fn(async () => null),
@@ -385,7 +391,7 @@ describe("ReviewWorker cleanup", () => {
       markJobCompleted: vi.fn(async () => {}),
       failInteractionRun: vi.fn(async () => {}),
       markJobQueued: vi.fn(async () => {}),
-      markJobFailed: vi.fn(async () => {})
+      markJobFailed: vi.fn(async () => {}),
     };
     const cleanup = vi.fn(async () => {});
 
@@ -394,8 +400,8 @@ describe("ReviewWorker cleanup", () => {
       tenantRegistry: {
         getTenantById: vi.fn(async () => ({
           ...tenant,
-          modelProfileName: "missing-profile"
-        }))
+          modelProfileName: "missing-profile",
+        })),
       } as never,
       hydrator: {
         loadRoutingContext: vi.fn(async () => ({
@@ -407,14 +413,15 @@ describe("ReviewWorker cleanup", () => {
             project_id: tenant.projectId,
             title: "Add worker",
             description: "Adds the worker",
-            web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+            web_url:
+              "https://gitlab.example.com/group/project/-/merge_requests/7",
             source_branch: "feature",
             target_branch: "main",
             author: {
               id: 42,
               username: "developer",
-              name: "Dev User"
-            }
+              name: "Dev User",
+            },
           },
           changes: [],
           notes: [],
@@ -423,13 +430,13 @@ describe("ReviewWorker cleanup", () => {
             rootPath: join("tmp", "workspace-routing"),
             cleanupRoot: join("tmp", "cleanup-routing"),
             strategy: "git",
-            instructionFiles: []
+            instructionFiles: [],
           },
           projectMemory: {
             enabled: true,
             page: null,
-            entries: []
-          }
+            entries: [],
+          },
         })),
         hydrate: vi.fn(async () => ({
           tenant,
@@ -440,14 +447,15 @@ describe("ReviewWorker cleanup", () => {
             project_id: tenant.projectId,
             title: "Add worker",
             description: "Adds the worker",
-            web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+            web_url:
+              "https://gitlab.example.com/group/project/-/merge_requests/7",
             source_branch: "feature",
             target_branch: "main",
             author: {
               id: 42,
               username: "developer",
-              name: "Dev User"
-            }
+              name: "Dev User",
+            },
           },
           versions: [],
           latestVersion: null,
@@ -458,12 +466,12 @@ describe("ReviewWorker cleanup", () => {
             rootPath: join("tmp", "workspace"),
             cleanupRoot: join("tmp", "cleanup"),
             strategy: "git",
-            instructionFiles: []
+            instructionFiles: [],
           },
           projectMemory: {
             enabled: true,
             page: null,
-            entries: []
+            entries: [],
           },
           snapshot: {
             id: "snapshot_1",
@@ -479,46 +487,53 @@ describe("ReviewWorker cleanup", () => {
             instructionsJson: "[]",
             projectMemoryJson: null,
             workspaceStrategy: "git",
-            createdAt: new Date().toISOString()
-          }
-        }))
+            createdAt: new Date().toISOString(),
+          },
+        })),
       } as never,
       workspaceMaterializer: {
-        cleanup
+        cleanup,
       } as never,
       reviewProviderFactory: {
-        createProvider: vi.fn()
+        createProvider: vi.fn(),
       },
       chatterRunnerFactory: {
-        createRunner: vi.fn()
+        createRunner: vi.fn(),
       } as never,
       reconciler: {
-        reconcile: vi.fn()
+        reconcile: vi.fn(),
       } as never,
       logger: createLogger("silent"),
       runLogDir: join("tmp", "run-logs"),
       maxJobRetries: 3,
-      retryBackoffMs: 5000
+      retryBackoffMs: 5000,
     });
 
-    await expect(worker.processJob("job_1")).rejects.toThrow('unknown model profile "missing-profile"');
+    await expect(worker.processJob("job_1")).rejects.toThrow(
+      'unknown model profile "missing-profile"',
+    );
     expect(storage.markJobQueued).not.toHaveBeenCalled();
     expect(storage.markJobFailed).toHaveBeenCalledWith(
       "job_1",
       1,
-      'Tenant https://gitlab.example.com::123 references unknown model profile "missing-profile"'
+      'Tenant https://gitlab.example.com::123 references unknown model profile "missing-profile"',
     );
     expect(storage.failInteractionRun).not.toHaveBeenCalled();
     expect(cleanup).toHaveBeenCalledWith(
       expect.objectContaining({
         cleanupRoot: join("tmp", "cleanup-routing"),
-        rootPath: join("tmp", "workspace-routing")
-      })
+        rootPath: join("tmp", "workspace-routing"),
+      }),
     );
     const postedBodies = fetchMock.mock.calls
-      .filter(([input, init]) => init?.method === "POST" && String(input).includes("/award_emoji"))
+      .filter(
+        ([input, init]) =>
+          init?.method === "POST" && String(input).includes("/award_emoji"),
+      )
       .map(([, init]) => String(init?.body));
-    expect(postedBodies.some((body) => body.includes("name=confounded"))).toBe(true);
+    expect(postedBodies.some((body) => body.includes("name=confounded"))).toBe(
+      true,
+    );
 
     globalThis.fetch = originalFetch;
   });

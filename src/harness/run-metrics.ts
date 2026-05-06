@@ -31,7 +31,9 @@ export interface HarnessRunMetricsSummary {
   repeatedViewPaths: RepeatedViewPathMetric[];
 }
 
-export async function readHarnessRunMetrics(logPath: string): Promise<HarnessRunMetricsSummary | null> {
+export async function readHarnessRunMetrics(
+  logPath: string,
+): Promise<HarnessRunMetricsSummary | null> {
   try {
     const raw = await readFile(logPath, "utf8");
     return summarizeHarnessRunLog(JSON.parse(raw) as HarnessRunLogRecord);
@@ -41,13 +43,23 @@ export async function readHarnessRunMetrics(logPath: string): Promise<HarnessRun
 }
 
 export function summarizeHarnessRunLog(
-  record: Pick<HarnessRunLogRecord, "prompt" | "events" | "metadata">
+  record: Pick<HarnessRunLogRecord, "prompt" | "events" | "metadata">,
 ): HarnessRunMetricsSummary {
-  const assistantUsages = record.events.filter((event) => event.type === "assistant.usage");
-  const assistantTurns = record.events.filter((event) => event.type === "assistant.turn_start").length;
-  const toolExecutions = record.events.filter((event) => event.type === "tool.execution_start");
-  const viewCalls = toolExecutions.filter((event) => event.data?.toolName === "view");
-  const globCalls = toolExecutions.filter((event) => event.data?.toolName === "glob");
+  const assistantUsages = record.events.filter(
+    (event) => event.type === "assistant.usage",
+  );
+  const assistantTurns = record.events.filter(
+    (event) => event.type === "assistant.turn_start",
+  ).length;
+  const toolExecutions = record.events.filter(
+    (event) => event.type === "tool.execution_start",
+  );
+  const viewCalls = toolExecutions.filter(
+    (event) => event.data?.toolName === "view",
+  );
+  const globCalls = toolExecutions.filter(
+    (event) => event.data?.toolName === "glob",
+  );
   const viewCounts = new Map<string, number>();
 
   for (const event of viewCalls) {
@@ -60,13 +72,16 @@ export function summarizeHarnessRunLog(
 
   const repeatedViewPaths = [...viewCounts.entries()]
     .filter(([, count]) => count > 1)
-    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .sort(
+      (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
+    )
     .slice(0, 10)
     .map(([path, count]) => ({ path, count }));
 
   return {
     promptChars: record.prompt.length,
-    assistantTurns: assistantTurns > 0 ? assistantTurns : assistantUsages.length,
+    assistantTurns:
+      assistantTurns > 0 ? assistantTurns : assistantUsages.length,
     assistantCalls: assistantUsages.length,
     toolExecutions: toolExecutions.length,
     viewToolCalls: viewCalls.length,
@@ -78,30 +93,44 @@ export function summarizeHarnessRunLog(
     reasoningTokens: sumUsageMetric(assistantUsages, "reasoningTokens"),
     apiDurationMs: sumUsageMetric(assistantUsages, "duration"),
     premiumRequests: sumUsageMetric(assistantUsages, "cost"),
-    premiumRequestsByModel: summarizePremiumRequestsByModel(assistantUsages, record.metadata.requestedModel),
-    repeatedViewReads: repeatedViewPaths.reduce((total, entry) => total + (entry.count - 1), 0),
-    repeatedViewPaths
+    premiumRequestsByModel: summarizePremiumRequestsByModel(
+      assistantUsages,
+      record.metadata.requestedModel,
+    ),
+    repeatedViewReads: repeatedViewPaths.reduce(
+      (total, entry) => total + (entry.count - 1),
+      0,
+    ),
+    repeatedViewPaths,
   };
 }
 
 function summarizePremiumRequestsByModel(
-  usages: Array<{ data?: { model?: string | null; cost?: number | undefined } }>,
-  fallbackModel: string | null
+  usages: Array<{
+    data?: { model?: string | null; cost?: number | undefined };
+  }>,
+  fallbackModel: string | null,
 ): PremiumRequestsByModelMetric[] {
   const totals = new Map<string, number>();
 
   for (const usage of usages) {
-    const premiumRequests = typeof usage.data?.cost === "number" ? usage.data.cost : 0;
+    const premiumRequests =
+      typeof usage.data?.cost === "number" ? usage.data.cost : 0;
     if (premiumRequests <= 0) {
       continue;
     }
 
-    const model = normalizeModel(usage.data?.model) ?? normalizeModel(fallbackModel) ?? "unknown";
+    const model =
+      normalizeModel(usage.data?.model) ??
+      normalizeModel(fallbackModel) ??
+      "unknown";
     totals.set(model, (totals.get(model) ?? 0) + premiumRequests);
   }
 
   return [...totals.entries()]
-    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .sort(
+      (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
+    )
     .map(([model, premiumRequests]) => ({ model, premiumRequests }));
 }
 
@@ -123,7 +152,7 @@ function sumUsageMetric(
     | "cacheWriteTokens"
     | "reasoningTokens"
     | "duration"
-    | "cost"
+    | "cost",
 ): number {
   return usages.reduce((total, usage) => {
     const value = usage.data?.[key];

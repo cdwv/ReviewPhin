@@ -5,7 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import { GitLabApiError } from "../src/gitlab/client.js";
 import type { HydratedMergeRequestContext } from "../src/gitlab/types.js";
 import { createLogger } from "../src/logger.js";
-import { buildProviderThreads, DiscussionReconciler } from "../src/reconcile/discussion-reconciler.js";
+import {
+  buildProviderThreads,
+  DiscussionReconciler,
+} from "../src/reconcile/discussion-reconciler.js";
 import { REVIEW_SUMMARY_NOTE_MARKER } from "../src/review/summary.js";
 import { createFindingIdentityKey } from "../src/utils/ids.js";
 
@@ -22,30 +25,35 @@ describe("Discussion reconciler", () => {
     botUsername: "review-bot",
     modelProfileName: null,
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
 
   it("updates a bot-owned thread when the model revises the finding after a human reply", async () => {
     const storage = {
-      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_1", ...input })),
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_1",
+        ...input,
+      })),
       updateReviewFindingStatus: vi.fn(async () => true),
-      listLatestReviewFindings: vi.fn(async () => [])
+      listLatestReviewFindings: vi.fn(async () => []),
     };
 
     const reconciler = new DiscussionReconciler({
       storage: storage as never,
-      logger
+      logger,
     });
 
     const replyToDiscussion = vi.fn();
-    const createMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, body: string) => ({
-      id: 90,
-      body,
-      author: { id: 999, username: "review-bot", name: "Review Bot" },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      system: false
-    }));
+    const createMergeRequestNote = vi.fn(
+      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+        id: 90,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
     const updateMergeRequestNote = vi.fn();
     const updateDiscussionNote = vi.fn(async () => ({
       id: 10,
@@ -54,7 +62,7 @@ describe("Discussion reconciler", () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       system: false,
-      resolved: false
+      resolved: false,
     }));
 
     const context = createHydratedContext();
@@ -81,8 +89,8 @@ describe("Discussion reconciler", () => {
         status: "open" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
+        updatedAt: new Date().toISOString(),
+      },
     ];
 
     const summary = await reconciler.reconcile({
@@ -93,7 +101,7 @@ describe("Discussion reconciler", () => {
       reviewResult: {
         overview: {
           summary: "Found one issue",
-          overallSeverity: "medium"
+          overallSeverity: "medium",
         },
         findings: [
           {
@@ -101,10 +109,10 @@ describe("Discussion reconciler", () => {
             title: "Old finding",
             body: "Updated body",
             severity: "medium",
-            category: "bug"
-          }
+            category: "bug",
+          },
         ],
-        priorDispositions: []
+        priorDispositions: [],
       },
       client: {
         createMergeRequestNote,
@@ -112,8 +120,8 @@ describe("Discussion reconciler", () => {
         updateMergeRequestNote,
         updateDiscussionNote,
         createMergeRequestDiscussion: vi.fn(),
-        resolveDiscussion: vi.fn()
-      } as never
+        resolveDiscussion: vi.fn(),
+      } as never,
     });
 
     expect(summary.updated).toBe(1);
@@ -121,31 +129,55 @@ describe("Discussion reconciler", () => {
     expect(replyToDiscussion).not.toHaveBeenCalled();
     expect(updateDiscussionNote).toHaveBeenCalledTimes(1);
     expect(createMergeRequestNote).toHaveBeenCalledTimes(1);
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(REVIEW_SUMMARY_NOTE_MARKER);
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain("### Overall assessment");
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain("\n\nFound one issue\n\n### Merge readiness");
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain("- **Status:** Needs attention");
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain("- **Confidence:** Medium");
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain("<details><summary>Suggested fixes prompt</summary>");
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain("\n\n```md\nReview and fix the issues called out for merge request");
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain("Findings to address (highest severity first):");
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain("\n```\n\n</details>");
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      REVIEW_SUMMARY_NOTE_MARKER,
+    );
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      "### Overall assessment",
+    );
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      "\n\nFound one issue\n\n### Merge readiness",
+    );
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      "- **Status:** Needs attention",
+    );
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      "- **Confidence:** Medium",
+    );
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      "<details><summary>Suggested fixes prompt</summary>",
+    );
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      "\n\n```md\nReview and fix the issues called out for merge request",
+    );
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      "Findings to address (highest severity first):",
+    );
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      "\n```\n\n</details>",
+    );
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledTimes(1);
-    expect(createMergeRequestNote.mock.invocationCallOrder[0] ?? 0).toBeLessThan(
-      updateDiscussionNote.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER
+    expect(
+      createMergeRequestNote.mock.invocationCallOrder[0] ?? 0,
+    ).toBeLessThan(
+      updateDiscussionNote.mock.invocationCallOrder[0] ??
+        Number.MAX_SAFE_INTEGER,
     );
   });
 
   it("replies in a bot-owned thread when the disposition explicitly asks for a reply", async () => {
     const storage = {
-      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_1", ...input })),
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_1",
+        ...input,
+      })),
       updateReviewFindingStatus: vi.fn(async () => true),
-      listLatestReviewFindings: vi.fn(async () => [])
+      listLatestReviewFindings: vi.fn(async () => []),
     };
 
     const reconciler = new DiscussionReconciler({
       storage: storage as never,
-      logger
+      logger,
     });
 
     const replyToDiscussion = vi.fn(async () => ({
@@ -155,16 +187,18 @@ describe("Discussion reconciler", () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       system: false,
-      resolved: false
+      resolved: false,
     }));
-    const createMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, body: string) => ({
-      id: 91,
-      body,
-      author: { id: 999, username: "review-bot", name: "Review Bot" },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      system: false
-    }));
+    const createMergeRequestNote = vi.fn(
+      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+        id: 91,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
     const updateMergeRequestNote = vi.fn();
     const updateDiscussionNote = vi.fn();
 
@@ -192,8 +226,8 @@ describe("Discussion reconciler", () => {
         status: "open" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
+        updatedAt: new Date().toISOString(),
+      },
     ];
 
     const summary = await reconciler.reconcile({
@@ -204,16 +238,16 @@ describe("Discussion reconciler", () => {
       reviewResult: {
         overview: {
           summary: "Handled follow-up",
-          overallSeverity: "medium"
+          overallSeverity: "medium",
         },
         findings: [],
         priorDispositions: [
           {
             threadId: "map_1",
             action: "reply",
-            replyBody: "Thanks, I reworded it."
-          }
-        ]
+            replyBody: "Thanks, I reworded it.",
+          },
+        ],
       },
       client: {
         createMergeRequestNote,
@@ -221,8 +255,8 @@ describe("Discussion reconciler", () => {
         updateMergeRequestNote,
         updateDiscussionNote,
         createMergeRequestDiscussion: vi.fn(),
-        resolveDiscussion: vi.fn()
-      } as never
+        resolveDiscussion: vi.fn(),
+      } as never,
     });
 
     expect(summary.replied).toBe(1);
@@ -234,14 +268,17 @@ describe("Discussion reconciler", () => {
 
   it("retires the previous finding identity when a reused thread is replaced with a new finding", async () => {
     const storage = {
-      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_1", ...input })),
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_1",
+        ...input,
+      })),
       updateReviewFindingStatus: vi.fn(async () => true),
-      listLatestReviewFindings: vi.fn(async () => [])
+      listLatestReviewFindings: vi.fn(async () => []),
     };
 
     const reconciler = new DiscussionReconciler({
       storage: storage as never,
-      logger
+      logger,
     });
 
     const updateDiscussionNote = vi.fn(async () => ({
@@ -251,16 +288,18 @@ describe("Discussion reconciler", () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       system: false,
-      resolved: false
+      resolved: false,
     }));
-    const createMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, body: string) => ({
-      id: 92,
-      body,
-      author: { id: 999, username: "review-bot", name: "Review Bot" },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      system: false
-    }));
+    const createMergeRequestNote = vi.fn(
+      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+        id: 92,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
 
     const context = createHydratedContext();
     const mappings = [
@@ -286,12 +325,12 @@ describe("Discussion reconciler", () => {
         status: "open" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
+        updatedAt: new Date().toISOString(),
+      },
     ];
     const nextIdentityKey = createFindingIdentityKey({
       title: "Replacement finding",
-      category: "bug"
+      category: "bug",
     });
 
     await reconciler.reconcile({
@@ -302,7 +341,7 @@ describe("Discussion reconciler", () => {
       reviewResult: {
         overview: {
           summary: "Found one replacement issue",
-          overallSeverity: "medium"
+          overallSeverity: "medium",
         },
         findings: [
           {
@@ -310,10 +349,10 @@ describe("Discussion reconciler", () => {
             title: "Replacement finding",
             body: "New body",
             severity: "medium",
-            category: "bug"
-          }
+            category: "bug",
+          },
         ],
-        priorDispositions: []
+        priorDispositions: [],
       },
       client: {
         createMergeRequestNote,
@@ -321,31 +360,48 @@ describe("Discussion reconciler", () => {
         updateMergeRequestNote: vi.fn(),
         updateDiscussionNote,
         createMergeRequestDiscussion: vi.fn(),
-        resolveDiscussion: vi.fn()
-      } as never
+        resolveDiscussion: vi.fn(),
+      } as never,
     });
 
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
       expect.objectContaining({
         identityKey: nextIdentityKey,
-        gitlabDiscussionId: "disc_1"
-      })
+        gitlabDiscussionId: "disc_1",
+      }),
     );
-    expect(storage.updateReviewFindingStatus).toHaveBeenNthCalledWith(1, tenant.id, 7, nextIdentityKey, "open");
-    expect(storage.updateReviewFindingStatus).toHaveBeenNthCalledWith(2, tenant.id, 7, "identity_old", "resolved");
+    expect(storage.updateReviewFindingStatus).toHaveBeenNthCalledWith(
+      1,
+      tenant.id,
+      7,
+      nextIdentityKey,
+      "open",
+    );
+    expect(storage.updateReviewFindingStatus).toHaveBeenNthCalledWith(
+      2,
+      tenant.id,
+      7,
+      "identity_old",
+      "resolved",
+    );
   });
 
   it("builds the summary after replacement retirement so stale findings are excluded", async () => {
     const persistedStatuses = new Map<string, "open" | "resolved">([
       ["identity_old", "open"],
-      ["identity_new", "open"]
+      ["identity_new", "open"],
     ]);
     const storage = {
-      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_1", ...input })),
-      updateReviewFindingStatus: vi.fn(async (_tenantId, _mergeRequestIid, identityKey: string, status) => {
-        persistedStatuses.set(identityKey, status);
-        return true;
-      }),
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_1",
+        ...input,
+      })),
+      updateReviewFindingStatus: vi.fn(
+        async (_tenantId, _mergeRequestIid, identityKey: string, status) => {
+          persistedStatuses.set(identityKey, status);
+          return true;
+        },
+      ),
       listLatestReviewFindings: vi.fn(async () =>
         [
           {
@@ -360,7 +416,7 @@ describe("Discussion reconciler", () => {
             suggestion: null,
             interactionRunId: "run_prev",
             reviewedAt: new Date().toISOString(),
-            headSha: "head-prev"
+            headSha: "head-prev",
           },
           {
             findingId: "finding_new",
@@ -374,15 +430,15 @@ describe("Discussion reconciler", () => {
             suggestion: null,
             interactionRunId: "run_1",
             reviewedAt: new Date().toISOString(),
-            headSha: "head-new"
-          }
-        ].filter((finding) => finding.status === "open")
-      )
+            headSha: "head-new",
+          },
+        ].filter((finding) => finding.status === "open"),
+      ),
     };
 
     const reconciler = new DiscussionReconciler({
       storage: storage as never,
-      logger
+      logger,
     });
 
     const updateDiscussionNote = vi.fn(async () => ({
@@ -392,16 +448,18 @@ describe("Discussion reconciler", () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       system: false,
-      resolved: false
+      resolved: false,
     }));
-    const createMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, body: string) => ({
-      id: 94,
-      body,
-      author: { id: 999, username: "review-bot", name: "Review Bot" },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      system: false
-    }));
+    const createMergeRequestNote = vi.fn(
+      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+        id: 94,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
 
     await reconciler.reconcile({
       tenant,
@@ -429,14 +487,14 @@ describe("Discussion reconciler", () => {
           status: "open" as const,
           lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
+          updatedAt: new Date().toISOString(),
+        },
       ],
       interactionRunId: "run_1",
       reviewResult: {
         overview: {
           summary: "Found one replacement issue",
-          overallSeverity: "medium"
+          overallSeverity: "medium",
         },
         findings: [
           {
@@ -444,10 +502,10 @@ describe("Discussion reconciler", () => {
             title: "Replacement finding",
             body: "New body",
             severity: "medium",
-            category: "bug"
-          }
+            category: "bug",
+          },
         ],
-        priorDispositions: []
+        priorDispositions: [],
       },
       client: {
         createMergeRequestNote,
@@ -455,18 +513,25 @@ describe("Discussion reconciler", () => {
         updateMergeRequestNote: vi.fn(),
         updateDiscussionNote,
         createMergeRequestDiscussion: vi.fn(),
-        resolveDiscussion: vi.fn()
-      } as never
+        resolveDiscussion: vi.fn(),
+      } as never,
     });
 
     expect(createMergeRequestNote).toHaveBeenCalledOnce();
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain("Replacement finding");
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).not.toContain("Old finding");
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      "Replacement finding",
+    );
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).not.toContain(
+      "Old finding",
+    );
   });
 
   it("persists dismissed status when a prior thread is resolved as not applicable", async () => {
     const storage = {
-      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_1", ...input })),
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_1",
+        ...input,
+      })),
       updateReviewFindingStatus: vi.fn(async () => true),
       listLatestReviewFindings: vi.fn(async () => [
         {
@@ -481,25 +546,27 @@ describe("Discussion reconciler", () => {
           suggestion: null,
           interactionRunId: "run_prev",
           reviewedAt: new Date().toISOString(),
-          headSha: "head-prev"
-        }
-      ])
+          headSha: "head-prev",
+        },
+      ]),
     };
 
     const reconciler = new DiscussionReconciler({
       storage: storage as never,
-      logger
+      logger,
     });
 
     const resolveDiscussion = vi.fn(async () => undefined);
-    const createMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, body: string) => ({
-      id: 93,
-      body,
-      author: { id: 999, username: "review-bot", name: "Review Bot" },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      system: false
-    }));
+    const createMergeRequestNote = vi.fn(
+      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+        id: 93,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
 
     await reconciler.reconcile({
       tenant,
@@ -527,23 +594,23 @@ describe("Discussion reconciler", () => {
           status: "open" as const,
           lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
+          updatedAt: new Date().toISOString(),
+        },
       ],
       interactionRunId: "run_1",
       reviewResult: {
         overview: {
           summary: "Handled follow-up",
-          overallSeverity: "low"
+          overallSeverity: "low",
         },
         findings: [],
         priorDispositions: [
           {
             threadId: "map_1",
             action: "resolve",
-            resolution: "dismissed"
-          }
-        ]
+            resolution: "dismissed",
+          },
+        ],
       },
       client: {
         createMergeRequestNote,
@@ -551,26 +618,38 @@ describe("Discussion reconciler", () => {
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         createMergeRequestDiscussion: vi.fn(),
-        resolveDiscussion
-      } as never
+        resolveDiscussion,
+      } as never,
     });
 
     expect(resolveDiscussion).toHaveBeenCalledTimes(1);
-    expect(storage.updateReviewFindingStatus).toHaveBeenCalledWith(tenant.id, 7, "identity", "dismissed");
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain("Remaining storage correctness fix");
+    expect(storage.updateReviewFindingStatus).toHaveBeenCalledWith(
+      tenant.id,
+      7,
+      "identity",
+      "dismissed",
+    );
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      "Remaining storage correctness fix",
+    );
   });
 
   it("excludes persisted findings that the current review resolved from the summary note", async () => {
     const persistedStatuses = new Map<string, "open" | "resolved">([
       ["identity", "open"],
-      ["identity_open", "open"]
+      ["identity_open", "open"],
     ]);
     const storage = {
-      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_1", ...input })),
-      updateReviewFindingStatus: vi.fn(async (_tenantId, _mergeRequestIid, identityKey: string, status) => {
-        persistedStatuses.set(identityKey, status);
-        return true;
-      }),
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_1",
+        ...input,
+      })),
+      updateReviewFindingStatus: vi.fn(
+        async (_tenantId, _mergeRequestIid, identityKey: string, status) => {
+          persistedStatuses.set(identityKey, status);
+          return true;
+        },
+      ),
       listLatestReviewFindings: vi.fn(async () =>
         [
           {
@@ -585,7 +664,7 @@ describe("Discussion reconciler", () => {
             suggestion: null,
             interactionRunId: "run_prev",
             reviewedAt: new Date().toISOString(),
-            headSha: "head-prev"
+            headSha: "head-prev",
           },
           {
             findingId: "finding_open",
@@ -599,25 +678,27 @@ describe("Discussion reconciler", () => {
             suggestion: null,
             interactionRunId: "run_prev",
             reviewedAt: new Date().toISOString(),
-            headSha: "head-prev"
-          }
-        ].filter((finding) => finding.status === "open")
-      )
+            headSha: "head-prev",
+          },
+        ].filter((finding) => finding.status === "open"),
+      ),
     };
 
     const reconciler = new DiscussionReconciler({
       storage: storage as never,
-      logger
+      logger,
     });
 
-    const createMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, body: string) => ({
-      id: 94,
-      body,
-      author: { id: 999, username: "review-bot", name: "Review Bot" },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      system: false
-    }));
+    const createMergeRequestNote = vi.fn(
+      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+        id: 94,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
 
     await reconciler.reconcile({
       tenant,
@@ -645,8 +726,8 @@ describe("Discussion reconciler", () => {
           status: "open" as const,
           lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
+          updatedAt: new Date().toISOString(),
+        },
       ],
       interactionRunId: "run_1",
       reviewResult: {
@@ -657,17 +738,17 @@ describe("Discussion reconciler", () => {
           mergeReadiness: {
             status: "ready",
             confidence: "high",
-            summary: "No blocking issues were found in this rerun."
-          }
+            summary: "No blocking issues were found in this rerun.",
+          },
         },
         findings: [],
         priorDispositions: [
           {
             threadId: "map_1",
             action: "resolve",
-            resolution: "resolved"
-          }
-        ]
+            resolution: "resolved",
+          },
+        ],
       },
       client: {
         createMergeRequestNote,
@@ -675,26 +756,35 @@ describe("Discussion reconciler", () => {
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         createMergeRequestDiscussion: vi.fn(),
-        resolveDiscussion: vi.fn(async () => undefined)
-      } as never
+        resolveDiscussion: vi.fn(async () => undefined),
+      } as never,
     });
 
     expect(createMergeRequestNote).toHaveBeenCalledTimes(1);
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain("- **Findings snapshot:** 1 finding (1 medium)");
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain("Remaining storage correctness fix");
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).not.toContain("Resolved storage correctness fix");
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      "- **Findings snapshot:** 1 finding (1 medium)",
+    );
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+      "Remaining storage correctness fix",
+    );
+    expect(createMergeRequestNote.mock.calls[0]?.[2]).not.toContain(
+      "Resolved storage correctness fix",
+    );
   });
 
   it("replies instead of updating when the prior bot-owned thread is already resolved", async () => {
     const storage = {
-      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_1", ...input })),
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_1",
+        ...input,
+      })),
       updateReviewFindingStatus: vi.fn(async () => true),
-      listLatestReviewFindings: vi.fn(async () => [])
+      listLatestReviewFindings: vi.fn(async () => []),
     };
 
     const reconciler = new DiscussionReconciler({
       storage: storage as never,
-      logger
+      logger,
     });
 
     const replyToDiscussion = vi.fn(async () => ({
@@ -704,21 +794,21 @@ describe("Discussion reconciler", () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       system: false,
-      resolved: true
+      resolved: true,
     }));
-    const createMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, body: string) => ({
-      id: 92,
-      body,
-      author: { id: 999, username: "review-bot", name: "Review Bot" },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      system: false
-    }));
+    const createMergeRequestNote = vi.fn(
+      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+        id: 92,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
     const updateMergeRequestNote = vi.fn();
     const updateDiscussionNote = vi.fn();
     const resolveDiscussion = vi.fn(async () => undefined);
-
-    const context = createHydratedContext();
     const mappings = [
       {
         id: "map_1",
@@ -742,8 +832,8 @@ describe("Discussion reconciler", () => {
         status: "resolved" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
+        updatedAt: new Date().toISOString(),
+      },
     ];
 
     const summary = await reconciler.reconcile({
@@ -761,18 +851,18 @@ describe("Discussion reconciler", () => {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 system: false,
-                resolved: true
-              }
-            ]
-          }
-        ]
+                resolved: true,
+              },
+            ],
+          },
+        ],
       }),
       mappings,
       interactionRunId: "run_1",
       reviewResult: {
         overview: {
           summary: "Handled resolved thread",
-          overallSeverity: "medium"
+          overallSeverity: "medium",
         },
         findings: [
           {
@@ -780,10 +870,10 @@ describe("Discussion reconciler", () => {
             title: "Old finding",
             body: "Updated after resolution",
             severity: "medium",
-            category: "bug"
-          }
+            category: "bug",
+          },
         ],
-        priorDispositions: []
+        priorDispositions: [],
       },
       client: {
         createMergeRequestNote,
@@ -791,38 +881,55 @@ describe("Discussion reconciler", () => {
         updateMergeRequestNote,
         updateDiscussionNote,
         createMergeRequestDiscussion: vi.fn(),
-        resolveDiscussion
-      } as never
+        resolveDiscussion,
+      } as never,
     });
 
     expect(summary.replied).toBe(1);
-    expect(resolveDiscussion).toHaveBeenCalledWith(tenant.projectId, 7, "disc_1", false);
+    expect(resolveDiscussion).toHaveBeenCalledWith(
+      tenant.projectId,
+      7,
+      "disc_1",
+      false,
+    );
     expect(replyToDiscussion).toHaveBeenCalledTimes(1);
     expect(updateDiscussionNote).not.toHaveBeenCalled();
-    expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(expect.objectContaining({ status: "open" }));
+    expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "open" }),
+    );
   });
 
   it("updates the existing merge request review summary note instead of creating a new one", async () => {
     const storage = {
-      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_1", ...input })),
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_1",
+        ...input,
+      })),
       updateReviewFindingStatus: vi.fn(async () => true),
-      listLatestReviewFindings: vi.fn(async () => [])
+      listLatestReviewFindings: vi.fn(async () => []),
     };
 
     const reconciler = new DiscussionReconciler({
       storage: storage as never,
-      logger
+      logger,
     });
 
     const createMergeRequestNote = vi.fn();
-    const updateMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, noteId: number, body: string) => ({
-      id: noteId,
-      body,
-      author: { id: 999, username: "review-bot", name: "Review Bot" },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      system: false
-    }));
+    const updateMergeRequestNote = vi.fn(
+      async (
+        _projectId: number,
+        _mergeRequestIid: number,
+        noteId: number,
+        body: string,
+      ) => ({
+        id: noteId,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
 
     const context = createHydratedContext({
       notes: [
@@ -832,9 +939,9 @@ describe("Discussion reconciler", () => {
           author: { id: 999, username: "review-bot", name: "Review Bot" },
           created_at: new Date(Date.now() - 60_000).toISOString(),
           updated_at: new Date(Date.now() - 60_000).toISOString(),
-          system: false
-        }
-      ]
+          system: false,
+        },
+      ],
     });
 
     const summary = await reconciler.reconcile({
@@ -849,12 +956,12 @@ describe("Discussion reconciler", () => {
           mergeReadiness: {
             status: "ready",
             confidence: "high",
-            summary: "No blocking issues were found."
+            summary: "No blocking issues were found.",
           },
-          highlights: ["No actionable findings in touched code paths."]
+          highlights: ["No actionable findings in touched code paths."],
         },
         findings: [],
-        priorDispositions: []
+        priorDispositions: [],
       },
       client: {
         createMergeRequestNote,
@@ -862,24 +969,37 @@ describe("Discussion reconciler", () => {
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         createMergeRequestDiscussion: vi.fn(),
-        resolveDiscussion: vi.fn()
-      } as never
+        resolveDiscussion: vi.fn(),
+      } as never,
     });
 
     expect(summary.summaryNoteAction).toBe("updated");
     expect(createMergeRequestNote).not.toHaveBeenCalled();
     expect(updateMergeRequestNote).toHaveBeenCalledTimes(1);
     expect(updateMergeRequestNote.mock.calls[0]?.[2]).toBe(70);
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain("### Merge readiness");
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain("- **Status:** Ready");
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain("- **Confidence:** High");
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain("### Highlights");
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).not.toContain("<details><summary>Suggested fixes prompt</summary>");
+    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+      "### Merge readiness",
+    );
+    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+      "- **Status:** Ready",
+    );
+    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+      "- **Confidence:** High",
+    );
+    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+      "### Highlights",
+    );
+    expect(updateMergeRequestNote.mock.calls[0]?.[3]).not.toContain(
+      "<details><summary>Suggested fixes prompt</summary>",
+    );
   });
 
   it("keeps the summary note in needs-attention when persisted open findings remain", async () => {
     const storage = {
-      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_1", ...input })),
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_1",
+        ...input,
+      })),
       updateReviewFindingStatus: vi.fn(async () => true),
       listLatestReviewFindings: vi.fn(async () => [
         {
@@ -894,25 +1014,32 @@ describe("Discussion reconciler", () => {
           suggestion: null,
           interactionRunId: "run_prev",
           reviewedAt: new Date().toISOString(),
-          headSha: "head-prev"
-        }
-      ])
+          headSha: "head-prev",
+        },
+      ]),
     };
 
     const reconciler = new DiscussionReconciler({
       storage: storage as never,
-      logger
+      logger,
     });
 
     const createMergeRequestNote = vi.fn();
-    const updateMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, noteId: number, body: string) => ({
-      id: noteId,
-      body,
-      author: { id: 999, username: "review-bot", name: "Review Bot" },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      system: false
-    }));
+    const updateMergeRequestNote = vi.fn(
+      async (
+        _projectId: number,
+        _mergeRequestIid: number,
+        noteId: number,
+        body: string,
+      ) => ({
+        id: noteId,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
 
     const context = createHydratedContext({
       notes: [
@@ -922,9 +1049,9 @@ describe("Discussion reconciler", () => {
           author: { id: 999, username: "review-bot", name: "Review Bot" },
           created_at: new Date(Date.now() - 60_000).toISOString(),
           updated_at: new Date(Date.now() - 60_000).toISOString(),
-          system: false
-        }
-      ]
+          system: false,
+        },
+      ],
     });
 
     const summary = await reconciler.reconcile({
@@ -940,12 +1067,12 @@ describe("Discussion reconciler", () => {
           mergeReadiness: {
             status: "ready",
             confidence: "high",
-            summary: "No blocking issues were found in this rerun."
+            summary: "No blocking issues were found in this rerun.",
           },
-          highlights: ["The rerun resolved the directly requested thread."]
+          highlights: ["The rerun resolved the directly requested thread."],
         },
         findings: [],
-        priorDispositions: []
+        priorDispositions: [],
       },
       client: {
         createMergeRequestNote,
@@ -953,20 +1080,32 @@ describe("Discussion reconciler", () => {
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         createMergeRequestDiscussion: vi.fn(),
-        resolveDiscussion: vi.fn()
-      } as never
+        resolveDiscussion: vi.fn(),
+      } as never,
     });
 
     expect(summary.summaryNoteAction).toBe("updated");
     expect(createMergeRequestNote).not.toHaveBeenCalled();
     expect(updateMergeRequestNote).toHaveBeenCalledTimes(1);
     expect(updateMergeRequestNote.mock.calls[0]?.[2]).toBe(71);
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain("- **Status:** Needs attention");
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain("- **Rationale:** Persisted open findings remain and should be reviewed before merge.");
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain("- **Overall severity:** Medium");
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain("Remaining storage correctness fix");
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain("<details><summary>Suggested fixes prompt</summary>");
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).not.toContain("- **Status:** Ready");
+    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+      "- **Status:** Needs attention",
+    );
+    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+      "- **Rationale:** Persisted open findings remain and should be reviewed before merge.",
+    );
+    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+      "- **Overall severity:** Medium",
+    );
+    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+      "Remaining storage correctness fix",
+    );
+    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+      "<details><summary>Suggested fixes prompt</summary>",
+    );
+    expect(updateMergeRequestNote.mock.calls[0]?.[3]).not.toContain(
+      "- **Status:** Ready",
+    );
   });
 
   it("ignores stored mappings when the live root note is not bot-authored", () => {
@@ -983,10 +1122,10 @@ describe("Discussion reconciler", () => {
               author: { id: 1, username: "dev", name: "Developer" },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              system: false
-            }
-          ]
-        }
+              system: false,
+            },
+          ],
+        },
       ],
       mappings: [
         {
@@ -1011,9 +1150,9 @@ describe("Discussion reconciler", () => {
           status: "open",
           lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
-      ]
+          updatedAt: new Date().toISOString(),
+        },
+      ],
     });
 
     expect(threads).toEqual([]);
@@ -1033,7 +1172,7 @@ describe("Discussion reconciler", () => {
               author: { id: 999, username: "review-bot", name: "Review Bot" },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              system: false
+              system: false,
             },
             {
               id: 11,
@@ -1041,9 +1180,9 @@ describe("Discussion reconciler", () => {
               author: { id: 1, username: "dev", name: "Developer" },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              system: false
-            }
-          ]
+              system: false,
+            },
+          ],
         },
         {
           id: "disc_summary",
@@ -1055,7 +1194,7 @@ describe("Discussion reconciler", () => {
               author: { id: 999, username: "review-bot", name: "Review Bot" },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              system: false
+              system: false,
             },
             {
               id: 21,
@@ -1063,10 +1202,10 @@ describe("Discussion reconciler", () => {
               author: { id: 1, username: "dev", name: "Developer" },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              system: false
-            }
-          ]
-        }
+              system: false,
+            },
+          ],
+        },
       ],
       mappings: [
         {
@@ -1091,22 +1230,22 @@ describe("Discussion reconciler", () => {
           status: "open",
           lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
-      ]
+          updatedAt: new Date().toISOString(),
+        },
+      ],
     });
 
     expect(threads).toHaveLength(1);
     expect(threads[0]).toMatchObject({
       discussionId: "disc_finding",
-      title: "Finding"
+      title: "Finding",
     });
     expect(threads[0]?.humanReplies).toEqual([
       {
         noteId: 11,
         authorUsername: "dev",
-        body: "Please clarify this."
-      }
+        body: "Please clarify this.",
+      },
     ]);
   });
 
@@ -1114,36 +1253,41 @@ describe("Discussion reconciler", () => {
     {
       name: "legacy line_code validation errors",
       responseBody:
-        "{\"message\":\"400 Bad request - Note {:line_code=>[\\\"can't be blank\\\", \\\"must be a valid line code\\\"]}\"}"
+        '{"message":"400 Bad request - Note {:line_code=>[\\"can\'t be blank\\", \\"must be a valid line code\\"]}"}',
     },
     {
       name: "structured position validation errors",
-      responseBody: "{\"message\":{\"position\":[\"is incomplete\"]}}"
+      responseBody: '{"message":{"position":["is incomplete"]}}',
     },
     {
       name: "string position validation errors",
-      responseBody: "{\"message\":\"position is invalid\"}"
-    }
+      responseBody: '{"message":"position is invalid"}',
+    },
   ])("retries without a diff position for $name", async ({ responseBody }) => {
     const storage = {
-      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_new", ...input })),
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_new",
+        ...input,
+      })),
       updateReviewFindingStatus: vi.fn(async () => true),
-      listLatestReviewFindings: vi.fn(async () => [])
+      listLatestReviewFindings: vi.fn(async () => []),
     };
 
     const reconciler = new DiscussionReconciler({
       storage: storage as never,
-      logger
+      logger,
     });
 
-    const createMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, body: string) => ({
-      id: 90,
-      body,
-      author: { id: 999, username: "review-bot", name: "Review Bot" },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      system: false
-    }));
+    const createMergeRequestNote = vi.fn(
+      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+        id: 90,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
     const createMergeRequestDiscussion = vi
       .fn()
       .mockRejectedValueOnce(
@@ -1151,8 +1295,8 @@ describe("Discussion reconciler", () => {
           "GitLab form request failed for POST /projects/123/merge_requests/7/discussions with 400",
           400,
           responseBody,
-          "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/discussions"
-        )
+          "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/discussions",
+        ),
       )
       .mockResolvedValueOnce({
         id: "disc_new",
@@ -1164,9 +1308,9 @@ describe("Discussion reconciler", () => {
             author: { id: 999, username: "review-bot", name: "Review Bot" },
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            system: false
-          }
-        ]
+            system: false,
+          },
+        ],
       });
 
     const summary = await reconciler.reconcile({
@@ -1177,7 +1321,7 @@ describe("Discussion reconciler", () => {
           base_commit_sha: "base",
           start_commit_sha: "start",
           head_commit_sha: "head",
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
         },
         changes: [
           {
@@ -1186,16 +1330,16 @@ describe("Discussion reconciler", () => {
             diff: "@@ -11,3 +11,4 @@\n context line\n+added line\n trailing context\n",
             new_file: false,
             renamed_file: false,
-            deleted_file: false
-          }
-        ]
+            deleted_file: false,
+          },
+        ],
       }),
       mappings: [],
       interactionRunId: "run_1",
       reviewResult: {
         overview: {
           summary: "Found one issue",
-          overallSeverity: "medium"
+          overallSeverity: "medium",
         },
         findings: [
           {
@@ -1208,11 +1352,11 @@ describe("Discussion reconciler", () => {
               oldPath: "src/index.ts",
               startLine: 11,
               endLine: 13,
-              side: "new"
-            }
-          }
+              side: "new",
+            },
+          },
         ],
-        priorDispositions: []
+        priorDispositions: [],
       },
       client: {
         createMergeRequestNote,
@@ -1220,8 +1364,8 @@ describe("Discussion reconciler", () => {
         updateMergeRequestNote: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
-        resolveDiscussion: vi.fn()
-      } as never
+        resolveDiscussion: vi.fn(),
+      } as never,
     });
 
     expect(summary.created).toBe(1);
@@ -1235,11 +1379,11 @@ describe("Discussion reconciler", () => {
         position_type: "text",
         old_path: "src/index.ts",
         new_path: "src/index.ts",
-        new_line: 12
-      }
+        new_line: 12,
+      },
     });
     expect(createMergeRequestDiscussion).toHaveBeenNthCalledWith(2, 123, 7, {
-      body: "**Broad finding**\n\nAnchor body"
+      body: "**Broad finding**\n\nAnchor body",
     });
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledTimes(1);
   });
@@ -1247,24 +1391,29 @@ describe("Discussion reconciler", () => {
   it("does not warn when a new open finding status cannot be updated yet", async () => {
     const warn = vi.fn();
     const storage = {
-      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_new", ...input })),
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_new",
+        ...input,
+      })),
       updateReviewFindingStatus: vi.fn(async () => false),
-      listLatestReviewFindings: vi.fn(async () => [])
+      listLatestReviewFindings: vi.fn(async () => []),
     };
 
     const reconciler = new DiscussionReconciler({
       storage: storage as never,
-      logger: { warn } as never
+      logger: { warn } as never,
     });
 
-    const createMergeRequestNote = vi.fn(async (_projectId: number, _mergeRequestIid: number, body: string) => ({
-      id: 90,
-      body,
-      author: { id: 999, username: "review-bot", name: "Review Bot" },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      system: false
-    }));
+    const createMergeRequestNote = vi.fn(
+      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+        id: 90,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
     const createMergeRequestDiscussion = vi.fn(async () => ({
       id: "disc_new",
       individual_note: false,
@@ -1275,9 +1424,9 @@ describe("Discussion reconciler", () => {
           author: { id: 999, username: "review-bot", name: "Review Bot" },
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          system: false
-        }
-      ]
+          system: false,
+        },
+      ],
     }));
 
     await reconciler.reconcile({
@@ -1288,17 +1437,17 @@ describe("Discussion reconciler", () => {
       reviewResult: {
         overview: {
           summary: "Found one issue",
-          overallSeverity: "medium"
+          overallSeverity: "medium",
         },
         findings: [
           {
             title: "New finding",
             body: "Anchor body",
             severity: "medium",
-            category: "bug"
-          }
+            category: "bug",
+          },
         ],
-        priorDispositions: []
+        priorDispositions: [],
       },
       client: {
         createMergeRequestNote,
@@ -1306,8 +1455,8 @@ describe("Discussion reconciler", () => {
         updateMergeRequestNote: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
-        resolveDiscussion: vi.fn()
-      } as never
+        resolveDiscussion: vi.fn(),
+      } as never,
     });
 
     expect(storage.updateReviewFindingStatus).toHaveBeenCalledWith(
@@ -1319,33 +1468,38 @@ describe("Discussion reconciler", () => {
         path: undefined,
         startLine: undefined,
         endLine: undefined,
-        side: undefined
+        side: undefined,
       }),
-      "open"
+      "open",
     );
     expect(warn).not.toHaveBeenCalled();
   });
 
   it("does not retry unrelated 400 discussion failures as overview threads", async () => {
     const storage = {
-      upsertDiscussionMapping: vi.fn(async (input) => ({ id: "map_new", ...input })),
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_new",
+        ...input,
+      })),
       updateReviewFindingStatus: vi.fn(async () => true),
-      listLatestReviewFindings: vi.fn(async () => [])
+      listLatestReviewFindings: vi.fn(async () => []),
     };
 
     const reconciler = new DiscussionReconciler({
       storage: storage as never,
-      logger
+      logger,
     });
 
-    const createMergeRequestDiscussion = vi.fn().mockRejectedValueOnce(
-      new GitLabApiError(
-        "GitLab form request failed for POST /projects/123/merge_requests/7/discussions with 400",
-        400,
-        "{\"message\":{\"body\":[\"is too long (maximum is 100000 characters)\"]}}",
-        "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/discussions"
-      )
-    );
+    const createMergeRequestDiscussion = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new GitLabApiError(
+          "GitLab form request failed for POST /projects/123/merge_requests/7/discussions with 400",
+          400,
+          '{"message":{"body":["is too long (maximum is 100000 characters)"]}}',
+          "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/discussions",
+        ),
+      );
 
     await expect(
       reconciler.reconcile({
@@ -1356,7 +1510,7 @@ describe("Discussion reconciler", () => {
             base_commit_sha: "base",
             start_commit_sha: "start",
             head_commit_sha: "head",
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
           },
           changes: [
             {
@@ -1365,16 +1519,16 @@ describe("Discussion reconciler", () => {
               diff: "@@ -11,3 +11,4 @@\n context line\n+added line\n trailing context\n",
               new_file: false,
               renamed_file: false,
-              deleted_file: false
-            }
-          ]
+              deleted_file: false,
+            },
+          ],
         }),
         mappings: [],
         interactionRunId: "run_1",
         reviewResult: {
           overview: {
             summary: "Found one issue",
-            overallSeverity: "medium"
+            overallSeverity: "medium",
           },
           findings: [
             {
@@ -1387,11 +1541,11 @@ describe("Discussion reconciler", () => {
                 oldPath: "src/index.ts",
                 startLine: 11,
                 endLine: 13,
-                side: "new"
-              }
-            }
+                side: "new",
+              },
+            },
           ],
-          priorDispositions: []
+          priorDispositions: [],
         },
         client: {
           createMergeRequestNote: vi.fn(),
@@ -1399,9 +1553,9 @@ describe("Discussion reconciler", () => {
           updateMergeRequestNote: vi.fn(),
           replyToDiscussion: vi.fn(),
           updateDiscussionNote: vi.fn(),
-          resolveDiscussion: vi.fn()
-        } as never
-      })
+          resolveDiscussion: vi.fn(),
+        } as never,
+      }),
     ).rejects.toBeInstanceOf(GitLabApiError);
 
     expect(createMergeRequestDiscussion).toHaveBeenCalledTimes(1);
@@ -1427,7 +1581,7 @@ function createHydratedContext(overrides?: {
       botUsername: "review-bot",
       modelProfileName: null,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     },
     job: {
       id: "job_1",
@@ -1443,7 +1597,7 @@ function createHydratedContext(overrides?: {
       lastError: null,
       enqueuedAt: new Date().toISOString(),
       startedAt: new Date().toISOString(),
-      finishedAt: null
+      finishedAt: null,
     },
     mergeRequest: {
       id: 1,
@@ -1457,8 +1611,8 @@ function createHydratedContext(overrides?: {
       author: {
         id: 42,
         username: "developer",
-        name: "Developer"
-      }
+        name: "Developer",
+      },
     },
     versions: [],
     latestVersion: overrides?.latestVersion ?? null,
@@ -1476,7 +1630,7 @@ function createHydratedContext(overrides?: {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             system: false,
-            resolved: false
+            resolved: false,
           },
           {
             id: 11,
@@ -1485,21 +1639,21 @@ function createHydratedContext(overrides?: {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             system: false,
-            resolved: false
-          }
-        ]
-      }
+            resolved: false,
+          },
+        ],
+      },
     ],
     workspace: {
       rootPath: join("tmp", "workspace"),
       cleanupRoot: join("tmp", "cleanup"),
       strategy: "archive",
-      instructionFiles: []
+      instructionFiles: [],
     },
     projectMemory: {
       enabled: true,
       page: null,
-      entries: []
+      entries: [],
     },
     snapshot: {
       id: "snapshot_1",
@@ -1515,7 +1669,7 @@ function createHydratedContext(overrides?: {
       instructionsJson: "[]",
       projectMemoryJson: null,
       workspaceStrategy: "archive",
-      createdAt: new Date().toISOString()
-    }
+      createdAt: new Date().toISOString(),
+    },
   };
 }

@@ -19,7 +19,7 @@ export class TenantRegistry {
 
   public async resolveWebhookTenant(
     payload: GitLabNoteHookPayload,
-    providedSecret: string | undefined
+    providedSecret: string | undefined,
   ): Promise<TenantRecord | null> {
     if (!providedSecret) {
       return null;
@@ -29,19 +29,26 @@ export class TenantRegistry {
       filters: { projectId: { eq: payload.project.id } },
       order: [
         { field: "baseUrl", direction: "asc" },
-        { field: "projectId", direction: "asc" }
-      ]
+        { field: "projectId", direction: "asc" },
+      ],
     });
     if (projectTenants.length === 0) {
       return null;
     }
 
     const narrowed = projectTenants.length
-      ? projectTenants.filter((tenant) => webhookMatchesGitLabBase(payload, tenant.baseUrl))
+      ? projectTenants.filter((tenant) =>
+          webhookMatchesGitLabBase(payload, tenant.baseUrl),
+        )
       : projectTenants;
 
-    const candidates = (narrowed.length > 0 ? narrowed : projectTenants).toSorted((left, right) => {
-      return normalizeGitLabBaseUrl(right.baseUrl).length - normalizeGitLabBaseUrl(left.baseUrl).length;
+    const candidates = (
+      narrowed.length > 0 ? narrowed : projectTenants
+    ).toSorted((left, right) => {
+      return (
+        normalizeGitLabBaseUrl(right.baseUrl).length -
+        normalizeGitLabBaseUrl(left.baseUrl).length
+      );
     });
 
     for (const tenant of candidates) {

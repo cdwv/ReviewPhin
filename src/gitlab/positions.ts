@@ -1,4 +1,8 @@
-import type { GitLabDiffPosition, GitLabMergeRequestChange, GitLabMergeRequestVersion } from "./types.js";
+import type {
+  GitLabDiffPosition,
+  GitLabMergeRequestChange,
+  GitLabMergeRequestVersion,
+} from "./types.js";
 
 export interface LineAnchorLike {
   path: string;
@@ -17,7 +21,7 @@ export interface SuggestionLike {
 export function buildDiffPosition(
   anchor: LineAnchorLike,
   changes: GitLabMergeRequestChange[],
-  version: GitLabMergeRequestVersion | null
+  version: GitLabMergeRequestVersion | null,
 ): GitLabDiffPosition | null {
   if (!version) {
     return null;
@@ -28,8 +32,9 @@ export function buildDiffPosition(
       candidate.new_path === anchor.path ||
       candidate.old_path === anchor.path ||
       (anchor.oldPath !== undefined && anchor.oldPath !== null
-        ? candidate.new_path === anchor.oldPath || candidate.old_path === anchor.oldPath
-        : false)
+        ? candidate.new_path === anchor.oldPath ||
+          candidate.old_path === anchor.oldPath
+        : false),
   );
   if (!change) {
     return null;
@@ -46,7 +51,7 @@ export function buildDiffPosition(
     head_sha: version.head_commit_sha,
     position_type: "text",
     old_path: change.old_path,
-    new_path: change.new_path
+    new_path: change.new_path,
   };
 
   if (targetLine.oldLine !== null) {
@@ -66,16 +71,25 @@ interface DiffLineReference {
   newLine: number | null;
 }
 
-function findDiffLineForAnchor(diff: string | undefined, anchor: LineAnchorLike): DiffLineReference | null {
-  const matches = collectDiffLineReferences(diff).filter((line) => lineOverlapsAnchor(line, anchor));
+function findDiffLineForAnchor(
+  diff: string | undefined,
+  anchor: LineAnchorLike,
+): DiffLineReference | null {
+  const matches = collectDiffLineReferences(diff).filter((line) =>
+    lineOverlapsAnchor(line, anchor),
+  );
   if (matches.length === 0) {
     return null;
   }
 
-  return matches.find((line) => line.kind === anchor.side) ?? matches[0] ?? null;
+  return (
+    matches.find((line) => line.kind === anchor.side) ?? matches[0] ?? null
+  );
 }
 
-function collectDiffLineReferences(diff: string | undefined): DiffLineReference[] {
+function collectDiffLineReferences(
+  diff: string | undefined,
+): DiffLineReference[] {
   if (!diff) {
     return [];
   }
@@ -105,7 +119,7 @@ function collectDiffLineReferences(diff: string | undefined): DiffLineReference[
       lines.push({
         kind: "context",
         oldLine,
-        newLine
+        newLine,
       });
       oldLine += 1;
       newLine += 1;
@@ -116,7 +130,7 @@ function collectDiffLineReferences(diff: string | undefined): DiffLineReference[
       lines.push({
         kind: "old",
         oldLine,
-        newLine: null
+        newLine: null,
       });
       oldLine += 1;
       continue;
@@ -126,7 +140,7 @@ function collectDiffLineReferences(diff: string | undefined): DiffLineReference[
       lines.push({
         kind: "new",
         oldLine: null,
-        newLine
+        newLine,
       });
       newLine += 1;
     }
@@ -135,14 +149,21 @@ function collectDiffLineReferences(diff: string | undefined): DiffLineReference[
   return lines;
 }
 
-function lineOverlapsAnchor(line: DiffLineReference, anchor: LineAnchorLike): boolean {
+function lineOverlapsAnchor(
+  line: DiffLineReference,
+  anchor: LineAnchorLike,
+): boolean {
   const candidate = anchor.side === "new" ? line.newLine : line.oldLine;
-  return candidate !== null && candidate >= anchor.startLine && candidate <= anchor.endLine;
+  return (
+    candidate !== null &&
+    candidate >= anchor.startLine &&
+    candidate <= anchor.endLine
+  );
 }
 
 export function renderSuggestionMarkdown(
   suggestion: SuggestionLike | null | undefined,
-  anchor: LineAnchorLike | null | undefined
+  anchor: LineAnchorLike | null | undefined,
 ): string | null {
   if (!suggestion || !anchor) {
     return null;
@@ -152,7 +173,10 @@ export function renderSuggestionMarkdown(
     return null;
   }
 
-  if (anchor.startLine < suggestion.startLine || anchor.startLine > suggestion.endLine) {
+  if (
+    anchor.startLine < suggestion.startLine ||
+    anchor.startLine > suggestion.endLine
+  ) {
     return null;
   }
 
@@ -165,11 +189,14 @@ export function renderSuggestionMarkdown(
   return [
     `\`\`\`suggestion:-${linesAbove}+${linesBelow}`,
     suggestion.replacement.replace(/\r\n/g, "\n").trimEnd(),
-    "```"
+    "```",
   ].join("\n");
 }
 
-export function appendSuggestion(body: string, suggestionMarkdown: string | null): string {
+export function appendSuggestion(
+  body: string,
+  suggestionMarkdown: string | null,
+): string {
   if (!suggestionMarkdown) {
     return body;
   }

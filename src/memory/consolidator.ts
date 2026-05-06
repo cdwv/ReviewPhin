@@ -1,7 +1,16 @@
-import type { HarnessRunResult, HarnessRunSpec } from "../harness/types.js";
+import type {
+  HarnessModelConfig,
+  HarnessRunLoggingContext,
+  HarnessRunResult,
+  HarnessRunSpec,
+  HarnessTenantContext,
+} from "../harness/types.js";
 import { buildProjectMemoryCoalescePrompt } from "../prompts/prompt-builders.js";
 import { createId } from "../utils/ids.js";
-import type { ProjectMemoryCoalesceInput, ProjectMemoryEntry } from "./types.js";
+import type {
+  ProjectMemoryCoalesceInput,
+  ProjectMemoryEntry,
+} from "./types.js";
 
 interface ProjectMemoryConsolidatorOptions {
   runSession: (spec: HarnessRunSpec) => Promise<HarnessRunResult>;
@@ -15,9 +24,9 @@ export class ProjectMemoryConsolidator {
   }
 
   public async coalesce(input: {
-    modelConfig: import("../harness/types.js").HarnessModelConfig;
-    tenant?: import("../harness/types.js").HarnessTenantContext | undefined;
-    logging?: import("../harness/types.js").HarnessRunLoggingContext | undefined;
+    modelConfig: HarnessModelConfig;
+    tenant?: HarnessTenantContext | undefined;
+    logging?: HarnessRunLoggingContext | undefined;
     coalesceInput: ProjectMemoryCoalesceInput;
   }): Promise<ProjectMemoryEntry[]> {
     if (input.coalesceInput.entries.length === 0) {
@@ -36,26 +45,32 @@ export class ProjectMemoryConsolidator {
         interactionJobId: input.logging?.interactionJobId ?? null,
         tenantId: input.logging?.tenantId ?? input.tenant?.id ?? null,
         parentInteractionRunId:
-          input.logging?.parentInteractionRunId ?? input.logging?.interactionRunId ?? null,
+          input.logging?.parentInteractionRunId ??
+          input.logging?.interactionRunId ??
+          null,
         runDirectory: input.logging?.runDirectory,
         pathSegments: [
           ...(input.logging?.pathSegments ?? ["copilot"]),
           "memory-consolidation",
-          createId("session")
+          createId("session"),
         ],
-        sessionKind: "memory-consolidation"
-      }
+        sessionKind: "memory-consolidation",
+      },
     });
 
     return parseCoalescedEntries(response.response?.data.content);
   }
 }
 
-function selectConsolidationModel(input: import("../harness/types.js").HarnessModelConfig): string | undefined {
+function selectConsolidationModel(
+  input: HarnessModelConfig,
+): string | undefined {
   return input.textGenerationModel ?? input.reviewModel ?? undefined;
 }
 
-function parseCoalescedEntries(content: string | undefined): ProjectMemoryEntry[] {
+function parseCoalescedEntries(
+  content: string | undefined,
+): ProjectMemoryEntry[] {
   const trimmed = content?.trim();
   if (!trimmed) {
     throw new Error("Project memory consolidator returned no content");
@@ -63,7 +78,9 @@ function parseCoalescedEntries(content: string | undefined): ProjectMemoryEntry[
 
   const parsed = parseJsonResponse(trimmed) as { entries?: unknown };
   if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.entries)) {
-    throw new Error("Project memory consolidator did not return an entries array");
+    throw new Error(
+      "Project memory consolidator did not return an entries array",
+    );
   }
 
   const entries = parsed.entries

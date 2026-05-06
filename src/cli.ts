@@ -5,10 +5,17 @@ import { pathToFileURL } from "node:url";
 
 import { z } from "zod";
 
-import { loadConfig, modelProfileNameSchema, tenantConfigSchema } from "./config.js";
+import {
+  loadConfig,
+  modelProfileNameSchema,
+  tenantConfigSchema,
+} from "./config.js";
 import { loadLocalEnvFile } from "./env.js";
 import { maskSecret } from "./review/model-profiles.js";
-import { readHarnessRunMetrics, type PremiumRequestsByModelMetric } from "./harness/run-metrics.js";
+import {
+  readHarnessRunMetrics,
+  type PremiumRequestsByModelMetric,
+} from "./harness/run-metrics.js";
 import { initializeStorageRuntime } from "./storage/runtime.js";
 import { listAll, type StorageHelpers } from "./storage/storage-helpers.js";
 import type { TenantDeletionSummary } from "./storage/contract/index.js";
@@ -58,20 +65,20 @@ interface TenantArtifactSummary {
 }
 
 const tenantAddSchema = tenantConfigSchema.extend({
-  databasePath: z.string().min(1).optional()
+  databasePath: z.string().min(1).optional(),
 });
 
 const tenantLookupSchema = tenantConfigSchema
   .pick({
     baseUrl: true,
-    projectId: true
+    projectId: true,
   })
   .extend({
-    databasePath: z.string().min(1).optional()
+    databasePath: z.string().min(1).optional(),
   });
 
 const tenantProfileSchema = tenantLookupSchema.extend({
-  modelProfileName: modelProfileNameSchema
+  modelProfileName: modelProfileNameSchema,
 });
 
 const modelProfileSchema = z.object({
@@ -83,7 +90,7 @@ const modelProfileSchema = z.object({
   reviewModel: z.string().min(1).optional(),
   textGenerationModel: z.string().min(1).optional(),
   isDefault: z.boolean().optional(),
-  databasePath: z.string().min(1).optional()
+  databasePath: z.string().min(1).optional(),
 });
 
 const clearableModelProfileFields = [
@@ -92,15 +99,17 @@ const clearableModelProfileFields = [
   "wire-api",
   "auth-token",
   "review-model",
-  "text-generation-model"
+  "text-generation-model",
 ] as const;
 
 const modelProfileLookupSchema = z.object({
   name: modelProfileNameSchema,
-  databasePath: z.string().min(1).optional()
+  databasePath: z.string().min(1).optional(),
 });
 
-export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
+export async function runCli(
+  argv: string[] = process.argv.slice(2),
+): Promise<number> {
   loadLocalEnvFile();
   const config = loadConfig();
 
@@ -116,7 +125,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       botUserId: options["bot-user-id"],
       botUsername: options["bot-username"],
       modelProfileName: options["model-profile"],
-      databasePath: options["sqlite-database-path"]
+      databasePath: options["sqlite-database-path"],
     });
     return withStorage(options, config, async (storage) => {
       const savedTenant = await storage.upsertTenant(tenant);
@@ -126,8 +135,8 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
           `id: ${savedTenant.id}`,
           `key: ${savedTenant.key}`,
           `project: ${savedTenant.baseUrl} :: ${savedTenant.projectId}`,
-          `modelProfile: ${savedTenant.modelProfileName ?? "(none)"}`
-        ].join("\n") + "\n"
+          `modelProfile: ${savedTenant.modelProfileName ?? "(none)"}`,
+        ].join("\n") + "\n",
       );
       return 0;
     });
@@ -138,8 +147,8 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       const tenants = await listAll(storage.stores.tenants, {
         order: [
           { field: "baseUrl", direction: "asc" },
-          { field: "projectId", direction: "asc" }
-        ]
+          { field: "projectId", direction: "asc" },
+        ],
       });
       if (tenants.length === 0) {
         process.stdout.write("No tenants registered.\n");
@@ -155,11 +164,11 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
             projectId: tenant.projectId,
             botUserId: tenant.botUserId,
             botUsername: tenant.botUsername,
-            modelProfileName: tenant.modelProfileName
+            modelProfileName: tenant.modelProfileName,
           })),
           null,
-          2
-        )}\n`
+          2,
+        )}\n`,
       );
       return 0;
     });
@@ -170,18 +179,22 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       baseUrl: options["base-url"],
       projectId: options["project-id"],
       modelProfileName: options["model-profile"],
-      databasePath: options["sqlite-database-path"]
+      databasePath: options["sqlite-database-path"],
     });
     return withStorage(options, config, async (storage) => {
-      const updatedTenant = await storage.setTenantModelProfile(tenant.baseUrl, tenant.projectId, tenant.modelProfileName);
+      const updatedTenant = await storage.setTenantModelProfile(
+        tenant.baseUrl,
+        tenant.projectId,
+        tenant.modelProfileName,
+      );
       process.stdout.write(
         [
           "Tenant profile updated.",
           `id: ${updatedTenant.id}`,
           `key: ${updatedTenant.key}`,
           `project: ${updatedTenant.baseUrl} :: ${updatedTenant.projectId}`,
-          `modelProfile: ${updatedTenant.modelProfileName ?? "(none)"}`
-        ].join("\n") + "\n"
+          `modelProfile: ${updatedTenant.modelProfileName ?? "(none)"}`,
+        ].join("\n") + "\n",
       );
       return 0;
     });
@@ -191,17 +204,21 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
     const tenant = tenantLookupSchema.parse({
       baseUrl: options["base-url"],
       projectId: options["project-id"],
-      databasePath: options["sqlite-database-path"]
+      databasePath: options["sqlite-database-path"],
     });
     return withStorage(options, config, async (storage) => {
-      const updatedTenant = await storage.setTenantModelProfile(tenant.baseUrl, tenant.projectId, null);
+      const updatedTenant = await storage.setTenantModelProfile(
+        tenant.baseUrl,
+        tenant.projectId,
+        null,
+      );
       process.stdout.write(
         [
           "Tenant profile cleared.",
           `id: ${updatedTenant.id}`,
           `key: ${updatedTenant.key}`,
-          `project: ${updatedTenant.baseUrl} :: ${updatedTenant.projectId}`
-        ].join("\n") + "\n"
+          `project: ${updatedTenant.baseUrl} :: ${updatedTenant.projectId}`,
+        ].join("\n") + "\n",
       );
       return 0;
     });
@@ -211,56 +228,85 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
     const tenant = tenantLookupSchema.parse({
       baseUrl: options["base-url"],
       projectId: options["project-id"],
-      databasePath: options["sqlite-database-path"]
+      databasePath: options["sqlite-database-path"],
     });
-    const workspaceRoot = typeof options["workspace-root"] === "string" ? resolve(options["workspace-root"]) : config.workspaceRoot;
-    const runLogDir = typeof options["run-log-dir"] === "string" ? resolve(options["run-log-dir"]) : config.runLogDir;
+    const workspaceRoot =
+      typeof options["workspace-root"] === "string"
+        ? resolve(options["workspace-root"])
+        : config.workspaceRoot;
+    const runLogDir =
+      typeof options["run-log-dir"] === "string"
+        ? resolve(options["run-log-dir"])
+        : config.runLogDir;
     const assumeYes = options.yes === true || options.yes === "true";
     return withStorage(options, config, async (storage, storageContext) => {
-      const deletionSummary = await storage.getTenantDeletionSummary(tenant.baseUrl, tenant.projectId);
+      const deletionSummary = await storage.getTenantDeletionSummary(
+        tenant.baseUrl,
+        tenant.projectId,
+      );
       if (!deletionSummary) {
-        process.stdout.write(`Tenant not found for ${tenant.baseUrl} :: ${tenant.projectId}\n`);
+        process.stdout.write(
+          `Tenant not found for ${tenant.baseUrl} :: ${tenant.projectId}\n`,
+        );
         return 1;
       }
 
-      const artifactSummary = await collectTenantArtifactSummary(deletionSummary, workspaceRoot, runLogDir);
+      const artifactSummary = await collectTenantArtifactSummary(
+        deletionSummary,
+        workspaceRoot,
+        runLogDir,
+      );
       process.stdout.write(
         formatTenantRemovalSummary(
           deletionSummary,
           artifactSummary,
-          storageContext.sqliteDatabasePath ?? resolve("./data/review-worker.sqlite"),
+          storageContext.sqliteDatabasePath ??
+            resolve("./data/review-worker.sqlite"),
           workspaceRoot,
-          runLogDir
-        )
+          runLogDir,
+        ),
       );
 
       if (!assumeYes) {
         if (!process.stdin.isTTY) {
-          process.stdout.write("Tenant removal requires confirmation. Re-run with --yes in non-interactive mode.\n");
+          process.stdout.write(
+            "Tenant removal requires confirmation. Re-run with --yes in non-interactive mode.\n",
+          );
           return 1;
         }
 
-        const confirmed = await promptForConfirmation("Continue and remove all tenant data? [y/N] ");
+        const confirmed = await promptForConfirmation(
+          "Continue and remove all tenant data? [y/N] ",
+        );
         if (!confirmed) {
           process.stdout.write("Tenant removal aborted.\n");
           return 1;
         }
       }
 
-      const deletedSummary = await storage.deleteTenantWithSummary(tenant.baseUrl, tenant.projectId);
+      const deletedSummary = await storage.deleteTenantWithSummary(
+        tenant.baseUrl,
+        tenant.projectId,
+      );
       if (!deletedSummary) {
-        throw new Error(`Tenant ${tenant.baseUrl} :: ${tenant.projectId} disappeared during removal`);
+        throw new Error(
+          `Tenant ${tenant.baseUrl} :: ${tenant.projectId} disappeared during removal`,
+        );
       }
 
-      await deleteTenantArtifactsForSummary(deletedSummary, workspaceRoot, runLogDir);
+      await deleteTenantArtifactsForSummary(
+        deletedSummary,
+        workspaceRoot,
+        runLogDir,
+      );
 
       process.stdout.write(
         [
           "Tenant removed.",
           `id: ${deletedSummary.tenant.id}`,
           `key: ${deletedSummary.tenant.key}`,
-          `project: ${deletedSummary.tenant.baseUrl} :: ${deletedSummary.tenant.projectId}`
-        ].join("\n") + "\n"
+          `project: ${deletedSummary.tenant.baseUrl} :: ${deletedSummary.tenant.projectId}`,
+        ].join("\n") + "\n",
       );
       return 0;
     });
@@ -276,45 +322,79 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       authToken: options["auth-token"],
       reviewModel: options["review-model"],
       textGenerationModel: options["text-generation-model"],
-      isDefault: "default" in options ? options.default === true || options.default === "true" : undefined,
-      databasePath: options["sqlite-database-path"]
+      isDefault:
+        "default" in options
+          ? options.default === true || options.default === "true"
+          : undefined,
+      databasePath: options["sqlite-database-path"],
     });
     return withStorage(options, config, async (storage) => {
-      const clearBaseUrl = options["clear-base-url"] === true || options["clear-base-url"] === "true";
+      const clearBaseUrl =
+        options["clear-base-url"] === true ||
+        options["clear-base-url"] === "true";
       const clearProviderType =
-        clearBaseUrl || options["clear-provider-type"] === true || options["clear-provider-type"] === "true";
-      const clearWireApi = clearBaseUrl || options["clear-wire-api"] === true || options["clear-wire-api"] === "true";
+        clearBaseUrl ||
+        options["clear-provider-type"] === true ||
+        options["clear-provider-type"] === "true";
+      const clearWireApi =
+        clearBaseUrl ||
+        options["clear-wire-api"] === true ||
+        options["clear-wire-api"] === "true";
 
       const savedProfile = await storage.upsertModelProfile({
         name: profile.name,
         ...(clearBaseUrl ? { providerBaseUrl: null } : {}),
-        ...("base-url" in options && !clearBaseUrl ? { providerBaseUrl: profile.providerBaseUrl ?? null } : {}),
+        ...("base-url" in options && !clearBaseUrl
+          ? { providerBaseUrl: profile.providerBaseUrl ?? null }
+          : {}),
         ...(clearProviderType ? { providerType: null } : {}),
-        ...("provider-type" in options && !clearProviderType ? { providerType: profile.providerType ?? null } : {}),
+        ...("provider-type" in options && !clearProviderType
+          ? { providerType: profile.providerType ?? null }
+          : {}),
         ...(clearWireApi ? { wireApi: null } : {}),
-        ...("wire-api" in options && !clearWireApi ? { wireApi: profile.wireApi ?? null } : {}),
-        ...(options["clear-auth-token"] === true || options["clear-auth-token"] === "true" ? { authToken: null } : {}),
+        ...("wire-api" in options && !clearWireApi
+          ? { wireApi: profile.wireApi ?? null }
+          : {}),
+        ...(options["clear-auth-token"] === true ||
+        options["clear-auth-token"] === "true"
+          ? { authToken: null }
+          : {}),
         ...("auth-token" in options &&
-        !(options["clear-auth-token"] === true || options["clear-auth-token"] === "true")
+        !(
+          options["clear-auth-token"] === true ||
+          options["clear-auth-token"] === "true"
+        )
           ? { authToken: profile.authToken ?? null }
           : {}),
-        ...(options["clear-review-model"] === true || options["clear-review-model"] === "true"
+        ...(options["clear-review-model"] === true ||
+        options["clear-review-model"] === "true"
           ? { reviewModel: null }
           : {}),
         ...("review-model" in options &&
-        !(options["clear-review-model"] === true || options["clear-review-model"] === "true")
+        !(
+          options["clear-review-model"] === true ||
+          options["clear-review-model"] === "true"
+        )
           ? { reviewModel: profile.reviewModel ?? null }
           : {}),
-        ...(options["clear-text-generation-model"] === true || options["clear-text-generation-model"] === "true"
+        ...(options["clear-text-generation-model"] === true ||
+        options["clear-text-generation-model"] === "true"
           ? { textGenerationModel: null }
           : {}),
         ...("text-generation-model" in options &&
-        !(options["clear-text-generation-model"] === true || options["clear-text-generation-model"] === "true")
+        !(
+          options["clear-text-generation-model"] === true ||
+          options["clear-text-generation-model"] === "true"
+        )
           ? { textGenerationModel: profile.textGenerationModel ?? null }
           : {}),
-        ...("default" in options ? { isDefault: profile.isDefault ?? false } : {})
+        ...("default" in options
+          ? { isDefault: profile.isDefault ?? false }
+          : {}),
       });
-      process.stdout.write(formatModelProfileSummary("Model profile saved.", savedProfile));
+      process.stdout.write(
+        formatModelProfileSummary("Model profile saved.", savedProfile),
+      );
       return 0;
     });
   }
@@ -324,8 +404,8 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       const profiles = await listAll(storage.stores.modelProfiles, {
         order: [
           { field: "isDefault", direction: "desc" },
-          { field: "name", direction: "asc" }
-        ]
+          { field: "name", direction: "asc" },
+        ],
       });
       if (profiles.length === 0) {
         process.stdout.write("No model profiles configured.\n");
@@ -342,11 +422,11 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
             reviewModel: profile.reviewModel,
             textGenerationModel: profile.textGenerationModel,
             isDefault: profile.isDefault,
-            authToken: maskSecret(profile.authToken)
+            authToken: maskSecret(profile.authToken),
           })),
           null,
-          2
-        )}\n`
+          2,
+        )}\n`,
       );
       return 0;
     });
@@ -355,7 +435,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
   if (resource === "model-profile" && action === "remove") {
     const profile = modelProfileLookupSchema.parse({
       name: options.name,
-      databasePath: options["sqlite-database-path"]
+      databasePath: options["sqlite-database-path"],
     });
     return withStorage(options, config, async (storage) => {
       const removedProfile = await storage.deleteModelProfile(profile.name);
@@ -364,7 +444,9 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
         return 1;
       }
 
-      process.stdout.write(formatModelProfileSummary("Model profile removed.", removedProfile));
+      process.stdout.write(
+        formatModelProfileSummary("Model profile removed.", removedProfile),
+      );
       return 0;
     });
   }
@@ -372,7 +454,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
   if (resource === "model-profile" && action === "set-default") {
     const profile = modelProfileLookupSchema.parse({
       name: options.name,
-      databasePath: options["sqlite-database-path"]
+      databasePath: options["sqlite-database-path"],
     });
     return withStorage(options, config, async (storage) => {
       const updatedProfile = await storage.setDefaultModelProfile(profile.name);
@@ -381,7 +463,12 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
         return 1;
       }
 
-      process.stdout.write(formatModelProfileSummary("Default model profile updated.", updatedProfile));
+      process.stdout.write(
+        formatModelProfileSummary(
+          "Default model profile updated.",
+          updatedProfile,
+        ),
+      );
       return 0;
     });
   }
@@ -397,21 +484,28 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
   if (resource === "metrics" && action === "sessions") {
     const config = loadConfig();
     const runLogDir =
-      typeof options["run-log-dir"] === "string" ? resolve(options["run-log-dir"]) : config.runLogDir;
+      typeof options["run-log-dir"] === "string"
+        ? resolve(options["run-log-dir"])
+        : config.runLogDir;
     const runRows = await loadRunMetricsRows(runLogDir);
 
     if (runRows.length === 0) {
-      process.stdout.write(`No readable Copilot session logs found in ${runLogDir}.\n`);
+      process.stdout.write(
+        `No readable Copilot session logs found in ${runLogDir}.\n`,
+      );
       return 0;
     }
 
-    const modelPremiumRequestsRows = buildModelPremiumRequestsStatsRows(runRows);
+    const modelPremiumRequestsRows =
+      buildModelPremiumRequestsStatsRows(runRows);
     process.stdout.write(
       [
         formatRunMetricsTable(runRows),
         formatSummaryMetricsTable(buildSummaryMetricsRows(runRows)),
-        ...(modelPremiumRequestsRows.length > 0 ? [formatModelPremiumRequestsStatsTable(modelPremiumRequestsRows)] : [])
-      ].join("\n\n") + "\n"
+        ...(modelPremiumRequestsRows.length > 0
+          ? [formatModelPremiumRequestsStatsTable(modelPremiumRequestsRows)]
+          : []),
+      ].join("\n\n") + "\n",
     );
     return 0;
   }
@@ -458,10 +552,13 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
 async function withStorage<T>(
   options: Record<string, string | boolean>,
   config: ReturnType<typeof loadConfig>,
-  run: (storage: StorageHelpers, context: { sqliteDatabasePath?: string | undefined }) => Promise<T>
+  run: (
+    storage: StorageHelpers,
+    context: { sqliteDatabasePath?: string | undefined },
+  ) => Promise<T>,
 ): Promise<T> {
   const env = {
-    ...process.env
+    ...process.env,
   };
   if (typeof options["sqlite-database-path"] === "string") {
     env.SQLITE_DATABASE_PATH = options["sqlite-database-path"];
@@ -469,14 +566,18 @@ async function withStorage<T>(
 
   const storageRuntime = await initializeStorageRuntime({
     providerModule:
-      typeof options["storage-provider-module"] === "string" ? options["storage-provider-module"] : config.storageProviderModule,
-    env
+      typeof options["storage-provider-module"] === "string"
+        ? options["storage-provider-module"]
+        : config.storageProviderModule,
+    env,
   });
 
   try {
     return await run(storageRuntime.storage, {
       sqliteDatabasePath:
-        typeof env.SQLITE_DATABASE_PATH === "string" ? resolve(env.SQLITE_DATABASE_PATH) : undefined
+        typeof env.SQLITE_DATABASE_PATH === "string"
+          ? resolve(env.SQLITE_DATABASE_PATH)
+          : undefined,
     });
   } finally {
     await storageRuntime.provider.close();
@@ -485,21 +586,21 @@ async function withStorage<T>(
 
 function printHelp(): void {
   process.stdout.write(
-      [
-        "Usage:",
-        "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> --bot-username <name> [--bot-user-id <id>] [--model-profile <name>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-        "  pnpm cli tenant list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-        "  pnpm cli tenant set-profile --base-url <url> --project-id <id> --model-profile <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-        "  pnpm cli tenant clear-profile --base-url <url> --project-id <id> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-        "  pnpm cli tenant remove --base-url <url> --project-id <id> [--sqlite-database-path <path>] [--storage-provider-module <module>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
-        "  pnpm cli model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--default] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-        "  pnpm cli model-profile list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-        "  pnpm cli model-profile remove --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-        "  pnpm cli model-profile set-default --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-        "  pnpm cli model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-        "  pnpm cli metrics sessions [--run-log-dir <path>]"
-      ].join("\n") + "\n"
-    );
+    [
+      "Usage:",
+      "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> --bot-username <name> [--bot-user-id <id>] [--model-profile <name>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli tenant list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli tenant set-profile --base-url <url> --project-id <id> --model-profile <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli tenant clear-profile --base-url <url> --project-id <id> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli tenant remove --base-url <url> --project-id <id> [--sqlite-database-path <path>] [--storage-provider-module <module>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
+      "  pnpm cli model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--default] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli model-profile list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli model-profile remove --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli model-profile set-default --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli metrics sessions [--run-log-dir <path>]",
+    ].join("\n") + "\n",
+  );
 }
 
 function formatModelProfileSummary(
@@ -513,22 +614,26 @@ function formatModelProfileSummary(
     textGenerationModel: string | null;
     isDefault: boolean;
     authToken: string | null;
-  }
+  },
 ): string {
-  return [
-    header,
-    `name: ${profile.name}`,
-    `providerBaseUrl: ${profile.providerBaseUrl ?? "(none)"}`,
-    `providerType: ${profile.providerType ?? "(native)"}`,
-    `wireApi: ${profile.providerBaseUrl ? (profile.wireApi ?? "responses") : "(native)"}`,
-    `reviewModel: ${profile.reviewModel ?? "(default)"}`,
-    `textGenerationModel: ${profile.textGenerationModel ?? "(default)"}`,
-    `default: ${profile.isDefault ? "yes" : "no"}`,
-    `authToken: ${maskSecret(profile.authToken) ?? "(none)"}`
-  ].join("\n") + "\n";
+  return (
+    [
+      header,
+      `name: ${profile.name}`,
+      `providerBaseUrl: ${profile.providerBaseUrl ?? "(none)"}`,
+      `providerType: ${profile.providerType ?? "(native)"}`,
+      `wireApi: ${profile.providerBaseUrl ? (profile.wireApi ?? "responses") : "(native)"}`,
+      `reviewModel: ${profile.reviewModel ?? "(default)"}`,
+      `textGenerationModel: ${profile.textGenerationModel ?? "(default)"}`,
+      `default: ${profile.isDefault ? "yes" : "no"}`,
+      `authToken: ${maskSecret(profile.authToken) ?? "(none)"}`,
+    ].join("\n") + "\n"
+  );
 }
 
-function assertNoConflictingModelProfileFieldOptions(options: Record<string, string | boolean>): void {
+function assertNoConflictingModelProfileFieldOptions(
+  options: Record<string, string | boolean>,
+): void {
   for (const field of clearableModelProfileFields) {
     const clearOption = `clear-${field}`;
     if (!(field in options) || !(clearOption in options)) {
@@ -538,28 +643,37 @@ function assertNoConflictingModelProfileFieldOptions(options: Record<string, str
     throw new Error(`Cannot use --${field} and --${clearOption} together`);
   }
 
-  if ("clear-base-url" in options && ("provider-type" in options || "wire-api" in options)) {
-    throw new Error("Cannot combine --clear-base-url with --provider-type or --wire-api");
+  if (
+    "clear-base-url" in options &&
+    ("provider-type" in options || "wire-api" in options)
+  ) {
+    throw new Error(
+      "Cannot combine --clear-base-url with --provider-type or --wire-api",
+    );
   }
 }
 
 async function collectTenantArtifactSummary(
   summary: TenantDeletionSummary,
   workspaceRoot: string,
-  runLogDir: string
+  runLogDir: string,
 ): Promise<TenantArtifactSummary> {
-  const workspacePaths = summary.interactionJobIds.map((interactionJobId) => join(workspaceRoot, interactionJobId));
-  const runLogPaths = summary.interactionRunIds.map((interactionRunId) => join(runLogDir, interactionRunId));
+  const workspacePaths = summary.interactionJobIds.map((interactionJobId) =>
+    join(workspaceRoot, interactionJobId),
+  );
+  const runLogPaths = summary.interactionRunIds.map((interactionRunId) =>
+    join(runLogDir, interactionRunId),
+  );
   const [existingWorkspaceCount, existingRunLogCount] = await Promise.all([
     countExistingPaths(workspacePaths),
-    countExistingPaths(runLogPaths)
+    countExistingPaths(runLogPaths),
   ]);
 
   return {
     workspacePaths,
     runLogPaths,
     existingWorkspaceCount,
-    existingRunLogCount
+    existingRunLogCount,
   };
 }
 
@@ -582,7 +696,7 @@ function formatTenantRemovalSummary(
   artifactSummary: TenantArtifactSummary,
   databasePath: string,
   workspaceRoot: string,
-  runLogDir: string
+  runLogDir: string,
 ): string {
   return [
     `Preparing to remove tenant ${summary.tenant.baseUrl} :: ${summary.tenant.projectId}`,
@@ -597,7 +711,7 @@ function formatTenantRemovalSummary(
     `- ${summary.discussionMappingCount} ${pluralize("discussion mapping", summary.discussionMappingCount)}`,
     `- ${artifactSummary.existingWorkspaceCount}/${artifactSummary.workspacePaths.length} workspace ${pluralize("directory", artifactSummary.workspacePaths.length)} under ${workspaceRoot}`,
     `- ${artifactSummary.existingRunLogCount}/${artifactSummary.runLogPaths.length} run log ${pluralize("directory", artifactSummary.runLogPaths.length)} under ${runLogDir}`,
-    ""
+    "",
   ].join("\n");
 }
 
@@ -608,7 +722,7 @@ function pluralize(noun: string, count: number): string {
 async function promptForConfirmation(prompt: string): Promise<boolean> {
   const readline = createInterface({
     input: process.stdin,
-    output: process.stdout
+    output: process.stdout,
   });
 
   try {
@@ -627,20 +741,25 @@ async function deleteTenantArtifacts(paths: string[]): Promise<void> {
         recursive: true,
         force: true,
         maxRetries: 10,
-        retryDelay: 200
-      })
-    )
+        retryDelay: 200,
+      }),
+    ),
   );
   const failures = results
     .map((result, index) => ({ result, path: uniquePaths[index] }))
-    .filter((entry): entry is { result: PromiseRejectedResult; path: string } => entry.result.status === "rejected");
+    .filter(
+      (entry): entry is { result: PromiseRejectedResult; path: string } =>
+        entry.result.status === "rejected",
+    );
 
   if (failures.length > 0) {
     throw new Error(
       [
         "Failed to remove local tenant artifacts:",
-        ...failures.map((failure) => `- ${failure.path}: ${String(failure.result.reason)}`)
-      ].join("\n")
+        ...failures.map(
+          (failure) => `- ${failure.path}: ${String(failure.result.reason)}`,
+        ),
+      ].join("\n"),
     );
   }
 }
@@ -648,18 +767,24 @@ async function deleteTenantArtifacts(paths: string[]): Promise<void> {
 async function deleteTenantArtifactsForSummary(
   summary: TenantDeletionSummary,
   workspaceRoot: string,
-  runLogDir: string
+  runLogDir: string,
 ): Promise<void> {
   await deleteTenantArtifacts([
-    ...summary.interactionJobIds.map((interactionJobId) => join(workspaceRoot, interactionJobId)),
-    ...summary.interactionRunIds.map((interactionRunId) => join(runLogDir, interactionRunId))
+    ...summary.interactionJobIds.map((interactionJobId) =>
+      join(workspaceRoot, interactionJobId),
+    ),
+    ...summary.interactionRunIds.map((interactionRunId) =>
+      join(runLogDir, interactionRunId),
+    ),
   ]);
 }
 
 async function loadRunMetricsRows(runLogDir: string): Promise<RunMetricsRow[]> {
   try {
     const entries = await readdir(runLogDir, { withFileTypes: true });
-    const runDirectories = entries.filter((entry) => entry.isDirectory()).sort((left, right) => left.name.localeCompare(right.name));
+    const runDirectories = entries
+      .filter((entry) => entry.isDirectory())
+      .sort((left, right) => left.name.localeCompare(right.name));
     const rows: RunMetricsRow[] = [];
 
     for (const entry of runDirectories) {
@@ -675,7 +800,7 @@ async function loadRunMetricsRows(runLogDir: string): Promise<RunMetricsRow[]> {
         inputTokens: metrics.inputTokens,
         outputTokens: metrics.outputTokens,
         toolCalls: metrics.toolExecutions,
-        durationMs: metrics.apiDurationMs
+        durationMs: metrics.apiDurationMs,
       });
     }
 
@@ -688,7 +813,7 @@ async function loadRunMetricsRows(runLogDir: string): Promise<RunMetricsRow[]> {
 async function loadRunMetrics(runDirectory: string) {
   const candidateLogPaths = [
     join(runDirectory, "copilot", "reviewer", "session.json"),
-    join(runDirectory, "copilot", "session.json")
+    join(runDirectory, "copilot", "session.json"),
   ];
 
   for (const candidateLogPath of candidateLogPaths) {
@@ -701,7 +826,9 @@ async function loadRunMetrics(runDirectory: string) {
   return null;
 }
 
-function buildModelPremiumRequestsStatsRows(rows: RunMetricsRow[]): ModelPremiumRequestsStatsRow[] {
+function buildModelPremiumRequestsStatsRows(
+  rows: RunMetricsRow[],
+): ModelPremiumRequestsStatsRow[] {
   const statsByModel = new Map<string, number[]>();
 
   for (const row of rows) {
@@ -713,9 +840,10 @@ function buildModelPremiumRequestsStatsRows(rows: RunMetricsRow[]): ModelPremium
   }
 
   return [...statsByModel.entries()]
-    .sort(
-      (left, right) =>
-        sum(left[1]) - sum(right[1]) === 0 ? left[0].localeCompare(right[0]) : sum(right[1]) - sum(left[1])
+    .sort((left, right) =>
+      sum(left[1]) - sum(right[1]) === 0
+        ? left[0].localeCompare(right[0])
+        : sum(right[1]) - sum(left[1]),
     )
     .map(([model, premiumRequests]) => ({
       model,
@@ -727,7 +855,7 @@ function buildModelPremiumRequestsStatsRows(rows: RunMetricsRow[]): ModelPremium
       p25: percentile(premiumRequests, 25),
       p50: percentile(premiumRequests, 50),
       p75: percentile(premiumRequests, 75),
-      p90: percentile(premiumRequests, 90)
+      p90: percentile(premiumRequests, 90),
     }));
 }
 
@@ -739,13 +867,69 @@ function buildSummaryMetricsRows(rows: RunMetricsRow[]): SummaryMetricsRow[] {
   const durationMs = rows.map((row) => row.durationMs);
 
   return [
-    createSummaryMetricsRow("min", premiumRequests, inputTokens, outputTokens, toolCalls, durationMs, minimum),
-    createSummaryMetricsRow("max", premiumRequests, inputTokens, outputTokens, toolCalls, durationMs, maximum),
-    createSummaryMetricsRow("avg", premiumRequests, inputTokens, outputTokens, toolCalls, durationMs, average),
-    createSummaryMetricsRow("p50", premiumRequests, inputTokens, outputTokens, toolCalls, durationMs, (values) => percentile(values, 50)),
-    createSummaryMetricsRow("p25", premiumRequests, inputTokens, outputTokens, toolCalls, durationMs, (values) => percentile(values, 25)),
-    createSummaryMetricsRow("p75", premiumRequests, inputTokens, outputTokens, toolCalls, durationMs, (values) => percentile(values, 75)),
-    createSummaryMetricsRow("p90", premiumRequests, inputTokens, outputTokens, toolCalls, durationMs, (values) => percentile(values, 90))
+    createSummaryMetricsRow(
+      "min",
+      premiumRequests,
+      inputTokens,
+      outputTokens,
+      toolCalls,
+      durationMs,
+      minimum,
+    ),
+    createSummaryMetricsRow(
+      "max",
+      premiumRequests,
+      inputTokens,
+      outputTokens,
+      toolCalls,
+      durationMs,
+      maximum,
+    ),
+    createSummaryMetricsRow(
+      "avg",
+      premiumRequests,
+      inputTokens,
+      outputTokens,
+      toolCalls,
+      durationMs,
+      average,
+    ),
+    createSummaryMetricsRow(
+      "p50",
+      premiumRequests,
+      inputTokens,
+      outputTokens,
+      toolCalls,
+      durationMs,
+      (values) => percentile(values, 50),
+    ),
+    createSummaryMetricsRow(
+      "p25",
+      premiumRequests,
+      inputTokens,
+      outputTokens,
+      toolCalls,
+      durationMs,
+      (values) => percentile(values, 25),
+    ),
+    createSummaryMetricsRow(
+      "p75",
+      premiumRequests,
+      inputTokens,
+      outputTokens,
+      toolCalls,
+      durationMs,
+      (values) => percentile(values, 75),
+    ),
+    createSummaryMetricsRow(
+      "p90",
+      premiumRequests,
+      inputTokens,
+      outputTokens,
+      toolCalls,
+      durationMs,
+      (values) => percentile(values, 90),
+    ),
   ];
 }
 
@@ -756,7 +940,7 @@ function createSummaryMetricsRow(
   outputTokens: number[],
   toolCalls: number[],
   durationMs: number[],
-  aggregate: (values: number[]) => number
+  aggregate: (values: number[]) => number,
 ): SummaryMetricsRow {
   return {
     stat,
@@ -764,61 +948,104 @@ function createSummaryMetricsRow(
     inputTokens: aggregate(inputTokens),
     outputTokens: aggregate(outputTokens),
     toolCalls: aggregate(toolCalls),
-    durationMs: aggregate(durationMs)
+    durationMs: aggregate(durationMs),
   };
 }
 
 function formatRunMetricsTable(rows: RunMetricsRow[]): string {
-  return formatTable(["run", "premiumRequests", "inputTokens", "outputTokens", "toolCalls", "durationMs"], rows.map((row) => [
-    row.run,
-    row.premiumRequests,
-    row.inputTokens,
-    row.outputTokens,
-    row.toolCalls,
-    row.durationMs
-  ]));
+  return formatTable(
+    [
+      "run",
+      "premiumRequests",
+      "inputTokens",
+      "outputTokens",
+      "toolCalls",
+      "durationMs",
+    ],
+    rows.map((row) => [
+      row.run,
+      row.premiumRequests,
+      row.inputTokens,
+      row.outputTokens,
+      row.toolCalls,
+      row.durationMs,
+    ]),
+  );
 }
 
 function formatSummaryMetricsTable(rows: SummaryMetricsRow[]): string {
-  return formatTable(["stat", "premiumRequests", "inputTokens", "outputTokens", "toolCalls", "durationMs"], rows.map((row) => [
-    row.stat,
-    row.premiumRequests,
-    row.inputTokens,
-    row.outputTokens,
-    row.toolCalls,
-    row.durationMs
-  ]));
+  return formatTable(
+    [
+      "stat",
+      "premiumRequests",
+      "inputTokens",
+      "outputTokens",
+      "toolCalls",
+      "durationMs",
+    ],
+    rows.map((row) => [
+      row.stat,
+      row.premiumRequests,
+      row.inputTokens,
+      row.outputTokens,
+      row.toolCalls,
+      row.durationMs,
+    ]),
+  );
 }
 
-function formatModelPremiumRequestsStatsTable(rows: ModelPremiumRequestsStatsRow[]): string {
-  return formatTable(["model", "runs", "premiumRequests", "min", "max", "avg", "p25", "p50", "p75", "p90"], rows.map((row) => [
-    row.model,
-    row.runs,
-    row.premiumRequests,
-    row.min,
-    row.max,
-    row.avg,
-    row.p25,
-    row.p50,
-    row.p75,
-    row.p90
-  ]));
+function formatModelPremiumRequestsStatsTable(
+  rows: ModelPremiumRequestsStatsRow[],
+): string {
+  return formatTable(
+    [
+      "model",
+      "runs",
+      "premiumRequests",
+      "min",
+      "max",
+      "avg",
+      "p25",
+      "p50",
+      "p75",
+      "p90",
+    ],
+    rows.map((row) => [
+      row.model,
+      row.runs,
+      row.premiumRequests,
+      row.min,
+      row.max,
+      row.avg,
+      row.p25,
+      row.p50,
+      row.p75,
+      row.p90,
+    ]),
+  );
 }
 
-function formatTable(headers: string[], rows: Array<Array<string | number>>): string {
+function formatTable(
+  headers: string[],
+  rows: Array<Array<string | number>>,
+): string {
   const widths = headers.map((header, columnIndex) => {
     const values = rows.map((row) => formatCellValue(row[columnIndex] ?? ""));
     return Math.max(header.length, ...values.map((value) => value.length));
   });
-  const header = headers.map((label, index) => label.padEnd(widths[index] ?? 0)).join("  ");
+  const header = headers
+    .map((label, index) => label.padEnd(widths[index] ?? 0))
+    .join("  ");
   const separator = widths.map((width) => "-".repeat(width)).join("  ");
   const body = rows.map((row) =>
     row
       .map((rawValue, index) => {
         const value = formatCellValue(rawValue);
-        return typeof rawValue === "number" ? value.padStart(widths[index] ?? 0) : value.padEnd(widths[index] ?? 0);
+        return typeof rawValue === "number"
+          ? value.padStart(widths[index] ?? 0)
+          : value.padEnd(widths[index] ?? 0);
       })
-      .join("  ")
+      .join("  "),
   );
 
   return [header, separator, ...body].join("\n");
@@ -833,7 +1060,10 @@ function formatCellValue(value: string | number): string {
     return String(value);
   }
 
-  return value.toFixed(2).replace(/\.00$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+  return value
+    .toFixed(2)
+    .replace(/\.00$/, "")
+    .replace(/(\.\d*[1-9])0+$/, "$1");
 }
 
 function minimum(values: number[]): number {
@@ -876,7 +1106,10 @@ async function main(): Promise<void> {
   process.exitCode = exitCode;
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+if (
+  process.argv[1] &&
+  pathToFileURL(process.argv[1]).href === import.meta.url
+) {
   main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`${message}\n`);

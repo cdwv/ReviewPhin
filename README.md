@@ -43,15 +43,15 @@ Node.js + TypeScript service that listens for GitLab Note Hook comments that exp
    pnpm dev
    ```
 
-5.  For non-local GitLab installations you will need to expose the server to the internet, e.g. with cloudlfare:
-   ```
-   cloudflared tunnel --url http://localhost:3000
-   ```
-   
-6. In GitLab Project, 
+5. For non-local GitLab installations you will need to expose the server to the internet, e.g. with cloudlfare:
+
+```
+cloudflared tunnel --url http://localhost:3000
+```
+
+6. In GitLab Project,
    1. create a bot token (group, project, or user access token) with `api` scope; if it maps to a project member or bot user, make that identity at least `Developer` because the worker resolves merge request discussions.
    2. add webhook pointing to https://your-public-url/webhooks/gitlab/note.
-   
 7. Register a tenant locally with the CLI.
 
    ```bash
@@ -142,8 +142,11 @@ For a normal local run:
 Useful commands:
 
 - `pnpm dev` - start in watch mode
+- `pnpm lint` - run ESLint across the TypeScript sources and tests
+- `pnpm lint:fix` - apply ESLint autofixes where safe
 - `pnpm start` - run the built app from `dist`
 - `pnpm build` - compile TypeScript
+- `pnpm typecheck` - run the TypeScript compiler without emitting files
 - `pnpm test` - run tests
 
 ## Prompt fragments and registration
@@ -365,30 +368,30 @@ After the worker is running, verify the path in this order:
 
 The Docker image reads the same application variables as a local run. All worker settings have image defaults.
 
-| Variable | Required | Default | Notes |
-| --- | --- | --- | --- |
-| `PORT` | No | `3000` | HTTP port exposed by the worker |
-| `HOST` | No | `0.0.0.0` | Bind address inside the container |
-| `LOG_LEVEL` | No | `info` | One of `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` |
-| `STORAGE_PROVIDER_MODULE` | No | built-in SQLite adapter | Optional package name or JS module path for a storage provider entrypoint |
-| `SQLITE_DATABASE_PATH` | No | `./data/review-worker.sqlite` | SQLite database path; keep this under `/app/data` if you want it persisted by compose |
-| `RUN_LOG_DIR` | No | `./data/run-logs` | Root directory for per-review run artifacts, including Copilot traces, GitLab HTTP logs, and worker app logs |
-| `WORKSPACE_ROOT` | No | `./tmp/review-workspaces` | Scratch directory for hydrated repositories |
-| `MAX_JOB_RETRIES` | No | `3` | Retry attempts for failed review jobs |
-| `RETRY_BACKOFF_MS` | No | `5000` | Delay between retries in milliseconds |
-| `COPILOT_TIMEOUT_MS` | No | `180000` | Copilot review timeout in milliseconds |
-| `REVIEWPHIN_MEMORY_ENABLED` | No | `true` | Enables per-project wiki-backed memory on the `Reviewphin memory` page; set to `false` to disable all reads and writes |
-| `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS` | No | `5000` | Character budget used for injected project memory and for triggering memory coalescing |
-| `COPILOT_CLI_PATH` | No | `/usr/local/bin/copilot` in the image | The packaged image sets this automatically to the installed Copilot CLI |
+| Variable                             | Required | Default                               | Notes                                                                                                                  |
+| ------------------------------------ | -------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                               | No       | `3000`                                | HTTP port exposed by the worker                                                                                        |
+| `HOST`                               | No       | `0.0.0.0`                             | Bind address inside the container                                                                                      |
+| `LOG_LEVEL`                          | No       | `info`                                | One of `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`                                                    |
+| `STORAGE_PROVIDER_MODULE`            | No       | built-in SQLite adapter               | Optional package name or JS module path for a storage provider entrypoint                                              |
+| `SQLITE_DATABASE_PATH`               | No       | `./data/review-worker.sqlite`         | SQLite database path; keep this under `/app/data` if you want it persisted by compose                                  |
+| `RUN_LOG_DIR`                        | No       | `./data/run-logs`                     | Root directory for per-review run artifacts, including Copilot traces, GitLab HTTP logs, and worker app logs           |
+| `WORKSPACE_ROOT`                     | No       | `./tmp/review-workspaces`             | Scratch directory for hydrated repositories                                                                            |
+| `MAX_JOB_RETRIES`                    | No       | `3`                                   | Retry attempts for failed review jobs                                                                                  |
+| `RETRY_BACKOFF_MS`                   | No       | `5000`                                | Delay between retries in milliseconds                                                                                  |
+| `COPILOT_TIMEOUT_MS`                 | No       | `180000`                              | Copilot review timeout in milliseconds                                                                                 |
+| `REVIEWPHIN_MEMORY_ENABLED`          | No       | `true`                                | Enables per-project wiki-backed memory on the `Reviewphin memory` page; set to `false` to disable all reads and writes |
+| `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS` | No       | `5000`                                | Character budget used for injected project memory and for triggering memory coalescing                                 |
+| `COPILOT_CLI_PATH`                   | No       | `/usr/local/bin/copilot` in the image | The packaged image sets this automatically to the installed Copilot CLI                                                |
 
 #### GitHub Copilot authentication (default mode)
 
 When using GitHub-hosted models, set exactly one of these variables:
 
-| Variable | Required | Description |
-| --- | --- | --- |
-| `GH_TOKEN` | Yes, unless any other variant is set | Preferred GitHub personal access token for the Copilot CLI |
-| `GITHUB_TOKEN` | Yes, unless any other variant is set | Preferred GitHub personal access token for the Copilot CLI |
+| Variable               | Required                             | Description                                                              |
+| ---------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
+| `GH_TOKEN`             | Yes, unless any other variant is set | Preferred GitHub personal access token for the Copilot CLI               |
+| `GITHUB_TOKEN`         | Yes, unless any other variant is set | Preferred GitHub personal access token for the Copilot CLI               |
 | `COPILOT_GITHUB_TOKEN` | Yes, unless any other variant is set | Fallback GitHub personal access token name recognized by the Copilot CLI |
 
 The GitHub token used for `GH_TOKEN`, `GITHUB_TOKEN` or `COPILOT_GITHUB_TOKEN` should be a **fine-grained PAT** with the **Copilot Requests** permission. The token owner also needs an active GitHub Copilot entitlement, and if Copilot access comes from an organization or enterprise, Copilot CLI must be allowed by that org or enterprise policy.
@@ -430,34 +433,34 @@ pnpm cli model-profile add --name azure-gpt4 --base-url https://my-resource.open
 
 `pnpm cli tenant add` accepts these fields:
 
-| Field | Required | Description |
-| --- | --- | --- |
-| `--base-url` | Yes | GitLab instance base URL, for example `https://gitlab.example.com` or `https://gitlab.example.com/gitlab` |
-| `--project-id` | Yes | Numeric GitLab project ID |
-| `--api-token` | Yes | Personal, project, or group token with merge request API access |
-| `--webhook-secret` | Yes | Secret expected in the `X-Gitlab-Token` header |
-| `--bot-user-id` | No | Numeric GitLab bot user ID used for stricter ownership checks |
-| `--bot-username` | Yes | Bot username used for direct mention matching |
-| `--model-profile` | No | Named model profile to assign to the tenant immediately |
-| `--sqlite-database-path` | No | Override the SQLite path instead of using `SQLITE_DATABASE_PATH` from `.env` |
-| `--storage-provider-module` | No | Override the storage provider module instead of using `STORAGE_PROVIDER_MODULE` from `.env` |
+| Field                       | Required | Description                                                                                               |
+| --------------------------- | -------- | --------------------------------------------------------------------------------------------------------- |
+| `--base-url`                | Yes      | GitLab instance base URL, for example `https://gitlab.example.com` or `https://gitlab.example.com/gitlab` |
+| `--project-id`              | Yes      | Numeric GitLab project ID                                                                                 |
+| `--api-token`               | Yes      | Personal, project, or group token with merge request API access                                           |
+| `--webhook-secret`          | Yes      | Secret expected in the `X-Gitlab-Token` header                                                            |
+| `--bot-user-id`             | No       | Numeric GitLab bot user ID used for stricter ownership checks                                             |
+| `--bot-username`            | Yes      | Bot username used for direct mention matching                                                             |
+| `--model-profile`           | No       | Named model profile to assign to the tenant immediately                                                   |
+| `--sqlite-database-path`    | No       | Override the SQLite path instead of using `SQLITE_DATABASE_PATH` from `.env`                              |
+| `--storage-provider-module` | No       | Override the storage provider module instead of using `STORAGE_PROVIDER_MODULE` from `.env`               |
 
 `pnpm cli tenant set-profile` and `pnpm cli tenant clear-profile` use the same `--base-url`, `--project-id`, and optional `--sqlite-database-path` lookup fields.
 
 `pnpm cli model-profile add` accepts these fields:
 
-| Field | Required | Description |
-| --- | --- | --- |
-| `--name` | Yes | Stable profile name used by tenants and `/reviewphin-profile <name>` overrides |
-| `--base-url` | No | Optional BYOK provider base URL; leave unset for native Copilot-backed profiles |
-| `--provider-type` | No | Optional provider type for BYOK profiles: `openai`, `azure`, or `anthropic` |
-| `--wire-api` | No | Optional BYOK wire API mode: `responses` or `completions`. When omitted for BYOK profiles, Reviewphin uses `responses` |
-| `--auth-token` | No | Optional auth token. With `--base-url`, it is sent as the BYOK provider `apiKey`; without `--base-url`, it is used as the native Copilot GitHub token. CLI output always masks it |
-| `--review-model` | No | Explicit review model; required when `--base-url` is set |
-| `--text-generation-model` | No | Optional dedicated model for memory coalescing; defaults to the review model when omitted |
-| `--default` | No | Marks the profile as the single database default |
-| `--sqlite-database-path` | No | Override the SQLite path instead of using `SQLITE_DATABASE_PATH` from `.env` |
-| `--storage-provider-module` | No | Override the storage provider module instead of using `STORAGE_PROVIDER_MODULE` from `.env` |
+| Field                       | Required | Description                                                                                                                                                                       |
+| --------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--name`                    | Yes      | Stable profile name used by tenants and `/reviewphin-profile <name>` overrides                                                                                                    |
+| `--base-url`                | No       | Optional BYOK provider base URL; leave unset for native Copilot-backed profiles                                                                                                   |
+| `--provider-type`           | No       | Optional provider type for BYOK profiles: `openai`, `azure`, or `anthropic`                                                                                                       |
+| `--wire-api`                | No       | Optional BYOK wire API mode: `responses` or `completions`. When omitted for BYOK profiles, Reviewphin uses `responses`                                                            |
+| `--auth-token`              | No       | Optional auth token. With `--base-url`, it is sent as the BYOK provider `apiKey`; without `--base-url`, it is used as the native Copilot GitHub token. CLI output always masks it |
+| `--review-model`            | No       | Explicit review model; required when `--base-url` is set                                                                                                                          |
+| `--text-generation-model`   | No       | Optional dedicated model for memory coalescing; defaults to the review model when omitted                                                                                         |
+| `--default`                 | No       | Marks the profile as the single database default                                                                                                                                  |
+| `--sqlite-database-path`    | No       | Override the SQLite path instead of using `SQLITE_DATABASE_PATH` from `.env`                                                                                                      |
+| `--storage-provider-module` | No       | Override the storage provider module instead of using `STORAGE_PROVIDER_MODULE` from `.env`                                                                                       |
 
 To clear nullable fields on an existing profile, re-run `model-profile add` with one or more of:
 `--clear-base-url`, `--clear-provider-type`, `--clear-wire-api`, `--clear-auth-token`,
@@ -465,15 +468,15 @@ To clear nullable fields on an existing profile, re-run `model-profile add` with
 
 `pnpm cli tenant remove` accepts these fields:
 
-| Field | Required | Description |
-| --- | --- | --- |
-| `--base-url` | Yes | GitLab instance base URL, normalized the same way as tenant registration |
-| `--project-id` | Yes | Numeric GitLab project ID |
-| `--sqlite-database-path` | No | Override the SQLite path instead of using `SQLITE_DATABASE_PATH` from `.env` |
-| `--storage-provider-module` | No | Override the storage provider module instead of using `STORAGE_PROVIDER_MODULE` from `.env` |
-| `--workspace-root` | No | Override the workspace scratch root instead of using `WORKSPACE_ROOT` from `.env` when removing tenant-owned hydrated repositories |
-| `--run-log-dir` | No | Override the run log root instead of using `RUN_LOG_DIR` from `.env` when removing tenant-owned review artifacts |
-| `--yes` | No | Skip the interactive confirmation prompt after the deletion summary, for example in scripts or CI |
+| Field                       | Required | Description                                                                                                                        |
+| --------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `--base-url`                | Yes      | GitLab instance base URL, normalized the same way as tenant registration                                                           |
+| `--project-id`              | Yes      | Numeric GitLab project ID                                                                                                          |
+| `--sqlite-database-path`    | No       | Override the SQLite path instead of using `SQLITE_DATABASE_PATH` from `.env`                                                       |
+| `--storage-provider-module` | No       | Override the storage provider module instead of using `STORAGE_PROVIDER_MODULE` from `.env`                                        |
+| `--workspace-root`          | No       | Override the workspace scratch root instead of using `WORKSPACE_ROOT` from `.env` when removing tenant-owned hydrated repositories |
+| `--run-log-dir`             | No       | Override the run log root instead of using `RUN_LOG_DIR` from `.env` when removing tenant-owned review artifacts                   |
+| `--yes`                     | No       | Skip the interactive confirmation prompt after the deletion summary, for example in scripts or CI                                  |
 
 `RUN_LOG_DIR` controls where per-review run artifacts are written. Each `reviewRunId` gets its own directory containing a `copilot` subdirectory with the prompt/session trace, a `gitlab-http.ndjson` file with GitLab request and response logs, and an `app.ndjson` file with worker lifecycle logging. The legacy `COPILOT_LOG_DIR` environment variable is still accepted as a fallback alias.
 
@@ -508,4 +511,3 @@ The editable review instruction templates live in `prompts/review/`:
 - `pnpm build`
 - `pnpm lint`
 - `pnpm test`
-

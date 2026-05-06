@@ -11,8 +11,10 @@ export function truncate(value: string, maxLength: number): string {
 }
 
 export function firstNonEmptyLine(value: string): string {
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0) ?? "";
+  return (
+    value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? ""
+  );
 }

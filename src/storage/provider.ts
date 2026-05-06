@@ -1,7 +1,5 @@
 import { type Logger } from "pino";
-import type {
-  StorageStores
-} from "./contract/index.js";
+import type { StorageStores } from "./contract/index.js";
 
 export interface StoragePreparationResult {
   readonly providerId: string;
@@ -24,5 +22,7 @@ export interface StorageProvider {
 }
 
 export interface StorageProviderModule {
-  createStorageProvider(context: StorageProviderFactoryContext): Promise<StorageProvider> | StorageProvider;
+  createStorageProvider(
+    context: StorageProviderFactoryContext,
+  ): Promise<StorageProvider> | StorageProvider;
 }

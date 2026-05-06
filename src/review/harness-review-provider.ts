@@ -1,11 +1,16 @@
 import type { Logger } from "pino";
 
-import { HarnessSessionRuntime } from "../harness/session.js";
+import type { HarnessSessionRuntime } from "../harness/session.js";
 import type { HarnessModelConfig } from "../harness/types.js";
-import { ProjectMemoryConsolidator } from "../memory/consolidator.js";
+import type { ProjectMemoryConsolidator } from "../memory/consolidator.js";
 import { getProjectMemoryContentLength } from "../memory/project-memory.js";
 import { buildReviewPrompt } from "../prompts/prompt-builders.js";
-import type { ReviewProvider, ReviewProviderConfig, ReviewProviderFactory, ReviewProviderRuntimeContext } from "./provider.js";
+import type {
+  ReviewProvider,
+  ReviewProviderConfig,
+  ReviewProviderFactory,
+  ReviewProviderRuntimeContext,
+} from "./provider.js";
 import type { ReviewContext, ReviewResult } from "./types.js";
 import { reviewResultSchema } from "./types.js";
 
@@ -34,10 +39,13 @@ export class HarnessReviewProvider implements ReviewProvider {
     this.maxPromptMemoryChars = options.maxPromptMemoryChars;
   }
 
-  public async review(context: ReviewContext, runtime: ReviewProviderRuntimeContext): Promise<ReviewResult> {
+  public async review(
+    context: ReviewContext,
+    runtime: ReviewProviderRuntimeContext,
+  ): Promise<ReviewResult> {
     const effectiveContext = await this.preparePromptContext(context, runtime);
     const prompt = buildReviewPrompt(effectiveContext, {
-      maxPromptMemoryChars: this.maxPromptMemoryChars
+      maxPromptMemoryChars: this.maxPromptMemoryChars,
     });
     const response = await this.harnessRuntime.run({
       prompt,
@@ -54,26 +62,35 @@ export class HarnessReviewProvider implements ReviewProvider {
         tenantId: effectiveContext.logging?.tenantId ?? runtime.tenant.id,
         runDirectory: effectiveContext.logging?.runDirectory,
         pathSegments: ["copilot", "reviewer"],
-        sessionKind: "review"
+        sessionKind: "review",
       },
       metadata: {
         mergeRequestIid: effectiveContext.mergeRequest.iid,
-        workspacePath: effectiveContext.workspacePath
-      }
+        workspacePath: effectiveContext.workspacePath,
+      },
     });
     const content = response.response?.data.content;
     if (!content) {
       throw new Error("Copilot review session returned no content");
     }
 
-    return reviewResultSchema.parse(this.normalizeOptionalReplyHandoff(parseJsonResponse(content), effectiveContext));
+    return reviewResultSchema.parse(
+      this.normalizeOptionalReplyHandoff(
+        parseJsonResponse(content),
+        effectiveContext,
+      ),
+    );
   }
 
   private async preparePromptContext(
     context: ReviewContext,
-    runtime: ReviewProviderRuntimeContext
+    runtime: ReviewProviderRuntimeContext,
   ): Promise<ReviewContext> {
-    if (!context.projectMemory.enabled || getProjectMemoryContentLength(context.projectMemory.entries) <= this.maxPromptMemoryChars) {
+    if (
+      !context.projectMemory.enabled ||
+      getProjectMemoryContentLength(context.projectMemory.entries) <=
+        this.maxPromptMemoryChars
+    ) {
       return context;
     }
 
@@ -82,18 +99,18 @@ export class HarnessReviewProvider implements ReviewProvider {
         entries: context.projectMemory.entries,
         maxChars: this.maxPromptMemoryChars,
         targetChars: Math.floor(this.maxPromptMemoryChars * 0.75),
-        reason: "prompt-budget"
+        reason: "prompt-budget",
       },
       context,
-      runtime
+      runtime,
     );
 
     return {
       ...context,
       projectMemory: {
         ...context.projectMemory,
-        entries
-      }
+        entries,
+      },
     };
   }
 
@@ -105,7 +122,7 @@ export class HarnessReviewProvider implements ReviewProvider {
       reason: "prompt-budget" | "save-threshold";
     },
     context: ReviewContext,
-    runtime: ReviewProviderRuntimeContext
+    runtime: ReviewProviderRuntimeContext,
   ): Promise<ReviewContext["projectMemory"]["entries"]> {
     try {
       return await this.memoryConsolidator.coalesce({
@@ -117,9 +134,9 @@ export class HarnessReviewProvider implements ReviewProvider {
           tenantId: context.logging?.tenantId ?? runtime.tenant.id,
           runDirectory: context.logging?.runDirectory,
           pathSegments: ["copilot"],
-          sessionKind: "review"
+          sessionKind: "review",
         },
-        coalesceInput: input
+        coalesceInput: input,
       });
     } catch (error) {
       this.logger.warn(
@@ -127,48 +144,60 @@ export class HarnessReviewProvider implements ReviewProvider {
           err: error,
           interactionRunId: context.logging?.interactionRunId ?? null,
           tenantId: context.logging?.tenantId ?? null,
-          reason: input.reason
+          reason: input.reason,
         },
-        "project memory coalescing failed; keeping existing memory entries"
+        "project memory coalescing failed; keeping existing memory entries",
       );
       return input.entries;
     }
   }
 
-  private normalizeOptionalReplyHandoff(payload: unknown, context: ReviewContext): unknown {
+  private normalizeOptionalReplyHandoff(
+    payload: unknown,
+    context: ReviewContext,
+  ): unknown {
     if (!isRecord(payload) || !isRecord(payload.replyHandoff)) {
       return payload;
     }
 
     const replyHandoff = { ...payload.replyHandoff };
-    const summary = typeof replyHandoff.summary === "string" ? replyHandoff.summary.trim() : replyHandoff.summary;
+    const summary =
+      typeof replyHandoff.summary === "string"
+        ? replyHandoff.summary.trim()
+        : replyHandoff.summary;
     if (typeof summary === "string" && summary.length > 0) {
       replyHandoff.summary = summary;
       return {
         ...payload,
-        replyHandoff
+        replyHandoff,
       };
     }
 
-    const synthesizedSummary = this.synthesizeReplyHandoffSummary(payload, replyHandoff.targets);
+    const synthesizedSummary = this.synthesizeReplyHandoffSummary(
+      payload,
+      replyHandoff.targets,
+    );
 
     this.logger.warn(
       {
         interactionRunId: context.logging?.interactionRunId ?? null,
-        tenantId: context.logging?.tenantId ?? null
+        tenantId: context.logging?.tenantId ?? null,
       },
-      "reviewer emitted an empty reply handoff summary; synthesizing fallback summary"
+      "reviewer emitted an empty reply handoff summary; synthesizing fallback summary",
     );
     return {
       ...payload,
       replyHandoff: {
         ...replyHandoff,
-        summary: synthesizedSummary
-      }
+        summary: synthesizedSummary,
+      },
     };
   }
 
-  private synthesizeReplyHandoffSummary(payload: Record<string, unknown>, targets: unknown): string {
+  private synthesizeReplyHandoffSummary(
+    payload: Record<string, unknown>,
+    targets: unknown,
+  ): string {
     if (!Array.isArray(targets)) {
       return this.synthesizeReplyHandoffSummaryFromOverview(payload);
     }
@@ -189,15 +218,21 @@ export class HarnessReviewProvider implements ReviewProvider {
     return this.synthesizeReplyHandoffSummaryFromOverview(payload);
   }
 
-  private synthesizeReplyHandoffSummaryFromOverview(payload: Record<string, unknown>): string {
+  private synthesizeReplyHandoffSummaryFromOverview(
+    payload: Record<string, unknown>,
+  ): string {
     if (isRecord(payload.overview)) {
-      const overallAssessment = normalizeNonEmptyString(payload.overview.overallAssessment);
+      const overallAssessment = normalizeNonEmptyString(
+        payload.overview.overallAssessment,
+      );
       if (overallAssessment) {
         return overallAssessment;
       }
 
       if (isRecord(payload.overview.mergeReadiness)) {
-        const mergeReadinessSummary = normalizeNonEmptyString(payload.overview.mergeReadiness.summary);
+        const mergeReadinessSummary = normalizeNonEmptyString(
+          payload.overview.mergeReadiness.summary,
+        );
         if (mergeReadinessSummary) {
           return mergeReadinessSummary;
         }
@@ -239,12 +274,12 @@ export class HarnessReviewProviderFactory implements ReviewProviderFactory {
         textGenerationModel: config.textGenerationModel,
         hasAuthToken: Boolean(config.authToken),
         providerBaseUrl: config.providerBaseUrl,
-        providerType: config.providerType
+        providerType: config.providerType,
       }),
       modelConfig: config,
       harnessRuntime: this.harnessRuntime,
       memoryConsolidator: this.harnessRuntime.consolidator,
-      maxPromptMemoryChars: this.maxPromptMemoryChars
+      maxPromptMemoryChars: this.maxPromptMemoryChars,
     });
   }
 }

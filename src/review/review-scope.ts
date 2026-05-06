@@ -1,4 +1,10 @@
-import type { GitLabDiscussion, GitLabMergeRequest, GitLabMergeRequestChange, GitLabNote, InstructionFile } from "../gitlab/types.js";
+import type {
+  GitLabDiscussion,
+  GitLabMergeRequest,
+  GitLabMergeRequestChange,
+  GitLabNote,
+  InstructionFile,
+} from "../gitlab/types.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
 import { reviewResultSchema } from "./types.js";
 import type {
@@ -7,11 +13,10 @@ import type {
   ProviderThreadContext,
   ReviewChangeSummary,
   ReviewContext,
-  ReviewFinding,
   ReviewMode,
   ReviewResult,
   ReviewTriggerContext,
-  ReviewScopeContext
+  ReviewScopeContext,
 } from "./types.js";
 
 interface PreviousReviewSource {
@@ -37,44 +42,58 @@ interface BuildScopedReviewContextInput {
   logging?: ReviewContext["logging"];
 }
 
-interface PrioritizedChange {
-  change: GitLabMergeRequestChange;
-  index: number;
-  score: number;
-}
-
 const CHANGE_LIMIT_BY_MODE: Record<ReviewMode, number> = {
   "first-pass-full": 12,
   "incremental-rereview": 8,
-  "follow-up-thread": 4
+  "follow-up-thread": 4,
 };
 
 const NOTE_LIMIT_BY_MODE: Record<ReviewMode, number> = {
   "first-pass-full": 12,
   "incremental-rereview": 8,
-  "follow-up-thread": 0
+  "follow-up-thread": 0,
 };
 
 const THREAD_LIMIT_BY_MODE: Record<ReviewMode, number> = {
   "first-pass-full": 12,
   "incremental-rereview": 10,
-  "follow-up-thread": 1
+  "follow-up-thread": 1,
 };
 
-export function buildScopedReviewContext(input: BuildScopedReviewContextInput): ReviewContext {
-  const previousReviewResult = parsePreviousReviewResult(input.previousReview?.resultJson ?? null);
-  const previousReviewChanges = parsePreviousReviewChanges(input.previousReview?.changesJson ?? null);
-  const explicitFullRescan = hasExplicitFullRescanInstruction(input.trigger.instruction);
-  const mode = determineReviewMode(input.trigger, input.previousReview, explicitFullRescan);
+export function buildScopedReviewContext(
+  input: BuildScopedReviewContextInput,
+): ReviewContext {
+  const previousReviewResult = parsePreviousReviewResult(
+    input.previousReview?.resultJson ?? null,
+  );
+  const previousReviewChanges = parsePreviousReviewChanges(
+    input.previousReview?.changesJson ?? null,
+  );
+  const explicitFullRescan = hasExplicitFullRescanInstruction(
+    input.trigger.instruction,
+  );
+  const mode = determineReviewMode(
+    input.trigger,
+    input.previousReview,
+    explicitFullRescan,
+  );
   const priorFindings = input.priorFindings ?? [];
   const targetThread =
     input.trigger.targetThreadId !== null
-      ? input.priorThreads.find((thread) => thread.threadId === input.trigger.targetThreadId) ?? null
+      ? (input.priorThreads.find(
+          (thread) => thread.threadId === input.trigger.targetThreadId,
+        ) ?? null)
       : null;
 
-  const allChangedFiles = input.changes.map((change) => toChangeSummary(change));
-  const deltaChanges = input.previousReview ? findDeltaChanges(input.changes, previousReviewChanges) : [];
-  const deltaPaths = new Set(deltaChanges.map((change) => getChangePath(change)));
+  const allChangedFiles = input.changes.map((change) =>
+    toChangeSummary(change),
+  );
+  const deltaChanges = input.previousReview
+    ? findDeltaChanges(input.changes, previousReviewChanges)
+    : [];
+  const deltaPaths = new Set(
+    deltaChanges.map((change) => getChangePath(change)),
+  );
   const targetThreadPaths = new Set<string>();
   if (targetThread?.anchor?.path) {
     targetThreadPaths.add(targetThread.anchor.path);
@@ -84,7 +103,9 @@ export function buildScopedReviewContext(input: BuildScopedReviewContextInput): 
   }
 
   const widenedInputChanges =
-    mode === "incremental-rereview" && deltaChanges.length > 0 ? deltaChanges : input.changes;
+    mode === "incremental-rereview" && deltaChanges.length > 0
+      ? deltaChanges
+      : input.changes;
   const widenScopeHints = collectWidenScopeHints(widenedInputChanges);
 
   const focusPaths = new Set<string>();
@@ -122,22 +143,32 @@ export function buildScopedReviewContext(input: BuildScopedReviewContextInput): 
     focusPaths,
     mode,
     deltaChanges,
-    widenScopeHints
+    widenScopeHints,
   });
-  const selectedPathSet = new Set(selectedChanges.map((change) => getChangePath(change)));
+  const selectedPathSet = new Set(
+    selectedChanges.map((change) => getChangePath(change)),
+  );
 
   const selectedThreads = selectPriorThreads({
     priorThreads: input.priorThreads,
     focusPaths: selectedPathSet,
     mode,
-    targetThread
+    targetThread,
   });
-  const selectedThreadIds = new Set(selectedThreads.map((thread) => thread.discussionId));
+  const selectedThreadIds = new Set(
+    selectedThreads.map((thread) => thread.discussionId),
+  );
   const selectedNotes = selectNotes(input.notes, mode);
   const selectedDiscussions =
     mode === "follow-up-thread"
-      ? input.discussions.filter((discussion) => targetThread !== null && discussion.id === targetThread.discussionId)
-      : input.discussions.filter((discussion) => selectedThreadIds.has(discussion.id));
+      ? input.discussions.filter(
+          (discussion) =>
+            targetThread !== null &&
+            discussion.id === targetThread.discussionId,
+        )
+      : input.discussions.filter((discussion) =>
+          selectedThreadIds.has(discussion.id),
+        );
 
   const omittedChangedFiles = input.changes
     .filter((change) => !selectedChanges.includes(change))
@@ -154,7 +185,7 @@ export function buildScopedReviewContext(input: BuildScopedReviewContextInput): 
     allChangedFiles,
     omittedChangedFiles,
     deltaChanges,
-    widenScopeHints
+    widenScopeHints,
   });
 
   return {
@@ -164,18 +195,22 @@ export function buildScopedReviewContext(input: BuildScopedReviewContextInput): 
     notes: selectedNotes,
     discussions: selectedDiscussions,
     instructionFiles: input.instructionFiles,
-    projectMemory: input.projectMemory ?? { enabled: false, page: null, entries: [] },
+    projectMemory: input.projectMemory ?? {
+      enabled: false,
+      page: null,
+      entries: [],
+    },
     trigger: input.trigger,
     priorThreads: selectedThreads,
     scope,
-    ...(input.logging ? { logging: input.logging } : {})
+    ...(input.logging ? { logging: input.logging } : {}),
   };
 }
 
 function determineReviewMode(
   trigger: ReviewTriggerContext,
   previousReview: PreviousReviewSource | null,
-  explicitFullRescan: boolean
+  explicitFullRescan: boolean,
 ): ReviewMode {
   if (trigger.kind === "follow-up-comment") {
     return "follow-up-thread";
@@ -194,17 +229,19 @@ function hasExplicitFullRescanInstruction(instruction: string | null): boolean {
   }
 
   return /\b(full\s+rescan|full\s+review|fresh\s+full\s+review|full\s+review\s+from\s+scratch|rescan\s+everything)\b/i.test(
-    instruction
+    instruction,
   );
 }
 
-function parsePreviousReviewResult(resultJson: string | null): ReviewResult | null {
+function parsePreviousReviewResult(
+  resultJson: string | null,
+): ReviewResult | null {
   if (!resultJson) {
     return null;
   }
 
   try {
-    const parsed = JSON.parse(resultJson);
+    const parsed: unknown = JSON.parse(resultJson);
     const validated = reviewResultSchema.safeParse(parsed);
     return validated.success ? validated.data : null;
   } catch {
@@ -212,13 +249,15 @@ function parsePreviousReviewResult(resultJson: string | null): ReviewResult | nu
   }
 }
 
-function parsePreviousReviewChanges(changesJson: string | null): GitLabMergeRequestChange[] {
+function parsePreviousReviewChanges(
+  changesJson: string | null,
+): GitLabMergeRequestChange[] {
   if (!changesJson) {
     return [];
   }
 
   try {
-    const parsed = JSON.parse(changesJson);
+    const parsed: unknown = JSON.parse(changesJson);
     return Array.isArray(parsed) ? (parsed as GitLabMergeRequestChange[]) : [];
   } catch {
     return [];
@@ -227,10 +266,19 @@ function parsePreviousReviewChanges(changesJson: string | null): GitLabMergeRequ
 
 function findDeltaChanges(
   currentChanges: GitLabMergeRequestChange[],
-  previousChanges: GitLabMergeRequestChange[]
+  previousChanges: GitLabMergeRequestChange[],
 ): GitLabMergeRequestChange[] {
-  const previousSignatureByPath = new Map(previousChanges.map((change) => [getChangePath(change), getChangeSignature(change)]));
-  return currentChanges.filter((change) => previousSignatureByPath.get(getChangePath(change)) !== getChangeSignature(change));
+  const previousSignatureByPath = new Map(
+    previousChanges.map((change) => [
+      getChangePath(change),
+      getChangeSignature(change),
+    ]),
+  );
+  return currentChanges.filter(
+    (change) =>
+      previousSignatureByPath.get(getChangePath(change)) !==
+      getChangeSignature(change),
+  );
 }
 
 function selectChanges(input: {
@@ -250,7 +298,11 @@ function selectChanges(input: {
       ? focusedChanges
       : input.mode === "incremental-rereview"
         ? input.deltaChanges.length > 0
-          ? mergeChangesPreservingOrder(input.changes, focusedChanges, input.deltaChanges)
+          ? mergeChangesPreservingOrder(
+              input.changes,
+              focusedChanges,
+              input.deltaChanges,
+            )
           : input.changes
         : input.changes;
 
@@ -262,7 +314,7 @@ function selectChanges(input: {
     .map((change, index) => ({
       change,
       index,
-      score: scoreChange(change, input.focusPaths, input.widenScopeHints)
+      score: scoreChange(change, input.focusPaths, input.widenScopeHints),
     }))
     .sort((left, right) => right.score - left.score || left.index - right.index)
     .slice(0, CHANGE_LIMIT_BY_MODE[input.mode])
@@ -280,11 +332,19 @@ function mergeChangesPreservingOrder(
   orderedChanges: GitLabMergeRequestChange[],
   ...changeGroups: GitLabMergeRequestChange[][]
 ): GitLabMergeRequestChange[] {
-  const included = new Set(changeGroups.flat().map((change) => getChangeSignature(change)));
-  return orderedChanges.filter((change) => included.has(getChangeSignature(change)));
+  const included = new Set(
+    changeGroups.flat().map((change) => getChangeSignature(change)),
+  );
+  return orderedChanges.filter((change) =>
+    included.has(getChangeSignature(change)),
+  );
 }
 
-function scoreChange(change: GitLabMergeRequestChange, focusPaths: Set<string>, widenScopeHints: string[]): number {
+function scoreChange(
+  change: GitLabMergeRequestChange,
+  focusPaths: Set<string>,
+  widenScopeHints: string[],
+): number {
   const path = getChangePath(change);
   let score = 0;
 
@@ -300,11 +360,18 @@ function scoreChange(change: GitLabMergeRequestChange, focusPaths: Set<string>, 
     score += path.startsWith("src/") ? 60 : 20;
   }
 
-  if (/^(src\/(gitlab|jobs|reconcile|review|storage)\/|package\.json$|pnpm-lock\.yaml$|tsconfig(\..+)?\.json$|Dockerfile$|docker-compose\.yml$)/.test(path)) {
+  if (
+    /^(src\/(gitlab|jobs|reconcile|review|storage)\/|package\.json$|pnpm-lock\.yaml$|tsconfig(\..+)?\.json$|Dockerfile$|docker-compose\.yml$)/.test(
+      path,
+    )
+  ) {
     score += 120;
   }
 
-  if (widenScopeHints.length > 0 && /(^src\/|package\.json$|pnpm-lock\.yaml$|tsconfig(\..+)?\.json$)/.test(path)) {
+  if (
+    widenScopeHints.length > 0 &&
+    /(^src\/|package\.json$|pnpm-lock\.yaml$|tsconfig(\..+)?\.json$)/.test(path)
+  ) {
     score += 40;
   }
 
@@ -317,10 +384,17 @@ function collectWidenScopeHints(changes: GitLabMergeRequestChange[]): string[] {
 
   for (const change of changes) {
     const path = getChangePath(change);
-    if (/^(package\.json|pnpm-lock\.yaml|Dockerfile|docker-compose\.yml|tsconfig(\..+)?\.json)$/.test(path)) {
+    if (
+      /^(package\.json|pnpm-lock\.yaml|Dockerfile|docker-compose\.yml|tsconfig(\..+)?\.json)$/.test(
+        path,
+      )
+    ) {
       hints.add("shared build or runtime configuration changed");
     }
-    if (/^src\/.+\/types\.ts$/.test(path) || /(^|\/)(api|client|schema|types)\.ts$/.test(path)) {
+    if (
+      /^src\/.+\/types\.ts$/.test(path) ||
+      /(^|\/)(api|client|schema|types)\.ts$/.test(path)
+    ) {
       hints.add("public interfaces or shared contracts changed");
     }
     if (/^src\/storage\//.test(path) || /migration/i.test(path)) {
@@ -345,7 +419,9 @@ function selectPriorThreads(input: {
   }
 
   const candidateThreads =
-    input.mode === "incremental-rereview" ? input.priorThreads.filter((thread) => !thread.resolved) : input.priorThreads;
+    input.mode === "incremental-rereview"
+      ? input.priorThreads.filter((thread) => !thread.resolved)
+      : input.priorThreads;
 
   if (candidateThreads.length <= THREAD_LIMIT_BY_MODE[input.mode]) {
     return candidateThreads.slice();
@@ -357,9 +433,13 @@ function selectPriorThreads(input: {
       index,
       score:
         (thread.resolved ? 0 : 500) +
-        (thread.anchor?.path && input.focusPaths.has(thread.anchor.path) ? 300 : 0) +
-        (thread.anchor?.oldPath && input.focusPaths.has(thread.anchor.oldPath) ? 300 : 0) +
-        Math.min(thread.humanReplies.length * 30, 120)
+        (thread.anchor?.path && input.focusPaths.has(thread.anchor.path)
+          ? 300
+          : 0) +
+        (thread.anchor?.oldPath && input.focusPaths.has(thread.anchor.oldPath)
+          ? 300
+          : 0) +
+        Math.min(thread.humanReplies.length * 30, 120),
     }))
     .sort((left, right) => right.score - left.score || left.index - right.index)
     .slice(0, THREAD_LIMIT_BY_MODE[input.mode])
@@ -385,13 +465,18 @@ function buildScope(input: {
   deltaChanges: GitLabMergeRequestChange[];
   widenScopeHints: string[];
 }): ReviewScopeContext {
-  const previousReview = buildPreviousReviewContext(input.previousReview, input.previousReviewResult);
+  const previousReview = buildPreviousReviewContext(
+    input.previousReview,
+    input.previousReviewResult,
+  );
   const deltaSincePreviousReview =
     input.mode === "incremental-rereview" && input.previousReview
       ? {
           previousReviewRunId: input.previousReview.reviewRunId,
           previousHeadSha: input.previousReview.headSha,
-          changedFiles: input.deltaChanges.map((change) => toChangeSummary(change))
+          changedFiles: input.deltaChanges.map((change) =>
+            toChangeSummary(change),
+          ),
         }
       : null;
 
@@ -412,7 +497,7 @@ function buildScope(input: {
             `Prioritize the ${input.deltaChanges.length} file(s) changed since the previous review before widening beyond the delta.`,
             input.omittedChangedFiles.length > 0
               ? `${input.omittedChangedFiles.length} additional changed file(s) are summarized without inline diffs.`
-              : "All current changed files are included in detail."
+              : "All current changed files are included in detail.",
           ].join(" ")
         : [
             input.previousReview
@@ -420,7 +505,7 @@ function buildScope(input: {
               : "This is the first full review request for this merge request.",
             input.omittedChangedFiles.length > 0
               ? `${input.omittedChangedFiles.length} changed file(s) are summarized without inline diffs to keep the starting context bounded.`
-              : "All changed files are included in detail."
+              : "All changed files are included in detail.",
           ].join(" ");
 
   return {
@@ -432,13 +517,13 @@ function buildScope(input: {
     targetThread: input.targetThread,
     previousReview,
     priorFindings: input.priorFindings,
-    deltaSincePreviousReview
+    deltaSincePreviousReview,
   };
 }
 
 function buildPreviousReviewContext(
   previousReview: PreviousReviewSource | null,
-  result: ReviewResult | null
+  result: ReviewResult | null,
 ): PreviousReviewContext | null {
   if (!previousReview) {
     return null;
@@ -448,19 +533,23 @@ function buildPreviousReviewContext(
     reviewRunId: previousReview.reviewRunId,
     reviewedAt: previousReview.finishedAt,
     headSha: previousReview.headSha,
-    overviewSummary: result?.overview.overallAssessment ?? result?.overview.summary ?? null,
-    mergeReadiness: result?.overview.mergeReadiness ?? null
+    overviewSummary:
+      result?.overview.overallAssessment ?? result?.overview.summary ?? null,
+    mergeReadiness: result?.overview.mergeReadiness ?? null,
   };
 }
 
-function toChangeSummary(change: GitLabMergeRequestChange, reason?: string): ReviewChangeSummary {
+function toChangeSummary(
+  change: GitLabMergeRequestChange,
+  reason?: string,
+): ReviewChangeSummary {
   return {
     path: getChangePath(change),
     oldPath: change.old_path,
     newFile: change.new_file,
     renamedFile: change.renamed_file,
     deletedFile: change.deleted_file,
-    ...(reason ? { reason } : {})
+    ...(reason ? { reason } : {}),
   };
 }
 
@@ -475,6 +564,6 @@ function getChangeSignature(change: GitLabMergeRequestChange): string {
     diff: change.diff ?? "",
     newFile: change.new_file,
     renamedFile: change.renamed_file,
-    deletedFile: change.deleted_file
+    deletedFile: change.deleted_file,
   });
 }

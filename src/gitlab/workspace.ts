@@ -8,7 +8,11 @@ import type { Logger } from "pino";
 import * as tar from "tar";
 
 import { GitLabApiError, type GitLabClient } from "./client.js";
-import type { GitLabMergeRequestChange, InstructionFile, MaterializedWorkspace } from "./types.js";
+import type {
+  GitLabMergeRequestChange,
+  InstructionFile,
+  MaterializedWorkspace,
+} from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -56,11 +60,17 @@ export class WorkspaceMaterializer {
     try {
       return await this.materializeFromGit(input, cleanupRoot);
     } catch (error) {
-      this.logger.warn({ err: error }, "git checkout materialization failed; falling back to repository archive");
+      this.logger.warn(
+        { err: error },
+        "git checkout materialization failed; falling back to repository archive",
+      );
     }
 
     try {
-      const archiveBuffer = await input.client.downloadRepositoryArchive(input.projectId, input.headSha);
+      const archiveBuffer = await input.client.downloadRepositoryArchive(
+        input.projectId,
+        input.headSha,
+      );
       const archivePath = join(cleanupRoot, "repository.tar.gz");
       const rootPath = join(cleanupRoot, "workspace");
       await mkdir(rootPath, { recursive: true });
@@ -68,7 +78,7 @@ export class WorkspaceMaterializer {
       await tar.x({
         cwd: rootPath,
         file: archivePath,
-        strip: 1
+        strip: 1,
       });
       await rm(archivePath, { force: true });
       const instructionFiles = await loadInstructionFiles(rootPath);
@@ -77,10 +87,13 @@ export class WorkspaceMaterializer {
         rootPath,
         cleanupRoot,
         strategy: "archive",
-        instructionFiles
+        instructionFiles,
       };
     } catch (error) {
-      this.logger.warn({ err: error }, "repository archive materialization failed; falling back to targeted files");
+      this.logger.warn(
+        { err: error },
+        "repository archive materialization failed; falling back to targeted files",
+      );
       return this.materializeFromFiles(input, cleanupRoot);
     }
   }
@@ -90,7 +103,7 @@ export class WorkspaceMaterializer {
       recursive: true,
       force: true,
       maxRetries: 10,
-      retryDelay: 200
+      retryDelay: 200,
     });
   }
 
@@ -103,7 +116,7 @@ export class WorkspaceMaterializer {
       headSha: string;
       changes: GitLabMergeRequestChange[];
     },
-    cleanupRoot: string
+    cleanupRoot: string,
   ): Promise<MaterializedWorkspace> {
     const rootPath = join(cleanupRoot, "workspace");
     await mkdir(rootPath, { recursive: true });
@@ -113,7 +126,11 @@ export class WorkspaceMaterializer {
         continue;
       }
 
-      const content = await input.client.getRawFile(input.projectId, change.new_path, input.headSha);
+      const content = await input.client.getRawFile(
+        input.projectId,
+        change.new_path,
+        input.headSha,
+      );
       const outputPath = join(rootPath, ...change.new_path.split("/"));
       await mkdir(dirname(outputPath), { recursive: true });
       await writeFile(outputPath, content, "utf8");
@@ -121,7 +138,11 @@ export class WorkspaceMaterializer {
 
     for (const filePath of ["AGENTS.md", ".github/copilot-instructions.md"]) {
       try {
-        const content = await input.client.getRawFile(input.projectId, filePath, input.headSha);
+        const content = await input.client.getRawFile(
+          input.projectId,
+          filePath,
+          input.headSha,
+        );
         const outputPath = join(rootPath, ...filePath.split("/"));
         await mkdir(dirname(outputPath), { recursive: true });
         await writeFile(outputPath, content, "utf8");
@@ -137,13 +158,18 @@ export class WorkspaceMaterializer {
         input.projectId,
         input.headSha,
         ".github/instructions",
-        true
+        true,
       );
 
       for (const item of instructionTree.filter(
-        (entry) => entry.type === "blob" && entry.path.endsWith(".instructions.md")
+        (entry) =>
+          entry.type === "blob" && entry.path.endsWith(".instructions.md"),
       )) {
-        const content = await input.client.getRawFile(input.projectId, item.path, input.headSha);
+        const content = await input.client.getRawFile(
+          input.projectId,
+          item.path,
+          input.headSha,
+        );
         const outputPath = join(rootPath, ...item.path.split("/"));
         await mkdir(dirname(outputPath), { recursive: true });
         await writeFile(outputPath, content, "utf8");
@@ -158,7 +184,7 @@ export class WorkspaceMaterializer {
       rootPath,
       cleanupRoot,
       strategy: "targeted-files",
-      instructionFiles: await loadInstructionFiles(rootPath)
+      instructionFiles: await loadInstructionFiles(rootPath),
     };
   }
 
@@ -171,7 +197,7 @@ export class WorkspaceMaterializer {
       headSha: string;
       changes: GitLabMergeRequestChange[];
     },
-    cleanupRoot: string
+    cleanupRoot: string,
   ): Promise<MaterializedWorkspace> {
     const rootPath = join(cleanupRoot, "workspace");
     await mkdir(rootPath, { recursive: true });
@@ -182,12 +208,12 @@ export class WorkspaceMaterializer {
     await this.gitRunner({
       cwd: rootPath,
       args: ["init"],
-      env: gitEnv
+      env: gitEnv,
     });
     await this.gitRunner({
       cwd: rootPath,
       args: ["remote", "add", "origin", project.http_url_to_repo],
-      env: gitEnv
+      env: gitEnv,
     });
 
     let fetchedRef = "FETCH_HEAD";
@@ -195,7 +221,7 @@ export class WorkspaceMaterializer {
       await this.gitRunner({
         cwd: rootPath,
         args: ["fetch", "--depth", "1", "origin", input.headSha],
-        env: gitEnv
+        env: gitEnv,
       });
     } catch (exactShaError) {
       this.logger.warn(
@@ -203,26 +229,33 @@ export class WorkspaceMaterializer {
           err: exactShaError,
           projectId: input.projectId,
           mergeRequestIid: input.mergeRequestIid,
-          headSha: input.headSha
+          headSha: input.headSha,
         },
-        "git fetch by merge request SHA failed; trying merge request head ref"
+        "git fetch by merge request SHA failed; trying merge request head ref",
       );
 
       await this.gitRunner({
         cwd: rootPath,
-        args: ["fetch", "--depth", "1", "origin", `refs/merge-requests/${input.mergeRequestIid}/head`],
-        env: gitEnv
+        args: [
+          "fetch",
+          "--depth",
+          "1",
+          "origin",
+          `refs/merge-requests/${input.mergeRequestIid}/head`,
+        ],
+        env: gitEnv,
       });
       const fetchedSha = (
         await this.gitRunner({
           cwd: rootPath,
           args: ["rev-parse", "FETCH_HEAD"],
-          env: gitEnv
+          env: gitEnv,
         })
       ).stdout.trim();
       if (fetchedSha !== input.headSha) {
         throw new Error(
-          `Git fetch resolved merge request ${input.mergeRequestIid} to ${fetchedSha}, expected ${input.headSha}`
+          `Git fetch resolved merge request ${input.mergeRequestIid} to ${fetchedSha}, expected ${input.headSha}`,
+          { cause: exactShaError },
         );
       }
       fetchedRef = "FETCH_HEAD";
@@ -230,8 +263,14 @@ export class WorkspaceMaterializer {
 
     await this.gitRunner({
       cwd: rootPath,
-      args: ["-c", "advice.detachedHead=false", "checkout", "--detach", fetchedRef],
-      env: gitEnv
+      args: [
+        "-c",
+        "advice.detachedHead=false",
+        "checkout",
+        "--detach",
+        fetchedRef,
+      ],
+      env: gitEnv,
     });
     await rm(join(rootPath, ".git"), { recursive: true, force: true });
 
@@ -239,17 +278,26 @@ export class WorkspaceMaterializer {
       rootPath,
       cleanupRoot,
       strategy: "git",
-      instructionFiles: await loadInstructionFiles(rootPath)
+      instructionFiles: await loadInstructionFiles(rootPath),
     };
   }
 }
 
-async function loadInstructionFiles(rootPath: string): Promise<InstructionFile[]> {
-  const matches = await glob(["AGENTS.md", ".github/copilot-instructions.md", ".github/instructions/**/*.instructions.md"], {
-    cwd: rootPath,
-    nodir: true,
-    windowsPathsNoEscape: true
-  });
+async function loadInstructionFiles(
+  rootPath: string,
+): Promise<InstructionFile[]> {
+  const matches = await glob(
+    [
+      "AGENTS.md",
+      ".github/copilot-instructions.md",
+      ".github/instructions/**/*.instructions.md",
+    ],
+    {
+      cwd: rootPath,
+      nodir: true,
+      windowsPathsNoEscape: true,
+    },
+  );
 
   const uniqueMatches = Array.from(new Set(matches)).sort((left, right) => {
     const leftRank = instructionRank(left);
@@ -266,8 +314,8 @@ async function loadInstructionFiles(rootPath: string): Promise<InstructionFile[]
   for (const relativePath of uniqueMatches) {
     const absolutePath = join(rootPath, ...relativePath.split("/"));
     instructionFiles.push({
-      path: relativePath.replace(/\\/g, "/"),
-      content: await readFile(absolutePath, "utf8")
+      path: relativePath.replaceAll("\\", "/"),
+      content: await readFile(absolutePath, "utf8"),
     });
   }
 
@@ -292,11 +340,11 @@ async function runGitCommand(input: GitRunnerInput): Promise<GitRunnerResult> {
     env: input.env,
     windowsHide: true,
     timeout: 120_000,
-    maxBuffer: 10 * 1024 * 1024
+    maxBuffer: 10 * 1024 * 1024,
   });
 
   return {
     stdout: result.stdout,
-    stderr: result.stderr
+    stderr: result.stderr,
   };
 }

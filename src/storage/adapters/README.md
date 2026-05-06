@@ -7,7 +7,9 @@ Adapters are runtime plug-ins. The app only relies on the shared storage contrac
 Export a single entrypoint function:
 
 ```ts
-export function createStorageProvider(context: StorageProviderFactoryContext): StorageProvider | Promise<StorageProvider>
+export function createStorageProvider(
+  context: StorageProviderFactoryContext,
+): StorageProvider | Promise<StorageProvider>;
 ```
 
 The app loads the module from `STORAGE_PROVIDER_MODULE` when set, otherwise it uses the built-in SQLite entrypoint.

@@ -1,4 +1,7 @@
-import type { HarnessModelConfig, HarnessTenantContext } from "../harness/types.js";
+import type {
+  HarnessModelConfig,
+  HarnessTenantContext,
+} from "../harness/types.js";
 import type { ReviewContext, ReviewResult } from "./types.js";
 
 export type ReviewProviderConfig = HarnessModelConfig;
@@ -9,7 +12,10 @@ export interface ReviewProviderRuntimeContext {
 
 export interface ReviewProvider {
   readonly name: string;
-  review(context: ReviewContext, runtime: ReviewProviderRuntimeContext): Promise<ReviewResult>;
+  review(
+    context: ReviewContext,
+    runtime: ReviewProviderRuntimeContext,
+  ): Promise<ReviewResult>;
 }
 
 export interface ReviewProviderFactory {

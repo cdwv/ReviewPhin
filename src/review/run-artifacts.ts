@@ -19,11 +19,13 @@ export interface GitLabHttpLogEntry {
   durationMs?: number | undefined;
   request?: Record<string, unknown> | undefined;
   response?: Record<string, unknown> | undefined;
-  error?: {
-    message: string;
-    name?: string | undefined;
-    stack?: string | undefined;
-  } | undefined;
+  error?:
+    | {
+        message: string;
+        name?: string | undefined;
+        stack?: string | undefined;
+      }
+    | undefined;
 }
 
 export class InteractionRunArtifacts {
@@ -71,7 +73,10 @@ export class InteractionRunArtifacts {
     await this.appendNdjson(this.gitLabHttpLogPath, entry);
   }
 
-  public async writeJsonArtifact(relativePath: string, value: unknown): Promise<void> {
+  public async writeJsonArtifact(
+    relativePath: string,
+    value: unknown,
+  ): Promise<void> {
     const path = join(this.runDirectory, relativePath);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");

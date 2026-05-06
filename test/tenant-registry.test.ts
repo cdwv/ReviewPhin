@@ -8,10 +8,10 @@ function createPayload(): GitLabNoteHookPayload {
     object_kind: "note",
     project: {
       id: 123,
-      web_url: "https://gitlab.example.com/gitlab/group/project"
+      web_url: "https://gitlab.example.com/gitlab/group/project",
     },
     repository: {
-      homepage: "https://gitlab.example.com/gitlab/group/project"
+      homepage: "https://gitlab.example.com/gitlab/group/project",
     },
     merge_request: {
       iid: 1,
@@ -20,15 +20,15 @@ function createPayload(): GitLabNoteHookPayload {
       source_branch: "feature",
       target_branch: "main",
       last_commit: {
-        id: "abc123"
-      }
+        id: "abc123",
+      },
     },
     object_attributes: {
       id: 99,
       note: "/review",
       noteable_type: "MergeRequest",
-      url: "https://gitlab.example.com/gitlab/group/project/-/merge_requests/1#note_99"
-    }
+      url: "https://gitlab.example.com/gitlab/group/project/-/merge_requests/1#note_99",
+    },
   };
 }
 
@@ -49,7 +49,7 @@ describe("TenantRegistry", () => {
               botUsername: null,
               modelProfileName: null,
               createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
+              updatedAt: new Date().toISOString(),
             },
             {
               id: "tenant_prefixed",
@@ -62,19 +62,22 @@ describe("TenantRegistry", () => {
               botUsername: null,
               modelProfileName: null,
               createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            }
+              updatedAt: new Date().toISOString(),
+            },
           ],
-          get: async () => null
-        }
-      }
+          get: async () => null,
+        },
+      },
     };
 
     const registry = new TenantRegistry({
-      storage: storage as never
+      storage: storage as never,
     });
 
-    const tenant = await registry.resolveWebhookTenant(createPayload(), "secret");
+    const tenant = await registry.resolveWebhookTenant(
+      createPayload(),
+      "secret",
+    );
     expect(tenant?.id).toBe("tenant_prefixed");
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   extractMergeRequestModelProfileOverride,
-  resolveReviewProviderConfig
+  resolveReviewProviderConfig,
 } from "../src/review/model-profiles.js";
 import type { ModelProfileRecord } from "../src/storage/contract/index.js";
 
@@ -17,12 +17,12 @@ const tenant = {
   botUsername: "review-bot",
   modelProfileName: "tenant-profile",
   createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString()
+  updatedAt: new Date().toISOString(),
 };
 
 function createProfile(
   name: string,
-  overrides: Partial<ModelProfileRecord> = {}
+  overrides: Partial<ModelProfileRecord> = {},
 ): ModelProfileRecord {
   return {
     name,
@@ -35,18 +35,20 @@ function createProfile(
     isDefault: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    ...overrides
+    ...overrides,
   };
 }
 
 describe("model profile resolution", () => {
   it("extracts merge request overrides from descriptions", () => {
     expect(
-      extractMergeRequestModelProfileOverride([
-        "This MR updates the queue worker.",
-        "",
-        "/reviewphin-profile byok-prod"
-      ].join("\n"))
+      extractMergeRequestModelProfileOverride(
+        [
+          "This MR updates the queue worker.",
+          "",
+          "/reviewphin-profile byok-prod",
+        ].join("\n"),
+      ),
     ).toBe("byok-prod");
   });
 
@@ -54,27 +56,28 @@ describe("model profile resolution", () => {
     const modelProfiles = {
       get: vi.fn(async (name: string) =>
         createProfile(name, {
-          providerBaseUrl: name === "byok-prod" ? "https://llm.example.com/v1" : null,
+          providerBaseUrl:
+            name === "byok-prod" ? "https://llm.example.com/v1" : null,
           providerType: name === "byok-prod" ? "openai" : null,
           wireApi: name === "byok-prod" ? "completions" : null,
           authToken: name === "byok-prod" ? "secret-token" : null,
           reviewModel: name === "byok-prod" ? "custom-review" : "gpt-5.4",
-          textGenerationModel: name === "byok-prod" ? "custom-text" : null
-        })
+          textGenerationModel: name === "byok-prod" ? "custom-text" : null,
+        }),
       ),
       find: vi.fn(async () =>
         createProfile("default-profile", {
-          isDefault: true
-        })
-      )
+          isDefault: true,
+        }),
+      ),
     };
 
     const resolved = await resolveReviewProviderConfig({
       storage: { stores: { modelProfiles } },
       tenant,
       mergeRequest: {
-        description: "Queue changes\n/reviewphin-profile byok-prod"
-      }
+        description: "Queue changes\n/reviewphin-profile byok-prod",
+      },
     });
 
     expect(resolved).toMatchObject({
@@ -84,13 +87,13 @@ describe("model profile resolution", () => {
       reviewModel: "custom-review",
       textGenerationModel: "custom-text",
       providerBaseUrl: "https://llm.example.com/v1",
-      providerType: "openai"
+      providerType: "openai",
     });
     expect(resolved.provider).toEqual({
       baseUrl: "https://llm.example.com/v1",
       type: "openai",
       wireApi: "completions",
-      apiKey: "secret-token"
+      apiKey: "secret-token",
     });
     expect(modelProfiles.find).not.toHaveBeenCalled();
   });
@@ -104,23 +107,23 @@ describe("model profile resolution", () => {
               createProfile("byok-default-wire-api", {
                 providerBaseUrl: "https://llm.example.com/v1",
                 providerType: "openai",
-                reviewModel: "custom-review"
-              })
+                reviewModel: "custom-review",
+              }),
             ),
-            find: vi.fn(async () => null)
-          }
-        }
+            find: vi.fn(async () => null),
+          },
+        },
       },
       tenant,
       mergeRequest: {
-        description: "No override here"
-      }
+        description: "No override here",
+      },
     });
 
     expect(resolved.provider).toEqual({
       baseUrl: "https://llm.example.com/v1",
       type: "openai",
-      wireApi: "responses"
+      wireApi: "responses",
     });
   });
 
@@ -138,11 +141,11 @@ describe("model profile resolution", () => {
           find: vi.fn(async () => ({
             ...createProfile("default-profile", {
               isDefault: true,
-              textGenerationModel: "gpt-5.4-mini"
-            })
-          }))
-        }
-      }
+              textGenerationModel: "gpt-5.4-mini",
+            }),
+          })),
+        },
+      },
     };
 
     await expect(
@@ -150,23 +153,23 @@ describe("model profile resolution", () => {
         storage,
         tenant: {
           ...tenant,
-          modelProfileName: null
+          modelProfileName: null,
         },
         mergeRequest: {
-          description: "/reviewphin-profile missing-profile"
-        }
-      })
+          description: "/reviewphin-profile missing-profile",
+        },
+      }),
     ).rejects.toThrow('unknown model profile "missing-profile"');
 
     const resolved = await resolveReviewProviderConfig({
       storage,
       tenant: {
         ...tenant,
-        modelProfileName: null
+        modelProfileName: null,
       },
       mergeRequest: {
-        description: "No override here"
-      }
+        description: "No override here",
+      },
     });
 
     expect(resolved).toMatchObject({
@@ -176,7 +179,7 @@ describe("model profile resolution", () => {
       reviewModel: "gpt-5.4",
       textGenerationModel: "gpt-5.4-mini",
       providerBaseUrl: null,
-      providerType: null
+      providerType: null,
     });
 
     const nativeResolved = await resolveReviewProviderConfig({
@@ -185,17 +188,17 @@ describe("model profile resolution", () => {
           modelProfiles: {
             get: vi.fn(async () =>
               createProfile("native-token", {
-                authToken: "github-token"
-              })
+                authToken: "github-token",
+              }),
             ),
-            find: vi.fn(async () => null)
-          }
-        }
+            find: vi.fn(async () => null),
+          },
+        },
       },
       tenant,
       mergeRequest: {
-        description: "No override here"
-      }
+        description: "No override here",
+      },
     });
 
     expect(nativeResolved).toMatchObject({
@@ -203,7 +206,7 @@ describe("model profile resolution", () => {
       selectionSource: "tenant",
       authToken: "github-token",
       provider: undefined,
-      providerBaseUrl: null
+      providerBaseUrl: null,
     });
   });
 });

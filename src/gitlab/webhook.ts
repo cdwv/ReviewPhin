@@ -10,11 +10,11 @@ const noteHookSchema = z.object({
   event_type: z.string().optional(),
   project: z.object({
     id: z.number().int().positive(),
-    web_url: z.string().url().optional()
+    web_url: z.string().url().optional(),
   }),
   repository: z
     .object({
-      homepage: z.string().url().optional()
+      homepage: z.string().url().optional(),
     })
     .optional(),
   merge_request: z.object({
@@ -25,16 +25,16 @@ const noteHookSchema = z.object({
     target_branch: z.string(),
     last_commit: z
       .object({
-        id: z.string().min(1)
+        id: z.string().min(1),
       })
       .optional(),
     diff_refs: z
       .object({
         base_sha: z.string(),
         start_sha: z.string(),
-        head_sha: z.string()
+        head_sha: z.string(),
       })
-      .optional()
+      .optional(),
   }),
   object_attributes: z.object({
     id: z.number().int().positive(),
@@ -48,23 +48,26 @@ const noteHookSchema = z.object({
     internal: z.boolean().optional(),
     created_at: z.string().optional(),
     updated_at: z.string().optional(),
-    url: z.string().url().optional()
+    url: z.string().url().optional(),
   }),
   user: z
     .object({
       id: z.number().int().positive(),
       username: z.string(),
       name: z.string(),
-      web_url: z.string().url().optional()
+      web_url: z.string().url().optional(),
     })
-    .optional()
+    .optional(),
 });
 
 export function parseGitLabNoteHook(payload: unknown): GitLabNoteHookPayload {
   return noteHookSchema.parse(payload);
 }
 
-export function containsBotMention(noteBody: string, botUsername: string | null): boolean {
+export function containsBotMention(
+  noteBody: string,
+  botUsername: string | null,
+): boolean {
   if (!botUsername) {
     return false;
   }
@@ -72,7 +75,10 @@ export function containsBotMention(noteBody: string, botUsername: string | null)
   return buildBotMentionPattern(botUsername).test(noteBody);
 }
 
-export function extractBotMentionInstruction(noteBody: string, botUsername: string | null): string | null {
+export function extractBotMentionInstruction(
+  noteBody: string,
+  botUsername: string | null,
+): string | null {
   if (!botUsername) {
     return null;
   }
@@ -86,8 +92,14 @@ export function extractBotMentionInstruction(noteBody: string, botUsername: stri
 }
 
 export function extractWebhookUrls(payload: GitLabNoteHookPayload): string[] {
-  const urls = [payload.project.web_url, payload.repository?.homepage, payload.object_attributes.url]
-    .filter((value): value is string => typeof value === "string" && value.length > 0)
+  const urls = [
+    payload.project.web_url,
+    payload.repository?.homepage,
+    payload.object_attributes.url,
+  ]
+    .filter(
+      (value): value is string => typeof value === "string" && value.length > 0,
+    )
     .map((value) => {
       const parsed = new URL(value);
       parsed.hash = "";
@@ -97,8 +109,13 @@ export function extractWebhookUrls(payload: GitLabNoteHookPayload): string[] {
   return Array.from(new Set(urls));
 }
 
-export function webhookMatchesGitLabBase(payload: GitLabNoteHookPayload, baseUrl: string): boolean {
-  return extractWebhookUrls(payload).some((url) => urlMatchesGitLabBase(url, baseUrl));
+export function webhookMatchesGitLabBase(
+  payload: GitLabNoteHookPayload,
+  baseUrl: string,
+): boolean {
+  return extractWebhookUrls(payload).some((url) =>
+    urlMatchesGitLabBase(url, baseUrl),
+  );
 }
 
 export function extractWebhookHeadSha(payload: GitLabNoteHookPayload): string {
@@ -106,13 +123,18 @@ export function extractWebhookHeadSha(payload: GitLabNoteHookPayload): string {
     payload.merge_request.last_commit?.id ??
     payload.merge_request.diff_refs?.head_sha ??
     (() => {
-      throw new Error("GitLab note hook payload did not include a merge request head SHA");
+      throw new Error(
+        "GitLab note hook payload did not include a merge request head SHA",
+      );
     })()
   );
 }
 
 function buildBotMentionPattern(botUsername: string, flags = "i"): RegExp {
-  return new RegExp(`(^|[^\\w])@${escapeRegExp(botUsername)}(?!${GITLAB_USERNAME_TRAILING_CHAR_PATTERN})`, flags);
+  return new RegExp(
+    `(^|[^\\w])@${escapeRegExp(botUsername)}(?!${GITLAB_USERNAME_TRAILING_CHAR_PATTERN})`,
+    flags,
+  );
 }
 
 function escapeRegExp(value: string): string {

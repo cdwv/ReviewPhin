@@ -10,22 +10,22 @@ describe("MergeRequestContextHydrator project memory", () => {
       createMergeRequestSnapshot: vi.fn(async (input) => ({
         id: "snapshot_1",
         ...input,
-        createdAt: new Date().toISOString()
-      }))
+        createdAt: new Date().toISOString(),
+      })),
     };
     const workspaceMaterializer = {
       materialize: vi.fn(async () => ({
         rootPath: tmpPath("workspace"),
         cleanupRoot: tmpPath("cleanup"),
         strategy: "git" as const,
-        instructionFiles: []
-      }))
+        instructionFiles: [],
+      })),
     };
     const createForGitLabClient = vi.fn(() => ({
       load: vi.fn(async () => {
         throw new Error("wiki unavailable");
       }),
-      saveEntries: vi.fn()
+      saveEntries: vi.fn(),
     }));
     const hydrator = new MergeRequestContextHydrator({
       storage: storage as never,
@@ -34,8 +34,8 @@ describe("MergeRequestContextHydrator project memory", () => {
       logger: createLogger("silent"),
       projectMemoryBackendFactory: {
         createForHarnessRun: vi.fn(),
-        createForGitLabClient
-      }
+        createForGitLabClient,
+      },
     });
 
     const context = await hydrator.hydrate({
@@ -50,7 +50,7 @@ describe("MergeRequestContextHydrator project memory", () => {
         botUsername: "review-bot",
         modelProfileName: null,
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       },
       job: {
         id: "job_1",
@@ -66,7 +66,7 @@ describe("MergeRequestContextHydrator project memory", () => {
         lastError: null,
         enqueuedAt: new Date().toISOString(),
         startedAt: null,
-        finishedAt: null
+        finishedAt: null,
       },
       client: {
         getMergeRequest: vi.fn(async () => ({
@@ -75,14 +75,15 @@ describe("MergeRequestContextHydrator project memory", () => {
           project_id: 123,
           title: "Example",
           description: "Description",
-          web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+          web_url:
+            "https://gitlab.example.com/group/project/-/merge_requests/7",
           source_branch: "feature",
           target_branch: "main",
           author: {
             id: 42,
             username: "developer",
-            name: "Dev User"
-          }
+            name: "Dev User",
+          },
         })),
         listMergeRequestVersions: vi.fn(async () => []),
         getMergeRequestChanges: vi.fn(async () => []),
@@ -93,29 +94,29 @@ describe("MergeRequestContextHydrator project memory", () => {
         }),
         listProjectWikiPages: vi.fn(async () => {
           throw new Error("wiki unavailable");
-        })
-      } as never
+        }),
+      } as never,
     });
 
     expect(context.projectMemory).toEqual({
       enabled: false,
       page: null,
-      entries: []
+      entries: [],
     });
     expect(storage.createMergeRequestSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         projectMemoryJson: JSON.stringify({
           enabled: false,
           page: null,
-          entries: []
-        })
-      })
+          entries: [],
+        }),
+      }),
     );
     expect(createForGitLabClient).toHaveBeenCalledWith(
       expect.objectContaining({
         projectId: 123,
-        enabled: true
-      })
+        enabled: true,
+      }),
     );
   });
 });

@@ -7,5 +7,6 @@
       "database": "${workspaceFolder:gitlab-agentic-webhooks}/data/review-worker.sqlite"
     }
   ],
-  "sqltools.useNodeRuntime": true
+  "sqltools.useNodeRuntime": true,
+  "editor.formatOnSave": true
 }

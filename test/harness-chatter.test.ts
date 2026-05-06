@@ -11,20 +11,20 @@ describe("HarnessChatterRunner", () => {
           content: JSON.stringify({
             memory: {
               status: "written",
-              summary: "Saved a durable tone preference."
+              summary: "Saved a durable tone preference.",
             },
-            replies: []
-          })
-        }
+            replies: [],
+          }),
+        },
       },
-      events: []
+      events: [],
     }));
 
     const runner = new HarnessChatterRunner({
       modelConfig: createModelConfig(),
       harnessRuntime: {
-        run
-      } as never
+        run,
+      } as never,
     });
 
     const result = await runner.run(
@@ -37,8 +37,8 @@ describe("HarnessChatterRunner", () => {
         projectMemory: {
           enabled: true,
           page: null,
-          entries: []
-        }
+          entries: [],
+        },
       },
       {
         tenant: {
@@ -46,9 +46,9 @@ describe("HarnessChatterRunner", () => {
           baseUrl: "https://gitlab.example.com",
           projectId: 1085,
           apiToken: "token",
-          memoryEnabled: true
-        }
-      }
+          memoryEnabled: true,
+        },
+      },
     );
 
     expect(result.memory?.status).toBe("written");
@@ -58,8 +58,8 @@ describe("HarnessChatterRunner", () => {
         model: "gpt-5.4-mini",
         workingDirectory: "H:\\repo",
         tools: ["glob", "rg", "view", "add_memory_entry"],
-        subagents: []
-      })
+        subagents: [],
+      }),
     );
   });
 
@@ -69,18 +69,18 @@ describe("HarnessChatterRunner", () => {
         data: {
           content: JSON.stringify({
             memory: null,
-            replies: []
-          })
-        }
+            replies: [],
+          }),
+        },
       },
-      events: []
+      events: [],
     }));
 
     const runner = new HarnessChatterRunner({
       modelConfig: createModelConfig(),
       harnessRuntime: {
-        run
-      } as never
+        run,
+      } as never,
     });
 
     await runner.run(
@@ -93,8 +93,8 @@ describe("HarnessChatterRunner", () => {
         projectMemory: {
           enabled: true,
           page: null,
-          entries: []
-        }
+          entries: [],
+        },
       },
       {
         tenant: {
@@ -102,9 +102,9 @@ describe("HarnessChatterRunner", () => {
           baseUrl: "https://gitlab.example.com",
           projectId: 1085,
           apiToken: "token",
-          memoryEnabled: true
-        }
-      }
+          memoryEnabled: true,
+        },
+      },
     );
 
     const firstCall = run.mock.calls.at(0) as [unknown] | undefined;
@@ -114,9 +114,9 @@ describe("HarnessChatterRunner", () => {
         tools: ["glob", "rg", "view"],
         metadata: {
           mergeRequestIid: 7,
-          workspacePath: "H:\\repo"
-        }
-      })
+          workspacePath: "H:\\repo",
+        },
+      }),
     );
   });
 
@@ -133,17 +133,17 @@ describe("HarnessChatterRunner", () => {
                   {
                     target: {
                       kind: "discussion-reply",
-                      noteId: 55
+                      noteId: 55,
                     },
-                    replyBody: "Here is the explanation."
-                  }
-                ]
-              })
-            }
+                    replyBody: "Here is the explanation.",
+                  },
+                ],
+              }),
+            },
           },
-          events: []
-        }))
-      } as never
+          events: [],
+        })),
+      } as never,
     });
 
     await expect(
@@ -157,8 +157,8 @@ describe("HarnessChatterRunner", () => {
           projectMemory: {
             enabled: true,
             page: null,
-            entries: []
-          }
+            entries: [],
+          },
         },
         {
           tenant: {
@@ -166,10 +166,10 @@ describe("HarnessChatterRunner", () => {
             baseUrl: "https://gitlab.example.com",
             projectId: 1085,
             apiToken: "token",
-            memoryEnabled: true
-          }
-        }
-      )
+            memoryEnabled: true,
+          },
+        },
+      ),
     ).rejects.toThrow(/discussionId is required for threaded reply targets/);
   });
 });
@@ -183,7 +183,7 @@ function createModelConfig(): HarnessModelConfig {
     authToken: null,
     provider: undefined,
     providerBaseUrl: null,
-    providerType: null
+    providerType: null,
   };
 }
 
@@ -205,8 +205,8 @@ function createTrigger() {
       discussionId: "disc_summary",
       authorUsername: "developer",
       body: "For future reference, keep the tone concise.",
-      instruction: "For future reference, keep the tone concise."
-    }
+      instruction: "For future reference, keep the tone concise.",
+    },
   };
 }
 
@@ -225,8 +225,8 @@ function createReviewContext() {
       author: {
         id: 42,
         username: "developer",
-        name: "Dev User"
-      }
+        name: "Dev User",
+      },
     },
     changes: [],
     notes: [],
@@ -235,7 +235,7 @@ function createReviewContext() {
     projectMemory: {
       enabled: true,
       page: null,
-      entries: []
+      entries: [],
     },
     trigger: createTrigger(),
     priorThreads: [],
@@ -248,7 +248,7 @@ function createReviewContext() {
       targetThread: null,
       previousReview: null,
       priorFindings: [],
-      deltaSincePreviousReview: null
-    }
+      deltaSincePreviousReview: null,
+    },
   };
 }

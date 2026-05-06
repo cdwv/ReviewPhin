@@ -22,17 +22,17 @@ async function main(): Promise<void> {
 
   const storageRuntime = await initializeStorageRuntime({
     providerModule: config.storageProviderModule,
-    logger: logger.child({ component: "storage-runtime" })
+    logger: logger.child({ component: "storage-runtime" }),
   });
   const { provider: storageProvider, storage } = storageRuntime;
 
   const tenantRegistry = new TenantRegistry({
-    storage
+    storage,
   });
 
   const workspaceMaterializer = new WorkspaceMaterializer({
     workspaceRoot: config.workspaceRoot,
-    logger
+    logger,
   });
 
   const projectMemoryBackendFactory = new GitLabProjectMemoryBackendFactory();
@@ -43,21 +43,21 @@ async function main(): Promise<void> {
     timeoutMs: config.copilotTimeoutMs,
     maxPromptMemoryChars: config.maxPromptMemoryChars,
     sdkLogLevel: config.copilotSdkLogLevel,
-    cliPath: config.copilotCliPath
+    cliPath: config.copilotCliPath,
   });
 
   const reviewProviderFactory = new HarnessReviewProviderFactory({
     logger,
     harnessRuntime,
-    maxPromptMemoryChars: config.maxPromptMemoryChars
+    maxPromptMemoryChars: config.maxPromptMemoryChars,
   });
   const chatterRunnerFactory = new HarnessChatterRunnerFactory({
-    harnessRuntime
+    harnessRuntime,
   });
 
   const reconciler = new DiscussionReconciler({
     storage,
-    logger
+    logger,
   });
 
   const hydrator = new MergeRequestContextHydrator({
@@ -65,36 +65,36 @@ async function main(): Promise<void> {
     workspaceMaterializer,
     memoryEnabled: config.memoryEnabled,
     logger,
-    projectMemoryBackendFactory
+    projectMemoryBackendFactory,
   });
 
   const reviewWorker = new ReviewWorker({
     storage,
     tenantRegistry,
     hydrator,
-      workspaceMaterializer,
-      reviewProviderFactory,
-      chatterRunnerFactory,
-      reconciler,
+    workspaceMaterializer,
+    reviewProviderFactory,
+    chatterRunnerFactory,
+    reconciler,
     logger,
     runLogDir: config.runLogDir,
     maxJobRetries: config.maxJobRetries,
-    retryBackoffMs: config.retryBackoffMs
+    retryBackoffMs: config.retryBackoffMs,
   });
 
   const queue = new JobQueue({
     logger,
     processor: {
-      processJob: (jobId) => reviewWorker.processJob(jobId)
-    }
+      processJob: (jobId) => reviewWorker.processJob(jobId),
+    },
   });
 
   const queuedJobs = await listAll(storage.stores.interactionJobs, {
     filters: { status: { eq: "queued" } },
     order: [
       { field: "enqueuedAt", direction: "asc" },
-      { field: "id", direction: "asc" }
-    ]
+      { field: "id", direction: "asc" },
+    ],
   });
   queue.enqueueMany(queuedJobs.map((job) => job.id));
 
@@ -102,7 +102,7 @@ async function main(): Promise<void> {
     logger,
     tenantRegistry,
     reviewWorker,
-    queue
+    queue,
   });
 
   const close = async (): Promise<void> => {
@@ -119,13 +119,13 @@ async function main(): Promise<void> {
 
   await app.listen({
     host: config.host,
-    port: config.port
+    port: config.port,
   });
 
   logger.info("GitLab interaction worker listening.");
   logger.info(
     { host: config.host, port: config.port },
-    `Point your GitLab webhooks to http://${config.host}:${config.port}/webhooks/gitlab/note`
+    `Point your GitLab webhooks to http://${config.host}:${config.port}/webhooks/gitlab/note`,
   );
 }
 

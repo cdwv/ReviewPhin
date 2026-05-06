@@ -34,13 +34,11 @@ export interface HarnessRunLogRecord {
     sessionKind: string | null;
   };
   prompt: string;
-  response:
-    | {
-        messageId: string;
-        requestId: string | null;
-        content: string;
-      }
-    | null;
+  response: {
+    messageId: string;
+    requestId: string | null;
+    content: string;
+  } | null;
   error: SerializedError | null;
   events: SessionEvent[];
 }
@@ -63,12 +61,12 @@ export class HarnessRunLog {
         mergeRequestIid: options.metadata?.mergeRequestIid ?? null,
         workspacePath: options.metadata?.workspacePath ?? null,
         requestedModel: options.model ?? null,
-        sessionKind: options.logging?.sessionKind ?? null
+        sessionKind: options.logging?.sessionKind ?? null,
       },
       prompt: options.prompt,
       response: null,
       error: null,
-      events: []
+      events: [],
     };
   }
 
@@ -92,7 +90,7 @@ export class HarnessRunLog {
     this.record.response = {
       messageId: response.data.messageId,
       requestId: response.data.requestId ?? null,
-      content: response.data.content
+      content: response.data.content,
     };
   }
 
@@ -113,11 +111,11 @@ function serializeError(error: unknown): SerializedError {
     return {
       message: error.message,
       name: error.name,
-      stack: error.stack
+      stack: error.stack,
     };
   }
 
   return {
-    message: String(error)
+    message: String(error),
   };
 }

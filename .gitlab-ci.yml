@@ -1,22 +1,21 @@
 include:
-  - project: 'devops/ci-templates'
+  - project: "devops/ci-templates"
     ref: main
-    file: '/common/build-oci-image.yml'
-  - project: 'devops/ci-templates'
+    file: "/common/build-oci-image.yml"
+  - project: "devops/ci-templates"
     ref: main
-    file: 'k8s/helm-templates.yaml'
-  - project: 'devops/ci-templates'
+    file: "k8s/helm-templates.yaml"
+  - project: "devops/ci-templates"
     ref: main
-    file: '/k8s/generic-secrets.yaml'
-  - project: 'devops/ci-templates'
+    file: "/k8s/generic-secrets.yaml"
+  - project: "devops/ci-templates"
     ref: main
-    file: '/k8s/ensure-namespace.yaml'
+    file: "/k8s/ensure-namespace.yaml"
 
 stages:
   - test
   - build
   - deployment
-
 
 .deployment:
   image: registry.dev.cdwv.pl/docker/k8s-deployment-toolset:K1.21_H3.6
@@ -40,9 +39,9 @@ stages:
       fi
     - kubectl config set-context --current --namespace="${KUBE_NAMESPACE}"
   script:
-    - !reference [ .ensure_namespace ]
-    - !reference [ .create_registry_secret ]
-    - !reference [ .create_app_secret ]
+    - !reference [.ensure_namespace]
+    - !reference [.create_registry_secret]
+    - !reference [.create_app_secret]
     - |
       helm upgrade --install \
             --wait \
@@ -142,4 +141,3 @@ deploy_production:
       variables:
         IMAGE_TAG: mr-${CI_MERGE_REQUEST_IID}
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-

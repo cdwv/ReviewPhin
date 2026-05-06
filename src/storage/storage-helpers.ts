@@ -7,71 +7,98 @@ import type {
   DiscussionMappingRecord,
   EntityStore,
   InteractionJobRecord,
-  InteractionJobFilters,
-  InteractionJobOrderField,
   InteractionRunMetricsRecord,
   InteractionRunRecord,
-  InteractionRunFilters,
-  InteractionRunOrderField,
   MergeRequestSnapshotRecord,
-  MergeRequestSnapshotFilters,
-  MergeRequestSnapshotOrderField,
   ModelProfileRecord,
-  ModelProfileFilters,
-  ModelProfileOrderField,
   PreviousCompletedInteractionRecord,
   PriorReviewFindingRecord,
   ReviewAnchor,
   ReviewFindingRecord,
-  ReviewFindingFilters,
-  ReviewFindingOrderField,
   ReviewFindingStatus,
   ReviewSuggestion,
   StorageTenantInput,
   StorageStores,
   StoreListOrder,
   TenantDeletionSummary,
-  TenantFilters,
-  TenantOrderField,
   TenantRecord,
   UpsertDiscussionMappingInput,
   UpsertInteractionRunMetricsInput,
-  UpsertModelProfileInput
+  UpsertModelProfileInput,
 } from "./contract/index.js";
 
 const DEFAULT_PAGE_SIZE = 200;
 
 export interface StorageHelpers {
   readonly stores: StorageStores;
-  upsertModelProfile(input: UpsertModelProfileInput): Promise<ModelProfileRecord>;
-  setDefaultModelProfile(name: string | null): Promise<ModelProfileRecord | null>;
+  upsertModelProfile(
+    input: UpsertModelProfileInput,
+  ): Promise<ModelProfileRecord>;
+  setDefaultModelProfile(
+    name: string | null,
+  ): Promise<ModelProfileRecord | null>;
   deleteModelProfile(name: string): Promise<ModelProfileRecord | null>;
   upsertTenant(tenant: StorageTenantInput): Promise<TenantRecord>;
-  setTenantModelProfile(baseUrl: string, projectId: number, modelProfileName: string | null): Promise<TenantRecord>;
-  getTenantDeletionSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null>;
-  deleteTenantWithSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null>;
-  createOrGetInteractionJob(input: CreateInteractionJobInput): Promise<{ job: InteractionJobRecord; created: boolean }>;
+  setTenantModelProfile(
+    baseUrl: string,
+    projectId: number,
+    modelProfileName: string | null,
+  ): Promise<TenantRecord>;
+  getTenantDeletionSummary(
+    baseUrl: string,
+    projectId: number,
+  ): Promise<TenantDeletionSummary | null>;
+  deleteTenantWithSummary(
+    baseUrl: string,
+    projectId: number,
+  ): Promise<TenantDeletionSummary | null>;
+  createOrGetInteractionJob(
+    input: CreateInteractionJobInput,
+  ): Promise<{ job: InteractionJobRecord; created: boolean }>;
   markJobInProgress(jobId: string): Promise<void>;
   markJobCompleted(jobId: string): Promise<void>;
-  markJobQueued(jobId: string, retryCount: number, error: string): Promise<void>;
-  markJobFailed(jobId: string, retryCount: number, error: string): Promise<void>;
-  createMergeRequestSnapshot(input: CreateMergeRequestSnapshotInput): Promise<MergeRequestSnapshotRecord>;
-  createInteractionRun(input: CreateInteractionRunInput): Promise<InteractionRunRecord>;
+  markJobQueued(
+    jobId: string,
+    retryCount: number,
+    error: string,
+  ): Promise<void>;
+  markJobFailed(
+    jobId: string,
+    retryCount: number,
+    error: string,
+  ): Promise<void>;
+  createMergeRequestSnapshot(
+    input: CreateMergeRequestSnapshotInput,
+  ): Promise<MergeRequestSnapshotRecord>;
+  createInteractionRun(
+    input: CreateInteractionRunInput,
+  ): Promise<InteractionRunRecord>;
   getLatestCompletedInteractionForMergeRequest(
     tenantId: string,
     mergeRequestIid: number,
-    currentInteractionJobId: string
+    currentInteractionJobId: string,
   ): Promise<PreviousCompletedInteractionRecord | null>;
-  completeInteractionRun(interactionRunId: string, resultJson: string | null): Promise<void>;
+  completeInteractionRun(
+    interactionRunId: string,
+    resultJson: string | null,
+  ): Promise<void>;
   failInteractionRun(interactionRunId: string, error: string): Promise<void>;
-  upsertInteractionRunMetrics(input: UpsertInteractionRunMetricsInput): Promise<InteractionRunMetricsRecord>;
-  replaceReviewFindings(interactionRunId: string, findings: CreateReviewFindingInput[]): Promise<void>;
+  upsertInteractionRunMetrics(
+    input: UpsertInteractionRunMetricsInput,
+  ): Promise<InteractionRunMetricsRecord>;
+  replaceReviewFindings(
+    interactionRunId: string,
+    findings: CreateReviewFindingInput[],
+  ): Promise<void>;
   listPriorReviewFindings(
     tenantId: string,
     mergeRequestIid: number,
-    currentInteractionJobId: string
+    currentInteractionJobId: string,
   ): Promise<PriorReviewFindingRecord[]>;
-  listLatestReviewFindings(tenantId: string, mergeRequestIid: number): Promise<PriorReviewFindingRecord[]>;
+  listLatestReviewFindings(
+    tenantId: string,
+    mergeRequestIid: number,
+  ): Promise<PriorReviewFindingRecord[]>;
   updateReviewFindingStatus(
     tenantId: string,
     mergeRequestIid: number,
@@ -79,9 +106,11 @@ export interface StorageHelpers {
     status: ReviewFindingStatus,
     options?: {
       currentStatuses?: readonly ReviewFindingStatus[] | undefined;
-    }
+    },
   ): Promise<boolean>;
-  upsertDiscussionMapping(input: UpsertDiscussionMappingInput): Promise<DiscussionMappingRecord>;
+  upsertDiscussionMapping(
+    input: UpsertDiscussionMappingInput,
+  ): Promise<DiscussionMappingRecord>;
 }
 
 export function createStorageHelpers(stores: StorageStores): StorageHelpers {
@@ -91,17 +120,21 @@ export function createStorageHelpers(stores: StorageStores): StorageHelpers {
 export class StoreBackedStorage implements StorageHelpers {
   public constructor(public readonly stores: StorageStores) {}
 
-  public async upsertModelProfile(input: UpsertModelProfileInput): Promise<ModelProfileRecord> {
+  public async upsertModelProfile(
+    input: UpsertModelProfileInput,
+  ): Promise<ModelProfileRecord> {
     const existing = await this.stores.modelProfiles.get(input.name);
     const resolved = resolveModelProfileUpsertInput(existing, input);
     const now = new Date().toISOString();
 
     if (resolved.isDefault) {
-      const currentDefault = await this.stores.modelProfiles.find({ isDefault: { eq: true } });
+      const currentDefault = await this.stores.modelProfiles.find({
+        isDefault: { eq: true },
+      });
       if (currentDefault && currentDefault.name !== input.name) {
         await this.stores.modelProfiles.patch({
           id: currentDefault.name,
-          value: { isDefault: false, updatedAt: now }
+          value: { isDefault: false, updatedAt: now },
         });
       }
     }
@@ -116,17 +149,21 @@ export class StoreBackedStorage implements StorageHelpers {
       textGenerationModel: resolved.textGenerationModel,
       isDefault: resolved.isDefault,
       createdAt: existing?.createdAt ?? now,
-      updatedAt: now
+      updatedAt: now,
     });
   }
 
-  public async setDefaultModelProfile(name: string | null): Promise<ModelProfileRecord | null> {
+  public async setDefaultModelProfile(
+    name: string | null,
+  ): Promise<ModelProfileRecord | null> {
     const now = new Date().toISOString();
-    const currentDefault = await this.stores.modelProfiles.find({ isDefault: { eq: true } });
+    const currentDefault = await this.stores.modelProfiles.find({
+      isDefault: { eq: true },
+    });
     if (currentDefault && currentDefault.name !== name) {
       await this.stores.modelProfiles.patch({
         id: currentDefault.name,
-        value: { isDefault: false, updatedAt: now }
+        value: { isDefault: false, updatedAt: now },
       });
     }
 
@@ -141,21 +178,25 @@ export class StoreBackedStorage implements StorageHelpers {
 
     return this.stores.modelProfiles.patch({
       id: name,
-      value: { isDefault: true, updatedAt: now }
+      value: { isDefault: true, updatedAt: now },
     });
   }
 
-  public async deleteModelProfile(name: string): Promise<ModelProfileRecord | null> {
+  public async deleteModelProfile(
+    name: string,
+  ): Promise<ModelProfileRecord | null> {
     const existing = await this.stores.modelProfiles.get(name);
     if (!existing) {
       return null;
     }
 
     const tenants = await listAll(this.stores.tenants, {
-      filters: { modelProfileName: { eq: name } }
+      filters: { modelProfileName: { eq: name } },
     });
     if (tenants.length > 0) {
-      throw new Error(`Cannot delete model profile "${name}" because ${tenants.length} tenant(s) still reference it`);
+      throw new Error(
+        `Cannot delete model profile "${name}" because ${tenants.length} tenant(s) still reference it`,
+      );
     }
 
     await this.stores.modelProfiles.delete(name);
@@ -165,14 +206,17 @@ export class StoreBackedStorage implements StorageHelpers {
   public async upsertTenant(tenant: StorageTenantInput): Promise<TenantRecord> {
     const tenantKey = createTenantKey(tenant.baseUrl, tenant.projectId);
     const existing = await this.stores.tenants.find({
-      key: { eq: tenantKey }
+      key: { eq: tenantKey },
     });
-    const resolvedModelProfileName = tenant.modelProfileName === undefined
-      ? (existing?.modelProfileName ?? null)
-      : tenant.modelProfileName;
+    const resolvedModelProfileName =
+      tenant.modelProfileName === undefined
+        ? (existing?.modelProfileName ?? null)
+        : tenant.modelProfileName;
 
     if (resolvedModelProfileName) {
-      const modelProfile = await this.stores.modelProfiles.get(resolvedModelProfileName);
+      const modelProfile = await this.stores.modelProfiles.get(
+        resolvedModelProfileName,
+      );
       if (!modelProfile) {
         throw new Error(`Unknown model profile ${resolvedModelProfileName}`);
       }
@@ -190,21 +234,26 @@ export class StoreBackedStorage implements StorageHelpers {
       botUsername: tenant.botUsername ?? null,
       modelProfileName: resolvedModelProfileName,
       createdAt: existing?.createdAt ?? now,
-      updatedAt: now
+      updatedAt: now,
     });
   }
 
-  public async setTenantModelProfile(baseUrl: string, projectId: number, modelProfileName: string | null): Promise<TenantRecord> {
+  public async setTenantModelProfile(
+    baseUrl: string,
+    projectId: number,
+    modelProfileName: string | null,
+  ): Promise<TenantRecord> {
     const tenantKey = createTenantKey(baseUrl, projectId);
     const tenant = await this.stores.tenants.find({
-      key: { eq: tenantKey }
+      key: { eq: tenantKey },
     });
     if (!tenant) {
       throw new Error(`Tenant not found for ${baseUrl} :: ${projectId}`);
     }
 
     if (modelProfileName) {
-      const modelProfile = await this.stores.modelProfiles.get(modelProfileName);
+      const modelProfile =
+        await this.stores.modelProfiles.get(modelProfileName);
       if (!modelProfile) {
         throw new Error(`Unknown model profile ${modelProfileName}`);
       }
@@ -214,15 +263,18 @@ export class StoreBackedStorage implements StorageHelpers {
       id: tenant.id,
       value: {
         modelProfileName,
-        updatedAt: new Date().toISOString()
-      }
+        updatedAt: new Date().toISOString(),
+      },
     });
   }
 
-  public async getTenantDeletionSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null> {
+  public async getTenantDeletionSummary(
+    baseUrl: string,
+    projectId: number,
+  ): Promise<TenantDeletionSummary | null> {
     const tenantKey = createTenantKey(baseUrl, projectId);
     const tenant = await this.stores.tenants.find({
-      key: { eq: tenantKey }
+      key: { eq: tenantKey },
     });
     if (!tenant) {
       return null;
@@ -231,10 +283,13 @@ export class StoreBackedStorage implements StorageHelpers {
     return this.buildTenantDeletionSummary(tenant);
   }
 
-  public async deleteTenantWithSummary(baseUrl: string, projectId: number): Promise<TenantDeletionSummary | null> {
+  public async deleteTenantWithSummary(
+    baseUrl: string,
+    projectId: number,
+  ): Promise<TenantDeletionSummary | null> {
     const tenantKey = createTenantKey(baseUrl, projectId);
     const tenant = await this.stores.tenants.find({
-      key: { eq: tenantKey }
+      key: { eq: tenantKey },
     });
     if (!tenant) {
       return null;
@@ -243,33 +298,37 @@ export class StoreBackedStorage implements StorageHelpers {
     const summary = await this.buildTenantDeletionSummary(tenant);
 
     await this.stores.discussionMappings.deleteMany(
-      (await listAll(this.stores.discussionMappings, { filters: { tenantId: { eq: tenant.id } } })).map((mapping) => mapping.id)
+      (
+        await listAll(this.stores.discussionMappings, {
+          filters: { tenantId: { eq: tenant.id } },
+        })
+      ).map((mapping) => mapping.id),
     );
 
     if (summary.interactionRunIds.length > 0) {
       await this.stores.interactionRunMetrics.deleteMany(
         (
           await listAll(this.stores.interactionRunMetrics, {
-            filters: { interactionRunId: { in: summary.interactionRunIds } }
+            filters: { interactionRunId: { in: summary.interactionRunIds } },
           })
-        ).map((metrics) => metrics.id)
+        ).map((metrics) => metrics.id),
       );
 
       await this.stores.reviewFindings.deleteMany(
         (
           await listAll(this.stores.reviewFindings, {
-            filters: { interactionRunId: { in: summary.interactionRunIds } }
+            filters: { interactionRunId: { in: summary.interactionRunIds } },
           })
-        ).map((finding) => finding.id)
+        ).map((finding) => finding.id),
       );
     }
 
     await this.stores.mergeRequestSnapshots.deleteMany(
       (
         await listAll(this.stores.mergeRequestSnapshots, {
-          filters: { tenantId: { eq: tenant.id } }
+          filters: { tenantId: { eq: tenant.id } },
         })
-      ).map((snapshot) => snapshot.id)
+      ).map((snapshot) => snapshot.id),
     );
     await this.stores.interactionRuns.deleteMany(summary.interactionRunIds);
     await this.stores.interactionJobs.deleteMany(summary.interactionJobIds);
@@ -278,8 +337,12 @@ export class StoreBackedStorage implements StorageHelpers {
     return summary;
   }
 
-  public async createOrGetInteractionJob(input: CreateInteractionJobInput): Promise<{ job: InteractionJobRecord; created: boolean }> {
-    const existing = await this.stores.interactionJobs.find({ dedupeKey: { eq: input.dedupeKey } });
+  public async createOrGetInteractionJob(
+    input: CreateInteractionJobInput,
+  ): Promise<{ job: InteractionJobRecord; created: boolean }> {
+    const existing = await this.stores.interactionJobs.find({
+      dedupeKey: { eq: input.dedupeKey },
+    });
     if (existing) {
       return { job: existing, created: false };
     }
@@ -300,12 +363,12 @@ export class StoreBackedStorage implements StorageHelpers {
       lastError: null,
       enqueuedAt: now,
       startedAt: null,
-      finishedAt: null
+      finishedAt: null,
     });
 
     return {
       job,
-      created: job.id === expectedId
+      created: job.id === expectedId,
     };
   }
 
@@ -316,8 +379,8 @@ export class StoreBackedStorage implements StorageHelpers {
         status: "in_progress",
         startedAt: new Date().toISOString(),
         finishedAt: null,
-        lastError: null
-      }
+        lastError: null,
+      },
     });
   }
 
@@ -327,36 +390,46 @@ export class StoreBackedStorage implements StorageHelpers {
       value: {
         status: "completed",
         finishedAt: new Date().toISOString(),
-        lastError: null
-      }
+        lastError: null,
+      },
     });
   }
 
-  public async markJobQueued(jobId: string, retryCount: number, error: string): Promise<void> {
+  public async markJobQueued(
+    jobId: string,
+    retryCount: number,
+    error: string,
+  ): Promise<void> {
     await this.stores.interactionJobs.patch({
       id: jobId,
       value: {
         status: "queued",
         retryCount,
         lastError: error,
-        finishedAt: null
-      }
+        finishedAt: null,
+      },
     });
   }
 
-  public async markJobFailed(jobId: string, retryCount: number, error: string): Promise<void> {
+  public async markJobFailed(
+    jobId: string,
+    retryCount: number,
+    error: string,
+  ): Promise<void> {
     await this.stores.interactionJobs.patch({
       id: jobId,
       value: {
         status: "failed",
         retryCount,
         lastError: error,
-        finishedAt: new Date().toISOString()
-      }
+        finishedAt: new Date().toISOString(),
+      },
     });
   }
 
-  public async createMergeRequestSnapshot(input: CreateMergeRequestSnapshotInput): Promise<MergeRequestSnapshotRecord> {
+  public async createMergeRequestSnapshot(
+    input: CreateMergeRequestSnapshotInput,
+  ): Promise<MergeRequestSnapshotRecord> {
     const now = new Date().toISOString();
     return this.stores.mergeRequestSnapshots.upsert({
       id: createId("snapshot"),
@@ -372,11 +445,13 @@ export class StoreBackedStorage implements StorageHelpers {
       instructionsJson: input.instructionsJson,
       projectMemoryJson: input.projectMemoryJson,
       workspaceStrategy: input.workspaceStrategy,
-      createdAt: now
+      createdAt: now,
     });
   }
 
-  public async createInteractionRun(input: CreateInteractionRunInput): Promise<InteractionRunRecord> {
+  public async createInteractionRun(
+    input: CreateInteractionRunInput,
+  ): Promise<InteractionRunRecord> {
     const now = new Date().toISOString();
     return this.stores.interactionRuns.upsert({
       id: createId("run"),
@@ -392,25 +467,25 @@ export class StoreBackedStorage implements StorageHelpers {
       resultJson: null,
       error: null,
       startedAt: now,
-      finishedAt: null
+      finishedAt: null,
     });
   }
 
   public async getLatestCompletedInteractionForMergeRequest(
     tenantId: string,
     mergeRequestIid: number,
-    currentInteractionJobId: string
+    currentInteractionJobId: string,
   ): Promise<PreviousCompletedInteractionRecord | null> {
     const interactionJobs = (
       await listAll(this.stores.interactionJobs, {
         filters: {
           tenantId: { eq: tenantId },
-          mergeRequestIid: { eq: mergeRequestIid }
+          mergeRequestIid: { eq: mergeRequestIid },
         },
         order: [
           { field: "enqueuedAt", direction: "desc" },
-          { field: "id", direction: "desc" }
-        ]
+          { field: "id", direction: "desc" },
+        ],
       })
     ).filter((job) => job.id !== currentInteractionJobId);
 
@@ -424,19 +499,22 @@ export class StoreBackedStorage implements StorageHelpers {
         filters: {
           interactionJobId: { in: jobIds },
           status: { eq: "completed" },
-          resultJson: { isNull: false }
-        }
+          resultJson: { isNull: false },
+        },
       }),
       listAll(this.stores.mergeRequestSnapshots, {
         filters: { interactionJobId: { in: jobIds } },
-        order: [{ field: "createdAt", direction: "desc" }]
-      })
+        order: [{ field: "createdAt", direction: "desc" }],
+      }),
     ]);
 
     const latestSnapshotByJobId = new Map<string, MergeRequestSnapshotRecord>();
     for (const snapshot of snapshots) {
       const existing = latestSnapshotByJobId.get(snapshot.interactionJobId);
-      if (!existing || compareIsoDesc(existing.createdAt, snapshot.createdAt) < 0) {
+      if (
+        !existing ||
+        compareIsoDesc(existing.createdAt, snapshot.createdAt) < 0
+      ) {
         latestSnapshotByJobId.set(snapshot.interactionJobId, snapshot);
       }
     }
@@ -445,13 +523,18 @@ export class StoreBackedStorage implements StorageHelpers {
     const bestRun = interactionRuns
       .filter((run) => latestSnapshotByJobId.has(run.interactionJobId))
       .toSorted((left, right) => {
-        const timestampComparison = compareIsoDesc(left.finishedAt ?? left.startedAt, right.finishedAt ?? right.startedAt);
+        const timestampComparison = compareIsoDesc(
+          left.finishedAt ?? left.startedAt,
+          right.finishedAt ?? right.startedAt,
+        );
         if (timestampComparison !== 0) {
           return timestampComparison;
         }
 
         const leftSnapshot = latestSnapshotByJobId.get(left.interactionJobId)!;
-        const rightSnapshot = latestSnapshotByJobId.get(right.interactionJobId)!;
+        const rightSnapshot = latestSnapshotByJobId.get(
+          right.interactionJobId,
+        )!;
         return compareIsoDesc(leftSnapshot.createdAt, rightSnapshot.createdAt);
       })[0];
 
@@ -471,40 +554,50 @@ export class StoreBackedStorage implements StorageHelpers {
       finishedAt: bestRun.finishedAt,
       headSha: interactionJob.headSha,
       resultJson: bestRun.resultJson,
-      snapshot
+      snapshot,
     };
   }
 
-  public async completeInteractionRun(interactionRunId: string, resultJson: string | null): Promise<void> {
+  public async completeInteractionRun(
+    interactionRunId: string,
+    resultJson: string | null,
+  ): Promise<void> {
     await this.stores.interactionRuns.patch({
       id: interactionRunId,
       value: {
         status: "completed",
         resultJson,
         error: null,
-        finishedAt: new Date().toISOString()
-      }
+        finishedAt: new Date().toISOString(),
+      },
     });
   }
 
-  public async failInteractionRun(interactionRunId: string, error: string): Promise<void> {
+  public async failInteractionRun(
+    interactionRunId: string,
+    error: string,
+  ): Promise<void> {
     const findings = await listAll(this.stores.reviewFindings, {
-      filters: { interactionRunId: { eq: interactionRunId } }
+      filters: { interactionRunId: { eq: interactionRunId } },
     });
-    await this.stores.reviewFindings.deleteMany(findings.map((finding) => finding.id));
+    await this.stores.reviewFindings.deleteMany(
+      findings.map((finding) => finding.id),
+    );
     await this.stores.interactionRuns.patch({
       id: interactionRunId,
       value: {
         status: "failed",
         error,
-        finishedAt: new Date().toISOString()
-      }
+        finishedAt: new Date().toISOString(),
+      },
     });
   }
 
-  public async upsertInteractionRunMetrics(input: UpsertInteractionRunMetricsInput): Promise<InteractionRunMetricsRecord> {
+  public async upsertInteractionRunMetrics(
+    input: UpsertInteractionRunMetricsInput,
+  ): Promise<InteractionRunMetricsRecord> {
     const existing = await this.stores.interactionRunMetrics.find({
-      interactionRunId: { eq: input.interactionRunId }
+      interactionRunId: { eq: input.interactionRunId },
     });
     const now = new Date().toISOString();
 
@@ -532,18 +625,26 @@ export class StoreBackedStorage implements StorageHelpers {
       repeatedViewReads: input.repeatedViewReads,
       repeatedViewPathsJson: input.repeatedViewPathsJson,
       createdAt: existing?.createdAt ?? now,
-      updatedAt: now
+      updatedAt: now,
     });
   }
 
-  public async replaceReviewFindings(interactionRunId: string, findings: CreateReviewFindingInput[]): Promise<void> {
+  public async replaceReviewFindings(
+    interactionRunId: string,
+    findings: CreateReviewFindingInput[],
+  ): Promise<void> {
     const existing = await listAll(this.stores.reviewFindings, {
-      filters: { interactionRunId: { eq: interactionRunId } }
+      filters: { interactionRunId: { eq: interactionRunId } },
     });
-    await this.stores.reviewFindings.deleteMany(existing.map((finding) => finding.id));
+    await this.stores.reviewFindings.deleteMany(
+      existing.map((finding) => finding.id),
+    );
 
     const now = new Date().toISOString();
-    const latestFindingsByIdentity = new Map<string, CreateReviewFindingInput>();
+    const latestFindingsByIdentity = new Map<
+      string,
+      CreateReviewFindingInput
+    >();
     for (const finding of findings) {
       latestFindingsByIdentity.set(finding.identityKey, finding);
     }
@@ -560,7 +661,7 @@ export class StoreBackedStorage implements StorageHelpers {
         anchorJson: finding.anchorJson,
         suggestionJson: finding.suggestionJson,
         status: finding.status,
-        createdAt: now
+        createdAt: now,
       });
     }
   }
@@ -568,12 +669,19 @@ export class StoreBackedStorage implements StorageHelpers {
   public async listPriorReviewFindings(
     tenantId: string,
     mergeRequestIid: number,
-    currentInteractionJobId: string
+    currentInteractionJobId: string,
   ): Promise<PriorReviewFindingRecord[]> {
-    return this.listLatestFindingsForMergeRequest(tenantId, mergeRequestIid, currentInteractionJobId);
+    return this.listLatestFindingsForMergeRequest(
+      tenantId,
+      mergeRequestIid,
+      currentInteractionJobId,
+    );
   }
 
-  public async listLatestReviewFindings(tenantId: string, mergeRequestIid: number): Promise<PriorReviewFindingRecord[]> {
+  public async listLatestReviewFindings(
+    tenantId: string,
+    mergeRequestIid: number,
+  ): Promise<PriorReviewFindingRecord[]> {
     return this.listLatestFindingsForMergeRequest(tenantId, mergeRequestIid);
   }
 
@@ -584,13 +692,13 @@ export class StoreBackedStorage implements StorageHelpers {
     status: ReviewFindingStatus,
     options?: {
       currentStatuses?: readonly ReviewFindingStatus[] | undefined;
-    }
+    },
   ): Promise<boolean> {
     const interactionJobs = await listAll(this.stores.interactionJobs, {
       filters: {
         tenantId: { eq: tenantId },
-        mergeRequestIid: { eq: mergeRequestIid }
-      }
+        mergeRequestIid: { eq: mergeRequestIid },
+      },
     });
     if (interactionJobs.length === 0) {
       return false;
@@ -599,8 +707,8 @@ export class StoreBackedStorage implements StorageHelpers {
     const interactionRuns = await listAll(this.stores.interactionRuns, {
       filters: {
         interactionJobId: { in: interactionJobs.map((job) => job.id) },
-        status: { eq: "completed" }
-      }
+        status: { eq: "completed" },
+      },
     });
     if (interactionRuns.length === 0) {
       return false;
@@ -613,10 +721,10 @@ export class StoreBackedStorage implements StorageHelpers {
         identityKey: { eq: identityKey },
         ...(currentStatuses && currentStatuses.length > 0
           ? {
-              status: { in: currentStatuses }
+              status: { in: currentStatuses },
             }
-          : {})
-      }
+          : {}),
+      },
     });
     if (findings.length === 0) {
       return false;
@@ -625,18 +733,20 @@ export class StoreBackedStorage implements StorageHelpers {
     for (const finding of findings) {
       await this.stores.reviewFindings.patch({
         id: finding.id,
-        value: { status }
+        value: { status },
       });
     }
 
     return true;
   }
 
-  public async upsertDiscussionMapping(input: UpsertDiscussionMappingInput): Promise<DiscussionMappingRecord> {
+  public async upsertDiscussionMapping(
+    input: UpsertDiscussionMappingInput,
+  ): Promise<DiscussionMappingRecord> {
     const existing = await this.stores.discussionMappings.find({
       tenantId: { eq: input.tenantId },
       mergeRequestIid: { eq: input.mergeRequestIid },
-      gitlabDiscussionId: { eq: input.gitlabDiscussionId }
+      gitlabDiscussionId: { eq: input.gitlabDiscussionId },
     });
     const now = new Date().toISOString();
 
@@ -662,29 +772,45 @@ export class StoreBackedStorage implements StorageHelpers {
       status: input.status,
       lastInteractionRunId: input.lastInteractionRunId,
       createdAt: existing?.createdAt ?? now,
-      updatedAt: now
+      updatedAt: now,
     });
   }
 
-  private async buildTenantDeletionSummary(tenant: TenantRecord): Promise<TenantDeletionSummary> {
-    const [interactionJobs, mergeRequestSnapshots, interactionRuns, discussionMappings] = await Promise.all([
-      listAll(this.stores.interactionJobs, { filters: { tenantId: { eq: tenant.id } } }),
-      listAll(this.stores.mergeRequestSnapshots, { filters: { tenantId: { eq: tenant.id } } }),
-      listAll(this.stores.interactionRuns, { filters: { tenantId: { eq: tenant.id } } }),
-      listAll(this.stores.discussionMappings, { filters: { tenantId: { eq: tenant.id } } })
+  private async buildTenantDeletionSummary(
+    tenant: TenantRecord,
+  ): Promise<TenantDeletionSummary> {
+    const [
+      interactionJobs,
+      mergeRequestSnapshots,
+      interactionRuns,
+      discussionMappings,
+    ] = await Promise.all([
+      listAll(this.stores.interactionJobs, {
+        filters: { tenantId: { eq: tenant.id } },
+      }),
+      listAll(this.stores.mergeRequestSnapshots, {
+        filters: { tenantId: { eq: tenant.id } },
+      }),
+      listAll(this.stores.interactionRuns, {
+        filters: { tenantId: { eq: tenant.id } },
+      }),
+      listAll(this.stores.discussionMappings, {
+        filters: { tenantId: { eq: tenant.id } },
+      }),
     ]);
 
     const interactionRunIds = interactionRuns.map((run) => run.id);
-    const [reviewFindings, interactionRunMetrics] = interactionRunIds.length === 0
-      ? [[], []] as const
-      : await Promise.all([
-          listAll(this.stores.reviewFindings, {
-            filters: { interactionRunId: { in: interactionRunIds } }
-          }),
-          listAll(this.stores.interactionRunMetrics, {
-            filters: { interactionRunId: { in: interactionRunIds } }
-          })
-        ]);
+    const [reviewFindings, interactionRunMetrics] =
+      interactionRunIds.length === 0
+        ? ([[], []] as const)
+        : await Promise.all([
+            listAll(this.stores.reviewFindings, {
+              filters: { interactionRunId: { in: interactionRunIds } },
+            }),
+            listAll(this.stores.interactionRunMetrics, {
+              filters: { interactionRunId: { in: interactionRunIds } },
+            }),
+          ]);
 
     return {
       tenant,
@@ -695,25 +821,25 @@ export class StoreBackedStorage implements StorageHelpers {
       interactionRunMetricCount: interactionRunMetrics.length,
       discussionMappingCount: discussionMappings.length,
       interactionJobIds: interactionJobs.map((job) => job.id),
-      interactionRunIds
+      interactionRunIds,
     };
   }
 
   private async listLatestFindingsForMergeRequest(
     tenantId: string,
     mergeRequestIid: number,
-    excludeInteractionJobId?: string
+    excludeInteractionJobId?: string,
   ): Promise<PriorReviewFindingRecord[]> {
     const interactionJobs = (
       await listAll(this.stores.interactionJobs, {
         filters: {
           tenantId: { eq: tenantId },
-          mergeRequestIid: { eq: mergeRequestIid }
+          mergeRequestIid: { eq: mergeRequestIid },
         },
         order: [
           { field: "enqueuedAt", direction: "desc" },
-          { field: "id", direction: "desc" }
-        ]
+          { field: "id", direction: "desc" },
+        ],
       })
     ).filter((job) => job.id !== excludeInteractionJobId);
 
@@ -724,20 +850,25 @@ export class StoreBackedStorage implements StorageHelpers {
     const interactionRuns = await listAll(this.stores.interactionRuns, {
       filters: {
         interactionJobId: { in: interactionJobs.map((job) => job.id) },
-        status: { eq: "completed" }
-      }
+        status: { eq: "completed" },
+      },
     });
     if (interactionRuns.length === 0) {
       return [];
     }
 
     const findings = await listAll(this.stores.reviewFindings, {
-      filters: { interactionRunId: { in: interactionRuns.map((run) => run.id) } }
+      filters: {
+        interactionRunId: { in: interactionRuns.map((run) => run.id) },
+      },
     });
     const runById = new Map(interactionRuns.map((run) => [run.id, run]));
     const jobById = new Map(interactionJobs.map((job) => [job.id, job]));
 
-    const latestByIdentity = new Map<string, { finding: ReviewFindingRecord; reviewedAt: string; headSha: string }>();
+    const latestByIdentity = new Map<
+      string,
+      { finding: ReviewFindingRecord; reviewedAt: string; headSha: string }
+    >();
     for (const finding of findings) {
       const run = runById.get(finding.interactionRunId);
       if (!run) {
@@ -751,11 +882,14 @@ export class StoreBackedStorage implements StorageHelpers {
 
       const reviewedAt = run.finishedAt ?? run.startedAt;
       const current = latestByIdentity.get(finding.identityKey);
-      if (!current || compareFindingPreference({ finding, reviewedAt }, current) < 0) {
+      if (
+        !current ||
+        compareFindingPreference({ finding, reviewedAt }, current) < 0
+      ) {
         latestByIdentity.set(finding.identityKey, {
           finding,
           reviewedAt,
-          headSha: job.headSha
+          headSha: job.headSha,
         });
       }
     }
@@ -773,15 +907,21 @@ export class StoreBackedStorage implements StorageHelpers {
         suggestion: parseJson<ReviewSuggestion>(finding.suggestionJson),
         interactionRunId: finding.interactionRunId,
         reviewedAt,
-        headSha
+        headSha,
       }))
       .toSorted((left, right) => {
-        const statusComparison = compareFinalFindingStatus(left.status, right.status);
+        const statusComparison = compareFinalFindingStatus(
+          left.status,
+          right.status,
+        );
         if (statusComparison !== 0) {
           return statusComparison;
         }
 
-        const reviewedAtComparison = compareIsoDesc(left.reviewedAt, right.reviewedAt);
+        const reviewedAtComparison = compareIsoDesc(
+          left.reviewedAt,
+          right.reviewedAt,
+        );
         if (reviewedAtComparison !== 0) {
           return reviewedAtComparison;
         }
@@ -796,7 +936,7 @@ export async function listAll<TEntity, TFilters, TOrder extends string>(
   input?: {
     filters?: TFilters;
     order?: readonly StoreListOrder<TOrder>[];
-  }
+  },
 ): Promise<TEntity[]> {
   const results: TEntity[] = [];
   for (let page = 1; ; page += 1) {
@@ -804,7 +944,7 @@ export async function listAll<TEntity, TFilters, TOrder extends string>(
       ...(input?.filters ? { filters: input.filters } : {}),
       ...(input?.order ? { order: input.order } : {}),
       page,
-      pageSize: DEFAULT_PAGE_SIZE
+      pageSize: DEFAULT_PAGE_SIZE,
     });
     results.push(...batch);
 
@@ -824,19 +964,28 @@ function parseJson<T>(value: string | null): T | null {
 
 function compareFindingPreference(
   left: { finding: ReviewFindingRecord; reviewedAt: string },
-  right: { finding: ReviewFindingRecord; reviewedAt: string }
+  right: { finding: ReviewFindingRecord; reviewedAt: string },
 ): number {
-  const reviewedAtComparison = compareIsoDesc(left.reviewedAt, right.reviewedAt);
+  const reviewedAtComparison = compareIsoDesc(
+    left.reviewedAt,
+    right.reviewedAt,
+  );
   if (reviewedAtComparison !== 0) {
     return reviewedAtComparison;
   }
 
-  const statusComparison = comparePreferredLatestStatus(left.finding.status, right.finding.status);
+  const statusComparison = comparePreferredLatestStatus(
+    left.finding.status,
+    right.finding.status,
+  );
   if (statusComparison !== 0) {
     return statusComparison;
   }
 
-  const createdAtComparison = compareIsoDesc(left.finding.createdAt, right.finding.createdAt);
+  const createdAtComparison = compareIsoDesc(
+    left.finding.createdAt,
+    right.finding.createdAt,
+  );
   if (createdAtComparison !== 0) {
     return createdAtComparison;
   }
@@ -844,11 +993,17 @@ function compareFindingPreference(
   return left.finding.id.localeCompare(right.finding.id);
 }
 
-function comparePreferredLatestStatus(left: ReviewFindingStatus, right: ReviewFindingStatus): number {
+function comparePreferredLatestStatus(
+  left: ReviewFindingStatus,
+  right: ReviewFindingStatus,
+): number {
   return statusRankForLatest(left) - statusRankForLatest(right);
 }
 
-function compareFinalFindingStatus(left: ReviewFindingStatus, right: ReviewFindingStatus): number {
+function compareFinalFindingStatus(
+  left: ReviewFindingStatus,
+  right: ReviewFindingStatus,
+): number {
   return statusRankForResult(left) - statusRankForResult(right);
 }
 
@@ -880,7 +1035,7 @@ function compareIsoDesc(left: string, right: string): number {
 
 function resolveModelProfileUpsertInput(
   existing: ModelProfileRecord | null,
-  input: UpsertModelProfileInput
+  input: UpsertModelProfileInput,
 ): {
   name: string;
   providerBaseUrl: string | null;
@@ -891,21 +1046,38 @@ function resolveModelProfileUpsertInput(
   textGenerationModel: string | null;
   isDefault: boolean;
 } {
-  const providerBaseUrl = input.providerBaseUrl !== undefined ? input.providerBaseUrl : (existing?.providerBaseUrl ?? null);
-  const providerType = providerBaseUrl === null && input.providerType === undefined
-    ? null
-    : (input.providerType !== undefined ? input.providerType : (existing?.providerType ?? null));
+  const providerBaseUrl =
+    input.providerBaseUrl !== undefined
+      ? input.providerBaseUrl
+      : (existing?.providerBaseUrl ?? null);
+  const providerType =
+    providerBaseUrl === null && input.providerType === undefined
+      ? null
+      : input.providerType !== undefined
+        ? input.providerType
+        : (existing?.providerType ?? null);
   const resolved = {
     name: input.name,
     providerBaseUrl,
     providerType,
-    wireApi: input.wireApi !== undefined ? input.wireApi : (existing?.wireApi ?? null),
-    authToken: input.authToken !== undefined ? input.authToken : (existing?.authToken ?? null),
-    reviewModel: input.reviewModel !== undefined ? input.reviewModel : (existing?.reviewModel ?? null),
-    textGenerationModel: input.textGenerationModel !== undefined
-      ? input.textGenerationModel
-      : (existing?.textGenerationModel ?? null),
-    isDefault: input.isDefault !== undefined ? input.isDefault : (existing?.isDefault ?? false)
+    wireApi:
+      input.wireApi !== undefined ? input.wireApi : (existing?.wireApi ?? null),
+    authToken:
+      input.authToken !== undefined
+        ? input.authToken
+        : (existing?.authToken ?? null),
+    reviewModel:
+      input.reviewModel !== undefined
+        ? input.reviewModel
+        : (existing?.reviewModel ?? null),
+    textGenerationModel:
+      input.textGenerationModel !== undefined
+        ? input.textGenerationModel
+        : (existing?.textGenerationModel ?? null),
+    isDefault:
+      input.isDefault !== undefined
+        ? input.isDefault
+        : (existing?.isDefault ?? false),
   };
 
   if (!resolved.providerBaseUrl && resolved.providerType) {

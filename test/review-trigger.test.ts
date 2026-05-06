@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildReviewTriggerContext, classifyWebhookTrigger } from "../src/review/trigger.js";
+import {
+  buildReviewTriggerContext,
+  classifyWebhookTrigger,
+} from "../src/review/trigger.js";
 import { REVIEW_SUMMARY_NOTE_MARKER } from "../src/review/summary.js";
 import { createInteractionJobDedupeKey } from "../src/utils/ids.js";
 
@@ -15,7 +18,7 @@ const tenant = {
   botUsername: "review-bot",
   modelProfileName: null,
   createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString()
+  updatedAt: new Date().toISOString(),
 };
 
 describe("review trigger helpers", () => {
@@ -26,28 +29,28 @@ describe("review trigger helpers", () => {
         object_kind: "note",
         project: {
           id: 123,
-          web_url: "https://gitlab.example.com/group/project"
+          web_url: "https://gitlab.example.com/group/project",
         },
         repository: {
-          homepage: "https://gitlab.example.com/group/project"
+          homepage: "https://gitlab.example.com/group/project",
         },
         merge_request: {
           iid: 7,
           title: "Add worker",
           description: "Adds the worker",
           source_branch: "feature",
-          target_branch: "main"
+          target_branch: "main",
         },
         object_attributes: {
           id: 55,
           note: "Please make this more human.",
-          noteable_type: "MergeRequest"
+          noteable_type: "MergeRequest",
         },
         user: {
           id: 42,
           username: "developer",
-          name: "Dev User"
-        }
+          name: "Dev User",
+        },
       },
       client: {
         listMergeRequestDiscussions: async () => [
@@ -62,7 +65,7 @@ describe("review trigger helpers", () => {
                 author: { id: 999, username: "review-bot", name: "Review Bot" },
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                system: false
+                system: false,
               },
               {
                 id: 55,
@@ -71,12 +74,12 @@ describe("review trigger helpers", () => {
                 author: { id: 42, username: "developer", name: "Dev User" },
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                system: false
-              }
-            ]
-          }
-        ]
-      }
+                system: false,
+              },
+            ],
+          },
+        ],
+      },
     });
 
     expect(trigger).toEqual({
@@ -84,8 +87,8 @@ describe("review trigger helpers", () => {
       note: {
         kind: "discussion-note",
         discussionId: "disc_1",
-        noteId: 55
-      }
+        noteId: 55,
+      },
     });
   });
 
@@ -96,40 +99,40 @@ describe("review trigger helpers", () => {
         object_kind: "note",
         project: {
           id: 123,
-          web_url: "https://gitlab.example.com/group/project"
+          web_url: "https://gitlab.example.com/group/project",
         },
         repository: {
-          homepage: "https://gitlab.example.com/group/project"
+          homepage: "https://gitlab.example.com/group/project",
         },
         merge_request: {
           iid: 7,
           title: "Add worker",
           description: "Adds the worker",
           source_branch: "feature",
-          target_branch: "main"
+          target_branch: "main",
         },
         object_attributes: {
           id: 56,
           note: "@review-bot please make the descriptions more human",
-          noteable_type: "MergeRequest"
+          noteable_type: "MergeRequest",
         },
         user: {
           id: 42,
           username: "developer",
-          name: "Dev User"
-        }
+          name: "Dev User",
+        },
       },
       client: {
-        listMergeRequestDiscussions: async () => []
-      }
+        listMergeRequestDiscussions: async () => [],
+      },
     });
 
     expect(trigger).toEqual({
       kind: "direct-mention",
       note: {
         kind: "merge-request-note",
-        noteId: 56
-      }
+        noteId: 56,
+      },
     });
   });
 
@@ -140,28 +143,28 @@ describe("review trigger helpers", () => {
         object_kind: "note",
         project: {
           id: 123,
-          web_url: "https://gitlab.example.com/group/project"
+          web_url: "https://gitlab.example.com/group/project",
         },
         repository: {
-          homepage: "https://gitlab.example.com/group/project"
+          homepage: "https://gitlab.example.com/group/project",
         },
         merge_request: {
           iid: 7,
           title: "Add worker",
           description: "Adds the worker",
           source_branch: "feature",
-          target_branch: "main"
+          target_branch: "main",
         },
         object_attributes: {
           id: 58,
           note: "Please rerun the review.",
-          noteable_type: "MergeRequest"
+          noteable_type: "MergeRequest",
         },
         user: {
           id: 42,
           username: "developer",
-          name: "Dev User"
-        }
+          name: "Dev User",
+        },
       },
       client: {
         listMergeRequestDiscussions: async () => [
@@ -176,7 +179,7 @@ describe("review trigger helpers", () => {
                 author: { id: 999, username: "review-bot", name: "Review Bot" },
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                system: false
+                system: false,
               },
               {
                 id: 58,
@@ -185,12 +188,12 @@ describe("review trigger helpers", () => {
                 author: { id: 42, username: "developer", name: "Dev User" },
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                system: false
-              }
-            ]
-          }
-        ]
-      }
+                system: false,
+              },
+            ],
+          },
+        ],
+      },
     });
 
     expect(trigger).toEqual({
@@ -198,8 +201,8 @@ describe("review trigger helpers", () => {
       note: {
         kind: "discussion-note",
         discussionId: "disc_summary",
-        noteId: 58
-      }
+        noteId: 58,
+      },
     });
   });
 
@@ -210,35 +213,35 @@ describe("review trigger helpers", () => {
         object_kind: "note",
         project: {
           id: 123,
-          web_url: "https://gitlab.example.com/group/project"
+          web_url: "https://gitlab.example.com/group/project",
         },
         repository: {
-          homepage: "https://gitlab.example.com/group/project"
+          homepage: "https://gitlab.example.com/group/project",
         },
         merge_request: {
           iid: 7,
           title: "Add worker",
           description: "Adds the worker",
           source_branch: "feature",
-          target_branch: "main"
+          target_branch: "main",
         },
         object_attributes: {
           id: 59,
           note: "@review-bot please review this",
           noteable_type: "MergeRequest",
-          draft: true
+          draft: true,
         },
         user: {
           id: 42,
           username: "developer",
-          name: "Dev User"
-        }
+          name: "Dev User",
+        },
       },
       client: {
         listMergeRequestDiscussions: async () => {
           throw new Error("draft notes should not fetch discussions");
-        }
-      }
+        },
+      },
     });
 
     expect(trigger).toBeNull();
@@ -251,32 +254,32 @@ describe("review trigger helpers", () => {
         object_kind: "note",
         project: {
           id: 123,
-          web_url: "https://gitlab.example.com/group/project"
+          web_url: "https://gitlab.example.com/group/project",
         },
         repository: {
-          homepage: "https://gitlab.example.com/group/project"
+          homepage: "https://gitlab.example.com/group/project",
         },
         merge_request: {
           iid: 7,
           title: "Add worker",
           description: "Adds the worker",
           source_branch: "feature",
-          target_branch: "main"
+          target_branch: "main",
         },
         object_attributes: {
           id: 57,
           note: "@review-bot-helper please make the descriptions more human",
-          noteable_type: "MergeRequest"
+          noteable_type: "MergeRequest",
         },
         user: {
           id: 42,
           username: "developer",
-          name: "Dev User"
-        }
+          name: "Dev User",
+        },
       },
       client: {
-        listMergeRequestDiscussions: async () => []
-      }
+        listMergeRequestDiscussions: async () => [],
+      },
     });
 
     expect(trigger).toBeNull();
@@ -296,10 +299,10 @@ describe("review trigger helpers", () => {
           {
             noteId: 55,
             authorUsername: "developer",
-            body: "Please make this more human."
-          }
-        ]
-      }
+            body: "Please make this more human.",
+          },
+        ],
+      },
     ];
 
     const followUpTrigger = buildReviewTriggerContext({
@@ -307,28 +310,28 @@ describe("review trigger helpers", () => {
         object_kind: "note",
         project: {
           id: 123,
-          web_url: "https://gitlab.example.com/group/project"
+          web_url: "https://gitlab.example.com/group/project",
         },
         repository: {
-          homepage: "https://gitlab.example.com/group/project"
+          homepage: "https://gitlab.example.com/group/project",
         },
         merge_request: {
           iid: 7,
           title: "Add worker",
           description: "Adds the worker",
           source_branch: "feature",
-          target_branch: "main"
+          target_branch: "main",
         },
         object_attributes: {
           id: 55,
           note: "Please make this more human.",
-          noteable_type: "MergeRequest"
+          noteable_type: "MergeRequest",
         },
         user: {
           id: 42,
           username: "developer",
-          name: "Dev User"
-        }
+          name: "Dev User",
+        },
       },
       tenant,
       discussions: [
@@ -343,7 +346,7 @@ describe("review trigger helpers", () => {
               author: { id: 999, username: "review-bot", name: "Review Bot" },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              system: false
+              system: false,
             },
             {
               id: 55,
@@ -352,12 +355,12 @@ describe("review trigger helpers", () => {
               author: { id: 42, username: "developer", name: "Dev User" },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              system: false
-            }
-          ]
-        }
+              system: false,
+            },
+          ],
+        },
       ],
-      priorThreads
+      priorThreads,
     });
 
     expect(followUpTrigger).toMatchObject({
@@ -369,8 +372,8 @@ describe("review trigger helpers", () => {
       responseTarget: {
         kind: "finding-thread-reply",
         discussionId: "disc_1",
-        noteId: 55
-      }
+        noteId: 55,
+      },
     });
 
     const reviewCommandTrigger = buildReviewTriggerContext({
@@ -378,32 +381,32 @@ describe("review trigger helpers", () => {
         object_kind: "note",
         project: {
           id: 123,
-          web_url: "https://gitlab.example.com/group/project"
+          web_url: "https://gitlab.example.com/group/project",
         },
         repository: {
-          homepage: "https://gitlab.example.com/group/project"
+          homepage: "https://gitlab.example.com/group/project",
         },
         merge_request: {
           iid: 7,
           title: "Add worker",
           description: "Adds the worker",
           source_branch: "feature",
-          target_branch: "main"
+          target_branch: "main",
         },
         object_attributes: {
           id: 56,
           note: "@review-bot please make the descriptions more human",
-          noteable_type: "MergeRequest"
+          noteable_type: "MergeRequest",
         },
         user: {
           id: 42,
           username: "developer",
-          name: "Dev User"
-        }
+          name: "Dev User",
+        },
       },
       tenant,
       discussions: [],
-      priorThreads
+      priorThreads,
     });
 
     expect(reviewCommandTrigger).toMatchObject({
@@ -412,8 +415,8 @@ describe("review trigger helpers", () => {
       targetThreadId: null,
       responseTarget: {
         kind: "merge-request-note",
-        noteId: 56
-      }
+        noteId: 56,
+      },
     });
 
     const summaryTrigger = buildReviewTriggerContext({
@@ -421,28 +424,28 @@ describe("review trigger helpers", () => {
         object_kind: "note",
         project: {
           id: 123,
-          web_url: "https://gitlab.example.com/group/project"
+          web_url: "https://gitlab.example.com/group/project",
         },
         repository: {
-          homepage: "https://gitlab.example.com/group/project"
+          homepage: "https://gitlab.example.com/group/project",
         },
         merge_request: {
           iid: 7,
           title: "Add worker",
           description: "Adds the worker",
           source_branch: "feature",
-          target_branch: "main"
+          target_branch: "main",
         },
         object_attributes: {
           id: 58,
           note: "In the future, please remember to throw in some dolphin related joke when it fits into the overall assessment.",
-          noteable_type: "MergeRequest"
+          noteable_type: "MergeRequest",
         },
         user: {
           id: 42,
           username: "developer",
-          name: "Dev User"
-        }
+          name: "Dev User",
+        },
       },
       tenant,
       discussions: [
@@ -457,7 +460,7 @@ describe("review trigger helpers", () => {
               author: { id: 999, username: "review-bot", name: "Review Bot" },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              system: false
+              system: false,
             },
             {
               id: 58,
@@ -466,23 +469,24 @@ describe("review trigger helpers", () => {
               author: { id: 42, username: "developer", name: "Dev User" },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              system: false
-            }
-          ]
-        }
+              system: false,
+            },
+          ],
+        },
       ],
-      priorThreads
+      priorThreads,
     });
 
     expect(summaryTrigger).toMatchObject({
       kind: "summary-follow-up",
-      instruction: "In the future, please remember to throw in some dolphin related joke when it fits into the overall assessment.",
+      instruction:
+        "In the future, please remember to throw in some dolphin related joke when it fits into the overall assessment.",
       targetThreadId: null,
       responseTarget: {
         kind: "summary-discussion-reply",
         discussionId: "disc_summary",
-        noteId: 58
-      }
+        noteId: 58,
+      },
     });
   });
 
@@ -492,28 +496,28 @@ describe("review trigger helpers", () => {
         object_kind: "note",
         project: {
           id: 123,
-          web_url: "https://gitlab.example.com/group/project"
+          web_url: "https://gitlab.example.com/group/project",
         },
         repository: {
-          homepage: "https://gitlab.example.com/group/project"
+          homepage: "https://gitlab.example.com/group/project",
         },
         merge_request: {
           iid: 7,
           title: "Add worker",
           description: "Adds the worker",
           source_branch: "feature",
-          target_branch: "main"
+          target_branch: "main",
         },
         object_attributes: {
           id: 77,
           note: "@review-bot can you explain this change?",
-          noteable_type: "MergeRequest"
+          noteable_type: "MergeRequest",
         },
         user: {
           id: 42,
           username: "developer",
-          name: "Dev User"
-        }
+          name: "Dev User",
+        },
       },
       tenant,
       discussions: [
@@ -528,12 +532,12 @@ describe("review trigger helpers", () => {
               author: { id: 42, username: "developer", name: "Dev User" },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              system: false
-            }
-          ]
-        }
+              system: false,
+            },
+          ],
+        },
       ],
-      priorThreads: []
+      priorThreads: [],
     });
 
     expect(trigger).toMatchObject({
@@ -541,8 +545,8 @@ describe("review trigger helpers", () => {
       responseTarget: {
         kind: "discussion-reply",
         discussionId: "disc_individual",
-        noteId: 77
-      }
+        noteId: 77,
+      },
     });
   });
 
@@ -551,7 +555,7 @@ describe("review trigger helpers", () => {
       baseUrl: tenant.baseUrl,
       projectId: tenant.projectId,
       mergeRequestIid: 7,
-      noteId: 55
+      noteId: 55,
     });
 
     const firstUpdateKey = createInteractionJobDedupeKey({
@@ -561,7 +565,7 @@ describe("review trigger helpers", () => {
       noteId: 55,
       noteAction: "update",
       noteUpdatedAt: "2026-04-27T11:00:00.000Z",
-      noteBody: "@review-bot please review this again"
+      noteBody: "@review-bot please review this again",
     });
 
     const secondUpdateKey = createInteractionJobDedupeKey({
@@ -571,7 +575,7 @@ describe("review trigger helpers", () => {
       noteId: 55,
       noteAction: "update",
       noteUpdatedAt: "2026-04-27T11:05:00.000Z",
-      noteBody: "@review-bot please review this again"
+      noteBody: "@review-bot please review this again",
     });
 
     expect(createKey).not.toBe(firstUpdateKey);
@@ -584,8 +588,8 @@ describe("review trigger helpers", () => {
         noteId: 55,
         noteAction: "update",
         noteUpdatedAt: "2026-04-27T11:00:00.000Z",
-        noteBody: "@review-bot please review this again"
-      })
+        noteBody: "@review-bot please review this again",
+      }),
     );
   });
 
@@ -597,8 +601,8 @@ describe("review trigger helpers", () => {
         mergeRequestIid: 7,
         noteId: 55,
         noteAction: "update",
-        noteBody: "@review-bot first edit"
-      })
+        noteBody: "@review-bot first edit",
+      }),
     ).not.toBe(
       createInteractionJobDedupeKey({
         baseUrl: tenant.baseUrl,
@@ -606,8 +610,8 @@ describe("review trigger helpers", () => {
         mergeRequestIid: 7,
         noteId: 55,
         noteAction: "update",
-        noteBody: "@review-bot second edit"
-      })
+        noteBody: "@review-bot second edit",
+      }),
     );
   });
 });
