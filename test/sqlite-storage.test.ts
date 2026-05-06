@@ -239,7 +239,7 @@ describe("SqliteStorage review findings", () => {
       headSha: "head-two",
     });
     expect(priorFindings[1]?.anchor).toEqual({
-      path: "src\\api.ts",
+      path: "src/api.ts",
       startLine: 12,
       endLine: 12,
       side: "new",
@@ -770,7 +770,7 @@ function createFinding(input: {
     title: input.title,
     body: input.body,
     anchorJson: JSON.stringify({
-      path: "src\\api.ts",
+      path: "src/api.ts",
       startLine: 12,
       endLine: 12,
       side: "new",

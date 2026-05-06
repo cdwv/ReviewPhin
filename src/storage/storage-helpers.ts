@@ -29,6 +29,14 @@ import type {
 
 const DEFAULT_PAGE_SIZE = 200;
 
+function resolveDefined<T>(value: T | undefined, fallback: T): T {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return value;
+}
+
 export interface StorageHelpers {
   readonly stores: StorageStores;
   upsertModelProfile(
@@ -538,7 +546,7 @@ export class StoreBackedStorage implements StorageHelpers {
         return compareIsoDesc(leftSnapshot.createdAt, rightSnapshot.createdAt);
       })[0];
 
-    if (!bestRun || !bestRun.finishedAt || bestRun.resultJson === null) {
+    if (!bestRun?.finishedAt || bestRun.resultJson === null) {
       return null;
     }
 
@@ -1046,38 +1054,34 @@ function resolveModelProfileUpsertInput(
   textGenerationModel: string | null;
   isDefault: boolean;
 } {
-  const providerBaseUrl =
-    input.providerBaseUrl !== undefined
-      ? input.providerBaseUrl
-      : (existing?.providerBaseUrl ?? null);
-  const providerType =
-    providerBaseUrl === null && input.providerType === undefined
-      ? null
-      : input.providerType !== undefined
-        ? input.providerType
-        : (existing?.providerType ?? null);
+  const providerBaseUrl = resolveDefined(
+    input.providerBaseUrl,
+    existing?.providerBaseUrl ?? null,
+  );
+  let providerType = resolveDefined(
+    input.providerType,
+    existing?.providerType ?? null,
+  );
+
+  if (providerBaseUrl === null && input.providerType === undefined) {
+    providerType = null;
+  }
+
   const resolved = {
     name: input.name,
     providerBaseUrl,
     providerType,
-    wireApi:
-      input.wireApi !== undefined ? input.wireApi : (existing?.wireApi ?? null),
-    authToken:
-      input.authToken !== undefined
-        ? input.authToken
-        : (existing?.authToken ?? null),
-    reviewModel:
-      input.reviewModel !== undefined
-        ? input.reviewModel
-        : (existing?.reviewModel ?? null),
-    textGenerationModel:
-      input.textGenerationModel !== undefined
-        ? input.textGenerationModel
-        : (existing?.textGenerationModel ?? null),
-    isDefault:
-      input.isDefault !== undefined
-        ? input.isDefault
-        : (existing?.isDefault ?? false),
+    wireApi: resolveDefined(input.wireApi, existing?.wireApi ?? null),
+    authToken: resolveDefined(input.authToken, existing?.authToken ?? null),
+    reviewModel: resolveDefined(
+      input.reviewModel,
+      existing?.reviewModel ?? null,
+    ),
+    textGenerationModel: resolveDefined(
+      input.textGenerationModel,
+      existing?.textGenerationModel ?? null,
+    ),
+    isDefault: resolveDefined(input.isDefault, existing?.isDefault ?? false),
   };
 
   if (!resolved.providerBaseUrl && resolved.providerType) {

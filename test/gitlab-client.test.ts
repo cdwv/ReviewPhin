@@ -3,6 +3,32 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitLabClient } from "../src/gitlab/client.js";
 import { createLogger } from "../src/logger.js";
 
+function getRequestUrl(input: URL | RequestInfo): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  if (input instanceof URL) {
+    return input.toString();
+  }
+
+  return input.url;
+}
+
+function getRequestBodyText(body: BodyInit | null | undefined): string {
+  if (typeof body === "string") {
+    return body;
+  }
+
+  if (body instanceof URLSearchParams) {
+    return body.toString();
+  }
+
+  throw new TypeError(
+    `Unexpected request body type: ${body === null ? "null" : typeof body}`,
+  );
+}
+
 describe("GitLabClient headers", () => {
   const originalFetch = globalThis.fetch;
 
@@ -14,7 +40,7 @@ describe("GitLabClient headers", () => {
   it("requests repository archives with a binary-compatible accept header", async () => {
     const fetchMock = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
-        expect(String(input)).toBe(
+        expect(getRequestUrl(input)).toBe(
           "https://gitlab.example.com/api/v4/projects/1085/repository/archive.tar.gz?sha=abc123",
         );
         expect(new Headers(init?.headers).get("accept")).toBe(
@@ -72,7 +98,7 @@ describe("GitLabClient headers", () => {
   it("fetches project wiki pages with the with_content query parameter when requested", async () => {
     const fetchMock = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
-        expect(String(input)).toBe(
+        expect(getRequestUrl(input)).toBe(
           "https://gitlab.example.com/api/v4/projects/1085/wikis?with_content=1&page=1&per_page=100",
         );
         expect(new Headers(init?.headers).get("accept")).toBe(
@@ -105,13 +131,13 @@ describe("GitLabClient headers", () => {
   it("updates project wiki pages using form-encoded content", async () => {
     const fetchMock = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
-        expect(String(input)).toBe(
+        expect(getRequestUrl(input)).toBe(
           "https://gitlab.example.com/api/v4/projects/1085/wikis/Reviewphin-memory",
         );
         expect(new Headers(init?.headers).get("content-type")).toBe(
           "application/x-www-form-urlencoded",
         );
-        const body = String(init?.body);
+        const body = getRequestBodyText(init?.body);
         expect(body).toContain("title=Reviewphin+memory");
         expect(body).toContain("content=hello+world");
 

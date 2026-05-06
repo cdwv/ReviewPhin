@@ -26,8 +26,8 @@ describe("buildScopedReviewContext", () => {
       workspacePath: repoPath(),
       mergeRequest,
       changes: [
-        createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old"),
-        createChange("src\\delta.ts", "@@ -1 +1 @@\n-old\n+new"),
+        createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+old"),
+        createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new"),
       ],
       notes: [createNote(1, "Looks good")],
       discussions: [],
@@ -53,7 +53,7 @@ describe("buildScopedReviewContext", () => {
           "map_1",
           "disc_1",
           "Existing finding",
-          "src\\existing.ts",
+          "src/existing.ts",
           false,
         ),
       ],
@@ -78,7 +78,7 @@ describe("buildScopedReviewContext", () => {
               severity: "medium",
               category: "correctness",
               anchor: {
-                path: "src\\existing.ts",
+                path: "src/existing.ts",
                 startLine: 1,
                 endLine: 1,
                 side: "new",
@@ -88,7 +88,7 @@ describe("buildScopedReviewContext", () => {
           priorDispositions: [],
         }),
         changesJson: JSON.stringify([
-          createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old"),
+          createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+old"),
         ]),
       },
     });
@@ -96,8 +96,8 @@ describe("buildScopedReviewContext", () => {
     expect(scoped.scope.mode).toBe("incremental-rereview");
     expect(scoped.changes).toHaveLength(2);
     expect(scoped.changes.map((change) => change.new_path)).toEqual([
-      "src\\existing.ts",
-      "src\\delta.ts",
+      "src/existing.ts",
+      "src/delta.ts",
     ]);
     expect(scoped.scope.previousReview?.reviewRunId).toBe("run_prev");
     expect(scoped.scope.deltaSincePreviousReview?.changedFiles).toHaveLength(1);
@@ -108,8 +108,8 @@ describe("buildScopedReviewContext", () => {
       workspacePath: repoPath(),
       mergeRequest,
       changes: [
-        createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old"),
-        createChange("src\\delta.ts", "@@ -1 +1 @@\n-old\n+new"),
+        createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+old"),
+        createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new"),
       ],
       notes: [],
       discussions: [],
@@ -141,7 +141,7 @@ describe("buildScopedReviewContext", () => {
           severity: "medium",
           category: "correctness",
           anchor: {
-            path: "src\\existing.ts",
+            path: "src/existing.ts",
             startLine: 1,
             endLine: 1,
             side: "new",
@@ -165,14 +165,14 @@ describe("buildScopedReviewContext", () => {
           priorDispositions: [],
         }),
         changesJson: JSON.stringify([
-          createChange("src\\existing.ts", "@@ -1 +1 @@\n-old\n+old"),
+          createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+old"),
         ]),
       },
     });
 
     expect(scoped.changes.map((change) => change.new_path)).toEqual([
-      "src\\existing.ts",
-      "src\\delta.ts",
+      "src/existing.ts",
+      "src/delta.ts",
     ]);
     expect(scoped.scope.priorFindings).toHaveLength(1);
     expect(scoped.scope.priorFindings[0]?.status).toBe("open");
@@ -182,7 +182,7 @@ describe("buildScopedReviewContext", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
       mergeRequest,
-      changes: [createChange("src\\delta.ts", "@@ -1 +1 @@\n-old\n+new")],
+      changes: [createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new")],
       notes: [],
       discussions: [],
       instructionFiles: [],
@@ -232,8 +232,8 @@ describe("buildScopedReviewContext", () => {
       workspacePath: repoPath(),
       mergeRequest,
       changes: [
-        createChange("src\\same-head-a.ts", "@@ -1 +1 @@\n-old-a\n+new-a"),
-        createChange("src\\same-head-b.ts", "@@ -1 +1 @@\n-old-b\n+new-b"),
+        createChange("src/same-head-a.ts", "@@ -1 +1 @@\n-old-a\n+new-a"),
+        createChange("src/same-head-b.ts", "@@ -1 +1 @@\n-old-b\n+new-b"),
       ],
       notes: [createNote(1, "Looks good")],
       discussions: [],
@@ -268,8 +268,8 @@ describe("buildScopedReviewContext", () => {
           priorDispositions: [],
         }),
         changesJson: JSON.stringify([
-          createChange("src\\same-head-a.ts", "@@ -1 +1 @@\n-old-a\n+new-a"),
-          createChange("src\\same-head-b.ts", "@@ -1 +1 @@\n-old-b\n+new-b"),
+          createChange("src/same-head-a.ts", "@@ -1 +1 @@\n-old-a\n+new-a"),
+          createChange("src/same-head-b.ts", "@@ -1 +1 @@\n-old-b\n+new-b"),
         ]),
       },
     });
@@ -277,8 +277,8 @@ describe("buildScopedReviewContext", () => {
     expect(scoped.scope.mode).toBe("incremental-rereview");
     expect(scoped.scope.deltaSincePreviousReview?.changedFiles).toEqual([]);
     expect(scoped.changes.map((change) => change.new_path)).toEqual([
-      "src\\same-head-a.ts",
-      "src\\same-head-b.ts",
+      "src/same-head-a.ts",
+      "src/same-head-b.ts",
     ]);
   });
 
@@ -287,22 +287,22 @@ describe("buildScopedReviewContext", () => {
       "map_target",
       "disc_target",
       "Target finding",
-      "src\\target.ts",
+      "src/target.ts",
       false,
     );
     const otherThread = createThread(
       "map_other",
       "disc_other",
       "Other finding",
-      "src\\other.ts",
+      "src/other.ts",
       false,
     );
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
       mergeRequest,
       changes: [
-        createChange("src\\target.ts", "@@ -1 +1 @@\n-old\n+new"),
-        createChange("src\\other.ts", "@@ -1 +1 @@\n-old\n+new"),
+        createChange("src/target.ts", "@@ -1 +1 @@\n-old\n+new"),
+        createChange("src/other.ts", "@@ -1 +1 @@\n-old\n+new"),
       ],
       notes: [createNote(1, "General MR note")],
       discussions: [
@@ -342,7 +342,7 @@ describe("buildScopedReviewContext", () => {
     expect(scoped.scope.mode).toBe("follow-up-thread");
     expect(scoped.priorThreads).toEqual([targetThread]);
     expect(scoped.changes).toHaveLength(1);
-    expect(scoped.changes[0]?.new_path).toBe("src\\target.ts");
+    expect(scoped.changes[0]?.new_path).toBe("src/target.ts");
     expect(scoped.notes).toEqual([]);
   });
 
@@ -351,13 +351,13 @@ describe("buildScopedReviewContext", () => {
       "map_target",
       "disc_target",
       "Target finding",
-      "src\\target.ts",
+      "src/target.ts",
       false,
     );
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
       mergeRequest,
-      changes: [createChange("src\\other.ts", "@@ -1 +1 @@\n-old\n+new")],
+      changes: [createChange("src/other.ts", "@@ -1 +1 @@\n-old\n+new")],
       notes: [createNote(1, "General MR note")],
       discussions: [
         {
@@ -392,7 +392,7 @@ describe("buildScopedReviewContext", () => {
     expect(scoped.priorThreads).toEqual([targetThread]);
     expect(scoped.changes).toEqual([]);
     expect(scoped.scope.omittedChangedFiles).toHaveLength(1);
-    expect(scoped.scope.omittedChangedFiles[0]?.path).toBe("src\\other.ts");
+    expect(scoped.scope.omittedChangedFiles[0]?.path).toBe("src/other.ts");
   });
 
   it("keeps first-pass direct mentions bounded for large merge requests", () => {
@@ -401,7 +401,7 @@ describe("buildScopedReviewContext", () => {
       mergeRequest,
       changes: Array.from({ length: 16 }, (_, index) =>
         createChange(
-          `src\\feature-${index + 1}.ts`,
+          `src/feature-${index + 1}.ts`,
           `@@ -1 +1 @@\n-old-${index}\n+new-${index}`,
         ),
       ),
@@ -437,7 +437,7 @@ describe("buildScopedReviewContext", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
       mergeRequest,
-      changes: [createChange("src\\delta.ts", "@@ -1 +1 @@\n-old\n+new")],
+      changes: [createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new")],
       notes: [],
       discussions: [],
       instructionFiles: [],

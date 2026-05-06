@@ -39,6 +39,8 @@ import type {
 } from "../../contract/index.js";
 import { applySqliteMigrations } from "./migrations.js";
 import type { Logger } from "pino";
+import type { SqlValue } from "./types.js";
+import { buildSqlPlaceholders, WHERE_OPERATORS } from "./where-operators.js";
 
 interface SqliteStoreDatabaseOptions {
   databasePath: string;
@@ -46,7 +48,6 @@ interface SqliteStoreDatabaseOptions {
 }
 
 type Row = Record<string, unknown>;
-type SqlValue = string | number | null;
 
 export class SqliteStoreDatabase {
   private readonly databasePath: string;
@@ -1814,10 +1815,7 @@ function listRows<TEntity, TFilters extends object, TOrder extends string>(
   mapRow: (row: Row) => TEntity,
 ): TEntity[] {
   const { clause, params } = buildWhereClause(input.filters, filterColumns);
-  const orderClause =
-    input.order && input.order.length > 0
-      ? ` ORDER BY ${input.order.map((entry) => `${orderColumns[entry.field]} ${entry.direction.toUpperCase()}`).join(", ")}`
-      : "";
+  const orderClause = buildOrderClause<TFilters, TOrder>(input, orderColumns);
   const limit = Math.max(1, input.pageSize);
   const offset = Math.max(0, (input.page - 1) * input.pageSize);
   const rows = database
@@ -1826,6 +1824,24 @@ function listRows<TEntity, TFilters extends object, TOrder extends string>(
     )
     .all(...params, limit, offset) as Row[];
   return rows.map(mapRow);
+}
+
+function buildOrderClause<TFilters extends object, TOrder extends string>(
+  input: StoreListInput<TFilters, TOrder>,
+  orderColumns: Record<TOrder, string>,
+) {
+  if (!input.order?.length) {
+    return "";
+  }
+
+  const orderFields = input.order
+    .map(
+      (entry) =>
+        `${orderColumns[entry.field]} ${entry.direction.toUpperCase()}`,
+    )
+    .join(", ");
+
+  return ` ORDER BY ${orderFields}`;
 }
 
 function buildWhereClause<TFilters extends object>(
@@ -1847,48 +1863,20 @@ function buildWhereClause<TFilters extends object>(
     }
 
     const column = filterColumns[field];
-    if ("isNull" in filter && filter.isNull !== undefined) {
-      clauses.push(`${column} IS ${filter.isNull ? "" : "NOT "}NULL`);
-    }
 
-    if ("eq" in filter && filter.eq !== undefined) {
-      if (filter.eq === null) {
-        clauses.push(`${column} IS NULL`);
-      } else {
-        clauses.push(`${column} = ?`);
-        params.push(toSqlValue(filter.eq));
+    for (const [operator, handler] of Object.entries(WHERE_OPERATORS)) {
+      if (
+        operator in filter &&
+        filter[operator as keyof StoreValueFilter<unknown>] !== undefined
+      ) {
+        const { clause, params: operatorParams } = handler(filter, column);
+        if (clause) {
+          clauses.push(clause);
+        }
+        if (operatorParams) {
+          params.push(...operatorParams);
+        }
       }
-    }
-
-    if ("neq" in filter && filter.neq !== undefined) {
-      if (filter.neq === null) {
-        clauses.push(`${column} IS NOT NULL`);
-      } else {
-        clauses.push(`${column} != ?`);
-        params.push(toSqlValue(filter.neq));
-      }
-    }
-
-    if ("in" in filter && filter.in !== undefined) {
-      if (filter.in.length === 0) {
-        clauses.push("1 = 0");
-      } else {
-        clauses.push(
-          `${column} IN (${buildSqlPlaceholders(filter.in.length)})`,
-        );
-        params.push(...filter.in.map(toSqlValue));
-      }
-    }
-
-    if (
-      "notIn" in filter &&
-      filter.notIn !== undefined &&
-      filter.notIn.length > 0
-    ) {
-      clauses.push(
-        `${column} NOT IN (${buildSqlPlaceholders(filter.notIn.length)})`,
-      );
-      params.push(...filter.notIn.map(toSqlValue));
     }
   }
 
@@ -1898,20 +1886,12 @@ function buildWhereClause<TFilters extends object>(
   };
 }
 
-function toSqlValue(value: unknown): SqlValue {
-  if (typeof value === "boolean") {
-    return value ? 1 : 0;
+function resolveDefined<T>(value: T | undefined, fallback: T): T {
+  if (value === undefined) {
+    return fallback;
   }
 
-  if (
-    typeof value === "number" ||
-    typeof value === "string" ||
-    value === null
-  ) {
-    return value;
-  }
-
-  throw new Error(`Unsupported SQL filter value type: ${typeof value}`);
+  return value;
 }
 
 function mapModelProfileRow(row: Row): ModelProfileRecord {
@@ -1942,38 +1922,34 @@ function resolveModelProfileUpsertInput(
   textGenerationModel: string | null;
   isDefault: boolean;
 } {
-  const providerBaseUrl =
-    input.providerBaseUrl !== undefined
-      ? input.providerBaseUrl
-      : (existing?.providerBaseUrl ?? null);
-  const providerType =
-    providerBaseUrl === null && input.providerType === undefined
-      ? null
-      : input.providerType !== undefined
-        ? input.providerType
-        : (existing?.providerType ?? null);
+  const providerBaseUrl = resolveDefined(
+    input.providerBaseUrl,
+    existing?.providerBaseUrl ?? null,
+  );
+  let providerType = resolveDefined(
+    input.providerType,
+    existing?.providerType ?? null,
+  );
+
+  if (providerBaseUrl === null && input.providerType === undefined) {
+    providerType = null;
+  }
+
   const resolved = {
     name: input.name,
     providerBaseUrl,
     providerType,
-    wireApi:
-      input.wireApi !== undefined ? input.wireApi : (existing?.wireApi ?? null),
-    authToken:
-      input.authToken !== undefined
-        ? input.authToken
-        : (existing?.authToken ?? null),
-    reviewModel:
-      input.reviewModel !== undefined
-        ? input.reviewModel
-        : (existing?.reviewModel ?? null),
-    textGenerationModel:
-      input.textGenerationModel !== undefined
-        ? input.textGenerationModel
-        : (existing?.textGenerationModel ?? null),
-    isDefault:
-      input.isDefault !== undefined
-        ? input.isDefault
-        : (existing?.isDefault ?? false),
+    wireApi: resolveDefined(input.wireApi, existing?.wireApi ?? null),
+    authToken: resolveDefined(input.authToken, existing?.authToken ?? null),
+    reviewModel: resolveDefined(
+      input.reviewModel,
+      existing?.reviewModel ?? null,
+    ),
+    textGenerationModel: resolveDefined(
+      input.textGenerationModel,
+      existing?.textGenerationModel ?? null,
+    ),
+    isDefault: resolveDefined(input.isDefault, existing?.isDefault ?? false),
   };
 
   if (!resolved.providerBaseUrl && resolved.providerType) {
@@ -2103,7 +2079,7 @@ function mapInteractionRunMetricsRow(row: Row): InteractionRunMetricsRecord {
 
 function asString(value: unknown): string {
   if (typeof value !== "string") {
-    throw new Error(`Expected string row value, received ${typeof value}`);
+    throw new TypeError(`Expected string row value, received ${typeof value}`);
   }
 
   return value;
@@ -2211,8 +2187,4 @@ function mapReviewFindingRow(row: Row): ReviewFindingRecord {
     status: asString(row.status) as ReviewFindingStatus,
     createdAt: asString(row.created_at),
   };
-}
-
-function buildSqlPlaceholders(count: number): string {
-  return Array.from({ length: count }, () => "?").join(", ");
 }
