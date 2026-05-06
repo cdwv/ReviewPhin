@@ -293,18 +293,7 @@ function selectChanges(input: {
     return input.focusPaths.has(path) || input.focusPaths.has(change.old_path);
   });
 
-  const candidatePool =
-    input.mode === "follow-up-thread"
-      ? focusedChanges
-      : input.mode === "incremental-rereview"
-        ? input.deltaChanges.length > 0
-          ? mergeChangesPreservingOrder(
-              input.changes,
-              focusedChanges,
-              input.deltaChanges,
-            )
-          : input.changes
-        : input.changes;
+  const candidatePool = getChangesCandidatePool(input, focusedChanges);
 
   if (candidatePool.length <= CHANGE_LIMIT_BY_MODE[input.mode]) {
     return candidatePool.slice();
@@ -326,6 +315,31 @@ function selectChanges(input: {
   }
 
   return candidatePool.slice(0, CHANGE_LIMIT_BY_MODE[input.mode]);
+}
+
+function getChangesCandidatePool(
+  input: {
+    changes: GitLabMergeRequestChange[];
+    focusPaths: Set<string>;
+    mode: ReviewMode;
+    deltaChanges: GitLabMergeRequestChange[];
+    widenScopeHints: string[];
+  },
+  focusedChanges: GitLabMergeRequestChange[],
+) {
+  if (input.mode === "follow-up-thread") {
+    return focusedChanges;
+  }
+
+  if (input.mode === "incremental-rereview" && input.deltaChanges.length > 0) {
+    return mergeChangesPreservingOrder(
+      input.changes,
+      focusedChanges,
+      input.deltaChanges,
+    );
+  }
+
+  return input.changes;
 }
 
 function mergeChangesPreservingOrder(
@@ -397,7 +411,7 @@ function collectWidenScopeHints(changes: GitLabMergeRequestChange[]): string[] {
     ) {
       hints.add("public interfaces or shared contracts changed");
     }
-    if (/^src\/storage\//.test(path) || /migration/i.test(path)) {
+    if (path.startsWith("src/storage/") || /migration/i.test(path)) {
       hints.add("storage or migration behavior changed");
     }
     if (/^src\/(gitlab|review|reconcile|jobs)\//.test(path)) {
@@ -481,32 +495,7 @@ function buildScope(input: {
       : null;
 
   const selectedChangeCount = input.selectedChanges.length;
-  const scopeSummary =
-    input.mode === "follow-up-thread"
-      ? `Focus on the target bot-owned thread${input.targetThread ? ` "${input.targetThread.title}"` : ""} and the ${selectedChangeCount} directly related changed file(s).`
-      : input.mode === "incremental-rereview"
-        ? [
-            input.trigger.kind === "summary-follow-up"
-              ? "A reply on the bot-owned summary note requested another review pass."
-              : input.trigger.instruction
-                ? "Repeated direct mention requested a new review pass."
-                : "Repeated direct mention requested another review pass.",
-            input.previousReview
-              ? `Start from review run ${input.previousReview.reviewRunId} at head ${input.previousReview.headSha}.`
-              : "No previous review head was available; widen scope as needed.",
-            `Prioritize the ${input.deltaChanges.length} file(s) changed since the previous review before widening beyond the delta.`,
-            input.omittedChangedFiles.length > 0
-              ? `${input.omittedChangedFiles.length} additional changed file(s) are summarized without inline diffs.`
-              : "All current changed files are included in detail.",
-          ].join(" ")
-        : [
-            input.previousReview
-              ? "A fresh full rescan was explicitly requested even though a previous review exists."
-              : "This is the first full review request for this merge request.",
-            input.omittedChangedFiles.length > 0
-              ? `${input.omittedChangedFiles.length} changed file(s) are summarized without inline diffs to keep the starting context bounded.`
-              : "All changed files are included in detail.",
-          ].join(" ");
+  const scopeSummary = buildScopeSummary(input, selectedChangeCount);
 
   return {
     mode: input.mode,
@@ -519,6 +508,74 @@ function buildScope(input: {
     priorFindings: input.priorFindings,
     deltaSincePreviousReview,
   };
+}
+
+function buildScopeSummary(
+  input: {
+    mode: ReviewMode;
+    trigger: ReviewTriggerContext;
+    targetThread: ProviderThreadContext | null;
+    previousReview: PreviousReviewSource | null;
+    previousReviewResult: ReviewResult | null;
+    priorFindings: PriorReviewFindingContext[];
+    selectedChanges: GitLabMergeRequestChange[];
+    allChangedFiles: ReviewChangeSummary[];
+    omittedChangedFiles: ReviewChangeSummary[];
+    deltaChanges: GitLabMergeRequestChange[];
+    widenScopeHints: string[];
+  },
+  selectedChangeCount: number,
+) {
+  if (input.mode === "follow-up-thread") {
+    return `Focus on the target bot-owned thread${input.targetThread ? ` "${input.targetThread.title}"` : ""} and the ${selectedChangeCount} directly related changed file(s).`;
+  }
+
+  if (input.mode === "incremental-rereview") {
+    const parts = [];
+
+    if (input.trigger.kind === "summary-follow-up") {
+      parts.push(
+        "A reply on the bot-owned summary note requested another review pass.",
+      );
+    } else if (input.trigger.instruction) {
+      parts.push("Repeated direct mention requested a new review pass.");
+    } else {
+      parts.push("Repeated direct mention requested another review pass.");
+    }
+
+    if (input.previousReview) {
+      parts.push(
+        `Start from review run ${input.previousReview.reviewRunId} at head ${input.previousReview.headSha}.`,
+      );
+    } else {
+      parts.push(
+        "No previous review head was available; widen scope as needed.",
+      );
+    }
+
+    parts.push(
+      `Prioritize the ${input.deltaChanges.length} file(s) changed since the previous review before widening beyond the delta.`,
+    );
+
+    if (input.omittedChangedFiles.length > 0) {
+      parts.push(
+        `${input.omittedChangedFiles.length} additional changed file(s) are summarized without inline diffs.`,
+      );
+    } else {
+      parts.push("All current changed files are included in detail.");
+    }
+
+    return parts.join(" ");
+  }
+
+  return [
+    input.previousReview
+      ? "A fresh full rescan was explicitly requested even though a previous review exists."
+      : "This is the first full review request for this merge request.",
+    input.omittedChangedFiles.length > 0
+      ? `${input.omittedChangedFiles.length} changed file(s) are summarized without inline diffs to keep the starting context bounded.`
+      : "All changed files are included in detail.",
+  ].join(" ");
 }
 
 function buildPreviousReviewContext(

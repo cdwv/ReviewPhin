@@ -8,5 +8,8 @@
     }
   ],
   "sqltools.useNodeRuntime": true,
-  "editor.formatOnSave": true
+  "editor.formatOnSave": true,
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
 }
