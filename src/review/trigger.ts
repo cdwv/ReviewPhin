@@ -2,7 +2,7 @@ import { isBotUser } from "../gitlab/bot-user.js";
 import type { GitLabClient } from "../gitlab/client.js";
 import type { GitLabDiscussion, TriggerNoteReference, GitLabNoteHookPayload } from "../gitlab/types.js";
 import { containsBotMention, extractBotMentionInstruction } from "../gitlab/webhook.js";
-import type { TenantRecord } from "../storage/types.js";
+import type { TenantRecord } from "../storage/contract/index.js";
 import { isReviewSummaryNoteBody } from "./summary.js";
 import type { ProviderThreadContext, ResponseTarget, ReviewTriggerContext, WebhookReviewTrigger } from "./types.js";
 

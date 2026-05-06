@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { isBotUser } from "../gitlab/bot-user.js";
 import { GitLabClient } from "../gitlab/client.js";
-import type { GitLabNoteHookPayload, MaterializedWorkspace, TriggerNoteReference } from "../gitlab/types.js";
+import type { GitLabDiscussion, GitLabNoteHookPayload, MaterializedWorkspace, TriggerNoteReference } from "../gitlab/types.js";
 import { parseGitLabNoteHook } from "../gitlab/webhook.js";
 import { extractWebhookHeadSha } from "../gitlab/webhook.js";
 import type { MergeRequestContextHydrator } from "../gitlab/hydrator.js";
@@ -23,9 +23,9 @@ import type {
   DiscussionMappingRecord,
   InteractionJobRecord,
   PreviousCompletedInteractionRecord,
-  Storage,
   TenantRecord
-} from "../storage/types.js";
+} from "../storage/contract/index.js";
+import { listAll, type StorageHelpers } from "../storage/storage-helpers.js";
 import type { TenantRegistry } from "../tenants/tenant-registry.js";
 import { createInteractionJobDedupeKey, createFindingIdentityKey } from "../utils/ids.js";
 
@@ -34,7 +34,7 @@ const REVIEW_COMPLETED_REACTION = "white_check_mark";
 const REVIEW_FAILED_REACTION = "confounded";
 
 interface ReviewWorkerOptions {
-  storage: Storage;
+  storage: StorageHelpers;
   tenantRegistry: TenantRegistry;
   hydrator: MergeRequestContextHydrator;
   workspaceMaterializer: WorkspaceMaterializer;
@@ -48,7 +48,7 @@ interface ReviewWorkerOptions {
 }
 
 export class ReviewWorker {
-  private readonly storage: Storage;
+  private readonly storage: StorageHelpers;
   private readonly tenantRegistry: TenantRegistry;
   private readonly hydrator: MergeRequestContextHydrator;
   private readonly workspaceMaterializer: WorkspaceMaterializer;
@@ -129,7 +129,7 @@ export class ReviewWorker {
   }
 
   public async processJob(jobId: string): Promise<{ requeueAfterMs?: number } | void> {
-    const job = await this.storage.getInteractionJobById(jobId);
+    const job = await this.storage.stores.interactionJobs.get(jobId);
     if (!job) {
       this.logger.warn({ interactionJobId: jobId }, "interaction job not found");
       return;
@@ -210,7 +210,19 @@ export class ReviewWorker {
         workspaceStrategy: routingContext.workspace.strategy
       });
 
-      const mappings = await this.storage.listDiscussionMappings(tenant.id, routingContext.mergeRequest.iid);
+      let mappings = await listAll(this.storage.stores.discussionMappings, {
+        filters: {
+          tenantId: { eq: tenant.id },
+          mergeRequestIid: { eq: routingContext.mergeRequest.iid }
+        },
+        order: [{ field: "updatedAt", direction: "desc" }]
+      });
+      mappings = await this.syncDiscussionFindingStatuses({
+        tenant,
+        mergeRequestIid: routingContext.mergeRequest.iid,
+        discussions: routingContext.discussions,
+        mappings
+      });
       const priorThreads = buildProviderThreads({
         tenant,
         discussions: routingContext.discussions,
@@ -236,7 +248,7 @@ export class ReviewWorker {
         routingContext.mergeRequest.iid,
         job.id
       );
-      const priorFindings = await this.storage.listPriorReviewFindings(tenant.id, routingContext.mergeRequest.iid, job.id);
+      let priorFindings = await this.storage.listPriorReviewFindings(tenant.id, routingContext.mergeRequest.iid, job.id);
       let chatterContext = this.buildPromptContext({
         interactionRunId: interactionRun.id,
         tenant,
@@ -334,6 +346,13 @@ export class ReviewWorker {
           context: routingContext
         });
         workspacesToCleanup.push(hydratedContext.workspace);
+        mappings = await this.syncDiscussionFindingStatuses({
+          tenant,
+          mergeRequestIid: hydratedContext.mergeRequest.iid,
+          discussions: hydratedContext.discussions,
+          mappings
+        });
+        priorFindings = await this.storage.listPriorReviewFindings(tenant.id, hydratedContext.mergeRequest.iid, job.id);
         reviewContext = this.buildPromptContext({
           interactionRunId: interactionRun.id,
           tenant,
@@ -634,6 +653,88 @@ export class ReviewWorker {
     }
   }
 
+  private async syncDiscussionFindingStatuses(input: {
+    tenant: TenantRecord;
+    mergeRequestIid: number;
+    discussions: GitLabDiscussion[];
+    mappings: DiscussionMappingRecord[];
+  }): Promise<DiscussionMappingRecord[]> {
+    const discussionById = new Map(input.discussions.map((discussion) => [discussion.id, discussion] as const));
+    const syncedMappings = [...input.mappings];
+    let synchronizedCount = 0;
+
+    for (const [index, mapping] of input.mappings.entries()) {
+      const discussion = discussionById.get(mapping.gitlabDiscussionId);
+      if (!discussion) {
+        continue;
+      }
+
+      const liveStatus = discussion.notes.some((note) => note.resolved === true) ? "resolved" : "open";
+      if (mapping.status === liveStatus) {
+        continue;
+      }
+      syncedMappings[index] = await this.storage.upsertDiscussionMapping({
+        id: mapping.id,
+        tenantId: mapping.tenantId,
+        projectId: mapping.projectId,
+        mergeRequestIid: mapping.mergeRequestIid,
+        identityKey: mapping.identityKey,
+        findingFingerprint: mapping.findingFingerprint,
+        title: mapping.title,
+        severity: mapping.severity,
+        category: mapping.category,
+        body: mapping.body,
+        gitlabDiscussionId: mapping.gitlabDiscussionId,
+        gitlabNoteId: mapping.gitlabNoteId,
+        anchorJson: mapping.anchorJson,
+        positionJson: mapping.positionJson,
+        botDiscussion: mapping.botDiscussion,
+        botNote: mapping.botNote,
+        noteAuthorId: mapping.noteAuthorId,
+        noteAuthorUsername: mapping.noteAuthorUsername,
+        status: liveStatus,
+        lastInteractionRunId: mapping.lastInteractionRunId
+      });
+
+      const findingStatusUpdated = await this.storage.updateReviewFindingStatus(
+        input.tenant.id,
+        input.mergeRequestIid,
+        mapping.identityKey,
+        liveStatus,
+        {
+          currentStatuses: ["open", "resolved"]
+        }
+      );
+      if (!findingStatusUpdated) {
+        this.logger.warn(
+          {
+            tenantId: input.tenant.id,
+            mergeRequestIid: input.mergeRequestIid,
+            discussionId: mapping.gitlabDiscussionId,
+            identityKey: mapping.identityKey,
+            findingStatus: liveStatus
+          },
+          "failed to synchronize persisted review finding status from live discussion"
+        );
+      }
+
+      synchronizedCount += 1;
+    }
+
+    if (synchronizedCount > 0) {
+      this.logger.info(
+        {
+          tenantId: input.tenant.id,
+          mergeRequestIid: input.mergeRequestIid,
+          synchronizedCount
+        },
+        "synchronized persisted discussion findings from live discussions"
+      );
+    }
+
+    return syncedMappings;
+  }
+
   private buildPromptContext(input: {
     interactionRunId: string;
     tenant: TenantRecord;
@@ -645,7 +746,7 @@ export class ReviewWorker {
       "workspace" | "mergeRequest" | "changes" | "notes" | "discussions" | "projectMemory"
     >;
     mappings: DiscussionMappingRecord[];
-    priorFindings: Awaited<ReturnType<Storage["listPriorReviewFindings"]>>;
+    priorFindings: Awaited<ReturnType<StorageHelpers["listPriorReviewFindings"]>>;
     previousInteraction: PreviousCompletedInteractionRecord | null;
   }): ReviewContext {
     return buildScopedReviewContext({

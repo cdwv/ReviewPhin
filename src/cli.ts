@@ -9,8 +9,9 @@ import { loadConfig, modelProfileNameSchema, tenantConfigSchema } from "./config
 import { loadLocalEnvFile } from "./env.js";
 import { maskSecret } from "./review/model-profiles.js";
 import { readHarnessRunMetrics, type PremiumRequestsByModelMetric } from "./harness/run-metrics.js";
-import { SqliteStorage } from "./storage/sqlite-storage.js";
-import type { TenantDeletionSummary } from "./storage/types.js";
+import { initializeStorageRuntime } from "./storage/runtime.js";
+import { listAll, type StorageHelpers } from "./storage/storage-helpers.js";
+import type { TenantDeletionSummary } from "./storage/contract/index.js";
 
 interface ParsedCliArgs {
   readonly positionals: string[];
@@ -101,12 +102,12 @@ const modelProfileLookupSchema = z.object({
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
   loadLocalEnvFile();
+  const config = loadConfig();
 
   const { positionals, options } = parseCliArgs(argv);
   const [resource, action] = positionals;
 
   if (resource === "tenant" && action === "add") {
-    const config = loadConfig();
     const tenant = tenantAddSchema.parse({
       baseUrl: options["base-url"],
       projectId: options["project-id"],
@@ -115,166 +116,157 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       botUserId: options["bot-user-id"],
       botUsername: options["bot-username"],
       modelProfileName: options["model-profile"],
-      databasePath: options["database-path"]
+      databasePath: options["sqlite-database-path"]
     });
-
-    const storage = new SqliteStorage({
-      databasePath: tenant.databasePath ?? config.databasePath
+    return withStorage(options, config, async (storage) => {
+      const savedTenant = await storage.upsertTenant(tenant);
+      process.stdout.write(
+        [
+          "Tenant saved.",
+          `id: ${savedTenant.id}`,
+          `key: ${savedTenant.key}`,
+          `project: ${savedTenant.baseUrl} :: ${savedTenant.projectId}`,
+          `modelProfile: ${savedTenant.modelProfileName ?? "(none)"}`
+        ].join("\n") + "\n"
+      );
+      return 0;
     });
-    await storage.initialize();
-
-    const savedTenant = await storage.upsertTenant(tenant);
-    process.stdout.write(
-      [
-        "Tenant saved.",
-        `id: ${savedTenant.id}`,
-        `key: ${savedTenant.key}`,
-        `project: ${savedTenant.baseUrl} :: ${savedTenant.projectId}`,
-        `modelProfile: ${savedTenant.modelProfileName ?? "(none)"}`
-      ].join("\n") + "\n"
-    );
-    return 0;
   }
 
   if (resource === "tenant" && action === "list") {
-    const config = loadConfig();
-    const databasePath = typeof options["database-path"] === "string" ? options["database-path"] : config.databasePath;
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    return withStorage(options, config, async (storage) => {
+      const tenants = await listAll(storage.stores.tenants, {
+        order: [
+          { field: "baseUrl", direction: "asc" },
+          { field: "projectId", direction: "asc" }
+        ]
+      });
+      if (tenants.length === 0) {
+        process.stdout.write("No tenants registered.\n");
+        return 0;
+      }
 
-    const tenants = await storage.listTenants();
-    if (tenants.length === 0) {
-      process.stdout.write("No tenants registered.\n");
+      process.stdout.write(
+        `${JSON.stringify(
+          tenants.map((tenant) => ({
+            id: tenant.id,
+            key: tenant.key,
+            baseUrl: tenant.baseUrl,
+            projectId: tenant.projectId,
+            botUserId: tenant.botUserId,
+            botUsername: tenant.botUsername,
+            modelProfileName: tenant.modelProfileName
+          })),
+          null,
+          2
+        )}\n`
+      );
       return 0;
-    }
-
-    process.stdout.write(
-      `${JSON.stringify(
-        tenants.map((tenant) => ({
-          id: tenant.id,
-          key: tenant.key,
-          baseUrl: tenant.baseUrl,
-          projectId: tenant.projectId,
-          botUserId: tenant.botUserId,
-          botUsername: tenant.botUsername,
-          modelProfileName: tenant.modelProfileName
-        })),
-        null,
-        2
-      )}\n`
-    );
-    return 0;
+    });
   }
 
   if (resource === "tenant" && action === "set-profile") {
-    const config = loadConfig();
     const tenant = tenantProfileSchema.parse({
       baseUrl: options["base-url"],
       projectId: options["project-id"],
       modelProfileName: options["model-profile"],
-      databasePath: options["database-path"]
+      databasePath: options["sqlite-database-path"]
     });
-    const storage = new SqliteStorage({
-      databasePath: tenant.databasePath ?? config.databasePath
+    return withStorage(options, config, async (storage) => {
+      const updatedTenant = await storage.setTenantModelProfile(tenant.baseUrl, tenant.projectId, tenant.modelProfileName);
+      process.stdout.write(
+        [
+          "Tenant profile updated.",
+          `id: ${updatedTenant.id}`,
+          `key: ${updatedTenant.key}`,
+          `project: ${updatedTenant.baseUrl} :: ${updatedTenant.projectId}`,
+          `modelProfile: ${updatedTenant.modelProfileName ?? "(none)"}`
+        ].join("\n") + "\n"
+      );
+      return 0;
     });
-    await storage.initialize();
-
-    const updatedTenant = await storage.setTenantModelProfile(tenant.baseUrl, tenant.projectId, tenant.modelProfileName);
-    process.stdout.write(
-      [
-        "Tenant profile updated.",
-        `id: ${updatedTenant.id}`,
-        `key: ${updatedTenant.key}`,
-        `project: ${updatedTenant.baseUrl} :: ${updatedTenant.projectId}`,
-        `modelProfile: ${updatedTenant.modelProfileName ?? "(none)"}`
-      ].join("\n") + "\n"
-    );
-    return 0;
   }
 
   if (resource === "tenant" && action === "clear-profile") {
-    const config = loadConfig();
     const tenant = tenantLookupSchema.parse({
       baseUrl: options["base-url"],
       projectId: options["project-id"],
-      databasePath: options["database-path"]
+      databasePath: options["sqlite-database-path"]
     });
-    const storage = new SqliteStorage({
-      databasePath: tenant.databasePath ?? config.databasePath
+    return withStorage(options, config, async (storage) => {
+      const updatedTenant = await storage.setTenantModelProfile(tenant.baseUrl, tenant.projectId, null);
+      process.stdout.write(
+        [
+          "Tenant profile cleared.",
+          `id: ${updatedTenant.id}`,
+          `key: ${updatedTenant.key}`,
+          `project: ${updatedTenant.baseUrl} :: ${updatedTenant.projectId}`
+        ].join("\n") + "\n"
+      );
+      return 0;
     });
-    await storage.initialize();
-
-    const updatedTenant = await storage.setTenantModelProfile(tenant.baseUrl, tenant.projectId, null);
-    process.stdout.write(
-      [
-        "Tenant profile cleared.",
-        `id: ${updatedTenant.id}`,
-        `key: ${updatedTenant.key}`,
-        `project: ${updatedTenant.baseUrl} :: ${updatedTenant.projectId}`
-      ].join("\n") + "\n"
-    );
-    return 0;
   }
 
   if (resource === "tenant" && action === "remove") {
-    const config = loadConfig();
     const tenant = tenantLookupSchema.parse({
       baseUrl: options["base-url"],
       projectId: options["project-id"],
-      databasePath: options["database-path"]
+      databasePath: options["sqlite-database-path"]
     });
-    const databasePath = typeof tenant.databasePath === "string" ? resolve(tenant.databasePath) : config.databasePath;
     const workspaceRoot = typeof options["workspace-root"] === "string" ? resolve(options["workspace-root"]) : config.workspaceRoot;
     const runLogDir = typeof options["run-log-dir"] === "string" ? resolve(options["run-log-dir"]) : config.runLogDir;
     const assumeYes = options.yes === true || options.yes === "true";
+    return withStorage(options, config, async (storage, storageContext) => {
+      const deletionSummary = await storage.getTenantDeletionSummary(tenant.baseUrl, tenant.projectId);
+      if (!deletionSummary) {
+        process.stdout.write(`Tenant not found for ${tenant.baseUrl} :: ${tenant.projectId}\n`);
+        return 1;
+      }
 
-    const storage = new SqliteStorage({
-      databasePath
+      const artifactSummary = await collectTenantArtifactSummary(deletionSummary, workspaceRoot, runLogDir);
+      process.stdout.write(
+        formatTenantRemovalSummary(
+          deletionSummary,
+          artifactSummary,
+          storageContext.sqliteDatabasePath ?? resolve("./data/review-worker.sqlite"),
+          workspaceRoot,
+          runLogDir
+        )
+      );
+
+      if (!assumeYes) {
+        if (!process.stdin.isTTY) {
+          process.stdout.write("Tenant removal requires confirmation. Re-run with --yes in non-interactive mode.\n");
+          return 1;
+        }
+
+        const confirmed = await promptForConfirmation("Continue and remove all tenant data? [y/N] ");
+        if (!confirmed) {
+          process.stdout.write("Tenant removal aborted.\n");
+          return 1;
+        }
+      }
+
+      const deletedSummary = await storage.deleteTenantWithSummary(tenant.baseUrl, tenant.projectId);
+      if (!deletedSummary) {
+        throw new Error(`Tenant ${tenant.baseUrl} :: ${tenant.projectId} disappeared during removal`);
+      }
+
+      await deleteTenantArtifactsForSummary(deletedSummary, workspaceRoot, runLogDir);
+
+      process.stdout.write(
+        [
+          "Tenant removed.",
+          `id: ${deletedSummary.tenant.id}`,
+          `key: ${deletedSummary.tenant.key}`,
+          `project: ${deletedSummary.tenant.baseUrl} :: ${deletedSummary.tenant.projectId}`
+        ].join("\n") + "\n"
+      );
+      return 0;
     });
-    await storage.initialize();
-
-    const deletionSummary = await storage.getTenantDeletionSummary(tenant.baseUrl, tenant.projectId);
-    if (!deletionSummary) {
-      process.stdout.write(`Tenant not found for ${tenant.baseUrl} :: ${tenant.projectId}\n`);
-      return 1;
-    }
-
-    const artifactSummary = await collectTenantArtifactSummary(deletionSummary, workspaceRoot, runLogDir);
-    process.stdout.write(formatTenantRemovalSummary(deletionSummary, artifactSummary, databasePath, workspaceRoot, runLogDir));
-
-    if (!assumeYes) {
-      if (!process.stdin.isTTY) {
-        process.stdout.write("Tenant removal requires confirmation. Re-run with --yes in non-interactive mode.\n");
-        return 1;
-      }
-
-      const confirmed = await promptForConfirmation("Continue and remove all tenant data? [y/N] ");
-      if (!confirmed) {
-        process.stdout.write("Tenant removal aborted.\n");
-        return 1;
-      }
-    }
-
-    const deletedSummary = await storage.deleteTenantWithSummary(tenant.baseUrl, tenant.projectId);
-    if (!deletedSummary) {
-      throw new Error(`Tenant ${tenant.baseUrl} :: ${tenant.projectId} disappeared during removal`);
-    }
-
-    await deleteTenantArtifactsForSummary(deletedSummary, workspaceRoot, runLogDir);
-
-    process.stdout.write(
-      [
-        "Tenant removed.",
-        `id: ${deletedSummary.tenant.id}`,
-        `key: ${deletedSummary.tenant.key}`,
-        `project: ${deletedSummary.tenant.baseUrl} :: ${deletedSummary.tenant.projectId}`
-      ].join("\n") + "\n"
-    );
-    return 0;
   }
 
   if (resource === "model-profile" && action === "add") {
-    const config = loadConfig();
     assertNoConflictingModelProfileFieldOptions(options);
     const profile = modelProfileSchema.parse({
       name: options.name,
@@ -285,122 +277,121 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       reviewModel: options["review-model"],
       textGenerationModel: options["text-generation-model"],
       isDefault: "default" in options ? options.default === true || options.default === "true" : undefined,
-      databasePath: options["database-path"]
+      databasePath: options["sqlite-database-path"]
     });
-    const storage = new SqliteStorage({
-      databasePath: profile.databasePath ?? config.databasePath
-    });
-    await storage.initialize();
+    return withStorage(options, config, async (storage) => {
+      const clearBaseUrl = options["clear-base-url"] === true || options["clear-base-url"] === "true";
+      const clearProviderType =
+        clearBaseUrl || options["clear-provider-type"] === true || options["clear-provider-type"] === "true";
+      const clearWireApi = clearBaseUrl || options["clear-wire-api"] === true || options["clear-wire-api"] === "true";
 
-    const clearBaseUrl = options["clear-base-url"] === true || options["clear-base-url"] === "true";
-    const clearProviderType =
-      clearBaseUrl || options["clear-provider-type"] === true || options["clear-provider-type"] === "true";
-    const clearWireApi = clearBaseUrl || options["clear-wire-api"] === true || options["clear-wire-api"] === "true";
-
-    const savedProfile = await storage.upsertModelProfile({
-      name: profile.name,
-      providerBaseUrl: clearBaseUrl ? null : ("base-url" in options ? (profile.providerBaseUrl ?? null) : undefined),
-      providerType: clearProviderType ? null : ("provider-type" in options ? (profile.providerType ?? null) : undefined),
-      wireApi: clearWireApi ? null : ("wire-api" in options ? (profile.wireApi ?? null) : undefined),
-      authToken:
-        options["clear-auth-token"] === true || options["clear-auth-token"] === "true"
-          ? null
-          : ("auth-token" in options ? (profile.authToken ?? null) : undefined),
-      reviewModel:
-        options["clear-review-model"] === true || options["clear-review-model"] === "true"
-          ? null
-          : ("review-model" in options ? (profile.reviewModel ?? null) : undefined),
-      textGenerationModel:
-        options["clear-text-generation-model"] === true || options["clear-text-generation-model"] === "true"
-          ? null
-          : ("text-generation-model" in options ? (profile.textGenerationModel ?? null) : undefined),
-      isDefault: "default" in options ? (profile.isDefault ?? false) : undefined
+      const savedProfile = await storage.upsertModelProfile({
+        name: profile.name,
+        ...(clearBaseUrl ? { providerBaseUrl: null } : {}),
+        ...("base-url" in options && !clearBaseUrl ? { providerBaseUrl: profile.providerBaseUrl ?? null } : {}),
+        ...(clearProviderType ? { providerType: null } : {}),
+        ...("provider-type" in options && !clearProviderType ? { providerType: profile.providerType ?? null } : {}),
+        ...(clearWireApi ? { wireApi: null } : {}),
+        ...("wire-api" in options && !clearWireApi ? { wireApi: profile.wireApi ?? null } : {}),
+        ...(options["clear-auth-token"] === true || options["clear-auth-token"] === "true" ? { authToken: null } : {}),
+        ...("auth-token" in options &&
+        !(options["clear-auth-token"] === true || options["clear-auth-token"] === "true")
+          ? { authToken: profile.authToken ?? null }
+          : {}),
+        ...(options["clear-review-model"] === true || options["clear-review-model"] === "true"
+          ? { reviewModel: null }
+          : {}),
+        ...("review-model" in options &&
+        !(options["clear-review-model"] === true || options["clear-review-model"] === "true")
+          ? { reviewModel: profile.reviewModel ?? null }
+          : {}),
+        ...(options["clear-text-generation-model"] === true || options["clear-text-generation-model"] === "true"
+          ? { textGenerationModel: null }
+          : {}),
+        ...("text-generation-model" in options &&
+        !(options["clear-text-generation-model"] === true || options["clear-text-generation-model"] === "true")
+          ? { textGenerationModel: profile.textGenerationModel ?? null }
+          : {}),
+        ...("default" in options ? { isDefault: profile.isDefault ?? false } : {})
+      });
+      process.stdout.write(formatModelProfileSummary("Model profile saved.", savedProfile));
+      return 0;
     });
-    process.stdout.write(formatModelProfileSummary("Model profile saved.", savedProfile));
-    return 0;
   }
 
   if (resource === "model-profile" && action === "list") {
-    const config = loadConfig();
-    const databasePath = typeof options["database-path"] === "string" ? options["database-path"] : config.databasePath;
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    return withStorage(options, config, async (storage) => {
+      const profiles = await listAll(storage.stores.modelProfiles, {
+        order: [
+          { field: "isDefault", direction: "desc" },
+          { field: "name", direction: "asc" }
+        ]
+      });
+      if (profiles.length === 0) {
+        process.stdout.write("No model profiles configured.\n");
+        return 0;
+      }
 
-    const profiles = await storage.listModelProfiles();
-    if (profiles.length === 0) {
-      process.stdout.write("No model profiles configured.\n");
+      process.stdout.write(
+        `${JSON.stringify(
+          profiles.map((profile) => ({
+            name: profile.name,
+            providerBaseUrl: profile.providerBaseUrl,
+            providerType: profile.providerType,
+            wireApi: profile.wireApi,
+            reviewModel: profile.reviewModel,
+            textGenerationModel: profile.textGenerationModel,
+            isDefault: profile.isDefault,
+            authToken: maskSecret(profile.authToken)
+          })),
+          null,
+          2
+        )}\n`
+      );
       return 0;
-    }
-
-    process.stdout.write(
-      `${JSON.stringify(
-        profiles.map((profile) => ({
-          name: profile.name,
-          providerBaseUrl: profile.providerBaseUrl,
-          providerType: profile.providerType,
-          wireApi: profile.wireApi,
-          reviewModel: profile.reviewModel,
-          textGenerationModel: profile.textGenerationModel,
-          isDefault: profile.isDefault,
-          authToken: maskSecret(profile.authToken)
-        })),
-        null,
-        2
-      )}\n`
-    );
-    return 0;
+    });
   }
 
   if (resource === "model-profile" && action === "remove") {
-    const config = loadConfig();
     const profile = modelProfileLookupSchema.parse({
       name: options.name,
-      databasePath: options["database-path"]
+      databasePath: options["sqlite-database-path"]
     });
-    const storage = new SqliteStorage({
-      databasePath: profile.databasePath ?? config.databasePath
+    return withStorage(options, config, async (storage) => {
+      const removedProfile = await storage.deleteModelProfile(profile.name);
+      if (!removedProfile) {
+        process.stdout.write(`Model profile ${profile.name} not found.\n`);
+        return 1;
+      }
+
+      process.stdout.write(formatModelProfileSummary("Model profile removed.", removedProfile));
+      return 0;
     });
-    await storage.initialize();
-
-    const removedProfile = await storage.deleteModelProfile(profile.name);
-    if (!removedProfile) {
-      process.stdout.write(`Model profile ${profile.name} not found.\n`);
-      return 1;
-    }
-
-    process.stdout.write(formatModelProfileSummary("Model profile removed.", removedProfile));
-    return 0;
   }
 
   if (resource === "model-profile" && action === "set-default") {
-    const config = loadConfig();
     const profile = modelProfileLookupSchema.parse({
       name: options.name,
-      databasePath: options["database-path"]
+      databasePath: options["sqlite-database-path"]
     });
-    const storage = new SqliteStorage({
-      databasePath: profile.databasePath ?? config.databasePath
+    return withStorage(options, config, async (storage) => {
+      const updatedProfile = await storage.setDefaultModelProfile(profile.name);
+      if (!updatedProfile) {
+        process.stdout.write("No model profile selected as default.\n");
+        return 1;
+      }
+
+      process.stdout.write(formatModelProfileSummary("Default model profile updated.", updatedProfile));
+      return 0;
     });
-    await storage.initialize();
-
-    const updatedProfile = await storage.setDefaultModelProfile(profile.name);
-    if (!updatedProfile) {
-      process.stdout.write("No model profile selected as default.\n");
-      return 1;
-    }
-
-    process.stdout.write(formatModelProfileSummary("Default model profile updated.", updatedProfile));
-    return 0;
   }
 
   if (resource === "model-profile" && action === "clear-default") {
-    const config = loadConfig();
-    const databasePath = typeof options["database-path"] === "string" ? options["database-path"] : config.databasePath;
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
-    await storage.setDefaultModelProfile(null);
-    process.stdout.write("Default model profile cleared.\n");
-    return 0;
+    return withStorage(options, config, async (storage) => {
+      await storage.setDefaultModelProfile(null);
+      process.stdout.write("Default model profile cleared.\n");
+      return 0;
+    });
   }
 
   if (resource === "metrics" && action === "sessions") {
@@ -464,20 +455,48 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
   return { positionals, options };
 }
 
+async function withStorage<T>(
+  options: Record<string, string | boolean>,
+  config: ReturnType<typeof loadConfig>,
+  run: (storage: StorageHelpers, context: { sqliteDatabasePath?: string | undefined }) => Promise<T>
+): Promise<T> {
+  const env = {
+    ...process.env
+  };
+  if (typeof options["sqlite-database-path"] === "string") {
+    env.SQLITE_DATABASE_PATH = options["sqlite-database-path"];
+  }
+
+  const storageRuntime = await initializeStorageRuntime({
+    providerModule:
+      typeof options["storage-provider-module"] === "string" ? options["storage-provider-module"] : config.storageProviderModule,
+    env
+  });
+
+  try {
+    return await run(storageRuntime.storage, {
+      sqliteDatabasePath:
+        typeof env.SQLITE_DATABASE_PATH === "string" ? resolve(env.SQLITE_DATABASE_PATH) : undefined
+    });
+  } finally {
+    await storageRuntime.provider.close();
+  }
+}
+
 function printHelp(): void {
   process.stdout.write(
       [
         "Usage:",
-        "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> --bot-username <name> [--bot-user-id <id>] [--model-profile <name>] [--database-path <path>]",
-        "  pnpm cli tenant list [--database-path <path>]",
-        "  pnpm cli tenant set-profile --base-url <url> --project-id <id> --model-profile <name> [--database-path <path>]",
-        "  pnpm cli tenant clear-profile --base-url <url> --project-id <id> [--database-path <path>]",
-        "  pnpm cli tenant remove --base-url <url> --project-id <id> [--database-path <path>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
-        "  pnpm cli model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--default] [--database-path <path>]",
-        "  pnpm cli model-profile list [--database-path <path>]",
-        "  pnpm cli model-profile remove --name <name> [--database-path <path>]",
-        "  pnpm cli model-profile set-default --name <name> [--database-path <path>]",
-        "  pnpm cli model-profile clear-default [--database-path <path>]",
+        "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> --bot-username <name> [--bot-user-id <id>] [--model-profile <name>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+        "  pnpm cli tenant list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+        "  pnpm cli tenant set-profile --base-url <url> --project-id <id> --model-profile <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+        "  pnpm cli tenant clear-profile --base-url <url> --project-id <id> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+        "  pnpm cli tenant remove --base-url <url> --project-id <id> [--sqlite-database-path <path>] [--storage-provider-module <module>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
+        "  pnpm cli model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--default] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+        "  pnpm cli model-profile list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+        "  pnpm cli model-profile remove --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+        "  pnpm cli model-profile set-default --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+        "  pnpm cli model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
         "  pnpm cli metrics sessions [--run-log-dir <path>]"
       ].join("\n") + "\n"
     );

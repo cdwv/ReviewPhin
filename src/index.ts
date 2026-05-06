@@ -9,7 +9,8 @@ import { GitLabProjectMemoryBackendFactory } from "./memory/gitlab-wiki-backend.
 import { DiscussionReconciler } from "./reconcile/discussion-reconciler.js";
 import { HarnessChatterRunnerFactory } from "./review/harness-chatter.js";
 import { HarnessReviewProviderFactory } from "./review/harness-review-provider.js";
-import { SqliteStorage } from "./storage/sqlite-storage.js";
+import { initializeStorageRuntime } from "./storage/runtime.js";
+import { listAll } from "./storage/storage-helpers.js";
 import { TenantRegistry } from "./tenants/tenant-registry.js";
 import { createApp } from "./app.js";
 import { loadLocalEnvFile } from "./env.js";
@@ -19,15 +20,15 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
 
-  const storage = new SqliteStorage({
-    databasePath: config.databasePath
+  const storageRuntime = await initializeStorageRuntime({
+    providerModule: config.storageProviderModule,
+    logger: logger.child({ component: "storage-runtime" })
   });
-  await storage.initialize();
+  const { provider: storageProvider, storage } = storageRuntime;
 
   const tenantRegistry = new TenantRegistry({
     storage
   });
-  await tenantRegistry.initialize();
 
   const workspaceMaterializer = new WorkspaceMaterializer({
     workspaceRoot: config.workspaceRoot,
@@ -88,7 +89,13 @@ async function main(): Promise<void> {
     }
   });
 
-  const queuedJobs = await storage.listQueuedInteractionJobs();
+  const queuedJobs = await listAll(storage.stores.interactionJobs, {
+    filters: { status: { eq: "queued" } },
+    order: [
+      { field: "enqueuedAt", direction: "asc" },
+      { field: "id", direction: "asc" }
+    ]
+  });
   queue.enqueueMany(queuedJobs.map((job) => job.id));
 
   const app = await createApp({
@@ -100,6 +107,7 @@ async function main(): Promise<void> {
 
   const close = async (): Promise<void> => {
     await app.close();
+    await storageProvider.close();
   };
 
   process.once("SIGINT", () => {

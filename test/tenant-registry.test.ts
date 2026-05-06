@@ -35,36 +35,39 @@ function createPayload(): GitLabNoteHookPayload {
 describe("TenantRegistry", () => {
   it("prefers the most specific baseUrl match for path-prefixed GitLab instances", async () => {
     const storage = {
-      listTenants: async () => [],
-      listTenantsByProjectId: async () => [
-        {
-          id: "tenant_root",
-          key: "https://gitlab.example.com::123",
-          baseUrl: "https://gitlab.example.com",
-          projectId: 123,
-          apiToken: "token-root",
-          webhookSecret: "secret",
-          botUserId: null,
-          botUsername: null,
-          modelProfileName: null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        },
-        {
-          id: "tenant_prefixed",
-          key: "https://gitlab.example.com/gitlab::123",
-          baseUrl: "https://gitlab.example.com/gitlab",
-          projectId: 123,
-          apiToken: "token-prefixed",
-          webhookSecret: "secret",
-          botUserId: null,
-          botUsername: null,
-          modelProfileName: null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+      stores: {
+        tenants: {
+          list: async () => [
+            {
+              id: "tenant_root",
+              key: "https://gitlab.example.com::123",
+              baseUrl: "https://gitlab.example.com",
+              projectId: 123,
+              apiToken: "token-root",
+              webhookSecret: "secret",
+              botUserId: null,
+              botUsername: null,
+              modelProfileName: null,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            },
+            {
+              id: "tenant_prefixed",
+              key: "https://gitlab.example.com/gitlab::123",
+              baseUrl: "https://gitlab.example.com/gitlab",
+              projectId: 123,
+              apiToken: "token-prefixed",
+              webhookSecret: "secret",
+              botUserId: null,
+              botUsername: null,
+              modelProfileName: null,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            }
+          ],
+          get: async () => null
         }
-      ],
-      getTenantById: async () => null
+      }
     };
 
     const registry = new TenantRegistry({

@@ -9,7 +9,7 @@ import type {
   TriggerNoteReference
 } from "../gitlab/types.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
-import type { ReviewFindingStatus } from "../storage/types.js";
+import type { ReviewFindingStatus } from "../storage/contract/index.js";
 
 export const reviewAnchorSchema = z
   .object({

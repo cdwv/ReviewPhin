@@ -5,165 +5,66 @@ import { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it } from "vitest";
 
-import { SqliteStorage } from "../src/storage/sqlite-storage.js";
-import type { CreateReviewFindingInput } from "../src/storage/types.js";
+import { listAll, type StorageHelpers } from "../src/storage/storage-helpers.js";
+import type { CreateReviewFindingInput } from "../src/storage/contract/index.js";
+import { openSqliteTestStorage } from "./helpers/storage.js";
 
 describe("SqliteStorage review findings", () => {
-  it("backfills legacy review findings status as resolved during initialization", async () => {
+  it("applies the baseline migration to an empty database", async () => {
     const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
-    const legacyDb = new DatabaseSync(databasePath);
-    legacyDb.exec(`
-      CREATE TABLE tenants (
-        id TEXT PRIMARY KEY,
-        tenant_key TEXT NOT NULL UNIQUE,
-        base_url TEXT NOT NULL,
-        project_id INTEGER NOT NULL,
-        api_token TEXT NOT NULL,
-        webhook_secret TEXT NOT NULL,
-        bot_user_id INTEGER,
-        bot_username TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-      CREATE TABLE review_jobs (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        dedupe_key TEXT NOT NULL UNIQUE,
-        project_id INTEGER NOT NULL,
-        merge_request_iid INTEGER NOT NULL,
-        note_id INTEGER NOT NULL,
-        head_sha TEXT NOT NULL,
-        status TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        retry_count INTEGER NOT NULL DEFAULT 0,
-        last_error TEXT,
-        enqueued_at TEXT NOT NULL,
-        started_at TEXT,
-        finished_at TEXT
-      );
-      CREATE TABLE review_runs (
-        id TEXT PRIMARY KEY,
-        review_job_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        provider TEXT NOT NULL,
-        model TEXT,
-        status TEXT NOT NULL,
-        result_json TEXT,
-        error TEXT,
-        started_at TEXT NOT NULL,
-        finished_at TEXT
-      );
-      CREATE TABLE review_findings (
-        id TEXT PRIMARY KEY,
-        review_run_id TEXT NOT NULL,
-        identity_key TEXT NOT NULL,
-        fingerprint TEXT NOT NULL,
-        severity TEXT NOT NULL,
-        category TEXT NOT NULL,
-        title TEXT NOT NULL,
-        body TEXT NOT NULL,
-        file_path TEXT,
-        start_line INTEGER,
-        end_line INTEGER,
-        side TEXT,
-        suggestion_json TEXT,
-        raw_json TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
-      INSERT INTO tenants VALUES (
-        'tenant_1',
-        'https://gitlab.example.com::123',
-        'https://gitlab.example.com',
-        123,
-        'token',
-        'secret',
-        999,
-        'review-bot',
-        '2026-04-01T00:00:00.000Z',
-        '2026-04-01T00:00:00.000Z'
-      );
-      INSERT INTO review_jobs VALUES (
-        'job_1',
-        'tenant_1',
-        'dedupe_1',
-        123,
-        7,
-        55,
-        'headsha',
-        'completed',
-        '{}',
-        0,
-        NULL,
-        '2026-04-01T00:00:00.000Z',
-        '2026-04-01T00:00:00.000Z',
-        '2026-04-01T00:05:00.000Z'
-      );
-      INSERT INTO review_runs VALUES (
-        'run_1',
-        'job_1',
-        'tenant_1',
-        'copilot-sdk',
-        NULL,
-        'completed',
-        '{}',
-        NULL,
-        '2026-04-01T00:00:00.000Z',
-        '2026-04-01T00:05:00.000Z'
-      );
-      INSERT INTO review_findings VALUES (
-        'finding_1',
-        'run_1',
-        'identity_1',
-        'fingerprint_1',
-        'medium',
-        'correctness',
-        'Legacy finding',
-        'Legacy body',
-        'src\\legacy.ts',
-        10,
-        10,
-        'new',
-        NULL,
-        '{}',
-        '2026-04-01T00:05:00.000Z'
-      );
-    `);
-    legacyDb.close();
-
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    const storage = await openSqliteTestStorage(databasePath);
 
     const verifiedDb = new DatabaseSync(databasePath);
-    const row = verifiedDb
-      .prepare("SELECT status, anchor_json FROM review_findings WHERE id = ?")
-      .get("finding_1") as { status: string; anchor_json: string | null };
-    const statusColumn = verifiedDb
-      .prepare("PRAGMA table_info(review_findings)")
-      .all()
-      .find((column) => (column as { name: string }).name === "status") as { dflt_value: string };
+    const tables = new Set(
+      (verifiedDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map(
+        (row) => row.name
+      )
+    );
+    const migrations = verifiedDb.prepare("SELECT adapter_name, migration_id FROM storage_migrations").all() as Array<{
+      adapter_name: string;
+      migration_id: string;
+    }>;
     const columnNames = new Set(
       (verifiedDb.prepare("PRAGMA table_info(review_findings)").all() as Array<{ name: string }>).map((column) => column.name)
     );
+    const indexes = verifiedDb.prepare("PRAGMA index_list(review_findings)").all() as Array<{ name: string; unique: number }>;
     verifiedDb.close();
 
-    expect(row.status).toBe("resolved");
-    expect(JSON.parse(row.anchor_json ?? "null")).toEqual({
-      path: "src\\legacy.ts",
-      startLine: 10,
-      endLine: 10,
-      side: "new"
-    });
-    expect(statusColumn.dflt_value).toBe("'open'");
+    expect([...tables]).toEqual(
+      expect.arrayContaining([
+        "storage_migrations",
+        "model_profiles",
+        "tenants",
+        "interaction_jobs",
+        "merge_request_snapshots",
+        "interaction_runs",
+        "review_findings",
+        "interaction_run_metrics",
+        "discussion_mappings"
+      ])
+    );
+    expect(migrations).toEqual([
+      {
+        adapter_name: "sqlite",
+        migration_id: "sqlite:0001_v0_baseline"
+      }
+    ]);
     expect(columnNames.has("anchor_json")).toBe(true);
-    expect(columnNames.has("fingerprint")).toBe(false);
-    expect(columnNames.has("raw_json")).toBe(false);
-    expect(columnNames.has("file_path")).toBe(false);
+    expect(columnNames.has("interaction_run_id")).toBe(true);
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "review_findings_interaction_run_identity_key_idx",
+          unique: 1
+        })
+      ])
+    );
   });
 
-  it("renames legacy review run foreign-key columns during interaction schema upgrade", async () => {
+  it("records the baseline migration for an existing current-schema database without touching data", async () => {
     const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
-    const legacyDb = new DatabaseSync(databasePath);
-    legacyDb.exec(`
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
       CREATE TABLE tenants (
         id TEXT PRIMARY KEY,
         tenant_key TEXT NOT NULL UNIQUE,
@@ -173,82 +74,10 @@ describe("SqliteStorage review findings", () => {
         webhook_secret TEXT NOT NULL,
         bot_user_id INTEGER,
         bot_username TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-      CREATE TABLE review_jobs (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        dedupe_key TEXT NOT NULL UNIQUE,
-        project_id INTEGER NOT NULL,
-        merge_request_iid INTEGER NOT NULL,
-        note_id INTEGER NOT NULL,
-        head_sha TEXT NOT NULL,
-        status TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        retry_count INTEGER NOT NULL DEFAULT 0,
-        last_error TEXT,
-        enqueued_at TEXT NOT NULL,
-        started_at TEXT,
-        finished_at TEXT
-      );
-      CREATE TABLE review_runs (
-        id TEXT PRIMARY KEY,
-        review_job_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        provider TEXT NOT NULL,
-        model TEXT,
         model_profile_name TEXT,
-        provider_base_url TEXT,
-        provider_type TEXT,
-        text_generation_model TEXT,
-        status TEXT NOT NULL,
-        result_json TEXT,
-        error TEXT,
-        started_at TEXT NOT NULL,
-        finished_at TEXT
-      );
-      CREATE TABLE review_run_metrics (
-        id TEXT PRIMARY KEY,
-        review_run_id TEXT NOT NULL UNIQUE,
-        trigger_kind TEXT,
-        prompt_mode TEXT,
-        prompt_chars INTEGER NOT NULL,
-        prompt_context_changed_files INTEGER NOT NULL,
-        prompt_context_prior_threads INTEGER NOT NULL,
-        prompt_context_notes INTEGER NOT NULL,
-        assistant_turns INTEGER NOT NULL,
-        assistant_calls INTEGER NOT NULL,
-        tool_executions INTEGER NOT NULL,
-        view_tool_calls INTEGER NOT NULL,
-        glob_tool_calls INTEGER NOT NULL,
-        input_tokens INTEGER NOT NULL,
-        output_tokens INTEGER NOT NULL,
-        cache_read_tokens INTEGER NOT NULL,
-        cache_write_tokens INTEGER NOT NULL,
-        reasoning_tokens INTEGER NOT NULL,
-        api_duration_ms INTEGER NOT NULL,
-        premium_requests INTEGER NOT NULL,
-        repeated_view_reads INTEGER NOT NULL,
-        repeated_view_paths_json TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-      CREATE TABLE merge_request_snapshots (
-        id TEXT PRIMARY KEY,
-        review_job_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        merge_request_iid INTEGER NOT NULL,
-        head_sha TEXT NOT NULL,
-        merge_request_json TEXT NOT NULL,
-        versions_json TEXT NOT NULL,
-        changes_json TEXT NOT NULL,
-        notes_json TEXT NOT NULL,
-        discussions_json TEXT NOT NULL,
-        instructions_json TEXT NOT NULL,
-        project_memory_json TEXT,
-        workspace_strategy TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        UNIQUE(base_url, project_id)
       );
       INSERT INTO tenants VALUES (
         'tenant_1',
@@ -259,148 +88,33 @@ describe("SqliteStorage review findings", () => {
         'secret',
         999,
         'review-bot',
+        NULL,
         '2026-04-01T00:00:00.000Z',
         '2026-04-01T00:00:00.000Z'
       );
-      INSERT INTO review_jobs VALUES (
-        'job_1',
-        'tenant_1',
-        'dedupe_1',
-        123,
-        7,
-        55,
-        'headsha',
-        'completed',
-        '{}',
-        0,
-        NULL,
-        '2026-04-01T00:00:00.000Z',
-        '2026-04-01T00:00:00.000Z',
-        '2026-04-01T00:05:00.000Z'
-      );
-      INSERT INTO review_runs VALUES (
-        'run_1',
-        'job_1',
-        'tenant_1',
-        'copilot-sdk',
-        'gpt-5.4',
-        NULL,
-        NULL,
-        NULL,
-        NULL,
-        'completed',
-        '{"overview":{"summary":"ok","overallSeverity":"low"},"findings":[],"priorDispositions":[]}',
-        NULL,
-        '2026-04-01T00:00:00.000Z',
-        '2026-04-01T00:05:00.000Z'
-      );
-      INSERT INTO review_run_metrics VALUES (
-        'metrics_1',
-        'run_1',
-        'note',
-        'full',
-        10,
-        1,
-        0,
-        1,
-        1,
-        1,
-        0,
-        0,
-        0,
-        10,
-        20,
-        0,
-        0,
-        0,
-        100,
-        1,
-        0,
-        '[]',
-        '2026-04-01T00:05:00.000Z',
-        '2026-04-01T00:05:00.000Z'
-      );
-      INSERT INTO merge_request_snapshots VALUES (
-        'snapshot_1',
-        'job_1',
-        'tenant_1',
-        7,
-        'headsha',
-        '{}',
-        '[]',
-        '[]',
-        '[]',
-        '[]',
-        '[]',
-        NULL,
-        'git',
-        '2026-04-01T00:05:00.000Z'
-      );
     `);
-    legacyDb.close();
+    database.close();
 
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    const storage = await openSqliteTestStorage(databasePath);
 
-    const createdRun = await storage.createInteractionRun({
-      interactionJobId: "job_1",
-      tenantId: "tenant_1",
-      provider: "copilot-sdk",
-      model: "gpt-5.4",
-      modelProfileName: null,
-      providerBaseUrl: null,
-      providerType: null,
-      textGenerationModel: null
-    });
-    await storage.upsertInteractionRunMetrics({
-      interactionRunId: createdRun.id,
-      triggerKind: "note",
-      promptMode: "full",
-      promptChars: 12,
-      promptContextChangedFiles: 1,
-      promptContextPriorThreads: 0,
-      promptContextNotes: 1,
-      assistantTurns: 1,
-      assistantCalls: 1,
-      toolExecutions: 0,
-      viewToolCalls: 0,
-      globToolCalls: 0,
-      inputTokens: 11,
-      outputTokens: 22,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      reasoningTokens: 0,
-      apiDurationMs: 123,
-      premiumRequests: 1,
-      repeatedViewReads: 0,
-      repeatedViewPathsJson: "[]"
-    });
-
-    const previousInteraction = await storage.getLatestCompletedInteractionForMergeRequest("tenant_1", 7, "job_2");
     const verifiedDb = new DatabaseSync(databasePath);
-    const interactionRunColumns = new Set(
-      (verifiedDb.prepare("PRAGMA table_info(interaction_runs)").all() as Array<{ name: string }>).map((column) => column.name)
-    );
-    const interactionRunMetricColumns = new Set(
-      (verifiedDb.prepare("PRAGMA table_info(interaction_run_metrics)").all() as Array<{ name: string }>).map((column) => column.name)
-    );
+    const persistedTenant = verifiedDb.prepare("SELECT id, tenant_key FROM tenants WHERE id = ?").get("tenant_1") as {
+      id: string;
+      tenant_key: string;
+    };
+    const migrations = verifiedDb.prepare("SELECT COUNT(*) AS count FROM storage_migrations").get() as { count: number };
     verifiedDb.close();
 
-    expect(previousInteraction).toMatchObject({
-      interactionRunId: "run_1",
-      interactionJobId: "job_1",
-      headSha: "headsha"
+    expect(persistedTenant).toEqual({
+      id: "tenant_1",
+      tenant_key: "https://gitlab.example.com::123"
     });
-    expect(interactionRunColumns.has("interaction_job_id")).toBe(true);
-    expect(interactionRunColumns.has("review_job_id")).toBe(false);
-    expect(interactionRunMetricColumns.has("interaction_run_id")).toBe(true);
-    expect(interactionRunMetricColumns.has("review_run_id")).toBe(false);
+    expect(migrations.count).toBe(1);
   });
 
   it("returns latest prior finding state per identity and updates status in place", async () => {
     const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    const storage = await openSqliteTestStorage(databasePath);
 
     const tenant = await storage.upsertTenant({
       baseUrl: "https://gitlab.example.com",
@@ -484,8 +198,7 @@ describe("SqliteStorage review findings", () => {
 
   it("updates status on the latest completed finding row even when a newer failed run exists", async () => {
     const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    const storage = await openSqliteTestStorage(databasePath);
 
     const tenant = await storage.upsertTenant({
       baseUrl: "https://gitlab.example.com",
@@ -537,167 +250,23 @@ describe("SqliteStorage review findings", () => {
     expect(readFindingStatuses(databasePath, "identity_status")).toEqual(["dismissed"]);
   });
 
-  it("deduplicates persisted review findings during initialization and keeps the closed copy", async () => {
+  it("records the baseline migration only once across repeated initialization", async () => {
     const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
-    const database = new DatabaseSync(databasePath);
-    database.exec(`
-      CREATE TABLE tenants (
-        id TEXT PRIMARY KEY,
-        tenant_key TEXT NOT NULL UNIQUE,
-        base_url TEXT NOT NULL,
-        project_id INTEGER NOT NULL,
-        api_token TEXT NOT NULL,
-        webhook_secret TEXT NOT NULL,
-        bot_user_id INTEGER,
-        bot_username TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE(base_url, project_id)
-      );
-      CREATE TABLE review_jobs (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        dedupe_key TEXT NOT NULL UNIQUE,
-        project_id INTEGER NOT NULL,
-        merge_request_iid INTEGER NOT NULL,
-        note_id INTEGER NOT NULL,
-        head_sha TEXT NOT NULL,
-        status TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        retry_count INTEGER NOT NULL DEFAULT 0,
-        last_error TEXT,
-        enqueued_at TEXT NOT NULL,
-        started_at TEXT,
-        finished_at TEXT,
-        FOREIGN KEY (tenant_id) REFERENCES tenants(id)
-      );
-      CREATE TABLE review_runs (
-        id TEXT PRIMARY KEY,
-        review_job_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        provider TEXT NOT NULL,
-        model TEXT,
-        status TEXT NOT NULL,
-        result_json TEXT,
-        error TEXT,
-        started_at TEXT NOT NULL,
-        finished_at TEXT,
-        FOREIGN KEY (review_job_id) REFERENCES review_jobs(id),
-        FOREIGN KEY (tenant_id) REFERENCES tenants(id)
-      );
-      CREATE TABLE review_findings (
-        id TEXT PRIMARY KEY,
-        review_run_id TEXT NOT NULL,
-        identity_key TEXT NOT NULL,
-        severity TEXT NOT NULL,
-        category TEXT NOT NULL,
-        title TEXT NOT NULL,
-        body TEXT NOT NULL,
-        anchor_json TEXT,
-        suggestion_json TEXT,
-        status TEXT NOT NULL DEFAULT 'open',
-        created_at TEXT NOT NULL,
-        FOREIGN KEY (review_run_id) REFERENCES review_runs(id)
-      );
-      INSERT INTO tenants VALUES (
-        'tenant_1',
-        'https://gitlab.example.com::123',
-        'https://gitlab.example.com',
-        123,
-        'token',
-        'secret',
-        999,
-        'review-bot',
-        '2026-04-01T00:00:00.000Z',
-        '2026-04-01T00:00:00.000Z'
-      );
-      INSERT INTO review_jobs VALUES (
-        'job_1',
-        'tenant_1',
-        'dedupe_1',
-        123,
-        7,
-        55,
-        'headsha',
-        'completed',
-        '{}',
-        0,
-        NULL,
-        '2026-04-01T00:00:00.000Z',
-        '2026-04-01T00:00:00.000Z',
-        '2026-04-01T00:05:00.000Z'
-      );
-      INSERT INTO review_runs VALUES (
-        'run_1',
-        'job_1',
-        'tenant_1',
-        'copilot-sdk',
-        NULL,
-        'completed',
-        '{}',
-        NULL,
-        '2026-04-01T00:00:00.000Z',
-        '2026-04-01T00:05:00.000Z'
-      );
-      INSERT INTO review_findings VALUES
-      (
-        'finding_1',
-        'run_1',
-        'identity_1',
-        'medium',
-        'correctness',
-        'Duplicate finding',
-        'Still open copy',
-        NULL,
-        NULL,
-        'open',
-        '2026-04-01T00:05:00.000Z'
-      ),
-      (
-        'finding_2',
-        'run_1',
-        'identity_1',
-        'medium',
-        'correctness',
-        'Duplicate finding',
-        'Resolved copy',
-        NULL,
-        NULL,
-        'resolved',
-        '2026-04-01T00:05:00.000Z'
-      );
-    `);
-    database.close();
+    const first = await openSqliteTestStorage(databasePath);
+    await first.close();
 
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    const second = await openSqliteTestStorage(databasePath);
 
     const verifiedDb = new DatabaseSync(databasePath);
-    const dedupedRows = verifiedDb
-      .prepare("SELECT id, status, body FROM review_findings WHERE interaction_run_id = ? AND identity_key = ?")
-      .all("run_1", "identity_1") as Array<{ id: string; status: string; body: string }>;
-    const indexes = verifiedDb.prepare("PRAGMA index_list(review_findings)").all() as Array<{ name: string; unique: number }>;
+    const migrations = verifiedDb.prepare("SELECT migration_id FROM storage_migrations").all() as Array<{ migration_id: string }>;
     verifiedDb.close();
 
-    expect(dedupedRows).toHaveLength(1);
-    expect(dedupedRows[0]).toMatchObject({
-      status: "resolved",
-      body: "Resolved copy"
-    });
-    expect(indexes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: "review_findings_interaction_run_identity_key_idx",
-          unique: 1
-        })
-      ])
-    );
+    expect(migrations).toEqual([{ migration_id: "sqlite:0001_v0_baseline" }]);
   });
 
   it("stores only one finding row per identity for a review run", async () => {
     const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    const storage = await openSqliteTestStorage(databasePath);
 
     const tenant = await storage.upsertTenant({
       baseUrl: "https://gitlab.example.com",
@@ -757,8 +326,7 @@ describe("SqliteStorage review findings", () => {
 describe("SqliteStorage tenants", () => {
   it("stores model profiles, tenant assignments, and resolved review run config", async () => {
     const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    const storage = await openSqliteTestStorage(databasePath);
 
     const defaultProfile = await storage.upsertModelProfile({
       name: "native-default",
@@ -811,10 +379,10 @@ describe("SqliteStorage tenants", () => {
     });
 
     expect(defaultProfile.isDefault).toBe(true);
-    expect((await storage.getDefaultModelProfile())?.name).toBe("native-default");
-    expect(await storage.listModelProfiles()).toHaveLength(2);
+    expect((await storage.stores.modelProfiles.find({ isDefault: { eq: true } }))?.name).toBe("native-default");
+    expect(await listAll(storage.stores.modelProfiles)).toHaveLength(2);
     expect(tenant.modelProfileName).toBe("byok");
-    expect((await storage.getModelProfileByName("byok"))?.wireApi).toBe("responses");
+    expect((await storage.stores.modelProfiles.get("byok"))?.wireApi).toBe("responses");
     expect(run).toMatchObject({
       model: "custom-review",
       modelProfileName: "byok",
@@ -826,8 +394,7 @@ describe("SqliteStorage tenants", () => {
 
   it("refuses to delete a model profile while a tenant still references it", async () => {
     const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    const storage = await openSqliteTestStorage(databasePath);
 
     await storage.upsertModelProfile({
       name: "shared-profile",
@@ -853,8 +420,7 @@ describe("SqliteStorage tenants", () => {
 
   it("deletes a tenant by normalized base URL and project ID", async () => {
     const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    const storage = await openSqliteTestStorage(databasePath);
 
     await storage.upsertTenant({
       baseUrl: "https://gitlab.example.com/gitlab/",
@@ -873,8 +439,8 @@ describe("SqliteStorage tenants", () => {
       botUsername: "review-bot-2"
     });
 
-    const deletedTenant = await storage.deleteTenant("https://gitlab.example.com/gitlab", 123);
-    const remainingTenants = await storage.listTenants();
+    const deletedTenant = (await storage.deleteTenantWithSummary("https://gitlab.example.com/gitlab", 123))?.tenant ?? null;
+    const remainingTenants = await listAll(storage.stores.tenants);
 
     expect(deletedTenant).toMatchObject({
       baseUrl: "https://gitlab.example.com/gitlab/",
@@ -890,8 +456,7 @@ describe("SqliteStorage tenants", () => {
 
   it("deletes dependent review data before removing a tenant", async () => {
     const databasePath = join(await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")), "storage.sqlite");
-    const storage = new SqliteStorage({ databasePath });
-    await storage.initialize();
+    const storage = await openSqliteTestStorage(databasePath);
 
     const tenant = await storage.upsertTenant({
       baseUrl: "https://gitlab.example.com/gitlab",
@@ -1071,7 +636,7 @@ function createFinding(input: {
 }
 
 async function createCompletedRun(
-  storage: SqliteStorage,
+  storage: StorageHelpers,
   tenantId: string,
   projectId: number,
   mergeRequestIid: number,
@@ -1119,7 +684,7 @@ async function createCompletedRun(
 }
 
 async function createFailedRun(
-  storage: SqliteStorage,
+  storage: StorageHelpers,
   tenantId: string,
   projectId: number,
   mergeRequestIid: number,
