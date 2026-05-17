@@ -66,7 +66,7 @@ At minimum, set one GitHub token (for Copilot CLI mode):
 GH_TOKEN=github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-If you prefer to configure separate Github api token for different projects, yopu can skip this environment variable and configure [model profiles through CLI](./docs/CLI.md#Model-profile-commands). 
+If you prefer to configure separate Github api token for different projects, yopu can skip this environment variable and configure [model profiles through CLI](./docs/CLI.md#model-profile-commands). 
 
 See [Environment variables](#environment-variables) and [Model providers](docs/model-providers.md) for full options.
 
@@ -115,7 +115,7 @@ helm upgrade --install reviewphin cdwv/reviewphin \
   --set env.GH_TOKEN=<your-token>
 ```
 
-If you prefer to configure separate Github api token for different projects, yopu can skip this environment variable and configure [model profiles through CLI](./docs/CLI.md#Model-profile-commands). 
+If you prefer to configure separate Github api token for different projects, yopu can skip this environment variable and configure [model profiles through CLI](./docs/CLI.md#model-profile-commands). 
 
 **ToDo: add ingress && gateway API support**
 
@@ -258,7 +258,7 @@ Add a directive in the merge request **description** (not a comment):
 /reviewphin-profile byok-gpt4
 ```
 
-This selects a named model profile for every review run on that MR. To read more about named model profiles, read [about model profile management through CLI](./docs/CLI.md#Model-profile-commands)
+This selects a named model profile for every review run on that MR. To read more about named model profiles, read [about model profile management through CLI](./docs/CLI.md#model-profile-commands)
 
 ---
 
