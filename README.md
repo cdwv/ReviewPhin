@@ -1,515 +1,345 @@
-# GitLab agentic review worker
+<div align="center">
+  <img src="favicon.png" alt="Reviewphin" width="120" />
 
-Node.js + TypeScript service that listens for GitLab Note Hook comments that explicitly mention the configured bot username, follow-up comments on bot-owned discussions, and replies on the bot-owned review summary note, hydrates merge request context into a temporary workspace, runs a Copilot-powered review, and reconciles the result back into GitLab discussions while only mutating bot-owned content.
+  # Reviewphin
 
-## What it does
+  **Self-hosted AI code review for GitLab.**
+  Run on your own infrastructure. Bring your own model. Use your own agent subscription to pay per review, not per developer.
 
-- Accepts GitLab **Note Hook** webhooks for merge request comments that mention `@<botUsername>`, human follow-up comments inside bot-owned review discussions, and replies on the bot-owned review summary note, including edits to those trigger comments when users refine the instruction in place
-- Treats other merge request comments as background context only; they do not trigger new review passes by themselves
-- Stores tenants, jobs, snapshots, review runs, findings, and discussion mappings in the configured storage adapter (**SQLite by default**)
-- Hydrates merge request metadata, diff versions, changed files, notes, discussions, and project instructions before each run, using `git` checkout first and API fallbacks when needed
-- Uses a provider boundary with a first implementation backed by **`@github/copilot-sdk`**
-- Passes GitLab-hosted images from the trigger note and merge request description to Copilot as native blob attachments, while keeping only lightweight provenance breadcrumbs in prompt text and never storing image bytes in the configured storage provider
-- Creates new discussions, updates bot-authored notes, replies in bot-created discussions, and resolves obsolete bot-owned discussions
-- Maintains one bot-authored merge request summary note, updating it on each run with the latest overall assessment and merge readiness
-- Emits GitLab suggestion blocks when it has a safe new-side diff anchor on the latest merge request version, including multi-line suggestions when the replacement range is clear
-- Keeps optional per-project memory in the GitLab project wiki page `Reviewphin memory`, so durable user-provided conventions and policies can be reused in later reviews
+  [![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)
+  [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+</div>
 
-## Requirements
+---
 
-- Node.js 22+
-- pnpm 10+
-- GitHub Copilot access for the machine running the worker (an active Copilot subscription or organization entitlement with Copilot CLI enabled)
-- A selected review model/provider that supports vision if you want the agent to inspect GitLab image attachments; unsupported, off-host, non-image, or oversized image references are skipped without persisting image data
-- Docker + Docker Compose (only when running the packaged container image)
+Reviewphin is a hard working dolphin that listens for GitLab merge request comments, runs a multi-agent AI review, and writes findings back as GitLab discussions — while only ever touching content it created itself.
 
-## Setup
+All model calls go through configured harness (currently Copilot CLI, but more may come) so either subscription models, or [OpenAI-compatible API](docs/model-providers.md) can be connected. 
 
-1. Install dependencies:
+Everything is yours: Storage, Copilot subscription or custom models. **You know what you pay for because it's all yours.**
 
-   ```bash
-   pnpm install
-   ```
 
-2. (optionally) Copy `.env.example` into `.env` (or `.env.docker` if using `docker compose`) and fill in your shared worker configuration:
+## Table of Contents
 
-   ```bash
-   copy .env.example .env
-   ```
+- [How it works](#how-it-works)
+- [Quickstart with Docker](#quickstart-with-docker)
+- [Kubernetes / Helm](#kubernetes--helm)
+- [Adding tenants](#adding-tenants)
+- [Using Reviewphin in GitLab](#using-reviewphin-in-gitlab)
+- [Review pipeline](#review-pipeline)
+- [Technologies](#technologies)
+- [Environment variables](#environment-variables)
+- [CLI reference](docs/CLI.md)
+- [Model providers](docs/model-providers.md)
+- [Storage providers](docs/storage-providers.md)
 
-3. Ensure Copilot is authenticated for the runtime user. The SDK uses the Copilot CLI runtime under the hood. For local runs an interactive `copilot` login is fine; for Docker or other non-interactive runs, `COPILOT_GITHUB_TOKEN` (or `GH_TOKEN` or `GITHUB_TOKEN`) with a fine-grained GitHub PAT that has the **Copilot Requests** permission.
+---
 
-4. Start the service:
+## How it works
 
-   ```bash
-   pnpm dev
-   ```
+1. A developer mentions the bot in a GitLab merge request comment (`@reviewphin review this`).
+2. Reviewphin receives the GitLab Note Hook webhook, validates the signature, and queues a job.
+3. The **Router** hydrates the merge request: it checks out the exact commit, fetches diffs, notes, and any project instruction files.
+4. The **Reviewer** (a two-agent pipeline) analyses the changes and produces structured findings with severity, category, optional line anchors, and inline code suggestions.
+5. The **Chatter** handles follow-up replies, conversational questions, and durable project memory updates.
+6. Findings are reconciled back into GitLab as bot-owned discussions. Obsolete threads are resolved; the summary note is updated.
 
-5. For non-local GitLab installations you will need to expose the server to the internet, e.g. with cloudlfare:
+All code and data stay on your infrastructure. The worker calls the configured model API and the GitLab API; nothing else leaves the network.
 
+---
+
+## Quickstart with Docker
+
+The published image is `cdwv/reviewphin`. It bundles the GitHub Copilot CLI for default-mode operation and exposes the `reviewphin` CLI entrypoint.
+
+### 1. Configure the worker
+
+Copy the example environment file and fill in your settings:
+
+```bash
+cp .env.example .env.docker
 ```
+
+At minimum, set one GitHub token (for Copilot CLI mode):
+
+```env
+GH_TOKEN=github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+If you prefer to configure separate Github api token for different projects, yopu can skip this environment variable and configure [model profiles through CLI](./docs/CLI.md#Model-profile-commands). 
+
+See [Environment variables](#environment-variables) and [Model providers](docs/model-providers.md) for full options.
+
+### 2. Start the container
+
+```bash
+docker compose up -d
+```
+
+The compose file mounts `./data` to `/app/data` (SQLite database + run logs) and `./tmp` to `/app/tmp` (hydrated workspaces). Both directories are created automatically.
+
+### 3. Expose the worker to GitLab
+
+Reviewphin receives GitLab webhooks over HTTPS. If your GitLab instance cannot reach your host directly, create a temporary tunnel:
+
+```bash
+# Using cloudflared (no account needed for one-off tunnels)
 cloudflared tunnel --url http://localhost:3000
+
+# Or using ngrok
+ngrok http 3000
 ```
 
-6. In GitLab Project,
-   1. create a bot token (group, project, or user access token) with `api` scope; if it maps to a project member or bot user, make that identity at least `Developer` because the worker resolves merge request discussions.
-   2. add webhook pointing to https://your-public-url/webhooks/gitlab/note.
-7. Register a tenant locally with the CLI.
+Note the public HTTPS URL; you will use it in the webhook settings.
 
-   ```bash
-   pnpm cli tenant add --base-url https://gitlab.example.com --project-id 123 --api-token glpat-xxxxxxxx --webhook-secret replace-me --bot-user-id 999 --bot-username review-bot
-   ```
+For production, place Reviewphin behind a TLS-terminating reverse proxy or use the [Helm chart](#kubernetes--helm).
 
-8. Confirm the worker is up:
+### 4. Confirm it is running
 
-   ```bash
-   curl http://localhost:3000/healthz
-   ```
+```bash
+curl http://localhost:3000/healthz
+# {"status":"ok"}
+```
 
-## Running with Docker
+---
 
-The repository includes a multi-stage `Dockerfile` and a `docker-compose.yml` that build the worker, install the GitHub Copilot CLI, and run the compiled service on port `3000`.
+## Kubernetes / Helm
 
-1. Copy `.env.example` to `.env.docker`.
-2. Fill in any worker settings you want to override and uncomment `COPILOT_GITHUB_TOKEN` with a fine-grained GitHub personal access token that has the **Copilot Requests** permission.
-3. Build and start the container:
+A Helm chart is published at `https://charts.cdwv.dev/reviewphin`. It deploys one `Deployment`, one `Service` on port `3000`, and one `PersistentVolumeClaim` for `/app/data` and `/app/tmp`.
 
-   ```bash
-   docker compose up --build -d
-   ```
+```bash
+helm repo add cdwv https://charts.cdwv.dev
+helm repo update
+helm upgrade --install reviewphin cdwv/reviewphin \
+  --namespace reviewphin --create-namespace \
+  --set env.GH_TOKEN=<your-token>
+```
 
-4. Register at least one tenant in the container-backed SQLite database:
+If you prefer to configure separate Github api token for different projects, yopu can skip this environment variable and configure [model profiles through CLI](./docs/CLI.md#Model-profile-commands). 
 
-   ```bash
-   docker compose run --rm worker reviewphin tenant add --base-url https://gitlab.example.com --project-id 123 --api-token glpat-xxxxxxxx --webhook-secret replace-me --bot-user-id 999 --bot-username review-bot
-   ```
+**ToDo: add ingress && gateway API support**
 
-5. Confirm the container is healthy:
+---
 
-   ```bash
-   curl http://localhost:3000/healthz
-   ```
+## Adding tenants
 
-The compose setup mounts:
+A **tenant** is a single project on given gitlab instance. One Reviewphin instance can serve multiple tenants, but each tenant is configured only for one project.
 
-- `./data` into `/app/data` for the SQLite database and per-review run logs
-- `./tmp` into `/app/tmp` for hydrated review workspaces
-
-Keep tenant records in the SQLite database by using the CLI command above; tenant configuration is not provided through environment variables.
-
-## GitLab CI + Helm deployment
-
-The repository now includes:
-
-- `.gitlab-ci.yml` for test coverage on merge requests and `main`, plus OCI image build and deployment from `main`
-- `.chart/` with the Helm chart used by the deployment job
-
-The chart intentionally keeps cluster-specific settings out of `values.yaml`. The GitLab deployment job passes them with `helm upgrade --set ...`.
-
-### What the chart deploys
-
-- one `Deployment` for the Node.js worker
-- one `Service` on port `3000`
-- one `PersistentVolumeClaim`, mounted into `/app/data` and `/app/tmp`
-- no ingress resource
-
-### GitLab CI variables
-
-The pipeline now assumes sensible defaults for the deployment settings and only needs overrides when your cluster differs:
-
-- `KUBE_NAMESPACE` (optional; defaults to `${CI_PROJECT_NAME}-${CI_PROJECT_ID}`)
-- `KUBECTL_CONTEXT` (optional, only if the runner must switch kube context explicitly)
-- `HELM_CPU_REQUEST` (optional; defaults to `250m`)
-- `HELM_CPU_LIMIT` (optional; defaults to `500m`)
-- `HELM_MEMORY_REQUEST` (optional; defaults to `512Mi`)
-- `HELM_MEMORY_LIMIT` (optional; defaults to `1Gi`)
-- `HELM_PVC_SIZE` (optional; defaults to `10Gi`)
-- `HELM_PVC_STORAGE_CLASS` (optional if your cluster default is acceptable)
-
-GitLab exposes `CI_ENVIRONMENT_URL` automatically from the environment definition. For `production`, the pipeline sets it to `https://reviewphin.codewave.pl`.
-
-App-shaped defaults such as replica count, service type/port, probe path, and PVC access mode now live in `.chart/values.yaml` instead of being passed from CI.
-
-Application secrets are expected to be managed by the internal `generic-secrets` template include. The deployment consumes the generated `${CI_ENVIRONMENT_SLUG}-env-secrets` secret as container environment variables.
-
-## Running locally
-
-For a normal local run:
-
-1. Copy `.env.example` to `.env`.
-2. Register at least one tenant locally with the CLI.
-3. Start the worker with `pnpm dev`.
-4. Expose the local port to GitLab if your GitLab instance cannot reach your machine directly.
-
-Useful commands:
-
-- `pnpm dev` - start in watch mode
-- `pnpm lint` - run ESLint across the TypeScript sources and tests
-- `pnpm lint:fix` - apply ESLint autofixes where safe
-- `pnpm start` - run the built app from `dist`
-- `pnpm build` - compile TypeScript
-- `pnpm typecheck` - run the TypeScript compiler without emitting files
-- `pnpm test` - run tests
-
-## Prompt fragments and registration
-
-Prompt instructions are split into small markdown fragments under `prompts/` and then registered into concrete prompt combinations in code.
-
-### Source files
-
-- `prompts/review/*.md` contains reusable review instruction fragments such as the shared base prompt, mode-specific overlays, and subagent prompts.
-- `prompts/memory/*.md` contains memory-specific prompts such as project memory coalescing.
-
-### Prompt modules
-
-- `src/prompts/prompt-loader.ts` loads raw prompt files from `prompts/` and caches their trimmed content.
-- `src/prompts/instruction-types.ts` contains the generic type utilities used by the prompt system.
-- `src/prompts/instruction-helpers.ts` contains generic helpers for defining fragments, defining templates, building static combinations, and rendering registered prompts.
-- `src/prompts/instruction-registry.ts` is the source of truth for registered fragments and named prompt combinations.
-- `src/prompts/instruction-renderer.ts` exposes the public `renderPrompt(...)` function used by the rest of the app.
-- `src/prompts/prompt-builders.ts` builds domain-specific prompts on top of registered instruction combinations, for example by appending review JSON schema and serialized review context.
-
-### How registration works
-
-1. A prompt fragment is registered in `src/prompts/instruction-registry.ts` with `definePromptFragment(...)`.
-2. If the fragment needs parameter substitution, its registration provides a small render function that maps typed params into the raw markdown content.
-3. A practical prompt combination is then registered with a stable id such as `review.first-pass-full` or `subagent.review-author`.
-4. The rest of the application renders only registered combinations through `renderPrompt(...)`; application code does not load raw prompt files directly. This makes it much easier to trace instructions we have and dedup their instructions.
-
-### Current review flow
-
-- `src/prompts/instruction-registry.ts` registers the instruction-only combinations for first-pass review, incremental re-review, follow-up thread review, summary follow-up overlays, review subagents, and memory coalescing.
-- `src/prompts/prompt-builders.ts` selects the correct review combination for a `ReviewContext`, renders it, and appends the review response schema plus compact serialized context.
-- `src/review/copilot-provider.ts` uses the same registry for subagent prompts, so review prompt selection and subagent prompt selection both come from the same registered source.
-
-### Adding a new prompt
-
-1. Add the markdown fragment under `prompts/review/` or `prompts/memory/`.
-2. Register the fragment and a named template in `src/prompts/instruction-registry.ts`.
-3. If the prompt needs domain payload beyond static instructions, wire that in `src/prompts/prompt-builders.ts` or another domain-specific builder instead of expanding the registry.
-
-## Add a test GitLab server and project
-
-The worker treats each GitLab target as a **tenant** keyed by:
-
-- `baseUrl` = GitLab server URL
-- `projectId` = numeric GitLab project ID
-
-One tenant entry lets the worker review one project on one GitLab server.
-
-### 1. Create a test project
-
-In GitLab:
-
-1. Create a project, for example `agentic-review-sandbox`.
-2. Make sure merge requests are enabled.
-3. Create a test branch and open a merge request into your default branch.
-
-### 2. Create an API token for that project/server
+### 1. Create a bot identity in GitLab
 
 Use one of:
 
-- a dedicated bot user's personal access token
-- a project access token
-- a group access token
+- a **project access token** (scoped to one project)
+- a **group access token** (scoped to a group)
+- a **personal access token** belonging to a dedicated bot user (you must add it to project with at least Developer role)
 
-This worker uses the GitLab API to read merge requests, notes, discussions, versions, raw files, and repository archives, and it also creates discussions, replies, edits bot-authored notes, resolves discussions, and authenticates `git fetch` over HTTPS during workspace hydration.
+Required scope: **`api`** (read/write API access; also covers Git-over-HTTPS used during workspace hydration).
 
-From the GitLab token docs:
+Required project membership: **Developer or higher** (needed to resolve merge request discussions and read repository contents).
 
-- `read_repository` and `read_api` are read-only scopes
-- `api` grants read/write API access, and for personal access tokens also covers Git-over-HTTP access used by the worker's `git fetch`
-
-Use **`api` scope** for this worker.
-
-For project membership, GitLab's permissions docs say project members can leave comments starting at **Guest**, repository/code access starts at **Reporter**, and resolving merge request threads requires **Developer** or the merge request author. Because this worker reads repository contents and resolves obsolete merge request discussions during reconciliation, the bot user or token-backed account should be **Developer or higher** in the target project.
-
-### 3. Find the project ID
-
-You can get the numeric ID from the GitLab project page, or from the API:
+### 2. Find the project ID and bot identity
 
 ```bash
-curl --header "PRIVATE-TOKEN: <token>" ^
-  "https://gitlab.example.com/api/v4/projects?search=agentic-review-sandbox"
-```
+# Find the project
+curl --header "PRIVATE-TOKEN: <token>" \
+  "https://gitlab.example.com/api/v4/projects?search=my-project"
 
-### 4. Find the bot identity
-
-You should configure:
-
-- `botUsername`
-- `botUserId` (optional, but recommended for stricter ownership checks)
-
-`botUsername` is required because direct mention triggers match against that username. `botUserId` is still recommended because ownership checks are stricter.
-
-You can fetch the current token identity with:
-
-```bash
-curl --header "PRIVATE-TOKEN: <token>" ^
+# Get the token's own identity
+curl --header "PRIVATE-TOKEN: <token>" \
   "https://gitlab.example.com/api/v4/user"
 ```
 
-Use the returned `id` as `botUserId` and `username` as `botUsername`.
+Use the project's `id`, the user's `id` as `--bot-user-id`, and `username` as `--bot-username`.
 
-### 5. Add the tenant locally with the CLI
+### 3. Register the tenant with the CLI
 
-Keep the shared worker settings in `.env`:
-
-```env
-PORT=3000
-HOST=0.0.0.0
-LOG_LEVEL=debug
-# STORAGE_PROVIDER_MODULE=your-storage-provider-package-or-path
-SQLITE_DATABASE_PATH=./data/review-worker.sqlite
-RUN_LOG_DIR=./data/run-logs
-WORKSPACE_ROOT=./tmp/review-workspaces
-MAX_JOB_RETRIES=3
-RETRY_BACKOFF_MS=5000
-COPILOT_TIMEOUT_MS=180000
-REVIEWPHIN_MEMORY_ENABLED=true
-```
-
-If you want an explicit named model profile instead of the plain Copilot CLI fallback, add it first:
+#### In a Docker container
 
 ```bash
-pnpm cli model-profile add --name native-gpt5 --review-model gpt-5.4 --text-generation-model claude-sonnet-4.6 --default
+docker compose run --rm worker reviewphin tenant add \
+  --base-url https://gitlab.example.com \
+  --project-id 123 \
+  --api-token glpat-xxxxxxxx \
+  --webhook-secret replace-me \
+  --bot-user-id 999 \
+  --bot-username reviewphin
 ```
 
-Then add the tenant to the local SQLite database used by the worker:
+#### From a local checkout
 
 ```bash
-pnpm cli tenant add --base-url https://gitlab.example.com --project-id 123 --api-token glpat-xxxxxxxx --webhook-secret replace-me --bot-user-id 999 --bot-username review-bot --model-profile native-gpt5
+pnpm cli tenant add \
+  --base-url https://gitlab.example.com \
+  --project-id 123 \
+  --api-token glpat-xxxxxxxx \
+  --webhook-secret replace-me \
+  --bot-user-id 999 \
+  --bot-username reviewphin
 ```
 
-If you store the worker database somewhere else, pass `--sqlite-database-path`. To load a non-default storage adapter, pass `--storage-provider-module` or set `STORAGE_PROVIDER_MODULE`.
+To assign a specific model profile at registration time, add `--model-profile <name>`. See [Model providers](docs/model-providers.md) for profile setup.
 
-To inspect what is registered locally:
+### 4. Add the webhook in GitLab
+
+In the project's **Settings → Webhooks**:
+
+| Field        | Value                                           |
+| ------------ | ----------------------------------------------- |
+| URL          | `https://your-host/webhooks/gitlab/note`        |
+| Secret token | the same value you passed as `--webhook-secret` |
+| Trigger      | **Note events** only                            |
+
+Save, then use the **Test** button (select *Note events*) to verify Reviewphin receives the delivery and returns `200`.
+
+### 5. Verify the tenant is registered
 
 ```bash
+# Docker
+docker compose run --rm worker reviewphin tenant list
+
+# Local
 pnpm cli tenant list
 ```
 
-To inspect model profiles or change the tenant assignment later:
+See [CLI reference](docs/CLI.md) for all tenant and model-profile commands.
 
-```bash
-pnpm cli model-profile list
-pnpm cli tenant set-profile --base-url https://gitlab.example.com --project-id 123 --model-profile native-gpt5
-pnpm cli tenant clear-profile --base-url https://gitlab.example.com --project-id 123
+---
+
+## Using Reviewphin in GitLab
+
+> **Note:** The exact bot username depends on how you registered the tenant. The examples below use `@reviewphin`; substitute your own `--bot-username` value.
+
+### Trigger a review
+
+Post a merge request comment that mentions the bot:
+
+```
+@reviewphin review this
 ```
 
-To remove a tenant registration you no longer want locally:
+Reviewphin queues a job, hydrates the merge request, and creates or updates bot-owned discussion threads for each finding plus a summary note at the top of the discussion list.
 
-```bash
-pnpm cli tenant remove --base-url https://gitlab.example.com --project-id 123
+On first run this is a **full review** covering all changed files. On subsequent runs for the same merge request it is an **incremental re-review** focused on files changed since the last run.
+
+### Force a full re-scan
+
+To ignore the previous review and rescan everything from scratch:
+
+```
+@reviewphin full review
 ```
 
-The remove command now prints a deletion summary for tenant-owned database rows plus local review workspaces and run logs, then asks for confirmation before deleting them. Use `--yes` for non-interactive runs.
+Other accepted phrasings: `full rescan`, `fresh full review`, `rescan everything`.
 
-Inside the Docker image, the compiled CLI is also exposed as a `reviewphin` command, so container examples can use `reviewphin ...` instead of `node dist/cli.js ...`.
+### Follow-up conversations
 
-To add another test project on the same server, run `tenant add` again with a different `projectId`.
+Replies inside a bot-owned review discussion automatically queue a new pass scoped to that thread. You do not need to mention the bot again:
 
-To add another GitLab server, run `tenant add` again with a different `baseUrl`.
-
-### 6. Add the webhook in GitLab
-
-In the test project's **Settings -> Webhooks**:
-
-1. Set the URL to your worker endpoint:
-
-   ```text
-   http://your-host:3000/webhooks/gitlab/note
-   ```
-
-2. Set the secret token to the same value as `webhookSecret`.
-3. Enable **Note events**.
-4. Save the webhook.
-
-If GitLab cannot reach your laptop directly, expose the worker with a tunnel such as:
-
-- `ngrok http 3000`
-- `cloudflared tunnel --url http://localhost:3000`
-
-Then use the public HTTPS URL from the tunnel in the webhook settings.
-
-### 7. Trigger a test review
-
-1. Push a branch with a code change.
-2. Open or update a merge request.
-3. Add a merge request comment containing `@review-bot` (or whatever `botUsername` you configured), for example `@review-bot review this`.
-4. Optionally reply inside one of the bot's review discussions with follow-up instructions or wording requests; those replies also queue a new review pass without requiring another mention.
-
-If everything is configured correctly, the worker will:
-
-1. accept the Note Hook event
-2. queue a review job
-3. hydrate the merge request
-4. run the Copilot review
-5. create or update bot-owned GitLab discussions
-
-Repository hydration currently tries, in order:
-
-1. a `git` fetch/checkout of the exact merge request SHA
-2. the GitLab repository archive API
-3. targeted raw-file downloads for changed files and instruction files
-
-## End-to-end smoke test
-
-After the worker is running, verify the path in this order:
-
-1. `GET /healthz` returns `{"status":"ok"}`
-2. GitLab webhook test delivery reaches `POST /webhooks/gitlab/note`
-3. a merge request comment with `@<botUsername>` returns HTTP `202`
-4. a human reply inside a bot-owned review discussion also returns HTTP `202`
-5. the worker logs show hydration and reconciliation activity
-6. new or updated bot discussions appear on the merge request
-
-## Configuration
-
-### Container environment variables
-
-The Docker image reads the same application variables as a local run. All worker settings have image defaults.
-
-| Variable                             | Required | Default                               | Notes                                                                                                                  |
-| ------------------------------------ | -------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                               | No       | `3000`                                | HTTP port exposed by the worker                                                                                        |
-| `HOST`                               | No       | `0.0.0.0`                             | Bind address inside the container                                                                                      |
-| `LOG_LEVEL`                          | No       | `info`                                | One of `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`                                                    |
-| `STORAGE_PROVIDER_MODULE`            | No       | built-in SQLite adapter               | Optional package name or JS module path for a storage provider entrypoint                                              |
-| `SQLITE_DATABASE_PATH`               | No       | `./data/review-worker.sqlite`         | SQLite database path; keep this under `/app/data` if you want it persisted by compose                                  |
-| `RUN_LOG_DIR`                        | No       | `./data/run-logs`                     | Root directory for per-review run artifacts, including Copilot traces, GitLab HTTP logs, and worker app logs           |
-| `WORKSPACE_ROOT`                     | No       | `./tmp/review-workspaces`             | Scratch directory for hydrated repositories                                                                            |
-| `MAX_JOB_RETRIES`                    | No       | `3`                                   | Retry attempts for failed review jobs                                                                                  |
-| `RETRY_BACKOFF_MS`                   | No       | `5000`                                | Delay between retries in milliseconds                                                                                  |
-| `COPILOT_TIMEOUT_MS`                 | No       | `180000`                              | Copilot review timeout in milliseconds                                                                                 |
-| `REVIEWPHIN_MEMORY_ENABLED`          | No       | `true`                                | Enables per-project wiki-backed memory on the `Reviewphin memory` page; set to `false` to disable all reads and writes |
-| `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS` | No       | `5000`                                | Character budget used for injected project memory and for triggering memory coalescing                                 |
-| `COPILOT_CLI_PATH`                   | No       | `/usr/local/bin/copilot` in the image | The packaged image sets this automatically to the installed Copilot CLI                                                |
-
-#### GitHub Copilot authentication (default mode)
-
-When using GitHub-hosted models, set exactly one of these variables:
-
-| Variable               | Required                             | Description                                                              |
-| ---------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
-| `GH_TOKEN`             | Yes, unless any other variant is set | Preferred GitHub personal access token for the Copilot CLI               |
-| `GITHUB_TOKEN`         | Yes, unless any other variant is set | Preferred GitHub personal access token for the Copilot CLI               |
-| `COPILOT_GITHUB_TOKEN` | Yes, unless any other variant is set | Fallback GitHub personal access token name recognized by the Copilot CLI |
-
-The GitHub token used for `GH_TOKEN`, `GITHUB_TOKEN` or `COPILOT_GITHUB_TOKEN` should be a **fine-grained PAT** with the **Copilot Requests** permission. The token owner also needs an active GitHub Copilot entitlement, and if Copilot access comes from an organization or enterprise, Copilot CLI must be allowed by that org or enterprise policy.
-
-#### Model profiles and BYOK providers
-
-Model selection and BYOK provider settings are now stored in SQLite as named **model profiles** instead of process-global env vars. If no profiles exist, Reviewphin runs the Copilot CLI as-is. If profiles do exist, the effective profile is resolved in this order:
-
-1. `/reviewphin-profile <name>` in the merge request description
-2. the tenant's assigned profile
-3. the database default profile
-4. plain Copilot CLI fallback
-
-Use the CLI to manage them:
-
-```bash
-pnpm cli model-profile add --name native-gpt5 --review-model gpt-5.4 --text-generation-model gpt-5.4-mini --default
-pnpm cli model-profile add --name byok-vllm --base-url http://vllm-host:8000/v1 --provider-type openai --auth-token your-token --review-model meta-llama/Llama-3.1-8B-Instruct
-pnpm cli model-profile list
-pnpm cli model-profile set-default --name native-gpt5
-pnpm cli model-profile remove --name byok-vllm
+```
+# Inside a bot discussion thread:
+Can you suggest a more readable variable name here?
 ```
 
-Only the shared worker runtime stays in env; profile-specific review models, provider URLs, and auth tokens live in the database.
+### Teach the bot project conventions
 
-Storage providers are loaded dynamically. The built-in provider is SQLite; external adapters should export `createStorageProvider(...)` and follow `src/storage/adapters/README.md`.
+To store a durable note in the project memory (written to the `Reviewphin memory` wiki page):
 
-**vLLM example** (no auth required when vLLM runs without an API key):
-
-```bash
-pnpm cli model-profile add --name byok-vllm --base-url http://vllm-host:8000/v1 --provider-type openai --review-model meta-llama/Llama-3.1-8B-Instruct
+```
+@reviewphin for future reference, we always prefer functional React components over class components
 ```
 
-**Azure OpenAI example** (must use `type=azure` for `*.openai.azure.com` endpoints):
+Other triggers: `remember`, `going forward`, `team policy`, `always prefer`, `please prefer`.
 
-```bash
-pnpm cli model-profile add --name azure-gpt4 --base-url https://my-resource.openai.azure.com --provider-type azure --auth-token your-key-here --review-model my-gpt4-deployment
+### Override the model for one MR
+
+Add a directive in the merge request **description** (not a comment):
+
+```
+/reviewphin-profile byok-gpt4
 ```
 
-`pnpm cli tenant add` accepts these fields:
+This selects a named model profile for every review run on that MR. To read more about named model profiles, read [about model profile management through CLI](./docs/CLI.md#Model-profile-commands)
 
-| Field                       | Required | Description                                                                                               |
-| --------------------------- | -------- | --------------------------------------------------------------------------------------------------------- |
-| `--base-url`                | Yes      | GitLab instance base URL, for example `https://gitlab.example.com` or `https://gitlab.example.com/gitlab` |
-| `--project-id`              | Yes      | Numeric GitLab project ID                                                                                 |
-| `--api-token`               | Yes      | Personal, project, or group token with merge request API access                                           |
-| `--webhook-secret`          | Yes      | Secret expected in the `X-Gitlab-Token` header                                                            |
-| `--bot-user-id`             | No       | Numeric GitLab bot user ID used for stricter ownership checks                                             |
-| `--bot-username`            | Yes      | Bot username used for direct mention matching                                                             |
-| `--model-profile`           | No       | Named model profile to assign to the tenant immediately                                                   |
-| `--sqlite-database-path`    | No       | Override the SQLite path instead of using `SQLITE_DATABASE_PATH` from `.env`                              |
-| `--storage-provider-module` | No       | Override the storage provider module instead of using `STORAGE_PROVIDER_MODULE` from `.env`               |
+---
 
-`pnpm cli tenant set-profile` and `pnpm cli tenant clear-profile` use the same `--base-url`, `--project-id`, and optional `--sqlite-database-path` lookup fields.
+## Review pipeline
 
-`pnpm cli model-profile add` accepts these fields:
+Reviewphin uses three logical components for each triggered review:
 
-| Field                       | Required | Description                                                                                                                                                                       |
-| --------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--name`                    | Yes      | Stable profile name used by tenants and `/reviewphin-profile <name>` overrides                                                                                                    |
-| `--base-url`                | No       | Optional BYOK provider base URL; leave unset for native Copilot-backed profiles                                                                                                   |
-| `--provider-type`           | No       | Optional provider type for BYOK profiles: `openai`, `azure`, or `anthropic`                                                                                                       |
-| `--wire-api`                | No       | Optional BYOK wire API mode: `responses` or `completions`. When omitted for BYOK profiles, Reviewphin uses `responses`                                                            |
-| `--auth-token`              | No       | Optional auth token. With `--base-url`, it is sent as the BYOK provider `apiKey`; without `--base-url`, it is used as the native Copilot GitHub token. CLI output always masks it |
-| `--review-model`            | No       | Explicit review model; required when `--base-url` is set                                                                                                                          |
-| `--text-generation-model`   | No       | Optional dedicated model for memory coalescing; defaults to the review model when omitted                                                                                         |
-| `--default`                 | No       | Marks the profile as the single database default                                                                                                                                  |
-| `--sqlite-database-path`    | No       | Override the SQLite path instead of using `SQLITE_DATABASE_PATH` from `.env`                                                                                                      |
-| `--storage-provider-module` | No       | Override the storage provider module instead of using `STORAGE_PROVIDER_MODULE` from `.env`                                                                                       |
+### Router
 
-To clear nullable fields on an existing profile, re-run `model-profile add` with one or more of:
-`--clear-base-url`, `--clear-provider-type`, `--clear-wire-api`, `--clear-auth-token`,
-`--clear-review-model`, or `--clear-text-generation-model`. `--clear-base-url` also clears the stored provider type and wire API unless you explicitly set new values in the same command.
+The webhook handler validates the GitLab signature, classifies the trigger (direct mention, follow-up reply, or summary note reply), deduplicates concurrent jobs, and enqueues a review task. No model calls happen here.
 
-`pnpm cli tenant remove` accepts these fields:
+### Reviewer
 
-| Field                       | Required | Description                                                                                                                        |
-| --------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `--base-url`                | Yes      | GitLab instance base URL, normalized the same way as tenant registration                                                           |
-| `--project-id`              | Yes      | Numeric GitLab project ID                                                                                                          |
-| `--sqlite-database-path`    | No       | Override the SQLite path instead of using `SQLITE_DATABASE_PATH` from `.env`                                                       |
-| `--storage-provider-module` | No       | Override the storage provider module instead of using `STORAGE_PROVIDER_MODULE` from `.env`                                        |
-| `--workspace-root`          | No       | Override the workspace scratch root instead of using `WORKSPACE_ROOT` from `.env` when removing tenant-owned hydrated repositories |
-| `--run-log-dir`             | No       | Override the run log root instead of using `RUN_LOG_DIR` from `.env` when removing tenant-owned review artifacts                   |
-| `--yes`                     | No       | Skip the interactive confirmation prompt after the deletion summary, for example in scripts or CI                                  |
+The main agent runs as two sequential subagents inside a single model session:
 
-`RUN_LOG_DIR` controls where per-review run artifacts are written. Each `reviewRunId` gets its own directory containing a `copilot` subdirectory with the prompt/session trace, a `gitlab-http.ndjson` file with GitLab request and response logs, and an `app.ndjson` file with worker lifecycle logging. The legacy `COPILOT_LOG_DIR` environment variable is still accepted as a fallback alias.
+1. **context-analyst** — explores the hydrated workspace using `glob`, `ripgrep`, and file-read tools to gather the context most relevant to the changed files.
+2. **review-author** — produces structured findings: severity, category, body text, optional diff anchor, and optional inline code suggestion.
 
-`COPILOT_TIMEOUT_MS` controls how long the worker waits for Copilot to finish a review turn before treating it as failed. The default is `180000` (3 minutes).
+The reviewer selects one of three modes based on trigger context:
+- **first-pass-full** — first review of the MR, or an explicit full rescan
+- **incremental-rereview** — focused on files changed since the last review
+- **follow-up-thread** — scoped to one existing discussion thread
 
-#### Per-project memory
+### Chatter
 
-When `REVIEWPHIN_MEMORY_ENABLED=true`, the worker reads and writes a dedicated project wiki page named `Reviewphin memory`.
+A lightweight agent that runs after the reviewer (when applicable). It handles:
+- conversational replies to questions or wording requests
+- project memory decisions (`add_memory_entry` tool writes to the wiki page)
+- reply text for explicit follow-up targets
 
-- The page is machine-managed in a structured Markdown format.
-- Its contents are loaded into every review as durable project context, using the `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS` budget.
-- The model may update it when a user comment clearly communicates long-term guidance such as team policy, stable convention, or "for future reference" knowledge.
-- If the wiki is disabled or temporarily unavailable, the review still runs and simply skips project memory for that pass.
-- When the managed memory grows close to the configured character budget, Reviewphin runs a dedicated coalescing pass with the resolved profile's `textGenerationModel` (or its review model when that field is omitted) to merge duplicates and shrink the stored memory before saving.
-- One-off review remarks, temporary incidents, and merge-request-specific instructions should not be stored there.
+Chatter uses the `textGenerationModel` from the active profile (falling back to the review model when unset), keeping lighter interactions cheaper.
 
-`baseUrl` may include a path prefix for self-hosted installs behind a reverse proxy, but it should point to the GitLab instance root, not directly to `/api/v4`. The worker normalizes `/api/v4` away if you include it by mistake.
+---
 
-The editable review instruction templates live in `prompts/review/`:
+## Technologies
 
-- `prompts/review/main.md`
-- `prompts/review/context-analyst.md`
-- `prompts/review/review-author.md`
+| Layer              | Technology                                    |
+| ------------------ | --------------------------------------------- |
+| Runtime            | Node.js 22, TypeScript 5                      |
+| HTTP server        | Fastify 5                                     |
+| AI runtime         | `@github/copilot-sdk` (Copilot CLI wrapper)   |
+| Model APIs         | native Copilot, vLLM, Azure OpenAI, Anthropic |
+| Storage (default)  | SQLite via `better-sqlite3`                   |
+| Storage (optional) | Flotiq headless CMS                           |
+| Logging            | pino (structured JSON)                        |
+| Validation         | zod                                           |
+| Packaging          | Docker, multi-stage build                     |
+| Orchestration      | Helm (Kubernetes)                             |
+
+---
+
+## Environment variables
+
+All variables are optional unless noted. For local Docker from source, put them in `.env.docker`; for local runs, use `.env`.
+
+| Variable                                             | Default                          | Description                                                                     |
+| ---------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------- |
+| `PORT`                                               | `3000`                           | HTTP port                                                                       |
+| `HOST`                                               | `0.0.0.0`                        | Bind address                                                                    |
+| `LOG_LEVEL`                                          | `info`                           | `fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` \| `silent`        |
+| `STORAGE_PROVIDER_MODULE`                            | built-in SQLite                  | Module path or package name for a custom storage adapter                        |
+| `SQLITE_DATABASE_PATH`                               | `./data/review-worker.sqlite`    | SQLite file path (ignored when a custom storage module is set)                  |
+| `RUN_LOG_DIR`                                        | `./data/run-logs`                | Root directory for per-review run artifacts                                     |
+| `WORKSPACE_ROOT`                                     | `./tmp/review-workspaces`        | Scratch directory for hydrated repositories                                     |
+| `MAX_JOB_RETRIES`                                    | `3`                              | Retry attempts for failed review jobs                                           |
+| `RETRY_BACKOFF_MS`                                   | `5000`                           | Delay (ms) between retries                                                      |
+| `COPILOT_TIMEOUT_MS`                                 | `180000`                         | Model session timeout in milliseconds                                           |
+| `COPILOT_SDK_LOG_LEVEL`                              | _(none)_                         | SDK log verbosity: `none` \| `error` \| `warning` \| `info` \| `debug` \| `all` |
+| `COPILOT_CLI_PATH`                                   | `/usr/local/bin/copilot` (image) | Path to the Copilot CLI binary                                                  |
+| `REVIEWPHIN_MEMORY_ENABLED`                          | `true`                           | Enable per-project wiki memory                                                  |
+| `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS`                 | `5000`                           | Character budget for injected project memory                                    |
+| `GH_TOKEN` / `GITHUB_TOKEN` / `COPILOT_GITHUB_TOKEN` | _(required for Copilot mode)_    | GitHub PAT with **Copilot Requests** permission                                 |
+
+For model profile setup (BYOK providers, Azure OpenAI, etc.) see [Model providers](docs/model-providers.md).
+For custom storage adapters see [Storage providers](docs/storage-providers.md).
+
+---
 
 ## Routes
 
-- `GET /healthz` returns liveness information
-- `POST /webhooks/gitlab/note` accepts GitLab Note Hook payloads
-
-## Development commands
-
-- `pnpm build`
-- `pnpm lint`
-- `pnpm test`
+| Method | Path                    | Description                               |
+| ------ | ----------------------- | ----------------------------------------- |
+| `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}` |
+| `POST` | `/webhooks/gitlab/note` | GitLab Note Hook receiver                 |
