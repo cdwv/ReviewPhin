@@ -52,15 +52,13 @@ export function buildReviewSummaryNote(input: {
   context: HydratedMergeRequestContext;
   reviewResult: ReviewResult;
   activeFindings?: SummaryFinding[];
-  reviewedAt?: Date;
 }): string {
-  const reviewedAt = input.reviewedAt ?? new Date();
   const activeFindings = input.activeFindings ?? input.reviewResult.findings;
   const overview = resolveSummaryOverview(
     input.reviewResult,
     input.activeFindings,
   );
-  const findingsSnapshot = formatFindingsSnapshot(activeFindings);
+
   const topFindings = activeFindings
     .slice()
     .sort(compareFindingsBySeverity)
@@ -84,8 +82,7 @@ export function buildReviewSummaryNote(input: {
     "",
     `- **Overall severity:** ${capitalize(overview.overallSeverity)}`,
     `- **Scope reviewed:** ${formatScopeReviewed(input.context)}`,
-    `- **Findings snapshot:** ${findingsSnapshot}`,
-    `- **Last reviewed:** ${reviewedAt.toISOString()}`,
+    "",
   ];
 
   if (overview.highlights.length > 0) {
@@ -103,6 +100,26 @@ export function buildReviewSummaryNote(input: {
       );
     }
   }
+
+  lines.push("", "### Next Steps", "");
+  if (topFindings.length > 0) {
+    lines.push(
+      `- Address the issues reported in the review - either by:`,
+      `  - fixing them`,
+      `  - responding to the review comments and providing justification for why they are acceptable`,
+      `- Use prompt provided below to help you address all reported issues at once`,
+    );
+  } else {
+    lines.push(
+      `- Once you and your team are satisfied with the changes you can merge this branch since there are no actionable findings left.`,
+    );
+  }
+
+  lines.push(
+    `- If you made changes to the code, you can request a re-review to get new feedback by leaving new comment, e.g. \`@${input.context.tenant.botUsername} review\``,
+    `- You can ask \`@${input.context.tenant.botUsername}\` for help or to clarify anything regarding this codebase`,
+    "",
+  );
 
   if (shouldIncludeSuggestedFixesPrompt(overview)) {
     lines.push(
@@ -261,30 +278,6 @@ function formatScopeReviewed(context: HydratedMergeRequestContext): string {
   return `${fileCount} changed ${fileLabel} on \`${context.mergeRequest.source_branch}\` -> \`${context.mergeRequest.target_branch}\``;
 }
 
-function formatFindingsSnapshot(findings: SummaryFinding[]): string {
-  if (findings.length === 0) {
-    return "No actionable findings.";
-  }
-
-  const counts = new Map<ReviewFinding["severity"], number>([
-    ["critical", 0],
-    ["high", 0],
-    ["medium", 0],
-    ["low", 0],
-  ]);
-
-  for (const finding of findings) {
-    counts.set(finding.severity, (counts.get(finding.severity) ?? 0) + 1);
-  }
-
-  const parts = Array.from(counts.entries())
-    .filter(([, count]) => count > 0)
-    .map(([severity, count]) => `${count} ${severity}`);
-
-  const findingLabel = findings.length === 1 ? "finding" : "findings";
-  return `${findings.length} ${findingLabel} (${parts.join(", ")})`;
-}
-
 function compareFindingsBySeverity(
   left: SummaryFinding,
   right: SummaryFinding,
@@ -339,8 +332,6 @@ function buildSuggestedFixesPrompt(input: {
     for (const [index, finding] of sortedFindings.entries()) {
       lines.push(
         `${index + 1}. [${capitalize(finding.severity)} | ${finding.category}] ${finding.title.trim()}`,
-      );
-      lines.push(
         `   ${finding.body.trim().replace(/\r\n/g, "\n").replace(/\n/g, "\n   ")}`,
       );
     }

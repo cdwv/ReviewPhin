@@ -80,12 +80,28 @@ describe("HarnessReviewProvider", () => {
     });
 
     const result = await provider.review(createReviewContext(), {
+      attachments: [
+        {
+          type: "blob",
+          data: "AQID",
+          mimeType: "image/png",
+          displayName: "trigger-note-55-diagram.png",
+        },
+      ],
       tenant: createTenantRuntimeContext(),
     });
 
     expect(result.overview.summary).toBe("Looks good");
     expect(run).toHaveBeenCalledWith(
       expect.objectContaining({
+        attachments: [
+          {
+            type: "blob",
+            data: "AQID",
+            mimeType: "image/png",
+            displayName: "trigger-note-55-diagram.png",
+          },
+        ],
         model: "gpt-5.4",
         tenant: createTenantRuntimeContext(),
         tools: ["glob", "rg", "view"],
@@ -143,6 +159,14 @@ describe("HarnessReviewProvider", () => {
     });
 
     const result = await provider.review(createReviewContext(), {
+      attachments: [
+        {
+          type: "blob",
+          data: "AQID",
+          mimeType: "image/png",
+          displayName: "trigger-note-55-diagram.png",
+        },
+      ],
       tenant: createTenantRuntimeContext(),
     });
 
@@ -271,6 +295,15 @@ function createTenantRuntimeContext(): HarnessTenantContext {
 
 function createReviewContext(): ReviewContext {
   return {
+    attachments: [
+      {
+        sourceKind: "trigger-note",
+        noteId: 55,
+        displayName: "trigger-note-55-diagram.png",
+        contentType: "image/png",
+      },
+    ],
+    attachmentIssues: [],
     workspacePath: repoPath(),
     mergeRequest: {
       id: 1,

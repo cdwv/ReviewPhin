@@ -761,9 +761,7 @@ describe("Discussion reconciler", () => {
     });
 
     expect(createMergeRequestNote).toHaveBeenCalledTimes(1);
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
-      "- **Findings snapshot:** 1 finding (1 medium)",
-    );
+
     expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
       "Remaining storage correctness fix",
     );
@@ -1288,17 +1286,28 @@ describe("Discussion reconciler", () => {
         system: false,
       }),
     );
-    const createMergeRequestDiscussion = vi
+    const createMergeRequestDraftNote = vi
       .fn()
       .mockRejectedValueOnce(
         new GitLabApiError(
-          "GitLab form request failed for POST /projects/123/merge_requests/7/discussions with 400",
+          "GitLab form request failed for POST /projects/123/merge_requests/7/draft_notes with 400",
           400,
           responseBody,
-          "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/discussions",
+          "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/draft_notes",
         ),
       )
       .mockResolvedValueOnce({
+        id: 501,
+        author_id: 999,
+        merge_request_id: 7,
+        resolve_discussion: false,
+        discussion_id: null,
+        note: "**Broad finding**\n\nAnchor body",
+        position: null,
+      });
+    const bulkPublishMergeRequestDraftNotes = vi.fn(async () => undefined);
+    const listMergeRequestDiscussions = vi.fn(async () => [
+      {
         id: "disc_new",
         individual_note: false,
         notes: [
@@ -1311,7 +1320,8 @@ describe("Discussion reconciler", () => {
             system: false,
           },
         ],
-      });
+      },
+    ]);
 
     const summary = await reconciler.reconcile({
       tenant,
@@ -1360,7 +1370,10 @@ describe("Discussion reconciler", () => {
       },
       client: {
         createMergeRequestNote,
-        createMergeRequestDiscussion,
+        createMergeRequestDraftNote,
+        bulkPublishMergeRequestDraftNotes,
+        listMergeRequestDiscussions,
+        deleteMergeRequestDraftNote: vi.fn(),
         updateMergeRequestNote: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
@@ -1369,9 +1382,11 @@ describe("Discussion reconciler", () => {
     });
 
     expect(summary.created).toBe(1);
-    expect(createMergeRequestDiscussion).toHaveBeenCalledTimes(2);
-    expect(createMergeRequestDiscussion).toHaveBeenNthCalledWith(1, 123, 7, {
-      body: "**Broad finding**\n\nAnchor body",
+    expect(createMergeRequestDraftNote).toHaveBeenCalledTimes(2);
+    expect(createMergeRequestDraftNote).toHaveBeenNthCalledWith(1, 123, 7, {
+      note: expect.stringMatching(
+        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(gitlab-agentic-review-thread:draftthread_/,
+      ),
       position: {
         base_sha: "base",
         start_sha: "start",
@@ -1382,10 +1397,230 @@ describe("Discussion reconciler", () => {
         new_line: 12,
       },
     });
-    expect(createMergeRequestDiscussion).toHaveBeenNthCalledWith(2, 123, 7, {
-      body: "**Broad finding**\n\nAnchor body",
+    expect(createMergeRequestDraftNote).toHaveBeenNthCalledWith(2, 123, 7, {
+      note: expect.stringMatching(
+        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(gitlab-agentic-review-thread:draftthread_/,
+      ),
+    });
+    expect(bulkPublishMergeRequestDraftNotes).toHaveBeenCalledTimes(1);
+    expect(listMergeRequestDiscussions).toHaveBeenCalledTimes(1);
+    expect(listMergeRequestDiscussions).toHaveBeenCalledWith(123, 7, {
+      noCache: true,
     });
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledTimes(1);
+  });
+
+  it("matches the newest published draft discussion when duplicate candidates exist", async () => {
+    const storage = {
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_new",
+        ...input,
+      })),
+      updateReviewFindingStatus: vi.fn(async () => true),
+      listLatestReviewFindings: vi.fn(async () => []),
+    };
+
+    const reconciler = new DiscussionReconciler({
+      storage: storage as never,
+      logger,
+    });
+
+    const now = new Date();
+    const olderCreatedAt = new Date(now.getTime() - 60_000).toISOString();
+    const newerCreatedAt = now.toISOString();
+    const createMergeRequestDraftNote = vi.fn(async () => ({
+      id: 601,
+      author_id: 999,
+      merge_request_id: 7,
+      resolve_discussion: false,
+      discussion_id: null,
+      note: "**New finding**\n\nAnchor body",
+      position: null,
+    }));
+    const bulkPublishMergeRequestDraftNotes = vi.fn(async () => undefined);
+    const listMergeRequestDiscussions = vi.fn(async () => [
+      {
+        id: "disc_older",
+        individual_note: false,
+        notes: [
+          {
+            id: 11,
+            body: "**New finding**\n\nAnchor body",
+            author: { id: 999, username: "review-bot", name: "Review Bot" },
+            created_at: olderCreatedAt,
+            updated_at: olderCreatedAt,
+            system: false,
+          },
+        ],
+      },
+      {
+        id: "disc_newer",
+        individual_note: false,
+        notes: [
+          {
+            id: 12,
+            body: "**New finding**\n\nAnchor body",
+            author: { id: 999, username: "review-bot", name: "Review Bot" },
+            created_at: newerCreatedAt,
+            updated_at: newerCreatedAt,
+            system: false,
+          },
+        ],
+      },
+    ]);
+
+    await reconciler.reconcile({
+      tenant,
+      context: createHydratedContext({ discussions: [] }),
+      mappings: [],
+      interactionRunId: "run_1",
+      reviewResult: {
+        overview: {
+          summary: "Found one issue",
+          overallSeverity: "medium",
+        },
+        findings: [
+          {
+            title: "New finding",
+            body: "Anchor body",
+            severity: "medium",
+            category: "bug",
+          },
+        ],
+        priorDispositions: [],
+      },
+      client: {
+        createMergeRequestNote: vi.fn(),
+        createMergeRequestDraftNote,
+        bulkPublishMergeRequestDraftNotes,
+        listMergeRequestDiscussions,
+        deleteMergeRequestDraftNote: vi.fn(),
+        updateMergeRequestNote: vi.fn(),
+        replyToDiscussion: vi.fn(),
+        updateDiscussionNote: vi.fn(),
+        resolveDiscussion: vi.fn(),
+      } as never,
+    });
+
+    expect(listMergeRequestDiscussions).toHaveBeenCalledWith(123, 7, {
+      noCache: true,
+    });
+    expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gitlabDiscussionId: "disc_newer",
+        gitlabNoteId: 12,
+      }),
+    );
+  });
+
+  it("matches a published draft discussion by hidden marker before body fallback", async () => {
+    const storage = {
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_new",
+        ...input,
+      })),
+      updateReviewFindingStatus: vi.fn(async () => true),
+      listLatestReviewFindings: vi.fn(async () => []),
+    };
+
+    const reconciler = new DiscussionReconciler({
+      storage: storage as never,
+      logger,
+    });
+
+    let createdDraftBody = "";
+    const createMergeRequestDraftNote = vi.fn(
+      async (
+        _projectId: number,
+        _mergeRequestIid: number,
+        input: { note: string },
+      ) => {
+        createdDraftBody = input.note;
+        return {
+          id: 601,
+          author_id: 999,
+          merge_request_id: 7,
+          resolve_discussion: false,
+          discussion_id: null,
+          note: input.note,
+          position: null,
+        };
+      },
+    );
+    const bulkPublishMergeRequestDraftNotes = vi.fn(async () => undefined);
+    const newerCreatedAt = new Date().toISOString();
+    const olderCreatedAt = new Date(Date.now() - 60_000).toISOString();
+    const listMergeRequestDiscussions = vi.fn(async () => [
+      {
+        id: "disc_wrong",
+        individual_note: false,
+        notes: [
+          {
+            id: 11,
+            body: "**New finding**\n\nAnchor body",
+            author: { id: 999, username: "review-bot", name: "Review Bot" },
+            created_at: newerCreatedAt,
+            updated_at: newerCreatedAt,
+            system: false,
+          },
+        ],
+      },
+      {
+        id: "disc_marked",
+        individual_note: false,
+        notes: [
+          {
+            id: 12,
+            body: createdDraftBody,
+            author: { id: 999, username: "review-bot", name: "Review Bot" },
+            created_at: olderCreatedAt,
+            updated_at: olderCreatedAt,
+            system: false,
+          },
+        ],
+      },
+    ]);
+
+    await reconciler.reconcile({
+      tenant,
+      context: createHydratedContext({ discussions: [] }),
+      mappings: [],
+      interactionRunId: "run_1",
+      reviewResult: {
+        overview: {
+          summary: "Found one issue",
+          overallSeverity: "medium",
+        },
+        findings: [
+          {
+            title: "New finding",
+            body: "Anchor body",
+            severity: "medium",
+            category: "bug",
+          },
+        ],
+        priorDispositions: [],
+      },
+      client: {
+        createMergeRequestNote: vi.fn(),
+        createMergeRequestDraftNote,
+        bulkPublishMergeRequestDraftNotes,
+        listMergeRequestDiscussions,
+        deleteMergeRequestDraftNote: vi.fn(),
+        updateMergeRequestNote: vi.fn(),
+        replyToDiscussion: vi.fn(),
+        updateDiscussionNote: vi.fn(),
+        resolveDiscussion: vi.fn(),
+      } as never,
+    });
+
+    expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gitlabDiscussionId: "disc_marked",
+        gitlabNoteId: 12,
+        body: "**New finding**\n\nAnchor body",
+      }),
+    );
   });
 
   it("does not warn when a new open finding status cannot be updated yet", async () => {
@@ -1414,20 +1649,32 @@ describe("Discussion reconciler", () => {
         system: false,
       }),
     );
-    const createMergeRequestDiscussion = vi.fn(async () => ({
-      id: "disc_new",
-      individual_note: false,
-      notes: [
-        {
-          id: 12,
-          body: "**New finding**\n\nAnchor body",
-          author: { id: 999, username: "review-bot", name: "Review Bot" },
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          system: false,
-        },
-      ],
+    const createMergeRequestDraftNote = vi.fn(async () => ({
+      id: 601,
+      author_id: 999,
+      merge_request_id: 7,
+      resolve_discussion: false,
+      discussion_id: null,
+      note: "**New finding**\n\nAnchor body",
+      position: null,
     }));
+    const bulkPublishMergeRequestDraftNotes = vi.fn(async () => undefined);
+    const listMergeRequestDiscussions = vi.fn(async () => [
+      {
+        id: "disc_new",
+        individual_note: false,
+        notes: [
+          {
+            id: 12,
+            body: "**New finding**\n\nAnchor body",
+            author: { id: 999, username: "review-bot", name: "Review Bot" },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            system: false,
+          },
+        ],
+      },
+    ]);
 
     await reconciler.reconcile({
       tenant,
@@ -1451,7 +1698,10 @@ describe("Discussion reconciler", () => {
       },
       client: {
         createMergeRequestNote,
-        createMergeRequestDiscussion,
+        createMergeRequestDraftNote,
+        bulkPublishMergeRequestDraftNotes,
+        listMergeRequestDiscussions,
+        deleteMergeRequestDraftNote: vi.fn(),
         updateMergeRequestNote: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
@@ -1490,14 +1740,14 @@ describe("Discussion reconciler", () => {
       logger,
     });
 
-    const createMergeRequestDiscussion = vi
+    const createMergeRequestDraftNote = vi
       .fn()
       .mockRejectedValueOnce(
         new GitLabApiError(
-          "GitLab form request failed for POST /projects/123/merge_requests/7/discussions with 400",
+          "GitLab form request failed for POST /projects/123/merge_requests/7/draft_notes with 400",
           400,
           '{"message":{"body":["is too long (maximum is 100000 characters)"]}}',
-          "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/discussions",
+          "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/draft_notes",
         ),
       );
 
@@ -1549,7 +1799,10 @@ describe("Discussion reconciler", () => {
         },
         client: {
           createMergeRequestNote: vi.fn(),
-          createMergeRequestDiscussion,
+          createMergeRequestDraftNote,
+          bulkPublishMergeRequestDraftNotes: vi.fn(),
+          listMergeRequestDiscussions: vi.fn(),
+          deleteMergeRequestDraftNote: vi.fn(),
           updateMergeRequestNote: vi.fn(),
           replyToDiscussion: vi.fn(),
           updateDiscussionNote: vi.fn(),
@@ -1558,7 +1811,76 @@ describe("Discussion reconciler", () => {
       }),
     ).rejects.toBeInstanceOf(GitLabApiError);
 
-    expect(createMergeRequestDiscussion).toHaveBeenCalledTimes(1);
+    expect(createMergeRequestDraftNote).toHaveBeenCalledTimes(1);
+    expect(storage.upsertDiscussionMapping).not.toHaveBeenCalled();
+  });
+
+  it("cleans up created draft notes when publishing them fails", async () => {
+    const storage = {
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_new",
+        ...input,
+      })),
+      updateReviewFindingStatus: vi.fn(async () => true),
+      listLatestReviewFindings: vi.fn(async () => []),
+    };
+
+    const reconciler = new DiscussionReconciler({
+      storage: storage as never,
+      logger,
+    });
+
+    const createMergeRequestDraftNote = vi.fn(async () => ({
+      id: 701,
+      author_id: 999,
+      merge_request_id: 7,
+      resolve_discussion: false,
+      discussion_id: null,
+      note: "**New finding**\n\nAnchor body",
+      position: null,
+    }));
+    const bulkPublishMergeRequestDraftNotes = vi.fn(
+      async () => await Promise.reject(new Error("publish failed")),
+    );
+    const listMergeRequestDiscussions = vi.fn(async () => []);
+    const deleteMergeRequestDraftNote = vi.fn(async () => undefined);
+
+    await expect(
+      reconciler.reconcile({
+        tenant,
+        context: createHydratedContext({ discussions: [] }),
+        mappings: [],
+        interactionRunId: "run_1",
+        reviewResult: {
+          overview: {
+            summary: "Found one issue",
+            overallSeverity: "medium",
+          },
+          findings: [
+            {
+              title: "New finding",
+              body: "Anchor body",
+              severity: "medium",
+              category: "bug",
+            },
+          ],
+          priorDispositions: [],
+        },
+        client: {
+          createMergeRequestNote: vi.fn(),
+          createMergeRequestDraftNote,
+          bulkPublishMergeRequestDraftNotes,
+          listMergeRequestDiscussions,
+          deleteMergeRequestDraftNote,
+          updateMergeRequestNote: vi.fn(),
+          replyToDiscussion: vi.fn(),
+          updateDiscussionNote: vi.fn(),
+          resolveDiscussion: vi.fn(),
+        } as never,
+      }),
+    ).rejects.toThrow("publish failed");
+
+    expect(deleteMergeRequestDraftNote).toHaveBeenCalledWith(123, 7, 701);
     expect(storage.upsertDiscussionMapping).not.toHaveBeenCalled();
   });
 });

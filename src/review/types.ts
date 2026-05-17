@@ -8,6 +8,10 @@ import type {
   InstructionFile,
   TriggerNoteReference,
 } from "../gitlab/types.js";
+import type {
+  GitLabImageAttachmentBreadcrumb,
+  GitLabImageAttachmentIssue,
+} from "../gitlab/image-attachments.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
 import type { ReviewFindingStatus } from "../storage/contract/index.js";
 
@@ -287,6 +291,8 @@ export interface ReviewScopeContext {
 }
 
 export interface ReviewContext {
+  attachments: GitLabImageAttachmentBreadcrumb[];
+  attachmentIssues: GitLabImageAttachmentIssue[];
   workspacePath: string;
   mergeRequest: GitLabMergeRequest;
   changes: GitLabMergeRequestChange[];

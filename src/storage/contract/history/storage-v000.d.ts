@@ -12,16 +12,6 @@ export interface ReviewSuggestion {
   endLine: number;
 }
 
-export interface StorageTenantInput {
-  baseUrl: string;
-  projectId: number;
-  apiToken: string;
-  webhookSecret: string;
-  botUserId?: number | undefined;
-  botUsername: string;
-  modelProfileName?: string | null | undefined;
-}
-
 export interface TenantRecord {
   id: string;
   key: string;
@@ -29,12 +19,19 @@ export interface TenantRecord {
   projectId: number;
   apiToken: string;
   webhookSecret: string;
-  botUserId: number | null;
-  botUsername: string | null;
+  botUserId: number;
+  botUsername: string;
   modelProfileName: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+export type StorageTenantInput = Omit<
+  TenantRecord,
+  "id" | "createdAt" | "updatedAt" | "key" | "modelProfileName"
+> & {
+  modelProfileName?: string | null;
+};
 
 export interface ModelProfileRecord {
   name: string;
@@ -79,7 +76,8 @@ export type InteractionJobStatus =
   | "queued"
   | "in_progress"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export interface InteractionJobRecord {
   id: string;
@@ -131,7 +129,11 @@ export type CreateMergeRequestSnapshotInput = Omit<
   "id" | "createdAt"
 >;
 
-export type InteractionRunStatus = "in_progress" | "completed" | "failed";
+export type InteractionRunStatus =
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 export interface InteractionRunRecord {
   id: string;
@@ -305,10 +307,14 @@ export interface EntityStore<TEntity, TFilters, TOrder extends string> {
   getMany(ids: string[]): Promise<TEntity[]>;
   find(filters: TFilters): Promise<TEntity | null>;
   list(input: StoreListInput<TFilters, TOrder>): Promise<TEntity[]>;
-  upsert(entity: TEntity): Promise<TEntity>;
-  replace(entity: TEntity): Promise<TEntity>;
-  update(input: StoreUpdateInput<TEntity>): Promise<TEntity>;
-  patch(input: StorePatchInput<TEntity>): Promise<TEntity>;
+  upsert(entity: TEntity): Promise<void>;
+  upsertMany(entities: TEntity[]): Promise<void>;
+  replace(entity: TEntity): Promise<void>;
+  replaceMany(entities: TEntity[]): Promise<void>;
+  update(input: StoreUpdateInput<TEntity>): Promise<void>;
+  updateMany(inputs: StoreUpdateInput<TEntity>[]): Promise<void>;
+  patch(input: StorePatchInput<TEntity>): Promise<void>;
+  patchMany(inputs: StorePatchInput<TEntity>[]): Promise<void>;
   delete(id: string): Promise<void>;
   deleteMany(ids: string[]): Promise<void>;
 }

@@ -5,6 +5,10 @@ import type {
   GitLabNote,
   InstructionFile,
 } from "../gitlab/types.js";
+import type {
+  GitLabImageAttachmentBreadcrumb,
+  GitLabImageAttachmentIssue,
+} from "../gitlab/image-attachments.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
 import { reviewResultSchema } from "./types.js";
 import type {
@@ -28,6 +32,8 @@ interface PreviousReviewSource {
 }
 
 interface BuildScopedReviewContextInput {
+  attachments?: GitLabImageAttachmentBreadcrumb[] | undefined;
+  attachmentIssues?: GitLabImageAttachmentIssue[] | undefined;
   workspacePath: string;
   mergeRequest: GitLabMergeRequest;
   changes: GitLabMergeRequestChange[];
@@ -189,6 +195,8 @@ export function buildScopedReviewContext(
   });
 
   return {
+    attachments: input.attachments ?? [],
+    attachmentIssues: input.attachmentIssues ?? [],
     workspacePath: input.workspacePath,
     mergeRequest: input.mergeRequest,
     changes: selectedChanges,

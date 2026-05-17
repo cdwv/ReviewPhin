@@ -49,6 +49,7 @@ export class HarnessReviewProvider implements ReviewProvider {
     });
     const response = await this.harnessRuntime.run({
       prompt,
+      ...(runtime.attachments ? { attachments: runtime.attachments } : {}),
       modelConfig: this.modelConfig,
       model: this.modelConfig.reviewModel ?? undefined,
       workingDirectory: effectiveContext.workspacePath,

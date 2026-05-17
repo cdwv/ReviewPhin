@@ -51,12 +51,97 @@ const payload: GitLabNoteHookPayload = {
   },
 };
 
+function getRequestUrl(input: URL | RequestInfo): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  if (input instanceof URL) {
+    return input.toString();
+  }
+
+  return input.url;
+}
+
+function createFreshTriggerNoteResponse(input: {
+  requestUrl: string;
+  noteId: number;
+  kind?: "merge-request-note" | "discussion-note";
+  discussionId?: string;
+}): Response {
+  if (
+    input.requestUrl.includes("/merge_requests/7/notes") &&
+    !input.requestUrl.includes("/discussions/") &&
+    !input.requestUrl.includes("/award_emoji")
+  ) {
+    return new Response(
+      JSON.stringify(
+        input.kind === "discussion-note"
+          ? []
+          : [
+              {
+                id: input.noteId,
+                body: payload.object_attributes.note,
+                author: payload.user,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                system: false,
+              },
+            ],
+      ),
+      {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      },
+    );
+  }
+
+  if (input.requestUrl.includes("/merge_requests/7/discussions")) {
+    return new Response(
+      JSON.stringify(
+        input.kind === "discussion-note"
+          ? [
+              {
+                id: input.discussionId ?? "disc_trigger",
+                individual_note: false,
+                notes: [
+                  {
+                    id: input.noteId,
+                    body: payload.object_attributes.note,
+                    author: payload.user,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    system: false,
+                  },
+                ],
+              },
+            ]
+          : [],
+      ),
+      {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      },
+    );
+  }
+
+  return new Response("[]", {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+    },
+  });
+}
+
 describe("ReviewWorker orchestration", () => {
-  it("skips full hydration for chatter-only replies", async () => {
+  it("abandons the run without retry when the trigger note no longer exists", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(
-      async (input: URL | RequestInfo, init?: RequestInit) => {
-        const requestUrl = String(input);
+      async (_input: URL | RequestInfo, init?: RequestInit) => {
         if (init?.method === "GET") {
           return new Response("[]", {
             status: 200,
@@ -64,6 +149,191 @@ describe("ReviewWorker orchestration", () => {
               "content-type": "application/json",
             },
           });
+        }
+
+        return new Response(null, { status: 204 });
+      },
+    );
+
+    const job = {
+      id: "job_1",
+      tenantId: tenant.id,
+      dedupeKey: "dedupe",
+      projectId: tenant.projectId,
+      mergeRequestIid: 7,
+      noteId: 55,
+      headSha: "abc123",
+      status: "queued" as const,
+      payloadJson: JSON.stringify(payload),
+      retryCount: 0,
+      lastError: null,
+      enqueuedAt: new Date().toISOString(),
+      startedAt: null,
+      finishedAt: null,
+    };
+    const createInteractionRun = vi.fn(async () => ({
+      id: "run_1",
+      interactionJobId: job.id,
+      tenantId: tenant.id,
+      provider: "copilot-sdk",
+      model: null,
+      modelProfileName: null,
+      providerBaseUrl: null,
+      providerType: null,
+      textGenerationModel: null,
+      status: "in_progress" as const,
+      resultJson: null,
+      error: null,
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+    }));
+    const cancelInteractionRun = vi.fn(async () => {});
+    const failInteractionRun = vi.fn(async () => {});
+    const markJobCancelled = vi.fn(async () => {});
+    const markJobFailed = vi.fn(async () => {});
+    const markJobQueued = vi.fn(async () => {});
+    const hydrate = vi.fn(async () => {
+      throw new Error(
+        "full hydration should not run when the trigger note is gone",
+      );
+    });
+
+    const worker = new ReviewWorker({
+      storage: {
+        stores: {
+          interactionJobs: {
+            get: vi.fn(async () => job),
+          },
+          discussionMappings: {
+            list: vi.fn(async () => []),
+          },
+          modelProfiles: {
+            get: vi.fn(async () => null),
+            find: vi.fn(async () => null),
+          },
+        },
+        getInteractionJobById: vi.fn(async () => job),
+        markJobInProgress: vi.fn(async () => {}),
+        listDiscussionMappings: vi.fn(async () => []),
+        createInteractionRun,
+        getModelProfileByName: vi.fn(async () => null),
+        getDefaultModelProfile: vi.fn(async () => null),
+        getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+        listPriorReviewFindings: vi.fn(async () => []),
+        completeInteractionRun: vi.fn(async () => {}),
+        replaceReviewFindings: vi.fn(async () => {}),
+        markJobCompleted: vi.fn(async () => {}),
+        cancelInteractionRun,
+        failInteractionRun,
+        markJobCancelled,
+        markJobQueued,
+        markJobFailed,
+      } as never,
+      tenantRegistry: {
+        getTenantById: vi.fn(async () => tenant),
+      } as never,
+      hydrator: {
+        loadRoutingContext: vi.fn(async () => ({
+          tenant,
+          job,
+          mergeRequest: {
+            id: 1,
+            iid: 7,
+            project_id: tenant.projectId,
+            title: "Add worker",
+            description: "Adds the worker",
+            web_url:
+              "https://gitlab.example.com/group/project/-/merge_requests/7",
+            source_branch: "feature",
+            target_branch: "main",
+            author: {
+              id: 42,
+              username: "developer",
+              name: "Dev User",
+            },
+          },
+          changes: [],
+          notes: [
+            {
+              id: 55,
+              body: "@review-bot what changed here?",
+              author: {
+                id: 42,
+                username: "developer",
+                name: "Dev User",
+              },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false,
+            },
+          ],
+          discussions: [],
+          workspace: {
+            rootPath: join("tmp", "workspace-routing"),
+            cleanupRoot: join("tmp", "cleanup-routing"),
+            strategy: "git",
+            instructionFiles: [],
+          },
+          projectMemory: {
+            enabled: true,
+            page: null,
+            entries: [],
+          },
+        })),
+        hydrate,
+      } as never,
+      workspaceMaterializer: {
+        cleanup: vi.fn(async () => {}),
+      } as never,
+      reviewProviderFactory: {
+        createProvider: vi.fn(() => ({
+          name: "copilot-sdk",
+          review: vi.fn(),
+        })),
+      },
+      chatterRunnerFactory: {
+        createRunner: vi.fn(() => ({
+          run: vi.fn(),
+        })),
+      } as never,
+      reconciler: {
+        reconcile: vi.fn(),
+      } as never,
+      logger: createLogger("silent"),
+      runLogDir: join("tmp", "run-logs"),
+      maxJobRetries: 2,
+      retryBackoffMs: 1000,
+    });
+
+    await expect(worker.processJob(job.id)).rejects.toThrow(
+      "Trigger note 55 no longer exists on merge request 7",
+    );
+
+    expect(createInteractionRun).toHaveBeenCalledTimes(1);
+    expect(hydrate).not.toHaveBeenCalled();
+    expect(cancelInteractionRun).toHaveBeenCalledWith(
+      "run_1",
+      "Trigger note 55 no longer exists on merge request 7",
+    );
+    expect(failInteractionRun).not.toHaveBeenCalled();
+    expect(markJobQueued).not.toHaveBeenCalled();
+    expect(markJobCancelled).toHaveBeenCalledWith(
+      job.id,
+      1,
+      "Trigger note 55 no longer exists on merge request 7",
+    );
+    expect(markJobFailed).not.toHaveBeenCalled();
+
+    globalThis.fetch = originalFetch;
+  });
+
+  it("skips full hydration for chatter-only replies", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const requestUrl = getRequestUrl(input);
+        if (init?.method === "GET") {
+          return createFreshTriggerNoteResponse({ requestUrl, noteId: 55 });
         }
 
         if (requestUrl.includes("/award_emoji")) {
@@ -283,18 +553,280 @@ describe("ReviewWorker orchestration", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("completes the run even when chatter reply publishing fails", async () => {
+  it("materializes GitLab image attachments for chatter-only runs without hydrating snapshots", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
-        const requestUrl = String(input);
+        const requestUrl = getRequestUrl(input);
+        if (
+          init?.method === "GET" &&
+          requestUrl.includes("/api/v4/projects/123/uploads/")
+        ) {
+          return new Response(new Uint8Array([1, 2, 3]), {
+            status: 200,
+            headers: {
+              "content-type": "image/png",
+              "content-length": "3",
+            },
+          });
+        }
+
         if (init?.method === "GET") {
-          return new Response("[]", {
+          return createFreshTriggerNoteResponse({ requestUrl, noteId: 55 });
+        }
+
+        if (requestUrl.includes("/award_emoji")) {
+          return new Response(
+            JSON.stringify({
+              id: 1,
+              name: "white_check_mark",
+              user: {
+                id: 999,
+                username: "review-bot",
+                name: "Review Bot",
+              },
+              created_at: new Date().toISOString(),
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            id: 501,
+            body: "Here is what changed.",
+            author: {
+              id: 999,
+              username: "review-bot",
+              name: "Review Bot",
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            system: false,
+          }),
+          {
             status: 200,
             headers: {
               "content-type": "application/json",
             },
-          });
+          },
+        );
+      },
+    );
+
+    const imagePayload = {
+      ...payload,
+      merge_request: {
+        ...payload.merge_request,
+        description:
+          "Adds the worker ![Diagram](../uploads/xyz789/diagram.png)",
+      },
+      object_attributes: {
+        ...payload.object_attributes,
+        note: "@review-bot what changed here? ![Screenshot](../uploads/abc123/note-image.png)",
+      },
+    };
+    const job = {
+      id: "job_images",
+      tenantId: tenant.id,
+      dedupeKey: "dedupe-images",
+      projectId: tenant.projectId,
+      mergeRequestIid: 7,
+      noteId: 55,
+      headSha: "abc123",
+      status: "queued" as const,
+      payloadJson: JSON.stringify(imagePayload),
+      retryCount: 0,
+      lastError: null,
+      enqueuedAt: new Date().toISOString(),
+      startedAt: null,
+      finishedAt: null,
+    };
+    const hydrate = vi.fn(async () => {
+      throw new Error("full hydration should be skipped");
+    });
+    const chatterRun = vi.fn(async () => ({
+      memory: {
+        status: "skipped" as const,
+        summary: "No durable memory detected.",
+      },
+      replies: [
+        {
+          target: {
+            kind: "merge-request-note" as const,
+            noteId: 55,
+          },
+          replyBody: "Here is what changed.",
+        },
+      ],
+    }));
+
+    const worker = new ReviewWorker({
+      storage: {
+        stores: {
+          interactionJobs: {
+            get: vi.fn(async () => job),
+          },
+          discussionMappings: {
+            list: vi.fn(async () => []),
+          },
+          modelProfiles: {
+            get: vi.fn(async () => null),
+            find: vi.fn(async () => null),
+          },
+        },
+        getInteractionJobById: vi.fn(async () => job),
+        markJobInProgress: vi.fn(async () => {}),
+        listDiscussionMappings: vi.fn(async () => []),
+        createInteractionRun: vi.fn(async () => ({
+          id: "run_images",
+          interactionJobId: job.id,
+          tenantId: tenant.id,
+          provider: "copilot-sdk",
+          model: null,
+          modelProfileName: null,
+          providerBaseUrl: null,
+          providerType: null,
+          textGenerationModel: null,
+          status: "in_progress" as const,
+          resultJson: null,
+          error: null,
+          startedAt: new Date().toISOString(),
+          finishedAt: null,
+        })),
+        getModelProfileByName: vi.fn(async () => null),
+        getDefaultModelProfile: vi.fn(async () => null),
+        getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+        listPriorReviewFindings: vi.fn(async () => []),
+        completeInteractionRun: vi.fn(async () => {}),
+        replaceReviewFindings: vi.fn(async () => {}),
+        markJobCompleted: vi.fn(async () => {}),
+        failInteractionRun: vi.fn(async () => {}),
+        markJobQueued: vi.fn(async () => {}),
+        markJobFailed: vi.fn(async () => {}),
+      } as never,
+      tenantRegistry: {
+        getTenantById: vi.fn(async () => tenant),
+      } as never,
+      hydrator: {
+        loadRoutingContext: vi.fn(async () => ({
+          tenant,
+          job,
+          mergeRequest: {
+            id: 1,
+            iid: 7,
+            project_id: tenant.projectId,
+            title: "Add worker",
+            description:
+              "Adds the worker ![Diagram](../uploads/xyz789/diagram.png)",
+            web_url:
+              "https://gitlab.example.com/group/project/-/merge_requests/7",
+            source_branch: "feature",
+            target_branch: "main",
+            author: {
+              id: 42,
+              username: "developer",
+              name: "Dev User",
+            },
+          },
+          changes: [],
+          notes: [],
+          discussions: [],
+          workspace: {
+            rootPath: join("tmp", "workspace-routing"),
+            cleanupRoot: join("tmp", "cleanup-routing"),
+            strategy: "git",
+            instructionFiles: [],
+          },
+          projectMemory: {
+            enabled: true,
+            page: null,
+            entries: [],
+          },
+        })),
+        hydrate,
+      } as never,
+      workspaceMaterializer: {
+        cleanup: vi.fn(async () => {}),
+      } as never,
+      reviewProviderFactory: {
+        createProvider: vi.fn(() => ({
+          name: "copilot-sdk",
+          review: vi.fn(),
+        })),
+      },
+      chatterRunnerFactory: {
+        createRunner: vi.fn(() => ({
+          run: chatterRun,
+          sessionPaths: {
+            memory: ["copilot", "chatter", "memory"],
+            reply: ["copilot", "chatter", "reply"],
+          },
+        })),
+      } as never,
+      reconciler: {
+        reconcile: vi.fn(),
+      } as never,
+      logger: createLogger("silent"),
+      runLogDir: join("tmp", "run-logs"),
+      maxJobRetries: 3,
+      retryBackoffMs: 5000,
+    });
+
+    await expect(worker.processJob("job_images")).resolves.toBeUndefined();
+
+    expect(hydrate).not.toHaveBeenCalled();
+    expect(chatterRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachments: [
+          {
+            type: "blob",
+            data: "AQID",
+            mimeType: "image/png",
+            displayName: "trigger-note-55-note-image.png",
+          },
+          {
+            type: "blob",
+            data: "AQID",
+            mimeType: "image/png",
+            displayName: "merge-request-description-diagram.png",
+          },
+        ],
+        reviewContext: expect.objectContaining({
+          attachments: [
+            {
+              sourceKind: "trigger-note",
+              noteId: 55,
+              displayName: "trigger-note-55-note-image.png",
+              contentType: "image/png",
+            },
+            {
+              sourceKind: "merge-request-description",
+              noteId: null,
+              displayName: "merge-request-description-diagram.png",
+              contentType: "image/png",
+            },
+          ],
+        }),
+      }),
+      expect.any(Object),
+    );
+
+    globalThis.fetch = originalFetch;
+  });
+
+  it("completes the run even when chatter reply publishing fails", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const requestUrl = getRequestUrl(input);
+        if (init?.method === "GET") {
+          return createFreshTriggerNoteResponse({ requestUrl, noteId: 56 });
         }
 
         if (requestUrl.includes("/award_emoji")) {
@@ -492,13 +1024,13 @@ describe("ReviewWorker orchestration", () => {
     const originalFetch = globalThis.fetch;
     const fetchMock = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
-        const requestUrl = String(input);
+        const requestUrl = getRequestUrl(input);
         if (init?.method === "GET") {
-          return new Response("[]", {
-            status: 200,
-            headers: {
-              "content-type": "application/json",
-            },
+          return createFreshTriggerNoteResponse({
+            requestUrl,
+            noteId: 77,
+            kind: "discussion-note",
+            discussionId: "disc_77",
           });
         }
 
@@ -747,14 +1279,9 @@ describe("ReviewWorker orchestration", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
-        const requestUrl = String(input);
+        const requestUrl = getRequestUrl(input);
         if (init?.method === "GET") {
-          return new Response("[]", {
-            status: 200,
-            headers: {
-              "content-type": "application/json",
-            },
-          });
+          return createFreshTriggerNoteResponse({ requestUrl, noteId: 58 });
         }
 
         if (requestUrl.includes("/award_emoji")) {
@@ -1098,14 +1625,9 @@ describe("ReviewWorker orchestration", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
-        const requestUrl = String(input);
+        const requestUrl = getRequestUrl(input);
         if (init?.method === "GET") {
-          return new Response("[]", {
-            status: 200,
-            headers: {
-              "content-type": "application/json",
-            },
-          });
+          return createFreshTriggerNoteResponse({ requestUrl, noteId: 59 });
         }
 
         if (requestUrl.includes("/award_emoji")) {

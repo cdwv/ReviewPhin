@@ -89,10 +89,34 @@ export class SqliteStoreDatabase {
         getMany: (ids) => this.getModelProfilesByNames(ids),
         find: (filters) => this.findModelProfileRecord(filters),
         list: (input) => this.listModelProfileRecords(input),
-        upsert: (entity) => this.upsertModelProfileRecord(entity),
-        replace: (entity) => this.replaceModelProfileRecord(entity),
-        update: ({ value }) => this.replaceModelProfileRecord(value),
-        patch: (input) => this.patchModelProfileRecord(input.id, input.value),
+        upsert: async (entity) => {
+          await this.upsertModelProfileRecord(entity);
+        },
+        upsertMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.upsertModelProfileRecord(entity),
+          ),
+        replace: async (entity) => {
+          await this.replaceModelProfileRecord(entity);
+        },
+        replaceMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.replaceModelProfileRecord(entity),
+          ),
+        update: async ({ value }) => {
+          await this.replaceModelProfileRecord(value);
+        },
+        updateMany: (inputs) =>
+          this.applyMany(inputs, ({ value }) =>
+            this.replaceModelProfileRecord(value),
+          ),
+        patch: async (input) => {
+          await this.patchModelProfileRecord(input.id, input.value);
+        },
+        patchMany: (inputs) =>
+          this.applyMany(inputs, (input) =>
+            this.patchModelProfileRecord(input.id, input.value),
+          ),
         delete: (id) => this.deleteModelProfileRecord(id),
         deleteMany: (ids) => this.deleteModelProfileRecords(ids),
       },
@@ -101,10 +125,32 @@ export class SqliteStoreDatabase {
         getMany: (ids) => this.getTenantRecordsByIds(ids),
         find: (filters) => this.findTenantRecord(filters),
         list: (input) => this.listTenantRecords(input),
-        upsert: (entity) => this.upsertTenantRecord(entity),
-        replace: (entity) => this.replaceTenantRecord(entity),
-        update: ({ value }) => this.replaceTenantRecord(value),
-        patch: (input) => this.patchTenantRecord(input.id, input.value),
+        upsert: async (entity) => {
+          await this.upsertTenantRecord(entity);
+        },
+        upsertMany: (entities) =>
+          this.applyMany(entities, (entity) => this.upsertTenantRecord(entity)),
+        replace: async (entity) => {
+          await this.replaceTenantRecord(entity);
+        },
+        replaceMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.replaceTenantRecord(entity),
+          ),
+        update: async ({ value }) => {
+          await this.replaceTenantRecord(value);
+        },
+        updateMany: (inputs) =>
+          this.applyMany(inputs, ({ value }) =>
+            this.replaceTenantRecord(value),
+          ),
+        patch: async (input) => {
+          await this.patchTenantRecord(input.id, input.value);
+        },
+        patchMany: (inputs) =>
+          this.applyMany(inputs, (input) =>
+            this.patchTenantRecord(input.id, input.value),
+          ),
         delete: (id) => this.deleteTenantRecord(id),
         deleteMany: (ids) => this.deleteTenantRecords(ids),
       },
@@ -113,10 +159,34 @@ export class SqliteStoreDatabase {
         getMany: (ids) => this.getInteractionJobRecordsByIds(ids),
         find: (filters) => this.findInteractionJobRecord(filters),
         list: (input) => this.listInteractionJobRecords(input),
-        upsert: (entity) => this.upsertInteractionJobRecord(entity),
-        replace: (entity) => this.replaceInteractionJobRecord(entity),
-        update: ({ value }) => this.replaceInteractionJobRecord(value),
-        patch: (input) => this.patchInteractionJobRecord(input.id, input.value),
+        upsert: async (entity) => {
+          await this.upsertInteractionJobRecord(entity);
+        },
+        upsertMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.upsertInteractionJobRecord(entity),
+          ),
+        replace: async (entity) => {
+          await this.replaceInteractionJobRecord(entity);
+        },
+        replaceMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.replaceInteractionJobRecord(entity),
+          ),
+        update: async ({ value }) => {
+          await this.replaceInteractionJobRecord(value);
+        },
+        updateMany: (inputs) =>
+          this.applyMany(inputs, ({ value }) =>
+            this.replaceInteractionJobRecord(value),
+          ),
+        patch: async (input) => {
+          await this.patchInteractionJobRecord(input.id, input.value);
+        },
+        patchMany: (inputs) =>
+          this.applyMany(inputs, (input) =>
+            this.patchInteractionJobRecord(input.id, input.value),
+          ),
         delete: (id) => this.deleteInteractionJobRecord(id),
         deleteMany: (ids) => this.deleteInteractionJobRecords(ids),
       },
@@ -125,11 +195,34 @@ export class SqliteStoreDatabase {
         getMany: (ids) => this.getMergeRequestSnapshotRecordsByIds(ids),
         find: (filters) => this.findMergeRequestSnapshotRecord(filters),
         list: (input) => this.listMergeRequestSnapshotRecords(input),
-        upsert: (entity) => this.upsertMergeRequestSnapshotRecord(entity),
-        replace: (entity) => this.replaceMergeRequestSnapshotRecord(entity),
-        update: ({ value }) => this.replaceMergeRequestSnapshotRecord(value),
-        patch: (input) =>
-          this.patchMergeRequestSnapshotRecord(input.id, input.value),
+        upsert: async (entity) => {
+          await this.upsertMergeRequestSnapshotRecord(entity);
+        },
+        upsertMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.upsertMergeRequestSnapshotRecord(entity),
+          ),
+        replace: async (entity) => {
+          await this.replaceMergeRequestSnapshotRecord(entity);
+        },
+        replaceMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.replaceMergeRequestSnapshotRecord(entity),
+          ),
+        update: async ({ value }) => {
+          await this.replaceMergeRequestSnapshotRecord(value);
+        },
+        updateMany: (inputs) =>
+          this.applyMany(inputs, ({ value }) =>
+            this.replaceMergeRequestSnapshotRecord(value),
+          ),
+        patch: async (input) => {
+          await this.patchMergeRequestSnapshotRecord(input.id, input.value);
+        },
+        patchMany: (inputs) =>
+          this.applyMany(inputs, (input) =>
+            this.patchMergeRequestSnapshotRecord(input.id, input.value),
+          ),
         delete: (id) => this.deleteMergeRequestSnapshotRecord(id),
         deleteMany: (ids) => this.deleteMergeRequestSnapshotRecords(ids),
       },
@@ -138,10 +231,34 @@ export class SqliteStoreDatabase {
         getMany: (ids) => this.getInteractionRunRecordsByIds(ids),
         find: (filters) => this.findInteractionRunRecord(filters),
         list: (input) => this.listInteractionRunRecords(input),
-        upsert: (entity) => this.upsertInteractionRunRecord(entity),
-        replace: (entity) => this.replaceInteractionRunRecord(entity),
-        update: ({ value }) => this.replaceInteractionRunRecord(value),
-        patch: (input) => this.patchInteractionRunRecord(input.id, input.value),
+        upsert: async (entity) => {
+          await this.upsertInteractionRunRecord(entity);
+        },
+        upsertMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.upsertInteractionRunRecord(entity),
+          ),
+        replace: async (entity) => {
+          await this.replaceInteractionRunRecord(entity);
+        },
+        replaceMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.replaceInteractionRunRecord(entity),
+          ),
+        update: async ({ value }) => {
+          await this.replaceInteractionRunRecord(value);
+        },
+        updateMany: (inputs) =>
+          this.applyMany(inputs, ({ value }) =>
+            this.replaceInteractionRunRecord(value),
+          ),
+        patch: async (input) => {
+          await this.patchInteractionRunRecord(input.id, input.value);
+        },
+        patchMany: (inputs) =>
+          this.applyMany(inputs, (input) =>
+            this.patchInteractionRunRecord(input.id, input.value),
+          ),
         delete: (id) => this.deleteInteractionRunRecord(id),
         deleteMany: (ids) => this.deleteInteractionRunRecords(ids),
       },
@@ -150,11 +267,34 @@ export class SqliteStoreDatabase {
         getMany: (ids) => this.getInteractionRunMetricsRecordsByIds(ids),
         find: (filters) => this.findInteractionRunMetricsRecord(filters),
         list: (input) => this.listInteractionRunMetricsRecords(input),
-        upsert: (entity) => this.upsertInteractionRunMetricsRecord(entity),
-        replace: (entity) => this.replaceInteractionRunMetricsRecord(entity),
-        update: ({ value }) => this.replaceInteractionRunMetricsRecord(value),
-        patch: (input) =>
-          this.patchInteractionRunMetricsRecord(input.id, input.value),
+        upsert: async (entity) => {
+          await this.upsertInteractionRunMetricsRecord(entity);
+        },
+        upsertMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.upsertInteractionRunMetricsRecord(entity),
+          ),
+        replace: async (entity) => {
+          await this.replaceInteractionRunMetricsRecord(entity);
+        },
+        replaceMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.replaceInteractionRunMetricsRecord(entity),
+          ),
+        update: async ({ value }) => {
+          await this.replaceInteractionRunMetricsRecord(value);
+        },
+        updateMany: (inputs) =>
+          this.applyMany(inputs, ({ value }) =>
+            this.replaceInteractionRunMetricsRecord(value),
+          ),
+        patch: async (input) => {
+          await this.patchInteractionRunMetricsRecord(input.id, input.value);
+        },
+        patchMany: (inputs) =>
+          this.applyMany(inputs, (input) =>
+            this.patchInteractionRunMetricsRecord(input.id, input.value),
+          ),
         delete: (id) => this.deleteInteractionRunMetricsRecord(id),
         deleteMany: (ids) => this.deleteInteractionRunMetricsRecords(ids),
       },
@@ -163,10 +303,34 @@ export class SqliteStoreDatabase {
         getMany: (ids) => this.getReviewFindingRecordsByIds(ids),
         find: (filters) => this.findReviewFindingRecord(filters),
         list: (input) => this.listReviewFindingRecords(input),
-        upsert: (entity) => this.upsertReviewFindingRecord(entity),
-        replace: (entity) => this.replaceReviewFindingRecord(entity),
-        update: ({ value }) => this.replaceReviewFindingRecord(value),
-        patch: (input) => this.patchReviewFindingRecord(input.id, input.value),
+        upsert: async (entity) => {
+          await this.upsertReviewFindingRecord(entity);
+        },
+        upsertMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.upsertReviewFindingRecord(entity),
+          ),
+        replace: async (entity) => {
+          await this.replaceReviewFindingRecord(entity);
+        },
+        replaceMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.replaceReviewFindingRecord(entity),
+          ),
+        update: async ({ value }) => {
+          await this.replaceReviewFindingRecord(value);
+        },
+        updateMany: (inputs) =>
+          this.applyMany(inputs, ({ value }) =>
+            this.replaceReviewFindingRecord(value),
+          ),
+        patch: async (input) => {
+          await this.patchReviewFindingRecord(input.id, input.value);
+        },
+        patchMany: (inputs) =>
+          this.applyMany(inputs, (input) =>
+            this.patchReviewFindingRecord(input.id, input.value),
+          ),
         delete: (id) => this.deleteReviewFindingRecord(id),
         deleteMany: (ids) => this.deleteReviewFindingRecords(ids),
       },
@@ -175,15 +339,47 @@ export class SqliteStoreDatabase {
         getMany: (ids) => this.getDiscussionMappingRecordsByIds(ids),
         find: (filters) => this.findDiscussionMappingRecord(filters),
         list: (input) => this.listDiscussionMappingRecords(input),
-        upsert: (entity) => this.upsertDiscussionMappingRecord(entity),
-        replace: (entity) => this.replaceDiscussionMappingRecord(entity),
-        update: ({ value }) => this.replaceDiscussionMappingRecord(value),
-        patch: (input) =>
-          this.patchDiscussionMappingRecord(input.id, input.value),
+        upsert: async (entity) => {
+          await this.upsertDiscussionMappingRecord(entity);
+        },
+        upsertMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.upsertDiscussionMappingRecord(entity),
+          ),
+        replace: async (entity) => {
+          await this.replaceDiscussionMappingRecord(entity);
+        },
+        replaceMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.replaceDiscussionMappingRecord(entity),
+          ),
+        update: async ({ value }) => {
+          await this.replaceDiscussionMappingRecord(value);
+        },
+        updateMany: (inputs) =>
+          this.applyMany(inputs, ({ value }) =>
+            this.replaceDiscussionMappingRecord(value),
+          ),
+        patch: async (input) => {
+          await this.patchDiscussionMappingRecord(input.id, input.value);
+        },
+        patchMany: (inputs) =>
+          this.applyMany(inputs, (input) =>
+            this.patchDiscussionMappingRecord(input.id, input.value),
+          ),
         delete: (id) => this.deleteDiscussionMappingRecord(id),
         deleteMany: (ids) => this.deleteDiscussionMappingRecords(ids),
       },
     };
+  }
+
+  private async applyMany<TInput>(
+    inputs: readonly TInput[],
+    apply: (input: TInput) => Promise<unknown>,
+  ): Promise<void> {
+    for (const input of inputs) {
+      await apply(input);
+    }
   }
 
   private async upsertModelProfile(
@@ -363,8 +559,8 @@ export class SqliteStoreDatabase {
       projectId: tenant.projectId,
       apiToken: tenant.apiToken,
       webhookSecret: tenant.webhookSecret,
-      botUserId: tenant.botUserId ?? null,
-      botUsername: tenant.botUsername ?? null,
+      botUserId: tenant.botUserId,
+      botUsername: tenant.botUsername,
       modelProfileName: resolvedModelProfileName,
       createdAt: now,
       updatedAt: now,
@@ -731,15 +927,57 @@ export class SqliteStoreDatabase {
   private async upsertTenantRecord(
     entity: TenantRecord,
   ): Promise<TenantRecord> {
-    return this.upsertTenant({
-      baseUrl: entity.baseUrl,
-      projectId: entity.projectId,
-      apiToken: entity.apiToken,
-      webhookSecret: entity.webhookSecret,
-      botUserId: entity.botUserId ?? undefined,
-      botUsername: entity.botUsername ?? "",
-      modelProfileName: entity.modelProfileName,
-    });
+    const database = this.getDb();
+
+    if (entity.modelProfileName) {
+      assertModelProfileExists(database, entity.modelProfileName);
+    }
+
+    database
+      .prepare(
+        `
+        INSERT INTO tenants (
+          id,
+          tenant_key,
+          base_url,
+          project_id,
+          api_token,
+          webhook_secret,
+          bot_user_id,
+          bot_username,
+          model_profile_name,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          tenant_key = excluded.tenant_key,
+          base_url = excluded.base_url,
+          project_id = excluded.project_id,
+          api_token = excluded.api_token,
+          webhook_secret = excluded.webhook_secret,
+          bot_user_id = excluded.bot_user_id,
+          bot_username = excluded.bot_username,
+          model_profile_name = excluded.model_profile_name,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at
+      `,
+      )
+      .run(
+        entity.id,
+        entity.key,
+        entity.baseUrl,
+        entity.projectId,
+        entity.apiToken,
+        entity.webhookSecret,
+        entity.botUserId,
+        entity.botUsername,
+        entity.modelProfileName,
+        entity.createdAt,
+        entity.updatedAt,
+      );
+
+    return (await this.getTenantById(entity.id))!;
   }
 
   private async replaceTenantRecord(
@@ -1975,8 +2213,8 @@ function mapTenantRow(row: Row): TenantRecord {
     projectId: asNumber(row.project_id),
     apiToken: asString(row.api_token),
     webhookSecret: asString(row.webhook_secret),
-    botUserId: asNullableNumber(row.bot_user_id),
-    botUsername: asNullableString(row.bot_username),
+    botUserId: asNumber(row.bot_user_id),
+    botUsername: asString(row.bot_username),
     modelProfileName: asNullableString(row.model_profile_name),
     createdAt: asString(row.created_at),
     updatedAt: asString(row.updated_at),

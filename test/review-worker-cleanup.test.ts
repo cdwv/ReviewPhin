@@ -55,8 +55,30 @@ describe("ReviewWorker cleanup", () => {
   it("does not fail a completed job when workspace cleanup throws", async () => {
     const originalFetch = globalThis.fetch;
     const fetchMock = vi.fn(
-      async (_input: URL | RequestInfo, init?: RequestInit) => {
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const requestUrl = String(input);
         if (init?.method === "GET") {
+          if (requestUrl.includes("/merge_requests/7/notes?")) {
+            return new Response(
+              JSON.stringify([
+                {
+                  id: 55,
+                  body: payload.object_attributes.note,
+                  author: payload.user,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  system: false,
+                },
+              ]),
+              {
+                status: 200,
+                headers: {
+                  "content-type": "application/json",
+                },
+              },
+            );
+          }
+
           return new Response("[]", {
             status: 200,
             headers: {
@@ -143,7 +165,9 @@ describe("ReviewWorker cleanup", () => {
       completeInteractionRun: vi.fn(async () => {}),
       replaceReviewFindings: vi.fn(async () => {}),
       markJobCompleted: vi.fn(async () => {}),
+      cancelInteractionRun: vi.fn(async () => {}),
       failInteractionRun: vi.fn(async () => {}),
+      markJobCancelled: vi.fn(async () => {}),
       markJobQueued: vi.fn(async () => {}),
       markJobFailed: vi.fn(async () => {}),
     };
@@ -301,8 +325,30 @@ describe("ReviewWorker cleanup", () => {
   it("fails immediately without retry when profile resolution is invalid", async () => {
     const originalFetch = globalThis.fetch;
     const fetchMock = vi.fn(
-      async (_input: URL | RequestInfo, init?: RequestInit) => {
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const requestUrl = String(input);
         if (init?.method === "GET") {
+          if (requestUrl.includes("/merge_requests/7/notes?")) {
+            return new Response(
+              JSON.stringify([
+                {
+                  id: 55,
+                  body: payload.object_attributes.note,
+                  author: payload.user,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  system: false,
+                },
+              ]),
+              {
+                status: 200,
+                headers: {
+                  "content-type": "application/json",
+                },
+              },
+            );
+          }
+
           return new Response("[]", {
             status: 200,
             headers: {
@@ -389,7 +435,9 @@ describe("ReviewWorker cleanup", () => {
       completeInteractionRun: vi.fn(async () => {}),
       replaceReviewFindings: vi.fn(async () => {}),
       markJobCompleted: vi.fn(async () => {}),
+      cancelInteractionRun: vi.fn(async () => {}),
       failInteractionRun: vi.fn(async () => {}),
+      markJobCancelled: vi.fn(async () => {}),
       markJobQueued: vi.fn(async () => {}),
       markJobFailed: vi.fn(async () => {}),
     };

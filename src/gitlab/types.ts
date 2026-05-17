@@ -96,6 +96,30 @@ export interface GitLabDiscussion {
   notes: GitLabNote[];
 }
 
+export interface GitLabDraftNotePosition {
+  base_sha?: string | null | undefined;
+  start_sha?: string | null | undefined;
+  head_sha?: string | null | undefined;
+  position_type?: "text" | "image" | "file" | null | undefined;
+  old_path?: string | null | undefined;
+  new_path?: string | null | undefined;
+  old_line?: number | null | undefined;
+  new_line?: number | null | undefined;
+  line_range?: Record<string, unknown> | null | undefined;
+}
+
+export interface GitLabDraftNote {
+  id: number;
+  author_id: number;
+  merge_request_id: number;
+  resolve_discussion: boolean;
+  discussion_id?: string | null | undefined;
+  note: string;
+  commit_id?: string | null | undefined;
+  line_code?: string | null | undefined;
+  position?: GitLabDraftNotePosition | null | undefined;
+}
+
 export interface GitLabRepositoryTreeItem {
   id: string;
   name: string;

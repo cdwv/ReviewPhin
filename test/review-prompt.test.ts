@@ -21,6 +21,37 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain(
       "For future reference, we generally avoid snapshot tests",
     );
+    expect(prompt).toContain('"attachments": [');
+    expect(prompt).toContain('"displayName": "trigger-note-55-diagram.png"');
+    expect(prompt).toContain('"contentType": "image/png"');
+  });
+
+  it("surfaces GitLab image download issues in reviewer prompts", () => {
+    const prompt = buildReviewPrompt(
+      createContext(undefined, "direct-mention", "first-pass-full", [
+        {
+          sourceKind: "merge-request-description",
+          noteId: null,
+          displayName: "merge-request-description-architecture.png",
+          status: 503,
+          message:
+            "GitLab image request failed for https://gitlab.example.com/-/project/1085/uploads/missing/architecture.png with 503",
+          url: "https://gitlab.example.com/-/project/1085/uploads/missing/architecture.png",
+        },
+      ]),
+    );
+
+    expect(prompt).toContain("Runtime note:");
+    expect(prompt).toContain(
+      "GitLab failed to download 1 referenced image attachment(s) before this run.",
+    );
+    expect(prompt).toContain(
+      "merge-request-description-architecture.png",
+    );
+    expect(prompt).toContain(
+      '"attachmentIssues": [',
+    );
+    expect(prompt).toContain('"status": 503');
   });
 
   it("caps the amount of project memory included in the prompt context", () => {
@@ -178,12 +209,41 @@ describe("buildReviewPrompt", () => {
       "The prior finding still applies because validation is missing.",
     );
   });
+
+  it("surfaces GitLab image download issues in chatter prompts", () => {
+    const prompt = buildChatterPrompt({
+      phase: "reply",
+      replyStyle: "direct-answer",
+      trigger: createContext().trigger,
+      responseTargets: [createContext().trigger.responseTarget],
+      projectMemory: createContext().projectMemory,
+      reviewContext: createContext(undefined, "direct-mention", "first-pass-full", [
+        {
+          sourceKind: "trigger-note",
+          noteId: 55,
+          displayName: "trigger-note-55-screenshot.png",
+          status: 403,
+          message:
+            "GitLab image request failed for https://gitlab.example.com/-/project/1085/uploads/denied/screenshot.png with 403",
+          url: "https://gitlab.example.com/-/project/1085/uploads/denied/screenshot.png",
+        },
+      ]),
+    });
+
+    expect(prompt).toContain("Runtime note:");
+    expect(prompt).toContain("trigger-note-55-screenshot.png");
+    expect(prompt).toContain('"attachmentIssues": [');
+    expect(prompt).toContain('"status": 403');
+  });
 });
 
 function createContext(
-  entries: Array<{
-    text: string;
-  }> | null = [
+  entries:
+    | Array<{
+        text: string;
+      }>
+    | null
+    | undefined = [
     { text: "Team policy is to prefer pnpm scripts for local development." },
     {
       text: "For future reference, we generally avoid snapshot tests for API responses.",
@@ -191,8 +251,18 @@ function createContext(
   ],
   triggerKind: ReviewContext["trigger"]["kind"] = "direct-mention",
   mode: ReviewContext["scope"]["mode"] = "first-pass-full",
+  attachmentIssues: ReviewContext["attachmentIssues"] = [],
 ): ReviewContext {
   return {
+    attachments: [
+      {
+        sourceKind: "trigger-note",
+        noteId: 55,
+        displayName: "trigger-note-55-diagram.png",
+        contentType: "image/png",
+      },
+    ],
+    attachmentIssues,
     workspacePath: repoPath(),
     mergeRequest: {
       id: 1,

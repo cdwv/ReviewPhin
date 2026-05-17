@@ -3,22 +3,29 @@ import { join } from "node:path";
 
 import { isBotUser } from "../gitlab/bot-user.js";
 import { GitLabClient } from "../gitlab/client.js";
+import {
+  discoverGitLabImageAttachmentReferences,
+  materializeGitLabImageAttachments,
+} from "../gitlab/image-attachments.js";
 import type {
   GitLabDiscussion,
   GitLabNoteHookPayload,
   MaterializedWorkspace,
   TriggerNoteReference,
 } from "../gitlab/types.js";
-import { parseGitLabNoteHook } from "../gitlab/webhook.js";
-import { extractWebhookHeadSha } from "../gitlab/webhook.js";
+import {
+  extractWebhookHeadSha,
+  parseGitLabNoteHook,
+} from "../gitlab/webhook.js";
 import type { MergeRequestContextHydrator } from "../gitlab/hydrator.js";
 import type { WorkspaceMaterializer } from "../gitlab/workspace.js";
-import type { DiscussionReconciler } from "../reconcile/discussion-reconciler.js";
 import {
   buildProviderThreads,
+  type DiscussionReconciler,
   type ReconcileSummary,
 } from "../reconcile/discussion-reconciler.js";
 import type { HarnessChatterRunnerFactory } from "../review/harness-chatter.js";
+import type { HarnessRunAttachments } from "../harness/types.js";
 import { buildInteractionPlan } from "../review/interaction-plan.js";
 import { readHarnessRunMetrics } from "../harness/run-metrics.js";
 import {
@@ -236,6 +243,12 @@ export class ReviewWorker {
         interactionRun.id,
         runArtifacts,
       );
+      triggerNote = await this.requireFreshTriggerNoteReference({
+        client,
+        tenant,
+        mergeRequestIid: job.mergeRequestIid,
+        noteId: job.noteId,
+      });
 
       await this.logRunEvent(runArtifacts, "info", "interaction run started", {
         interactionJobId: job.id,
@@ -307,17 +320,6 @@ export class ReviewWorker {
         routingContext.mergeRequest.iid,
         job.id,
       );
-      let chatterContext = this.buildPromptContext({
-        interactionRunId: interactionRun.id,
-        tenant,
-        job,
-        runArtifacts,
-        trigger,
-        context: routingContext,
-        mappings,
-        priorFindings,
-        previousInteraction,
-      });
       const interactionPlan = buildInteractionPlan({
         trigger,
         previousReviewExists: previousInteraction !== null,
@@ -345,10 +347,31 @@ export class ReviewWorker {
         apiToken: tenant.apiToken,
         memoryEnabled: routingContext.projectMemory.enabled,
       };
+      const imageAttachments = await this.materializeImageAttachments({
+        client,
+        gitLabBaseUrl: tenant.baseUrl,
+        mergeRequest: routingContext.mergeRequest,
+        runArtifacts,
+        trigger,
+      });
+      let chatterContext = this.buildPromptContext({
+        attachments: imageAttachments.breadcrumbs,
+        attachmentIssues: imageAttachments.issues,
+        interactionRunId: interactionRun.id,
+        tenant,
+        job,
+        runArtifacts,
+        trigger,
+        context: routingContext,
+        mappings,
+        priorFindings,
+        previousInteraction,
+      });
 
       if (interactionPlan.memoryCandidate) {
         const memoryResult = await chatterRunner.run(
           {
+            attachments: imageAttachments.attachments,
             trigger,
             responseTargets: interactionPlan.responseTargets,
             projectMemory: chatterContext.projectMemory,
@@ -388,6 +411,8 @@ export class ReviewWorker {
         });
         workspacesToCleanup.push(routingContext.workspace);
         chatterContext = this.buildPromptContext({
+          attachments: imageAttachments.breadcrumbs,
+          attachmentIssues: imageAttachments.issues,
           interactionRunId: interactionRun.id,
           tenant,
           job,
@@ -424,6 +449,8 @@ export class ReviewWorker {
           job.id,
         );
         reviewContext = this.buildPromptContext({
+          attachments: imageAttachments.breadcrumbs,
+          attachmentIssues: imageAttachments.issues,
           interactionRunId: interactionRun.id,
           tenant,
           job,
@@ -450,6 +477,7 @@ export class ReviewWorker {
         );
 
         reviewResult = await reviewProvider.review(reviewContext, {
+          attachments: imageAttachments.attachments,
           tenant: {
             ...harnessTenantContext,
             memoryEnabled: hydratedContext.projectMemory.enabled,
@@ -524,6 +552,7 @@ export class ReviewWorker {
       if (interactionPlan.replyNeeded) {
         const replyResult = await chatterRunner.run(
           {
+            attachments: imageAttachments.attachments,
             trigger,
             responseTargets: interactionPlan.responseTargets,
             projectMemory:
@@ -621,11 +650,18 @@ export class ReviewWorker {
         "interaction job completed",
       );
     } catch (error) {
+      const errorMessage = getErrorMessage(error);
+      const isAbandonedReview = error instanceof AbandonedReviewError;
+
       if (interactionRunId) {
-        await this.storage.failInteractionRun(
-          interactionRunId,
-          getErrorMessage(error),
-        );
+        if (isAbandonedReview) {
+          await this.storage.cancelInteractionRun(
+            interactionRunId,
+            errorMessage,
+          );
+        } else {
+          await this.storage.failInteractionRun(interactionRunId, errorMessage);
+        }
       }
 
       if (runArtifacts) {
@@ -642,15 +678,20 @@ export class ReviewWorker {
       }
 
       const nextRetryCount = job.retryCount + 1;
+      if (isAbandonedReview) {
+        await this.storage.markJobCancelled(
+          job.id,
+          nextRetryCount,
+          errorMessage,
+        );
+        throw error;
+      }
+
       if (
         !isNonRetryableReviewError(error) &&
         nextRetryCount <= this.maxJobRetries
       ) {
-        await this.storage.markJobQueued(
-          job.id,
-          nextRetryCount,
-          getErrorMessage(error),
-        );
+        await this.storage.markJobQueued(job.id, nextRetryCount, errorMessage);
         this.logger.warn(
           {
             err: error,
@@ -662,11 +703,7 @@ export class ReviewWorker {
         return { requeueAfterMs: this.retryBackoffMs * nextRetryCount };
       }
 
-      await this.storage.markJobFailed(
-        job.id,
-        nextRetryCount,
-        getErrorMessage(error),
-      );
+      await this.storage.markJobFailed(job.id, nextRetryCount, errorMessage);
       if (client && triggerNote) {
         await this.ensureTriggerNoteReaction(
           client,
@@ -789,6 +826,39 @@ export class ReviewWorker {
     }
   }
 
+  private async requireFreshTriggerNoteReference(input: {
+    client: GitLabClient;
+    tenant: TenantRecord;
+    mergeRequestIid: number;
+    noteId: number;
+  }): Promise<TriggerNoteReference> {
+    const [notes, discussions] = await Promise.all([
+      input.client.listMergeRequestNotes(
+        input.tenant.projectId,
+        input.mergeRequestIid,
+        { noCache: true },
+      ),
+      input.client.listMergeRequestDiscussions(
+        input.tenant.projectId,
+        input.mergeRequestIid,
+        { noCache: true },
+      ),
+    ]);
+
+    const noteExists =
+      notes.some((note) => note.id === input.noteId) ||
+      discussions.some((discussion) =>
+        discussion.notes.some((note) => note.id === input.noteId),
+      );
+    if (!noteExists) {
+      throw new AbandonedReviewError(
+        `Trigger note ${input.noteId} no longer exists on merge request ${input.mergeRequestIid}`,
+      );
+    }
+
+    return locateTriggerNoteReference(discussions, input.noteId);
+  }
+
   private async logRunEvent(
     runArtifacts: InteractionRunArtifacts,
     level: "debug" | "info" | "warn" | "error",
@@ -900,6 +970,8 @@ export class ReviewWorker {
   }
 
   private buildPromptContext(input: {
+    attachments: ReviewContext["attachments"];
+    attachmentIssues: ReviewContext["attachmentIssues"];
     interactionRunId: string;
     tenant: TenantRecord;
     job: InteractionJobRecord;
@@ -921,6 +993,8 @@ export class ReviewWorker {
     previousInteraction: PreviousCompletedInteractionRecord | null;
   }): ReviewContext {
     return buildScopedReviewContext({
+      attachments: input.attachments,
+      attachmentIssues: input.attachmentIssues,
       workspacePath: input.context.workspace.rootPath,
       mergeRequest: input.context.mergeRequest,
       changes: input.context.changes,
@@ -966,6 +1040,67 @@ export class ReviewWorker {
         runDirectory: input.runArtifacts.runDirectory,
       },
     });
+  }
+
+  private async materializeImageAttachments(input: {
+    client: GitLabClient;
+    gitLabBaseUrl: string;
+    mergeRequest: ReviewContext["mergeRequest"];
+    runArtifacts: InteractionRunArtifacts;
+    trigger: ReviewContext["trigger"];
+  }): Promise<{
+    attachments: HarnessRunAttachments;
+    breadcrumbs: ReviewContext["attachments"];
+    issues: ReviewContext["attachmentIssues"];
+  }> {
+    const references = discoverGitLabImageAttachmentReferences({
+      gitLabBaseUrl: input.gitLabBaseUrl,
+      mergeRequest: input.mergeRequest,
+      triggerNote: {
+        body: input.trigger.body,
+        noteId: input.trigger.noteId,
+      },
+    });
+    if (references.length === 0) {
+      return {
+        attachments: [],
+        breadcrumbs: [],
+        issues: [],
+      };
+    }
+
+    const materialized = await materializeGitLabImageAttachments({
+      client: input.client,
+      references,
+    });
+    await input.runArtifacts.writeJsonArtifact(
+      join("orchestration", "image-attachments.json"),
+      {
+        attachmentCount: materialized.attachments.length,
+        attachments: materialized.breadcrumbs,
+        issues: materialized.issues,
+        skipped: materialized.skipped,
+      },
+    );
+    if (materialized.issues.length > 0) {
+      await this.logRunEvent(
+        input.runArtifacts,
+        "warn",
+        "gitlab image attachment downloads failed for some referenced images; continuing with partial image context",
+        {
+          issueCount: materialized.issues.length,
+          attachmentCount: materialized.attachments.length,
+          triggerNoteId: input.trigger.noteId,
+          issues: materialized.issues,
+        },
+      );
+    }
+
+    return {
+      attachments: materialized.attachments,
+      breadcrumbs: materialized.breadcrumbs,
+      issues: materialized.issues,
+    };
   }
 
   private async publishChatterReplies(input: {
@@ -1111,5 +1246,15 @@ function serializeError(error: unknown): Record<string, unknown> {
 }
 
 function isNonRetryableReviewError(error: unknown): boolean {
-  return error instanceof ModelProfileConfigurationError;
+  return (
+    error instanceof ModelProfileConfigurationError ||
+    error instanceof AbandonedReviewError
+  );
+}
+
+class AbandonedReviewError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = "AbandonedReviewError";
+  }
 }

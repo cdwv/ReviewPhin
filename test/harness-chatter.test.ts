@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { HarnessChatterRunner } from "../src/review/harness-chatter.js";
 import type { HarnessModelConfig } from "../src/harness/types.js";
+import type { ReviewContext } from "../src/review/types.js";
 
 describe("HarnessChatterRunner", () => {
   it("uses the text-generation model and memory-only tool exposure for memory passes", async () => {
@@ -29,6 +30,14 @@ describe("HarnessChatterRunner", () => {
 
     const result = await runner.run(
       {
+        attachments: [
+          {
+            type: "blob",
+            data: "AQID",
+            mimeType: "image/png",
+            displayName: "trigger-note-55-diagram.png",
+          },
+        ],
         phase: "memory",
         replyStyle: "summary-follow-up",
         trigger: createTrigger(),
@@ -55,6 +64,14 @@ describe("HarnessChatterRunner", () => {
     const firstCall = run.mock.calls.at(0) as [unknown] | undefined;
     expect(firstCall?.[0]).toEqual(
       expect.objectContaining({
+        attachments: [
+          {
+            type: "blob",
+            data: "AQID",
+            mimeType: "image/png",
+            displayName: "trigger-note-55-diagram.png",
+          },
+        ],
         model: "gpt-5.4-mini",
         workingDirectory: "H:\\repo",
         tools: ["glob", "rg", "view", "add_memory_entry"],
@@ -85,6 +102,14 @@ describe("HarnessChatterRunner", () => {
 
     await runner.run(
       {
+        attachments: [
+          {
+            type: "blob",
+            data: "AQID",
+            mimeType: "image/png",
+            displayName: "trigger-note-55-diagram.png",
+          },
+        ],
         phase: "reply",
         replyStyle: "direct-answer",
         trigger: createTrigger(),
@@ -110,6 +135,14 @@ describe("HarnessChatterRunner", () => {
     const firstCall = run.mock.calls.at(0) as [unknown] | undefined;
     expect(firstCall?.[0]).toEqual(
       expect.objectContaining({
+        attachments: [
+          {
+            type: "blob",
+            data: "AQID",
+            mimeType: "image/png",
+            displayName: "trigger-note-55-diagram.png",
+          },
+        ],
         workingDirectory: "H:\\repo",
         tools: ["glob", "rg", "view"],
         metadata: {
@@ -149,6 +182,14 @@ describe("HarnessChatterRunner", () => {
     await expect(
       runner.run(
         {
+          attachments: [
+            {
+              type: "blob",
+              data: "AQID",
+              mimeType: "image/png",
+              displayName: "trigger-note-55-diagram.png",
+            },
+          ],
           phase: "reply",
           replyStyle: "direct-answer",
           trigger: createTrigger(),
@@ -210,8 +251,17 @@ function createTrigger() {
   };
 }
 
-function createReviewContext() {
+function createReviewContext(): ReviewContext {
   return {
+    attachments: [
+      {
+        sourceKind: "trigger-note",
+        noteId: 55,
+        displayName: "trigger-note-55-diagram.png",
+        contentType: "image/png",
+      },
+    ],
+    attachmentIssues: [],
     workspacePath: "H:\\repo",
     mergeRequest: {
       id: 1,
