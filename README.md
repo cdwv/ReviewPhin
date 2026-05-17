@@ -18,6 +18,8 @@ All model calls go through configured harness (currently Copilot CLI, but more m
 
 Everything is yours: Storage, Copilot subscription or custom models. **You know what you pay for because it's all yours.**
 
+*Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWave](https://codewave.eu)*
+
 
 ## Table of Contents
 
