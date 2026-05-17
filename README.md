@@ -7,7 +7,7 @@
   Run on your own infrastructure. Bring your own model. Use your own agent subscription to pay per review, not per developer.
 
   [![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)
-  [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+  [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](LICENSE)
 </div>
 
 ---
