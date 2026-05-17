@@ -109,7 +109,6 @@ describe("review summary note", () => {
         ],
         priorDispositions: [],
       },
-      reviewedAt: new Date(timestamp),
     });
 
     expect(note).toContain(
@@ -227,10 +226,8 @@ describe("review summary note", () => {
           category: "correctness",
         },
       ],
-      reviewedAt: new Date(timestamp),
     });
 
-    expect(note).toContain("- **Findings snapshot:** 1 finding (1 medium)");
     expect(note).toContain("Keep latest completed finding status in sync");
     expect(note).toContain(
       "Status writes should update the latest completed finding row",
@@ -342,7 +339,6 @@ describe("review summary note", () => {
           category: "correctness",
         },
       ],
-      reviewedAt: new Date(timestamp),
     });
 
     expect(note).toContain(

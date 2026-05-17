@@ -70,6 +70,30 @@ const followUpPayload: GitLabNoteHookPayload = {
 describe("GitLab reactions", () => {
   const originalFetch = globalThis.fetch;
 
+  function createFreshTriggerNoteListResponse(noteId: number): Response {
+    return new Response(
+      JSON.stringify([
+        {
+          id: noteId,
+          body:
+            noteId === followUpPayload.object_attributes.id
+              ? followUpPayload.object_attributes.note
+              : directMentionPayload.object_attributes.note,
+          author: directMentionPayload.user,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          system: false,
+        },
+      ]),
+      {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      },
+    );
+  }
+
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
@@ -145,6 +169,13 @@ describe("GitLab reactions", () => {
     const fetchMock = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
         const url = String(input);
+        if (
+          init?.method === "GET" &&
+          url.includes("/merge_requests/7/notes?")
+        ) {
+          return createFreshTriggerNoteListResponse(55);
+        }
+
         if (init?.method === "GET" && url.includes("/discussions?")) {
           return new Response("[]", {
             status: 200,
@@ -231,6 +262,13 @@ describe("GitLab reactions", () => {
     const fetchMock = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
         const url = String(input);
+        if (
+          init?.method === "GET" &&
+          url.includes("/merge_requests/7/notes?")
+        ) {
+          return createFreshTriggerNoteListResponse(55);
+        }
+
         if (init?.method === "GET" && url.includes("/discussions?")) {
           return new Response("[]", {
             status: 200,
@@ -312,6 +350,13 @@ describe("GitLab reactions", () => {
     const fetchMock = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
         const url = String(input);
+        if (
+          init?.method === "GET" &&
+          url.includes("/merge_requests/7/notes?")
+        ) {
+          return createFreshTriggerNoteListResponse(55);
+        }
+
         if (init?.method === "GET" && url.includes("/discussions?")) {
           return new Response("[]", {
             status: 200,
@@ -415,6 +460,13 @@ describe("GitLab reactions", () => {
     const fetchMock = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
         const url = String(input);
+        if (
+          init?.method === "GET" &&
+          url.includes("/merge_requests/7/notes?")
+        ) {
+          return createFreshTriggerNoteListResponse(56);
+        }
+
         if (init?.method === "GET" && url.includes("/discussions?")) {
           return new Response(JSON.stringify(discussions), {
             status: 200,
@@ -539,7 +591,9 @@ function createWorker(input: {
     completeInteractionRun: vi.fn(async () => {}),
     replaceReviewFindings: vi.fn(async () => {}),
     markJobCompleted: vi.fn(async () => {}),
+    cancelInteractionRun: vi.fn(async () => {}),
     failInteractionRun: vi.fn(async () => {}),
+    markJobCancelled: vi.fn(async () => {}),
     markJobQueued: vi.fn(async () => {}),
     markJobFailed: vi.fn(async () => {}),
   };

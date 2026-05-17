@@ -6,6 +6,7 @@ import type { GitLabHttpLogEntry } from "../review/run-artifacts.js";
 import type {
   GitLabAwardEmoji,
   GitLabDiscussion,
+  GitLabDraftNote,
   GitLabDiffPosition,
   GitLabMergeRequest,
   GitLabMergeRequestChange,
@@ -16,7 +17,11 @@ import type {
   GitLabWikiPage,
   TriggerNoteReference,
 } from "./types.js";
-import { buildGitLabApiUrl, normalizeGitLabBaseUrl } from "./url.js";
+import {
+  buildGitLabApiUrl,
+  normalizeGitLabBaseUrl,
+  urlMatchesGitLabBase,
+} from "./url.js";
 
 interface GitLabClientOptions {
   baseUrl: string;
@@ -45,6 +50,53 @@ export class GitLabApiError extends Error {
     this.status = status;
     this.responseBody = responseBody;
     this.requestUrl = requestUrl;
+  }
+}
+
+const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const SUPPORTED_IMAGE_MIME_TYPES = new Set([
+  "image/gif",
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+]);
+
+export interface GitLabDownloadedImage {
+  data: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export class GitLabImageDownloadError extends Error {
+  public readonly contentType: string | null;
+  public readonly reason:
+    | "empty"
+    | "invalid-url"
+    | "off-host"
+    | "too-large"
+    | "unsupported-mime";
+  public readonly sizeBytes: number | null;
+  public readonly url: string;
+
+  public constructor(input: {
+    contentType?: string | null | undefined;
+    message: string;
+    reason:
+      | "empty"
+      | "invalid-url"
+      | "off-host"
+      | "too-large"
+      | "unsupported-mime";
+    sizeBytes?: number | null | undefined;
+    url: string;
+  }) {
+    super(input.message);
+    this.name = "GitLabImageDownloadError";
+    this.reason = input.reason;
+    this.url = input.url;
+    this.contentType = input.contentType ?? null;
+    this.sizeBytes = input.sizeBytes ?? null;
   }
 }
 
@@ -172,18 +224,62 @@ export class GitLabClient {
   public async listMergeRequestNotes(
     projectId: number,
     mergeRequestIid: number,
+    options: { noCache?: boolean } = {},
   ): Promise<GitLabNote[]> {
     return this.requestPaginated<GitLabNote>(
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes`,
+      {},
+      options,
     );
   }
 
   public async listMergeRequestDiscussions(
     projectId: number,
     mergeRequestIid: number,
+    options: { noCache?: boolean } = {},
   ): Promise<GitLabDiscussion[]> {
     return this.requestPaginated<GitLabDiscussion>(
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions`,
+      {},
+      options,
+    );
+  }
+
+  public async createMergeRequestDraftNote(
+    projectId: number,
+    mergeRequestIid: number,
+    input: { note: string; position?: GitLabDiffPosition | null | undefined },
+  ): Promise<GitLabDraftNote> {
+    const payload: Record<string, unknown> = { note: input.note };
+    if (input.position) {
+      payload.position = input.position;
+    }
+
+    return this.requestForm<GitLabDraftNote>(
+      "POST",
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/draft_notes`,
+      payload,
+    );
+  }
+
+  public async deleteMergeRequestDraftNote(
+    projectId: number,
+    mergeRequestIid: number,
+    draftNoteId: number,
+  ): Promise<void> {
+    return this.requestFormVoid(
+      "DELETE",
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/draft_notes/${draftNoteId}`,
+    );
+  }
+
+  public async bulkPublishMergeRequestDraftNotes(
+    projectId: number,
+    mergeRequestIid: number,
+  ): Promise<void> {
+    return this.requestFormVoid(
+      "POST",
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/draft_notes/bulk_publish`,
     );
   }
 
@@ -367,6 +463,168 @@ export class GitLabClient {
       `/projects/${encodeURIComponent(String(projectId))}/repository/archive.tar.gz`,
       { sha: ref },
     );
+  }
+
+  public async downloadImage(
+    url: string,
+    options: {
+      maxBytes?: number | undefined;
+    } = {},
+  ): Promise<GitLabDownloadedImage> {
+    let requestUrl: URL;
+    try {
+      requestUrl = new URL(url);
+    } catch {
+      throw new GitLabImageDownloadError({
+        message: `GitLab image URL is invalid: ${url}`,
+        reason: "invalid-url",
+        url,
+      });
+    }
+
+    if (!urlMatchesGitLabBase(requestUrl.toString(), this.baseUrl)) {
+      throw new GitLabImageDownloadError({
+        message: `GitLab image URL is off-host and will be skipped: ${requestUrl.toString()}`,
+        reason: "off-host",
+        url: requestUrl.toString(),
+      });
+    }
+
+    const maxBytes = options.maxBytes ?? DEFAULT_MAX_IMAGE_BYTES;
+    const downloadUrl =
+      deriveProjectMarkdownUploadApiUrl(requestUrl, this.baseUrl) ?? requestUrl;
+    const requestId = randomUUID();
+    const startedAt = Date.now();
+    const requestPath = `${downloadUrl.pathname}${downloadUrl.search}`;
+    await this.logGitLabRequest({
+      timestamp: new Date().toISOString(),
+      requestId,
+      phase: "request",
+      method: "GET",
+      path: requestPath,
+      requestUrl: downloadUrl.toString(),
+      request: {
+        headers: {
+          accept: "image/*, */*",
+        },
+      },
+    });
+
+    const response = await fetch(downloadUrl, {
+      method: "GET",
+      headers: this.buildHeaders({
+        accept: "image/*, */*",
+      }),
+    });
+
+    if (!response.ok) {
+      const responseBody = await response.text();
+      await this.logGitLabRequest({
+        timestamp: new Date().toISOString(),
+        requestId,
+        phase: "error",
+        method: "GET",
+        path: requestPath,
+        requestUrl: downloadUrl.toString(),
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        response: {
+          headers: summarizeHeaders(response.headers),
+          body: truncateForLog(responseBody),
+        },
+      });
+      throw new GitLabApiError(
+        `GitLab image request failed for ${downloadUrl.toString()} with ${response.status}`,
+        response.status,
+        responseBody,
+        downloadUrl.toString(),
+      );
+    }
+
+    const contentType = normalizeMimeType(response.headers.get("content-type"));
+    if (!contentType || !SUPPORTED_IMAGE_MIME_TYPES.has(contentType)) {
+      await this.logGitLabRequest({
+        timestamp: new Date().toISOString(),
+        requestId,
+        phase: "error",
+        method: "GET",
+        path: requestPath,
+        requestUrl: downloadUrl.toString(),
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        response: {
+          headers: summarizeHeaders(response.headers),
+          body: {
+            kind: "binary",
+            size: parseContentLength(response.headers.get("content-length")),
+          },
+        },
+      });
+      throw new GitLabImageDownloadError({
+        contentType,
+        message: `GitLab image response content type is unsupported: ${contentType ?? "missing"}`,
+        reason: "unsupported-mime",
+        url: downloadUrl.toString(),
+      });
+    }
+
+    const declaredSize = parseContentLength(
+      response.headers.get("content-length"),
+    );
+    if (declaredSize !== null && declaredSize > maxBytes) {
+      await this.logGitLabRequest({
+        timestamp: new Date().toISOString(),
+        requestId,
+        phase: "error",
+        method: "GET",
+        path: requestPath,
+        requestUrl: downloadUrl.toString(),
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        response: {
+          headers: summarizeHeaders(response.headers),
+          body: {
+            kind: "binary",
+            size: declaredSize,
+          },
+        },
+      });
+      throw new GitLabImageDownloadError({
+        contentType,
+        message: `GitLab image exceeds the ${maxBytes} byte limit`,
+        reason: "too-large",
+        sizeBytes: declaredSize,
+        url: downloadUrl.toString(),
+      });
+    }
+
+    const buffer = await readResponseBuffer(response, maxBytes, {
+      contentType,
+      url: downloadUrl.toString(),
+    });
+    await this.logGitLabRequest({
+      timestamp: new Date().toISOString(),
+      requestId,
+      phase: "response",
+      method: "GET",
+      path: requestPath,
+      requestUrl: downloadUrl.toString(),
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      response: {
+        headers: summarizeHeaders(response.headers),
+        body: {
+          kind: "binary",
+          size: buffer.byteLength,
+        },
+      },
+    });
+
+    return {
+      data: buffer.toString("base64"),
+      mimeType: contentType,
+      sizeBytes: buffer.byteLength,
+    };
   }
 
   public async listRepositoryTree(
@@ -693,9 +951,87 @@ export class GitLabClient {
     return JSON.parse(responseBody) as T;
   }
 
+  private async requestFormVoid(
+    method: "POST" | "PUT" | "DELETE",
+    path: string,
+    payload: Record<string, unknown> = {},
+  ): Promise<void> {
+    const body = new URLSearchParams();
+    appendFormValue(body, payload);
+
+    const requestUrl = this.buildUrl(path);
+    const requestId = randomUUID();
+    const startedAt = Date.now();
+    await this.logGitLabRequest({
+      timestamp: new Date().toISOString(),
+      requestId,
+      phase: "request",
+      method,
+      path,
+      requestUrl: requestUrl.toString(),
+      request: {
+        headers: {
+          accept: "application/json",
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: payload,
+      },
+    });
+    const response = await fetch(requestUrl, {
+      method,
+      headers: this.buildHeaders({
+        "content-type": "application/x-www-form-urlencoded",
+      }),
+      body,
+    });
+
+    const responseBody = await response.text();
+    if (!response.ok) {
+      await this.logGitLabRequest({
+        timestamp: new Date().toISOString(),
+        requestId,
+        phase: "error",
+        method,
+        path,
+        requestUrl: requestUrl.toString(),
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        request: {
+          body: payload,
+        },
+        response: {
+          headers: summarizeHeaders(response.headers),
+          body: truncateForLog(responseBody),
+        },
+      });
+      throw new GitLabApiError(
+        `GitLab form request failed for ${method} ${path} with ${response.status}`,
+        response.status,
+        responseBody,
+        requestUrl.toString(),
+      );
+    }
+
+    await this.logGitLabRequest({
+      timestamp: new Date().toISOString(),
+      requestId,
+      phase: "response",
+      method,
+      path,
+      requestUrl: requestUrl.toString(),
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      response: {
+        headers: summarizeHeaders(response.headers),
+        body: truncateForLog(responseBody),
+      },
+    });
+  }
+
   private async requestPaginated<T>(
     path: string,
     query: Record<string, string | number | undefined> = {},
+    options: { noCache?: boolean } = {},
   ): Promise<T[]> {
     const items: T[] = [];
     let page = 1;
@@ -708,6 +1044,13 @@ export class GitLabClient {
       });
       const requestId = randomUUID();
       const startedAt = Date.now();
+      const requestHeaders: Record<string, string> = {
+        accept: "application/json",
+      };
+      if (options.noCache) {
+        requestHeaders["cache-control"] = "no-cache";
+        requestHeaders.pragma = "no-cache";
+      }
       await this.logGitLabRequest({
         timestamp: new Date().toISOString(),
         requestId,
@@ -721,14 +1064,12 @@ export class GitLabClient {
             page,
             per_page: 100,
           },
-          headers: {
-            accept: "application/json",
-          },
+          headers: requestHeaders,
         },
       });
       const response = await fetch(requestUrl, {
         method: "GET",
-        headers: this.buildHeaders(),
+        headers: this.buildHeaders(requestHeaders),
       });
 
       const responseBody = await response.text();
@@ -886,4 +1227,141 @@ function truncateForLog(value: unknown, maxLength = 20_000): unknown {
   }
 
   return `${value.slice(0, maxLength)}…[truncated ${value.length - maxLength} chars]`;
+}
+
+function normalizeMimeType(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const [mimeType] = value.split(";", 1);
+  const normalized = mimeType?.trim().toLowerCase();
+  return normalized && normalized.length > 0 ? normalized : null;
+}
+
+function deriveProjectMarkdownUploadApiUrl(
+  url: URL,
+  baseUrl: string,
+): URL | null {
+  const normalizedBase = new URL(normalizeGitLabBaseUrl(baseUrl));
+  if (url.origin !== normalizedBase.origin) {
+    return null;
+  }
+
+  const basePath = stripTrailingSlashes(normalizedBase.pathname);
+  const normalizedPath = stripTrailingSlashes(url.pathname);
+  const relativePath =
+    basePath === ""
+      ? normalizedPath
+      : normalizedPath.startsWith(`${basePath}/`)
+        ? normalizedPath.slice(basePath.length)
+        : null;
+  if (!relativePath) {
+    return null;
+  }
+
+  const match = relativePath.match(
+    /^\/-\/project\/(?<projectId>[^/]+)\/uploads\/(?<secret>[^/]+)\/(?<filename>[^/]+)$/,
+  );
+  if (!match?.groups) {
+    return null;
+  }
+
+  const { projectId, secret, filename } = match.groups;
+  if (!projectId || !secret || !filename) {
+    return null;
+  }
+
+  return buildGitLabApiUrl(
+    normalizedBase.toString(),
+    `/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(secret)}/${encodeURIComponent(filename)}`,
+  );
+}
+
+function stripTrailingSlashes(value: string): string {
+  if (value === "/") {
+    return "";
+  }
+
+  return value.replace(/\/+$/, "");
+}
+
+function parseContentLength(value: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+async function readResponseBuffer(
+  response: Response,
+  maxBytes: number,
+  context: {
+    contentType: string;
+    url: string;
+  },
+): Promise<Buffer> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    if (buffer.byteLength === 0) {
+      throw new GitLabImageDownloadError({
+        contentType: context.contentType,
+        message: "GitLab image response was empty",
+        reason: "empty",
+        url: context.url,
+      });
+    }
+    if (buffer.byteLength > maxBytes) {
+      throw new GitLabImageDownloadError({
+        contentType: context.contentType,
+        message: `GitLab image exceeds the ${maxBytes} byte limit`,
+        reason: "too-large",
+        sizeBytes: buffer.byteLength,
+        url: context.url,
+      });
+    }
+    return buffer;
+  }
+
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    if (!value) {
+      continue;
+    }
+
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      await reader.cancel();
+      throw new GitLabImageDownloadError({
+        contentType: context.contentType,
+        message: `GitLab image exceeds the ${maxBytes} byte limit`,
+        reason: "too-large",
+        sizeBytes: totalBytes,
+        url: context.url,
+      });
+    }
+
+    chunks.push(Buffer.from(value));
+  }
+
+  if (totalBytes === 0) {
+    throw new GitLabImageDownloadError({
+      contentType: context.contentType,
+      message: "GitLab image response was empty",
+      reason: "empty",
+      url: context.url,
+    });
+  }
+
+  return Buffer.concat(chunks, totalBytes);
 }

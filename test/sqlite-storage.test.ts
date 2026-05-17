@@ -865,3 +865,94 @@ async function createFailedRun(
   );
   await storage.failInteractionRun(run.id, "synthetic failure");
 }
+
+async function createCancelledRun(
+  storage: StorageHelpers,
+  tenantId: string,
+  projectId: number,
+  mergeRequestIid: number,
+  noteId: number,
+  headSha: string,
+  findings: CreateReviewFindingInput[],
+): Promise<void> {
+  const job = await storage.createOrGetInteractionJob({
+    tenantId,
+    dedupeKey: `cancelled-job-${noteId}`,
+    projectId,
+    mergeRequestIid,
+    noteId,
+    headSha,
+    payloadJson: "{}",
+  });
+  const run = await storage.createInteractionRun({
+    interactionJobId: job.job.id,
+    tenantId,
+    provider: "copilot-sdk",
+    model: null,
+    modelProfileName: null,
+    providerBaseUrl: null,
+    providerType: null,
+    textGenerationModel: null,
+  });
+  await storage.replaceReviewFindings(
+    run.id,
+    findings.map((finding) => ({
+      ...finding,
+      interactionRunId: run.id,
+    })),
+  );
+  await storage.cancelInteractionRun(run.id, "synthetic cancellation");
+  await storage.markJobCancelled(job.job.id, 1, "synthetic cancellation");
+}
+
+describe("SqliteStorage cancelled runs", () => {
+  it("persists cancelled job and run statuses and removes run findings", async () => {
+    const databasePath = join(
+      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      "storage.sqlite",
+    );
+    const storage = await openSqliteTestStorage(databasePath);
+    const tenant = await storage.upsertTenant({
+      baseUrl: "https://gitlab.example.com",
+      projectId: 123,
+      apiToken: "token",
+      webhookSecret: "secret",
+      botUserId: 999,
+      botUsername: "review-bot",
+    });
+
+    await createCancelledRun(
+      storage,
+      tenant.id,
+      tenant.projectId,
+      7,
+      88,
+      "head-cancelled",
+      [
+        createFinding({
+          identityKey: "cancelled-finding",
+          title: "Cancelled finding",
+          body: "This finding should be removed on cancellation.",
+          status: "open",
+        }),
+      ],
+    );
+
+    const cancelledJob = await storage.stores.interactionJobs.find({
+      dedupeKey: { eq: "cancelled-job-88" },
+    });
+    expect(cancelledJob?.status).toBe("cancelled");
+    expect(cancelledJob?.lastError).toBe("synthetic cancellation");
+
+    const cancelledRun = await storage.stores.interactionRuns.find({
+      interactionJobId: { eq: cancelledJob?.id ?? "missing" },
+    });
+    expect(cancelledRun?.status).toBe("cancelled");
+    expect(cancelledRun?.error).toBe("synthetic cancellation");
+
+    const remainingFindings = await listAll(storage.stores.reviewFindings, {
+      filters: { interactionRunId: { eq: cancelledRun?.id ?? "missing" } },
+    });
+    expect(remainingFindings).toEqual([]);
+  });
+});

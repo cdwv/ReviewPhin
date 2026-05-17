@@ -66,23 +66,15 @@ export function parseGitLabNoteHook(payload: unknown): GitLabNoteHookPayload {
 
 export function containsBotMention(
   noteBody: string,
-  botUsername: string | null,
+  botUsername: string,
 ): boolean {
-  if (!botUsername) {
-    return false;
-  }
-
   return buildBotMentionPattern(botUsername).test(noteBody);
 }
 
 export function extractBotMentionInstruction(
   noteBody: string,
-  botUsername: string | null,
+  botUsername: string,
 ): string | null {
-  if (!botUsername) {
-    return null;
-  }
-
   const instruction = noteBody
     .replace(buildBotMentionPattern(botUsername, "ig"), "$1")
     .replace(/\s+/g, " ")

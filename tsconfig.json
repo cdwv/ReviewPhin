@@ -14,7 +14,7 @@
     "allowSyntheticDefaultImports": true,
     "outDir": "dist",
     "rootDir": ".",
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals", "./src/storage/adapters/flotiq/flotiq-api.d.ts"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"],
   "exclude": ["dist", "node_modules"]

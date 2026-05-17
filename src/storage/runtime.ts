@@ -99,6 +99,13 @@ function resolveStorageModuleSpecifier(providerModule?: string): string {
     return new URL("./adapters/sqlite/entrypoint.js", import.meta.url).href;
   }
 
+  if (["sqlite", "flotiq"].includes(providerModule)) {
+    return new URL(
+      `./adapters/${providerModule}/entrypoint.js`,
+      import.meta.url,
+    ).href;
+  }
+
   if (isAbsolute(providerModule) || providerModule.startsWith(".")) {
     return pathToFileURL(resolve(providerModule)).href;
   }

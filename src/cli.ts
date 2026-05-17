@@ -16,9 +16,25 @@ import {
   readHarnessRunMetrics,
   type PremiumRequestsByModelMetric,
 } from "./harness/run-metrics.js";
-import { initializeStorageRuntime } from "./storage/runtime.js";
+import {
+  initializeStorageRuntime,
+  type InitializedStorageRuntime,
+} from "./storage/runtime.js";
 import { listAll, type StorageHelpers } from "./storage/storage-helpers.js";
-import type { TenantDeletionSummary } from "./storage/contract/index.js";
+import { createInteractionJobDedupeKey } from "./utils/ids.js";
+import type {
+  DiscussionMappingRecord,
+  EntityStore,
+  InteractionJobRecord,
+  InteractionRunRecord,
+  MergeRequestSnapshotRecord,
+  PreviousCompletedInteractionRecord,
+  PriorReviewFindingRecord,
+  StorageStores,
+  StoreListOrder,
+  TenantDeletionSummary,
+  TenantRecord,
+} from "./storage/contract/index.js";
 
 interface ParsedCliArgs {
   readonly positionals: string[];
@@ -107,6 +123,242 @@ const modelProfileLookupSchema = z.object({
   databasePath: z.string().min(1).optional(),
 });
 
+const storageMigrationSchema = z.object({
+  fromProviderModule: z.string().min(1),
+  toProviderModule: z.string().min(1),
+  fromSqliteDatabasePath: z.string().min(1).optional(),
+  toSqliteDatabasePath: z.string().min(1).optional(),
+});
+
+const mergeRequestDescribeSchema = z
+  .object({
+    tenantId: z.string().min(1).optional(),
+    baseUrl: z.string().url().optional(),
+    projectId: z.coerce.number().int().optional(),
+    mergeRequestIid: z.coerce.number().int().nonnegative(),
+    currentInteractionJobId: z.string().min(1).optional(),
+    triggerNoteId: z.coerce.number().int().positive().optional(),
+    triggerNoteAction: z.enum(["create", "update"]).optional(),
+    triggerNoteUpdatedAt: z.string().datetime({ offset: true }).optional(),
+    triggerNoteBody: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const hasTenantId = value.tenantId !== undefined;
+    const hasBaseUrl = value.baseUrl !== undefined;
+    const hasProjectId = value.projectId !== undefined;
+    const hasTriggerDetails =
+      value.triggerNoteId !== undefined ||
+      value.triggerNoteAction !== undefined ||
+      value.triggerNoteUpdatedAt !== undefined ||
+      value.triggerNoteBody !== undefined;
+
+    if (!hasTenantId && !(hasBaseUrl && hasProjectId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide --tenant-id or both --base-url and --project-id.",
+        path: ["tenantId"],
+      });
+    }
+
+    if (!hasTenantId && hasBaseUrl !== hasProjectId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "When using project lookup, provide both --base-url and --project-id.",
+        path: hasBaseUrl ? ["projectId"] : ["baseUrl"],
+      });
+    }
+
+    if (hasTriggerDetails && value.triggerNoteId === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Provide --trigger-note-id when supplying trigger dedupe inputs.",
+        path: ["triggerNoteId"],
+      });
+    }
+
+    if (
+      value.triggerNoteAction === "update" &&
+      value.triggerNoteUpdatedAt === undefined &&
+      value.triggerNoteBody === undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Provide --trigger-note-updated-at or --trigger-note-body for update trigger dedupe checks.",
+        path: ["triggerNoteUpdatedAt"],
+      });
+    }
+  });
+
+interface MergeRequestTriggerDedupeInput {
+  readonly noteId: number;
+  readonly noteAction: "create" | "update";
+  readonly noteUpdatedAt?: string | undefined;
+  readonly noteBody?: string | undefined;
+}
+
+interface StorageEndpointOptions {
+  readonly providerModule: string;
+  readonly sqliteDatabasePath?: string | undefined;
+}
+
+interface StorageMigrationStep {
+  readonly label: keyof StorageStores;
+  run(
+    source: StorageStores,
+    target: StorageStores,
+    context: StorageMigrationContext,
+  ): Promise<number>;
+}
+
+interface StorageMigrationContext {
+  readonly tenantIds: Map<string, string>;
+  readonly interactionJobIds: Map<string, string>;
+  readonly interactionRunIds: Map<string, string>;
+}
+
+const STORAGE_MIGRATION_PAGE_SIZE = 20;
+
+const storageMigrationSteps: readonly StorageMigrationStep[] = [
+  {
+    label: "modelProfiles",
+    run: (source, target) =>
+      migrateEntityStore(
+        source.modelProfiles,
+        target.modelProfiles,
+        "modelProfiles",
+        {
+          order: ascendingOrder("name"),
+        },
+      ),
+  },
+  {
+    label: "tenants",
+    run: (source, target, context) =>
+      migrateTenants(source.tenants, target.tenants, context, {
+        order: ascendingOrder("id"),
+      }),
+  },
+  {
+    label: "interactionJobs",
+    run: (source, target, context) =>
+      migrateInteractionJobs(
+        source.interactionJobs,
+        target.interactionJobs,
+        context,
+        {
+          order: ascendingOrder("id"),
+        },
+      ),
+  },
+  {
+    label: "mergeRequestSnapshots",
+    run: (source, target, context) =>
+      migrateEntityStore(
+        source.mergeRequestSnapshots,
+        target.mergeRequestSnapshots,
+        "mergeRequestSnapshots",
+        {
+          order: ascendingOrder("id"),
+          mapEntity: (entity) => ({
+            ...entity,
+            interactionJobId: resolveMappedId(
+              context.interactionJobIds,
+              entity.interactionJobId,
+              "interaction job",
+            ),
+            tenantId: resolveMappedId(
+              context.tenantIds,
+              entity.tenantId,
+              "tenant",
+            ),
+          }),
+        },
+      ),
+  },
+  {
+    label: "interactionRuns",
+    run: (source, target, context) =>
+      migrateInteractionRuns(
+        source.interactionRuns,
+        target.interactionRuns,
+        context,
+        {
+          order: ascendingOrder("id"),
+        },
+      ),
+  },
+  {
+    label: "interactionRunMetrics",
+    run: (source, target, context) =>
+      migrateEntityStore(
+        source.interactionRunMetrics,
+        target.interactionRunMetrics,
+        "interactionRunMetrics",
+        {
+          order: ascendingOrder("id"),
+          mapEntity: (entity) => ({
+            ...entity,
+            interactionRunId: resolveMappedId(
+              context.interactionRunIds,
+              entity.interactionRunId,
+              "interaction run",
+            ),
+          }),
+        },
+      ),
+  },
+  {
+    label: "reviewFindings",
+    run: (source, target, context) =>
+      migrateEntityStore(
+        source.reviewFindings,
+        target.reviewFindings,
+        "reviewFindings",
+        {
+          order: ascendingOrder("id"),
+          mapEntity: (entity) => ({
+            ...entity,
+            interactionRunId: resolveMappedId(
+              context.interactionRunIds,
+              entity.interactionRunId,
+              "interaction run",
+            ),
+          }),
+        },
+      ),
+  },
+  {
+    label: "discussionMappings",
+    run: (source, target, context) =>
+      migrateEntityStore(
+        source.discussionMappings,
+        target.discussionMappings,
+        "discussionMappings",
+        {
+          order: ascendingOrder("id"),
+          mapEntity: (entity) => ({
+            ...entity,
+            tenantId: resolveMappedId(
+              context.tenantIds,
+              entity.tenantId,
+              "tenant",
+            ),
+            lastInteractionRunId: entity.lastInteractionRunId
+              ? resolveMappedId(
+                  context.interactionRunIds,
+                  entity.lastInteractionRunId,
+                  "interaction run",
+                )
+              : null,
+          }),
+        },
+      ),
+  },
+];
+
 export async function runCli(
   argv: string[] = process.argv.slice(2),
 ): Promise<number> {
@@ -128,7 +380,17 @@ export async function runCli(
       databasePath: options["sqlite-database-path"],
     });
     return withStorage(options, config, async (storage) => {
-      const savedTenant = await storage.upsertTenant(tenant);
+      const savedTenant = await storage.upsertTenant({
+        baseUrl: tenant.baseUrl,
+        projectId: tenant.projectId,
+        apiToken: tenant.apiToken,
+        webhookSecret: tenant.webhookSecret,
+        botUserId: tenant.botUserId,
+        botUsername: tenant.botUsername,
+        ...(tenant.modelProfileName === undefined
+          ? {}
+          : { modelProfileName: tenant.modelProfileName }),
+      });
       process.stdout.write(
         [
           "Tenant saved.",
@@ -481,6 +743,52 @@ export async function runCli(
     });
   }
 
+  if (resource === "storage" && action === "migrate") {
+    const migration = storageMigrationSchema.parse({
+      fromProviderModule:
+        options["from-storage-provider-module"] ??
+        options["source-storage-provider-module"],
+      toProviderModule:
+        options["to-storage-provider-module"] ??
+        options["destination-storage-provider-module"],
+      fromSqliteDatabasePath:
+        options["from-sqlite-database-path"] ??
+        options["source-sqlite-database-path"],
+      toSqliteDatabasePath:
+        options["to-sqlite-database-path"] ??
+        options["destination-sqlite-database-path"],
+    });
+
+    return withStoragePair(
+      {
+        providerModule: migration.fromProviderModule,
+        sqliteDatabasePath: migration.fromSqliteDatabasePath,
+      },
+      {
+        providerModule: migration.toProviderModule,
+        sqliteDatabasePath: migration.toSqliteDatabasePath,
+      },
+      async (sourceRuntime, targetRuntime) => {
+        const migratedCounts = await migrateStorageStores(
+          sourceRuntime.storage.stores,
+          targetRuntime.storage.stores,
+        );
+        process.stdout.write(
+          formatStorageMigrationSummary(
+            sourceRuntime,
+            targetRuntime,
+            migratedCounts,
+          ),
+        );
+        return 0;
+      },
+    );
+  }
+
+  if (resource === "mr" && action === "describe") {
+    return runMergeRequestDescribeCommand(options, config);
+  }
+
   if (resource === "metrics" && action === "sessions") {
     const config = loadConfig();
     const runLogDir =
@@ -588,7 +896,7 @@ function printHelp(): void {
   process.stdout.write(
     [
       "Usage:",
-      "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> --bot-username <name> [--bot-user-id <id>] [--model-profile <name>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> --bot-user-id <id> --bot-username <name> [--model-profile <name>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli tenant list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli tenant set-profile --base-url <url> --project-id <id> --model-profile <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli tenant clear-profile --base-url <url> --project-id <id> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
@@ -598,8 +906,919 @@ function printHelp(): void {
       "  pnpm cli model-profile remove --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli model-profile set-default --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli storage migrate --from-storage-provider-module <module> [--from-sqlite-database-path <path>] --to-storage-provider-module <module> [--to-sqlite-database-path <path>]",
+      "  pnpm cli mr describe (--tenant-id <id> | --base-url <url> --project-id <id>) --merge-request-iid <iid> [--current-interaction-job-id <id>] [--trigger-note-id <id> --trigger-note-action <create|update> [--trigger-note-updated-at <iso>] [--trigger-note-body <text>]] [--json] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli metrics sessions [--run-log-dir <path>]",
     ].join("\n") + "\n",
+  );
+}
+
+async function runMergeRequestDescribeCommand(
+  options: Record<string, string | boolean>,
+  config: ReturnType<typeof loadConfig>,
+): Promise<number> {
+  const jsonOutput = options.json === true || options.json === "true";
+  const input = mergeRequestDescribeSchema.parse({
+    tenantId: options["tenant-id"],
+    baseUrl: options["base-url"],
+    projectId: options["project-id"],
+    mergeRequestIid: options["merge-request-iid"],
+    currentInteractionJobId: options["current-interaction-job-id"],
+    triggerNoteId: options["trigger-note-id"],
+    triggerNoteAction: options["trigger-note-action"],
+    triggerNoteUpdatedAt: options["trigger-note-updated-at"],
+    triggerNoteBody: options["trigger-note-body"],
+  });
+
+  return withStorage(options, config, async (storage) => {
+    const tenant = await resolveDescribeTenant(storage, input);
+    if (!tenant) {
+      process.stdout.write(
+        formatMissingDescribeTenantMessage(
+          input.tenantId,
+          input.baseUrl,
+          input.projectId,
+        ),
+      );
+      return 1;
+    }
+
+    const interactionJobs = await listMergeRequestInteractionJobs(
+      storage,
+      tenant,
+      input.mergeRequestIid,
+    );
+    if (
+      input.currentInteractionJobId &&
+      !interactionJobs.some((job) => job.id === input.currentInteractionJobId)
+    ) {
+      process.stdout.write(
+        `Interaction job ${input.currentInteractionJobId} not found for tenant ${tenant.id} merge request ${input.mergeRequestIid}.\n`,
+      );
+      return 1;
+    }
+
+    const currentInteractionJobId =
+      input.currentInteractionJobId ?? interactionJobs[0]?.id ?? null;
+    const description = await buildMergeRequestDescription(
+      storage,
+      tenant,
+      input.mergeRequestIid,
+      interactionJobs,
+      currentInteractionJobId,
+      resolveMergeRequestTriggerDedupeInput(input),
+    );
+
+    process.stdout.write(
+      jsonOutput
+        ? `${JSON.stringify(description, null, 2)}\n`
+        : formatMergeRequestDescription(description),
+    );
+    return 0;
+  });
+}
+
+async function resolveDescribeTenant(
+  storage: StorageHelpers,
+  input: {
+    tenantId?: string | undefined;
+    baseUrl?: string | undefined;
+    projectId?: number | undefined;
+  },
+): Promise<TenantRecord | null> {
+  if (input.tenantId) {
+    return storage.stores.tenants.get(input.tenantId);
+  }
+
+  return storage.stores.tenants.find({
+    baseUrl: { eq: input.baseUrl! },
+    projectId: { eq: input.projectId! },
+  });
+}
+
+async function listMergeRequestInteractionJobs(
+  storage: StorageHelpers,
+  tenant: TenantRecord,
+  mergeRequestIid: number,
+): Promise<InteractionJobRecord[]> {
+  return listProjectScopedMergeRequestInteractionJobs(
+    storage,
+    tenant,
+    mergeRequestIid,
+  );
+}
+
+async function listProjectScopedMergeRequestInteractionJobs(
+  storage: StorageHelpers,
+  tenant: TenantRecord,
+  mergeRequestIid: number,
+): Promise<InteractionJobRecord[]> {
+  return listAll(storage.stores.interactionJobs, {
+    filters: {
+      projectId: { eq: tenant.projectId },
+      mergeRequestIid: { eq: mergeRequestIid },
+      tenantId: { eq: tenant.id },
+    },
+    order: [
+      { field: "enqueuedAt", direction: "desc" },
+      { field: "id", direction: "desc" },
+    ],
+  });
+}
+
+async function buildMergeRequestDescription(
+  storage: StorageHelpers,
+  tenant: TenantRecord,
+  mergeRequestIid: number,
+  interactionJobs: readonly InteractionJobRecord[],
+  currentInteractionJobId: string | null,
+  triggerDedupeInput?: MergeRequestTriggerDedupeInput,
+) {
+  const interactionJobIds = interactionJobs.map((job) => job.id);
+  const hasInteractionJobs = interactionJobIds.length > 0;
+
+  const [
+    interactionRuns,
+    snapshots,
+    discussionMappings,
+    interactionJobDiagnostics,
+    latestReviewFindingsOverall,
+    latestCompletedInteractionOverall,
+    previousCompletedInteractionRelativeToCurrent,
+    priorReviewFindingsRelativeToCurrent,
+  ] = await Promise.all([
+    loadInteractionRunsForJobs(storage, interactionJobIds),
+    loadSnapshotsForJobs(storage, interactionJobIds),
+    listAll(storage.stores.discussionMappings, {
+      filters: {
+        tenantId: { eq: tenant.id },
+        mergeRequestIid: { eq: mergeRequestIid },
+      },
+      order: [
+        { field: "updatedAt", direction: "desc" },
+        { field: "id", direction: "desc" },
+      ],
+    }),
+    buildInteractionJobDiagnostics(storage, tenant, mergeRequestIid),
+    storage.listLatestReviewFindings(tenant.id, mergeRequestIid),
+    hasInteractionJobs
+      ? storage.getLatestCompletedInteractionForMergeRequest(
+          tenant.id,
+          mergeRequestIid,
+          "",
+        )
+      : Promise.resolve(null),
+    currentInteractionJobId
+      ? storage.getLatestCompletedInteractionForMergeRequest(
+          tenant.id,
+          mergeRequestIid,
+          currentInteractionJobId,
+        )
+      : Promise.resolve(null),
+    currentInteractionJobId
+      ? storage.listPriorReviewFindings(
+          tenant.id,
+          mergeRequestIid,
+          currentInteractionJobId,
+        )
+      : Promise.resolve([]),
+  ]);
+
+  return {
+    tenant: summarizeTenant(tenant),
+    mergeRequestIid,
+    currentInteractionJobId,
+    dedupeInspection: summarizeTriggerDedupeInspection(
+      tenant,
+      mergeRequestIid,
+      interactionJobs,
+      triggerDedupeInput,
+    ),
+    interactionJobDiagnostics,
+    counts: {
+      interactionJobs: interactionJobs.length,
+      interactionRuns: interactionRuns.length,
+      mergeRequestSnapshots: snapshots.length,
+      discussionMappings: discussionMappings.length,
+      latestReviewFindingsOverall: latestReviewFindingsOverall.length,
+      priorReviewFindingsRelativeToCurrent:
+        priorReviewFindingsRelativeToCurrent.length,
+    },
+    latestInteractionJob: interactionJobs[0]
+      ? summarizeInteractionJob(interactionJobs[0])
+      : null,
+    latestCompletedInteractionOverall: summarizePreviousCompletedInteraction(
+      latestCompletedInteractionOverall,
+    ),
+    previousCompletedInteractionRelativeToCurrent:
+      summarizePreviousCompletedInteraction(
+        previousCompletedInteractionRelativeToCurrent,
+      ),
+    latestReviewFindingsOverall: latestReviewFindingsOverall.map(
+      summarizePriorReviewFinding,
+    ),
+    priorReviewFindingsRelativeToCurrent:
+      priorReviewFindingsRelativeToCurrent.map(summarizePriorReviewFinding),
+    interactionJobs: interactionJobs.map(summarizeInteractionJob),
+    interactionRuns: interactionRuns.map(summarizeInteractionRun),
+    mergeRequestSnapshots: snapshots.map(summarizeSnapshot),
+    discussionMappings: discussionMappings.map(summarizeDiscussionMapping),
+  };
+}
+
+async function buildInteractionJobDiagnostics(
+  storage: StorageHelpers,
+  tenant: TenantRecord,
+  mergeRequestIid: number,
+) {
+  const [
+    jobsByTenantAndMergeRequest,
+    jobsByProjectAndMergeRequest,
+    jobsByTenantOnly,
+  ] = await Promise.all([
+    listAll(storage.stores.interactionJobs, {
+      filters: {
+        tenantId: { eq: tenant.id },
+        mergeRequestIid: { eq: mergeRequestIid },
+      },
+      order: [
+        { field: "enqueuedAt", direction: "desc" },
+        { field: "id", direction: "desc" },
+      ],
+    }),
+    listAll(storage.stores.interactionJobs, {
+      filters: {
+        projectId: { eq: tenant.projectId },
+        mergeRequestIid: { eq: mergeRequestIid },
+      },
+      order: [
+        { field: "enqueuedAt", direction: "desc" },
+        { field: "id", direction: "desc" },
+      ],
+    }),
+    listAll(storage.stores.interactionJobs, {
+      filters: {
+        tenantId: { eq: tenant.id },
+      },
+      order: [
+        { field: "enqueuedAt", direction: "desc" },
+        { field: "id", direction: "desc" },
+      ],
+    }),
+  ]);
+
+  return {
+    counts: {
+      byTenantAndMergeRequest: jobsByTenantAndMergeRequest.length,
+      byProjectAndMergeRequest: jobsByProjectAndMergeRequest.length,
+      byTenantOnly: jobsByTenantOnly.length,
+    },
+    samples: {
+      byTenantAndMergeRequest: jobsByTenantAndMergeRequest
+        .slice(0, 10)
+        .map(summarizeInteractionJob),
+      byProjectAndMergeRequest: jobsByProjectAndMergeRequest
+        .slice(0, 10)
+        .map(summarizeInteractionJob),
+      byTenantOnly: jobsByTenantOnly.slice(0, 10).map(summarizeInteractionJob),
+    },
+  };
+}
+
+async function loadInteractionRunsForJobs(
+  storage: StorageHelpers,
+  interactionJobIds: readonly string[],
+): Promise<InteractionRunRecord[]> {
+  if (interactionJobIds.length === 0) {
+    return [];
+  }
+
+  return listAll(storage.stores.interactionRuns, {
+    filters: {
+      interactionJobId: { in: interactionJobIds },
+    },
+    order: [
+      { field: "startedAt", direction: "desc" },
+      { field: "id", direction: "desc" },
+    ],
+  });
+}
+
+async function loadSnapshotsForJobs(
+  storage: StorageHelpers,
+  interactionJobIds: readonly string[],
+): Promise<MergeRequestSnapshotRecord[]> {
+  if (interactionJobIds.length === 0) {
+    return [];
+  }
+
+  return listAll(storage.stores.mergeRequestSnapshots, {
+    filters: {
+      interactionJobId: { in: interactionJobIds },
+    },
+    order: [{ field: "createdAt", direction: "desc" }],
+  });
+}
+
+function formatMissingDescribeTenantMessage(
+  tenantId: string | undefined,
+  baseUrl: string | undefined,
+  projectId: number | undefined,
+): string {
+  if (tenantId) {
+    return `Tenant ${tenantId} not found.\n`;
+  }
+
+  return `Tenant not found for ${baseUrl} :: ${projectId}.\n`;
+}
+
+function summarizeTenant(tenant: TenantRecord) {
+  return {
+    id: tenant.id,
+    key: tenant.key,
+    baseUrl: tenant.baseUrl,
+    projectId: tenant.projectId,
+    botUserId: tenant.botUserId,
+    botUsername: tenant.botUsername,
+    modelProfileName: tenant.modelProfileName,
+  };
+}
+
+function summarizeInteractionJob(interactionJob: InteractionJobRecord) {
+  return {
+    id: interactionJob.id,
+    dedupeKey: interactionJob.dedupeKey,
+    tenantId: interactionJob.tenantId,
+    projectId: interactionJob.projectId,
+    mergeRequestIid: interactionJob.mergeRequestIid,
+    noteId: interactionJob.noteId,
+    headSha: interactionJob.headSha,
+    status: interactionJob.status,
+    retryCount: interactionJob.retryCount,
+    lastError: interactionJob.lastError,
+    enqueuedAt: interactionJob.enqueuedAt,
+    startedAt: interactionJob.startedAt,
+    finishedAt: interactionJob.finishedAt,
+  };
+}
+
+function summarizeInteractionRun(interactionRun: InteractionRunRecord) {
+  return {
+    id: interactionRun.id,
+    interactionJobId: interactionRun.interactionJobId,
+    tenantId: interactionRun.tenantId,
+    provider: interactionRun.provider,
+    model: interactionRun.model,
+    modelProfileName: interactionRun.modelProfileName,
+    providerBaseUrl: interactionRun.providerBaseUrl,
+    providerType: interactionRun.providerType,
+    textGenerationModel: interactionRun.textGenerationModel,
+    status: interactionRun.status,
+    error: interactionRun.error,
+    startedAt: interactionRun.startedAt,
+    finishedAt: interactionRun.finishedAt,
+    hasResultJson: interactionRun.resultJson !== null,
+    resultJsonBytes: interactionRun.resultJson?.length ?? 0,
+  };
+}
+
+function summarizeSnapshot(snapshot: MergeRequestSnapshotRecord) {
+  return {
+    id: snapshot.id,
+    interactionJobId: snapshot.interactionJobId,
+    tenantId: snapshot.tenantId,
+    mergeRequestIid: snapshot.mergeRequestIid,
+    headSha: snapshot.headSha,
+    workspaceStrategy: snapshot.workspaceStrategy,
+    createdAt: snapshot.createdAt,
+    mergeRequestJsonBytes: snapshot.mergeRequestJson.length,
+    versionsJsonBytes: snapshot.versionsJson.length,
+    changesJsonBytes: snapshot.changesJson.length,
+    notesJsonBytes: snapshot.notesJson.length,
+    discussionsJsonBytes: snapshot.discussionsJson.length,
+    instructionsJsonBytes: snapshot.instructionsJson.length,
+    hasProjectMemoryJson: snapshot.projectMemoryJson !== null,
+  };
+}
+
+function summarizePreviousCompletedInteraction(
+  interaction: PreviousCompletedInteractionRecord | null,
+) {
+  if (!interaction) {
+    return null;
+  }
+
+  return {
+    interactionRunId: interaction.interactionRunId,
+    interactionJobId: interaction.interactionJobId,
+    finishedAt: interaction.finishedAt,
+    headSha: interaction.headSha,
+    resultJsonBytes: interaction.resultJson.length,
+    snapshot: summarizeSnapshot(interaction.snapshot),
+  };
+}
+
+function summarizePriorReviewFinding(finding: PriorReviewFindingRecord) {
+  return {
+    findingId: finding.findingId,
+    identityKey: finding.identityKey,
+    status: finding.status,
+    title: finding.title,
+    body: finding.body,
+    severity: finding.severity,
+    category: finding.category,
+    anchor: finding.anchor,
+    suggestion: finding.suggestion,
+    interactionRunId: finding.interactionRunId,
+    reviewedAt: finding.reviewedAt,
+    headSha: finding.headSha,
+  };
+}
+
+function summarizeDiscussionMapping(
+  discussionMapping: DiscussionMappingRecord,
+) {
+  return {
+    id: discussionMapping.id,
+    tenantId: discussionMapping.tenantId,
+    projectId: discussionMapping.projectId,
+    mergeRequestIid: discussionMapping.mergeRequestIid,
+    identityKey: discussionMapping.identityKey,
+    status: discussionMapping.status,
+    gitlabDiscussionId: discussionMapping.gitlabDiscussionId,
+    gitlabNoteId: discussionMapping.gitlabNoteId,
+    botDiscussion: discussionMapping.botDiscussion,
+    botNote: discussionMapping.botNote,
+    noteAuthorId: discussionMapping.noteAuthorId,
+    noteAuthorUsername: discussionMapping.noteAuthorUsername,
+    lastInteractionRunId: discussionMapping.lastInteractionRunId,
+    createdAt: discussionMapping.createdAt,
+    updatedAt: discussionMapping.updatedAt,
+  };
+}
+
+function resolveMergeRequestTriggerDedupeInput(
+  input: z.infer<typeof mergeRequestDescribeSchema>,
+): MergeRequestTriggerDedupeInput | undefined {
+  if (input.triggerNoteId === undefined) {
+    return undefined;
+  }
+
+  return {
+    noteId: input.triggerNoteId,
+    noteAction: input.triggerNoteAction ?? "create",
+    noteUpdatedAt: input.triggerNoteUpdatedAt,
+    noteBody: input.triggerNoteBody,
+  };
+}
+
+function summarizeTriggerDedupeInspection(
+  tenant: TenantRecord,
+  mergeRequestIid: number,
+  interactionJobs: readonly InteractionJobRecord[],
+  triggerInput?: MergeRequestTriggerDedupeInput,
+) {
+  const existingJobs = interactionJobs.map((job) => ({
+    jobId: job.id,
+    noteId: job.noteId,
+    dedupeKey: job.dedupeKey,
+    status: job.status,
+    enqueuedAt: job.enqueuedAt,
+  }));
+
+  if (!triggerInput) {
+    return {
+      triggerProvided: false,
+      existingJobs,
+    };
+  }
+
+  const candidateDedupeKey = createInteractionJobDedupeKey({
+    baseUrl: tenant.baseUrl,
+    projectId: tenant.projectId,
+    mergeRequestIid,
+    noteId: triggerInput.noteId,
+    noteAction: triggerInput.noteAction,
+    noteUpdatedAt: triggerInput.noteUpdatedAt,
+    noteBody: triggerInput.noteBody,
+  });
+  const matchingJob = interactionJobs.find(
+    (job) => job.dedupeKey === candidateDedupeKey,
+  );
+
+  return {
+    triggerProvided: true,
+    existingJobs,
+    candidate: {
+      noteId: triggerInput.noteId,
+      noteAction: triggerInput.noteAction,
+      noteUpdatedAt: triggerInput.noteUpdatedAt ?? null,
+      triggerNoteBodyProvided: triggerInput.noteBody !== undefined,
+      candidateDedupeKey,
+      matchingExistingJobId: matchingJob?.id ?? null,
+      wouldCreateNewJob: matchingJob === undefined,
+    },
+  };
+}
+
+type MergeRequestDescribeOutput = Awaited<
+  ReturnType<typeof buildMergeRequestDescription>
+>;
+
+function formatMergeRequestDescription(
+  description: MergeRequestDescribeOutput,
+): string {
+  const latestReviewLines = description.latestInteractionJob
+    ? [
+        "",
+        "Latest Review",
+        `job: ${description.latestInteractionJob.id} (${description.latestInteractionJob.status})`,
+        `noteId: ${description.latestInteractionJob.noteId}`,
+        `headSha: ${shortenValue(description.latestInteractionJob.headSha)}`,
+        `enqueuedAt: ${description.latestInteractionJob.enqueuedAt}`,
+        `finishedAt: ${description.latestInteractionJob.finishedAt ?? "(none)"}`,
+      ]
+    : [];
+  const latestFindingLines =
+    description.latestReviewFindingsOverall.length > 0
+      ? [
+          "",
+          "Latest Findings",
+          ...formatFindingsSummary(description.latestReviewFindingsOverall),
+        ]
+      : [];
+
+  const lines = [
+    "Merge Request",
+    `project: ${description.tenant.baseUrl} :: ${description.tenant.projectId}`,
+    `tenant: ${description.tenant.id}`,
+    `mergeRequestIid: ${description.mergeRequestIid}`,
+    "",
+    "Current State",
+    `currentInteractionJobId: ${description.currentInteractionJobId ?? "(none)"}`,
+    `interactionJobs: ${description.counts.interactionJobs}`,
+    `interactionRuns: ${description.counts.interactionRuns}`,
+    `mergeRequestSnapshots: ${description.counts.mergeRequestSnapshots}`,
+    `discussionMappings: ${description.counts.discussionMappings}`,
+    `latestReviewFindingsOverall: ${description.counts.latestReviewFindingsOverall}`,
+    `priorReviewFindingsRelativeToCurrent: ${description.counts.priorReviewFindingsRelativeToCurrent}`,
+    ...latestReviewLines,
+    "",
+    "History Signal",
+    `tenant+mr jobs: ${description.interactionJobDiagnostics.counts.byTenantAndMergeRequest}`,
+    `project+mr jobs: ${description.interactionJobDiagnostics.counts.byProjectAndMergeRequest}`,
+    `tenant jobs total: ${description.interactionJobDiagnostics.counts.byTenantOnly}`,
+    `assessment: ${buildMergeRequestAssessment(description)}`,
+    "",
+    "Previous Review",
+    `latestCompletedInteractionOverall: ${formatPreviousInteractionSummary(description.latestCompletedInteractionOverall)}`,
+    `previousCompletedInteractionRelativeToCurrent: ${formatPreviousInteractionSummary(description.previousCompletedInteractionRelativeToCurrent)}`,
+    "",
+    "Dedupe",
+    ...formatDedupeInspection(description.dedupeInspection),
+    ...latestFindingLines,
+  ];
+
+  return `${lines.join("\n")}\n`;
+}
+
+function buildMergeRequestAssessment(
+  description: MergeRequestDescribeOutput,
+): string {
+  const diagnostics = description.interactionJobDiagnostics.counts;
+  if (
+    diagnostics.byTenantOnly > diagnostics.byTenantAndMergeRequest &&
+    diagnostics.byProjectAndMergeRequest === diagnostics.byTenantAndMergeRequest
+  ) {
+    return "MR-specific history is sparse in storage; tenant relation filtering is unlikely to be the main issue.";
+  }
+
+  if (
+    diagnostics.byProjectAndMergeRequest > diagnostics.byTenantAndMergeRequest
+  ) {
+    return "Project-level MR history exceeds tenant-scoped MR history; tenant relation filtering is suspicious.";
+  }
+
+  if (diagnostics.byTenantAndMergeRequest > 1) {
+    return "Multiple MR jobs are visible in storage.";
+  }
+
+  return "Only one MR job is visible with the current filters.";
+}
+
+function formatPreviousInteractionSummary(
+  interaction: MergeRequestDescribeOutput["latestCompletedInteractionOverall"],
+): string {
+  if (!interaction) {
+    return "none";
+  }
+
+  return `${interaction.interactionJobId} @ ${interaction.finishedAt}`;
+}
+
+function formatDedupeInspection(
+  dedupeInspection: MergeRequestDescribeOutput["dedupeInspection"],
+): string[] {
+  if (!dedupeInspection.triggerProvided) {
+    return [
+      `trigger inspection: not provided`,
+      `visible MR jobs for dedupe: ${dedupeInspection.existingJobs.length}`,
+    ];
+  }
+
+  const candidate = dedupeInspection.candidate;
+  if (!candidate) {
+    return [`trigger inspection: provided`, `candidate: unavailable`];
+  }
+
+  return [
+    `trigger inspection: provided`,
+    `wouldCreateNewJob: ${candidate.wouldCreateNewJob ? "yes" : "no"}`,
+    `matchingExistingJobId: ${candidate.matchingExistingJobId ?? "(none)"}`,
+    `triggerNoteId: ${candidate.noteId}`,
+    `triggerNoteAction: ${candidate.noteAction}`,
+  ];
+}
+
+function formatFindingsSummary(
+  findings: MergeRequestDescribeOutput["latestReviewFindingsOverall"],
+): string[] {
+  const visibleFindings = findings
+    .slice(0, 5)
+    .map(
+      (finding) =>
+        `- ${finding.status} ${finding.severity} ${finding.category}: ${finding.title}`,
+    );
+  const hiddenCount = findings.length - visibleFindings.length;
+
+  return hiddenCount > 0
+    ? [...visibleFindings, `- ... ${hiddenCount} more`]
+    : visibleFindings;
+}
+
+function shortenValue(value: string, length = 12): string {
+  if (value.length <= length) {
+    return value;
+  }
+
+  return value.slice(0, length);
+}
+
+async function withStoragePair<T>(
+  sourceOptions: StorageEndpointOptions,
+  targetOptions: StorageEndpointOptions,
+  run: (
+    sourceRuntime: InitializedStorageRuntime,
+    targetRuntime: InitializedStorageRuntime,
+  ) => Promise<T>,
+): Promise<T> {
+  const sourceRuntime = await initializeStorageRuntime({
+    providerModule: sourceOptions.providerModule,
+    env: buildStorageEnv(sourceOptions.sqliteDatabasePath),
+  });
+
+  try {
+    const targetRuntime = await initializeStorageRuntime({
+      providerModule: targetOptions.providerModule,
+      env: buildStorageEnv(targetOptions.sqliteDatabasePath),
+    });
+
+    try {
+      return await run(sourceRuntime, targetRuntime);
+    } finally {
+      await targetRuntime.provider.close();
+    }
+  } finally {
+    await sourceRuntime.provider.close();
+  }
+}
+
+function buildStorageEnv(sqliteDatabasePath?: string): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+
+  if (sqliteDatabasePath) {
+    env.SQLITE_DATABASE_PATH = sqliteDatabasePath;
+  }
+
+  return env;
+}
+
+async function migrateStorageStores(
+  source: StorageStores,
+  target: StorageStores,
+): Promise<Record<string, number>> {
+  const migratedCounts: Record<string, number> = {};
+  const context: StorageMigrationContext = {
+    tenantIds: new Map(),
+    interactionJobIds: new Map(),
+    interactionRunIds: new Map(),
+  };
+
+  for (const step of storageMigrationSteps) {
+    process.stdout.write(`Migrating ${step.label}...\n`);
+    migratedCounts[step.label] = await step.run(source, target, context);
+  }
+
+  return migratedCounts;
+}
+
+async function migrateEntityStore<TEntity, TFilters, TOrder extends string>(
+  source: EntityStore<TEntity, TFilters, TOrder>,
+  target: EntityStore<TEntity, TFilters, TOrder>,
+  label: string,
+  options?: {
+    order?: readonly StoreListOrder<TOrder>[];
+    mapEntity?: (entity: TEntity) => TEntity;
+  },
+): Promise<number> {
+  return migrateStorePages(
+    source,
+    label,
+    async (entities) => {
+      await target.upsertMany(
+        options?.mapEntity
+          ? entities.map((entity) => options.mapEntity?.(entity) ?? entity)
+          : entities,
+      );
+    },
+    options?.order,
+  );
+}
+
+async function migrateTenants<TEntity extends { id: string }>(
+  source: EntityStore<TEntity, unknown, string>,
+  target: EntityStore<TEntity, unknown, string>,
+  context: StorageMigrationContext,
+  options?: {
+    order?: readonly StoreListOrder<string>[];
+  },
+): Promise<number> {
+  return migrateStorePages(
+    source,
+    "tenants",
+    async (entities) => {
+      await target.upsertMany(entities);
+
+      for (const entity of entities) {
+        context.tenantIds.set(entity.id, entity.id);
+      }
+    },
+    options?.order,
+  );
+}
+
+async function migrateInteractionJobs<
+  TEntity extends { id: string; tenantId: string },
+>(
+  source: EntityStore<TEntity, unknown, string>,
+  target: EntityStore<TEntity, unknown, string>,
+  context: StorageMigrationContext,
+  options?: {
+    order?: readonly StoreListOrder<string>[];
+  },
+): Promise<number> {
+  return migrateStorePages(
+    source,
+    "interactionJobs",
+    async (entities) => {
+      const migrated = entities.map((entity) => ({
+        ...entity,
+        tenantId: resolveMappedId(context.tenantIds, entity.tenantId, "tenant"),
+      }));
+
+      await target.upsertMany(migrated);
+
+      for (const entity of migrated) {
+        context.interactionJobIds.set(entity.id, entity.id);
+      }
+    },
+    options?.order,
+  );
+}
+
+async function migrateInteractionRuns<
+  TEntity extends { id: string; interactionJobId: string; tenantId: string },
+>(
+  source: EntityStore<TEntity, unknown, string>,
+  target: EntityStore<TEntity, unknown, string>,
+  context: StorageMigrationContext,
+  options?: {
+    order?: readonly StoreListOrder<string>[];
+  },
+): Promise<number> {
+  return migrateStorePages(
+    source,
+    "interactionRuns",
+    async (entities) => {
+      const migrated = entities.map((entity) => ({
+        ...entity,
+        interactionJobId: resolveMappedId(
+          context.interactionJobIds,
+          entity.interactionJobId,
+          "interaction job",
+        ),
+        tenantId: resolveMappedId(context.tenantIds, entity.tenantId, "tenant"),
+      }));
+
+      await target.upsertMany(migrated);
+
+      for (const entity of migrated) {
+        context.interactionRunIds.set(entity.id, entity.id);
+      }
+    },
+    options?.order,
+  );
+}
+
+async function migrateStorePages<TEntity, TFilters, TOrder extends string>(
+  source: EntityStore<TEntity, TFilters, TOrder>,
+  label: string,
+  processBatch: (entities: TEntity[]) => Promise<void>,
+  order?: readonly StoreListOrder<TOrder>[],
+): Promise<number> {
+  const totalItems = await countStoreEntities(source, order);
+  const totalPages = Math.ceil(totalItems / STORAGE_MIGRATION_PAGE_SIZE);
+  let migratedCount = 0;
+
+  if (totalPages === 0) {
+    process.stdout.write(`${label} (0/0)\n`);
+    return 0;
+  }
+
+  for (let page = 1; page <= totalPages; page += 1) {
+    process.stdout.write(`${label} (${page}/${totalPages})\n`);
+    const batch = await source.list({
+      ...(order ? { order } : {}),
+      page,
+      pageSize: STORAGE_MIGRATION_PAGE_SIZE,
+    });
+
+    await processBatch(batch);
+    migratedCount += batch.length;
+  }
+
+  return migratedCount;
+}
+
+async function countStoreEntities<TEntity, TFilters, TOrder extends string>(
+  source: EntityStore<TEntity, TFilters, TOrder>,
+  order?: readonly StoreListOrder<TOrder>[],
+): Promise<number> {
+  let totalCount = 0;
+
+  for (let page = 1; ; page += 1) {
+    const batch = await source.list({
+      ...(order ? { order } : {}),
+      page,
+      pageSize: STORAGE_MIGRATION_PAGE_SIZE,
+    });
+    totalCount += batch.length;
+
+    if (batch.length < STORAGE_MIGRATION_PAGE_SIZE) {
+      return totalCount;
+    }
+  }
+}
+
+function ascendingOrder<TOrder extends string>(
+  field: TOrder,
+): readonly StoreListOrder<TOrder>[] {
+  return [{ field, direction: "asc" }];
+}
+
+function resolveMappedId(
+  idMap: ReadonlyMap<string, string>,
+  sourceId: string,
+  entityType: string,
+): string {
+  const mappedId = idMap.get(sourceId);
+  if (!mappedId) {
+    throw new Error(`Missing migrated ${entityType} for source id ${sourceId}`);
+  }
+
+  return mappedId;
+}
+
+function formatStorageMigrationSummary(
+  sourceRuntime: InitializedStorageRuntime,
+  targetRuntime: InitializedStorageRuntime,
+  migratedCounts: Record<string, number>,
+): string {
+  const totalMigrated = Object.values(migratedCounts).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
+
+  return (
+    [
+      "Storage migration completed.",
+      `source: ${sourceRuntime.provider.getProviderId()} (${sourceRuntime.moduleSpecifier})`,
+      `destination: ${targetRuntime.provider.getProviderId()} (${targetRuntime.moduleSpecifier})`,
+      ...storageMigrationSteps.map(
+        (step) => `- ${step.label}: ${migratedCounts[step.label] ?? 0}`,
+      ),
+      `total: ${totalMigrated}`,
+    ].join("\n") + "\n"
   );
 }
 

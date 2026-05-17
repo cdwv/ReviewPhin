@@ -1,5 +1,4 @@
 import { type Logger } from "pino";
-import { CURRENT_STORAGE_CONTRACT_REVISION } from "../../contract/index.js";
 import type {
   StoragePreparationResult,
   StorageProvider,
@@ -26,7 +25,7 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   public getSupportedStorageContract(): string {
-    return CURRENT_STORAGE_CONTRACT_REVISION;
+    return "storage-v000";
   }
 
   public open(): Promise<void> {

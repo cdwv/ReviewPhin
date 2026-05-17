@@ -1,5 +1,6 @@
 import type {
   AssistantMessageEvent,
+  MessageOptions,
   ProviderConfig,
   SessionEvent,
 } from "@github/copilot-sdk";
@@ -12,6 +13,8 @@ export type HarnessSelectionSource =
 export type HarnessProviderType = "openai" | "azure" | "anthropic" | null;
 export type HarnessToolId = "glob" | "rg" | "view" | "add_memory_entry";
 export type HarnessSubagentId = "context-analyst" | "review-author";
+export type HarnessRunAttachment = NonNullable<MessageOptions["attachments"]>[number];
+export type HarnessRunAttachments = NonNullable<MessageOptions["attachments"]>;
 
 export interface HarnessModelConfig {
   modelProfileName: string | null;
@@ -49,6 +52,7 @@ export interface HarnessRunMetadata {
 
 export interface HarnessRunSpec {
   prompt: string;
+  attachments?: HarnessRunAttachments | undefined;
   modelConfig: HarnessModelConfig;
   model?: string | undefined;
   workingDirectory?: string | undefined;

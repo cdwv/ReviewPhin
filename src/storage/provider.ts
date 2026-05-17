@@ -9,7 +9,7 @@ export interface StoragePreparationResult {
 
 export interface StorageProviderFactoryContext {
   readonly env: NodeJS.ProcessEnv;
-  logger?: Logger;
+  logger?: Logger | undefined;
 }
 
 export interface StorageProvider {

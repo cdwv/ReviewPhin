@@ -1,4 +1,5 @@
 import type {
+  HarnessRunAttachments,
   HarnessModelConfig,
   HarnessTenantContext,
 } from "../harness/types.js";
@@ -7,6 +8,7 @@ import type { ReviewContext, ReviewResult } from "./types.js";
 export type ReviewProviderConfig = HarnessModelConfig;
 
 export interface ReviewProviderRuntimeContext {
+  attachments?: HarnessRunAttachments | undefined;
   tenant: HarnessTenantContext;
 }
 

@@ -45,7 +45,7 @@ The core app owns:
 
 - Keep stores CRUD/store-shaped around one persisted entity at a time.
 - Keep provider-specific transport and schema details out of the app.
-- Expose only the standard store contract (`get`, `getMany`, `find`, `list`, `upsert`, `replace`, `update`, `patch`, `delete`, `deleteMany`).
+- Expose only the standard store contract (`get`, `getMany`, `find`, `list`, `upsert`, `upsertMany`, `replace`, `replaceMany`, `update`, `updateMany`, `patch`, `patchMany`, `delete`, `deleteMany`).
 - If the app needs a query the filters/order contract cannot express efficiently, extend the shared filter/order types explicitly rather than adding provider-specific methods.
 
 ## Migrations

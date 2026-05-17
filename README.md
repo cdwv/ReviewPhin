@@ -9,6 +9,7 @@ Node.js + TypeScript service that listens for GitLab Note Hook comments that exp
 - Stores tenants, jobs, snapshots, review runs, findings, and discussion mappings in the configured storage adapter (**SQLite by default**)
 - Hydrates merge request metadata, diff versions, changed files, notes, discussions, and project instructions before each run, using `git` checkout first and API fallbacks when needed
 - Uses a provider boundary with a first implementation backed by **`@github/copilot-sdk`**
+- Passes GitLab-hosted images from the trigger note and merge request description to Copilot as native blob attachments, while keeping only lightweight provenance breadcrumbs in prompt text and never storing image bytes in the configured storage provider
 - Creates new discussions, updates bot-authored notes, replies in bot-created discussions, and resolves obsolete bot-owned discussions
 - Maintains one bot-authored merge request summary note, updating it on each run with the latest overall assessment and merge readiness
 - Emits GitLab suggestion blocks when it has a safe new-side diff anchor on the latest merge request version, including multi-line suggestions when the replacement range is clear
@@ -19,6 +20,7 @@ Node.js + TypeScript service that listens for GitLab Note Hook comments that exp
 - Node.js 22+
 - pnpm 10+
 - GitHub Copilot access for the machine running the worker (an active Copilot subscription or organization entitlement with Copilot CLI enabled)
+- A selected review model/provider that supports vision if you want the agent to inspect GitLab image attachments; unsupported, off-host, non-image, or oversized image references are skipped without persisting image data
 - Docker + Docker Compose (only when running the packaged container image)
 
 ## Setup

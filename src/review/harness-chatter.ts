@@ -1,7 +1,10 @@
 import { buildChatterPrompt } from "../prompts/prompt-builders.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
 import type { HarnessSessionRuntime } from "../harness/session.js";
-import type { HarnessModelConfig } from "../harness/types.js";
+import type {
+  HarnessModelConfig,
+  HarnessRunAttachments,
+} from "../harness/types.js";
 import type {
   ChatterBatchResult,
   ReplyStyle,
@@ -14,6 +17,7 @@ import type {
 import { chatterBatchResultSchema } from "./types.js";
 
 export interface ChatterRunContext {
+  attachments?: HarnessRunAttachments | undefined;
   trigger: ReviewTriggerContext;
   responseTargets: ResponseTarget[];
   projectMemory: ProjectMemoryContext;
@@ -67,6 +71,7 @@ export class HarnessChatterRunner {
         : (["glob", "rg", "view"] as const);
     const response = await this.harnessRuntime.run({
       prompt,
+      ...(context.attachments ? { attachments: context.attachments } : {}),
       modelConfig: this.modelConfig,
       model:
         this.modelConfig.textGenerationModel ??

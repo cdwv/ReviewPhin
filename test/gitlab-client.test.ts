@@ -173,6 +173,157 @@ describe("GitLabClient headers", () => {
     expect(page.slug).toBe("Reviewphin-memory");
   });
 
+  it("downloads on-host GitLab images as base64 blobs", async () => {
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        expect(getRequestUrl(input)).toBe(
+          "https://gitlab.example.com/api/v4/projects/1085/uploads/abc123/diagram.png",
+        );
+        expect(new Headers(init?.headers).get("accept")).toBe("image/*, */*");
+
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: {
+            "content-type": "image/png",
+            "content-length": "3",
+          },
+        });
+      },
+    );
+    globalThis.fetch = fetchMock;
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent"),
+    });
+
+    await expect(
+      client.downloadImage(
+        "https://gitlab.example.com/-/project/1085/uploads/abc123/diagram.png",
+      ),
+    ).resolves.toEqual({
+      data: "AQID",
+      mimeType: "image/png",
+      sizeBytes: 3,
+    });
+  });
+
+  it("downloads path-prefixed project upload urls through the GitLab API", async () => {
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        expect(getRequestUrl(input)).toBe(
+          "https://gitlab.example.com/gitlab/api/v4/projects/1085/uploads/abc123/diagram.png",
+        );
+        expect(new Headers(init?.headers).get("accept")).toBe("image/*, */*");
+
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: {
+            "content-type": "image/png",
+            "content-length": "3",
+          },
+        });
+      },
+    );
+    globalThis.fetch = fetchMock;
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com/gitlab",
+      apiToken: "token",
+      logger: createLogger("silent"),
+    });
+
+    await expect(
+      client.downloadImage(
+        "https://gitlab.example.com/gitlab/-/project/1085/uploads/abc123/diagram.png",
+      ),
+    ).resolves.toEqual({
+      data: "AQID",
+      mimeType: "image/png",
+      sizeBytes: 3,
+    });
+  });
+
+  it("rejects off-host GitLab image urls before fetching", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent"),
+    });
+
+    await expect(
+      client.downloadImage("https://cdn.example.com/uploads/diagram.png"),
+    ).rejects.toMatchObject({
+      name: "GitLabImageDownloadError",
+      reason: "off-host",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported GitLab image content types", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response("<html>nope</html>", {
+          status: 200,
+          headers: {
+            "content-type": "text/html",
+          },
+        }),
+    );
+    globalThis.fetch = fetchMock;
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent"),
+    });
+
+    await expect(
+      client.downloadImage(
+        "https://gitlab.example.com/-/project/1085/uploads/abc123/diagram.png",
+      ),
+    ).rejects.toMatchObject({
+      name: "GitLabImageDownloadError",
+      reason: "unsupported-mime",
+    });
+  });
+
+  it("rejects oversized GitLab images using the declared content length", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: {
+            "content-type": "image/png",
+            "content-length": "3",
+          },
+        }),
+    );
+    globalThis.fetch = fetchMock;
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent"),
+    });
+
+    await expect(
+      client.downloadImage(
+        "https://gitlab.example.com/-/project/1085/uploads/abc123/diagram.png",
+        {
+          maxBytes: 2,
+        },
+      ),
+    ).rejects.toMatchObject({
+      name: "GitLabImageDownloadError",
+      reason: "too-large",
+    });
+  });
+
   it("emits request and response records to the GitLab request logger", async () => {
     const fetchMock = vi.fn(
       async () =>
@@ -227,5 +378,187 @@ describe("GitLabClient headers", () => {
         }),
       }),
     );
+  });
+
+  it("creates merge request draft notes with nested position payloads", async () => {
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        expect(getRequestUrl(input)).toBe(
+          "https://gitlab.example.com/api/v4/projects/1085/merge_requests/7/draft_notes",
+        );
+        expect(new Headers(init?.headers).get("content-type")).toBe(
+          "application/x-www-form-urlencoded",
+        );
+        const body = getRequestBodyText(init?.body);
+        expect(body).toContain("note=Draft+body");
+        expect(body).toContain("position%5Bbase_sha%5D=base");
+        expect(body).toContain("position%5Bstart_sha%5D=start");
+        expect(body).toContain("position%5Bhead_sha%5D=head");
+        expect(body).toContain("position%5Bposition_type%5D=text");
+        expect(body).toContain("position%5Bold_path%5D=src%2Fold.ts");
+        expect(body).toContain("position%5Bnew_path%5D=src%2Fnew.ts");
+        expect(body).toContain("position%5Bnew_line%5D=14");
+
+        return new Response(
+          JSON.stringify({
+            id: 12,
+            author_id: 999,
+            merge_request_id: 7,
+            resolve_discussion: false,
+            discussion_id: null,
+            note: "Draft body",
+            position: null,
+          }),
+          {
+            status: 201,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    );
+
+    globalThis.fetch = fetchMock;
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent"),
+    });
+
+    await expect(
+      client.createMergeRequestDraftNote(1085, 7, {
+        note: "Draft body",
+        position: {
+          base_sha: "base",
+          start_sha: "start",
+          head_sha: "head",
+          position_type: "text",
+          old_path: "src/old.ts",
+          new_path: "src/new.ts",
+          new_line: 14,
+        },
+      }),
+    ).resolves.toMatchObject({
+      id: 12,
+      note: "Draft body",
+    });
+  });
+
+  it("bulk publishes draft notes without requiring a response body", async () => {
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        expect(getRequestUrl(input)).toBe(
+          "https://gitlab.example.com/api/v4/projects/1085/merge_requests/7/draft_notes/bulk_publish",
+        );
+        expect(init?.method).toBe("POST");
+
+        return new Response(null, { status: 204 });
+      },
+    );
+
+    globalThis.fetch = fetchMock;
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent"),
+    });
+
+    await expect(
+      client.bulkPublishMergeRequestDraftNotes(1085, 7),
+    ).resolves.toBeUndefined();
+  });
+
+  it("lists merge request discussions with no-cache headers when requested", async () => {
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        expect(getRequestUrl(input)).toBe(
+          "https://gitlab.example.com/api/v4/projects/1085/merge_requests/7/discussions?page=1&per_page=100",
+        );
+
+        const headers = new Headers(init?.headers);
+        expect(headers.get("cache-control")).toBe("no-cache");
+        expect(headers.get("pragma")).toBe("no-cache");
+
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        });
+      },
+    );
+
+    globalThis.fetch = fetchMock;
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent"),
+    });
+
+    await expect(
+      client.listMergeRequestDiscussions(1085, 7, { noCache: true }),
+    ).resolves.toEqual([]);
+  });
+
+  it("lists merge request notes with no-cache headers when requested", async () => {
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        expect(getRequestUrl(input)).toBe(
+          "https://gitlab.example.com/api/v4/projects/1085/merge_requests/7/notes?page=1&per_page=100",
+        );
+
+        const headers = new Headers(init?.headers);
+        expect(headers.get("cache-control")).toBe("no-cache");
+        expect(headers.get("pragma")).toBe("no-cache");
+
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        });
+      },
+    );
+
+    globalThis.fetch = fetchMock;
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent"),
+    });
+
+    await expect(
+      client.listMergeRequestNotes(1085, 7, { noCache: true }),
+    ).resolves.toEqual([]);
+  });
+
+  it("deletes draft notes without requiring a response body", async () => {
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        expect(getRequestUrl(input)).toBe(
+          "https://gitlab.example.com/api/v4/projects/1085/merge_requests/7/draft_notes/12",
+        );
+        expect(init?.method).toBe("DELETE");
+
+        return new Response(null, { status: 204 });
+      },
+    );
+
+    globalThis.fetch = fetchMock;
+
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent"),
+    });
+
+    await expect(
+      client.deleteMergeRequestDraftNote(1085, 7, 12),
+    ).resolves.toBeUndefined();
   });
 });

@@ -7,7 +7,14 @@ import tseslint from "typescript-eslint";
 
 export default defineConfig(
   {
-    ignores: ["coverage/**", "data/**", "dist/**", "node_modules/**", "tmp/**"],
+    ignores: [
+      "coverage/**",
+      "data/**",
+      "dist/**",
+      "node_modules/**",
+      "tmp/**",
+      "src/storage/adapters/flotiq/flotiq-api.d.ts",
+    ],
   },
   {
     files: ["**/*.ts"],

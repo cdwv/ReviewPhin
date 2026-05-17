@@ -21,7 +21,7 @@ export const tenantConfigSchema = z.object({
   projectId: z.coerce.number().int().positive(),
   apiToken: z.string().min(1),
   webhookSecret: z.string().min(1),
-  botUserId: z.coerce.number().int().positive().optional(),
+  botUserId: z.coerce.number().int().positive(),
   botUsername: z.string().min(1),
   modelProfileName: modelProfileNameSchema.optional(),
 });

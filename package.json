@@ -38,5 +38,8 @@
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.59.2",
     "vitest": "^3.2.4"
+  },
+  "optionalDependencies": {
+    "@flotiq/flotiq-api-sdk": "1.0.0-alpha.12"
   }
 }

@@ -23,6 +23,7 @@ export function buildReviewPrompt(
     options.maxPromptMemoryChars ?? DEFAULT_MAX_PROMPT_MEMORY_CHARS;
   return [
     renderPrompt(getPromptTemplateId(context), {}),
+    ...buildAttachmentRuntimeNote(context),
     "",
     "JSON schema:",
     JSON.stringify(reviewResponseSchema, null, 2),
@@ -40,6 +41,7 @@ export function buildChatterPrompt(context: ChatterRunContext): string {
   const maxPromptMemoryChars = DEFAULT_MAX_PROMPT_MEMORY_CHARS;
   return [
     renderPrompt(getChatterPromptTemplateId(context), {}),
+    ...buildAttachmentRuntimeNote(context.reviewContext),
     "",
     "JSON schema:",
     JSON.stringify(chatterResponseSchema, null, 2),
@@ -94,6 +96,20 @@ export function buildCompactReviewContext(
   maxPromptMemoryChars: number,
 ) {
   return {
+    attachments: context.attachments.map((attachment) => ({
+      sourceKind: attachment.sourceKind,
+      noteId: attachment.noteId,
+      displayName: attachment.displayName,
+      contentType: attachment.contentType,
+    })),
+    attachmentIssues: context.attachmentIssues.map((issue) => ({
+      sourceKind: issue.sourceKind,
+      noteId: issue.noteId,
+      displayName: issue.displayName,
+      status: issue.status,
+      message: issue.message,
+      url: issue.url,
+    })),
     reviewMode: context.scope.mode,
     reviewScope: {
       summary: context.scope.scopeSummary,
@@ -353,6 +369,8 @@ function buildCompactChatterContext(
   return {
     phase: context.phase,
     replyStyle: context.replyStyle,
+    attachments: sharedReviewContext?.attachments ?? [],
+    attachmentIssues: sharedReviewContext?.attachmentIssues ?? [],
     reviewMode: sharedReviewContext?.reviewMode ?? null,
     reviewScope: sharedReviewContext?.reviewScope ?? null,
     reviewTrigger: sharedReviewContext?.reviewTrigger ?? compactTrigger,
@@ -394,4 +412,34 @@ function buildCompactChatterContext(
       : null,
     reviewerReplyHandoff: context.reviewerReplyHandoff ?? null,
   };
+}
+
+function buildAttachmentRuntimeNote(
+  context:
+    | Pick<ReviewContext, "attachments" | "attachmentIssues">
+    | null
+    | undefined,
+): string[] {
+  if (!context || context.attachmentIssues.length === 0) {
+    return [];
+  }
+
+  const failedImages = context.attachmentIssues
+    .map((issue) => issue.displayName)
+    .filter((value, index, values) => values.indexOf(value) === index);
+  const availableImages = context.attachments
+    .map((attachment) => attachment.displayName)
+    .filter((value, index, values) => values.indexOf(value) === index);
+  const missingDescription =
+    failedImages.length > 0 ? failedImages.join(", ") : "referenced images";
+  const availableDescription =
+    availableImages.length > 0
+      ? `The images that were sent successfully are: ${availableImages.join(", ")}.`
+      : "No referenced images were sent successfully.";
+
+  return [
+    "",
+    "Runtime note:",
+    `GitLab failed to download ${context.attachmentIssues.length} referenced image attachment(s) before this run. These images were not sent to you: ${missingDescription}. ${availableDescription} Do not claim to have inspected the missing images. If they seem relevant, explicitly mention that some referenced GitLab images were unavailable because GitLab download requests failed, and reason from the remaining context only.`,
+  ];
 }

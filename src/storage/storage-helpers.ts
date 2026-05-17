@@ -75,6 +75,11 @@ export interface StorageHelpers {
     retryCount: number,
     error: string,
   ): Promise<void>;
+  markJobCancelled(
+    jobId: string,
+    retryCount: number,
+    reason: string,
+  ): Promise<void>;
   createMergeRequestSnapshot(
     input: CreateMergeRequestSnapshotInput,
   ): Promise<MergeRequestSnapshotRecord>;
@@ -91,6 +96,7 @@ export interface StorageHelpers {
     resultJson: string | null,
   ): Promise<void>;
   failInteractionRun(interactionRunId: string, error: string): Promise<void>;
+  cancelInteractionRun(interactionRunId: string, reason: string): Promise<void>;
   upsertInteractionRunMetrics(
     input: UpsertInteractionRunMetricsInput,
   ): Promise<InteractionRunMetricsRecord>;
@@ -147,7 +153,7 @@ export class StoreBackedStorage implements StorageHelpers {
       }
     }
 
-    return this.stores.modelProfiles.upsert({
+    await this.stores.modelProfiles.upsert({
       name: input.name,
       providerBaseUrl: resolved.providerBaseUrl,
       providerType: resolved.providerType,
@@ -159,6 +165,12 @@ export class StoreBackedStorage implements StorageHelpers {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     });
+
+    return getRequiredRecord(
+      this.stores.modelProfiles,
+      input.name,
+      `Failed to persist model profile ${input.name}`,
+    );
   }
 
   public async setDefaultModelProfile(
@@ -184,10 +196,16 @@ export class StoreBackedStorage implements StorageHelpers {
       throw new Error(`Unknown model profile ${name}`);
     }
 
-    return this.stores.modelProfiles.patch({
+    await this.stores.modelProfiles.patch({
       id: name,
       value: { isDefault: true, updatedAt: now },
     });
+
+    return getRequiredRecord(
+      this.stores.modelProfiles,
+      name,
+      `Failed to update model profile ${name}`,
+    );
   }
 
   public async deleteModelProfile(
@@ -231,19 +249,26 @@ export class StoreBackedStorage implements StorageHelpers {
     }
 
     const now = new Date().toISOString();
-    return this.stores.tenants.upsert({
-      id: existing?.id ?? createId("tenant"),
+    const tenantId = existing?.id ?? createId("tenant");
+    await this.stores.tenants.upsert({
+      id: tenantId,
       key: tenantKey,
       baseUrl: tenant.baseUrl,
       projectId: tenant.projectId,
       apiToken: tenant.apiToken,
       webhookSecret: tenant.webhookSecret,
-      botUserId: tenant.botUserId ?? null,
-      botUsername: tenant.botUsername ?? null,
+      botUserId: tenant.botUserId,
+      botUsername: tenant.botUsername,
       modelProfileName: resolvedModelProfileName,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     });
+
+    return getRequiredRecord(
+      this.stores.tenants,
+      tenantId,
+      `Failed to persist tenant ${tenantKey}`,
+    );
   }
 
   public async setTenantModelProfile(
@@ -267,13 +292,19 @@ export class StoreBackedStorage implements StorageHelpers {
       }
     }
 
-    return this.stores.tenants.patch({
+    await this.stores.tenants.patch({
       id: tenant.id,
       value: {
         modelProfileName,
         updatedAt: new Date().toISOString(),
       },
     });
+
+    return getRequiredRecord(
+      this.stores.tenants,
+      tenant.id,
+      `Failed to update tenant ${tenant.id}`,
+    );
   }
 
   public async getTenantDeletionSummary(
@@ -357,7 +388,7 @@ export class StoreBackedStorage implements StorageHelpers {
 
     const now = new Date().toISOString();
     const expectedId = createId("job");
-    const job = await this.stores.interactionJobs.upsert({
+    await this.stores.interactionJobs.upsert({
       id: expectedId,
       tenantId: input.tenantId,
       dedupeKey: input.dedupeKey,
@@ -373,6 +404,12 @@ export class StoreBackedStorage implements StorageHelpers {
       startedAt: null,
       finishedAt: null,
     });
+
+    const job = await this.stores.interactionJobs.get(expectedId);
+
+    if (!job) {
+      throw new Error("Failed to create interaction job");
+    }
 
     return {
       job,
@@ -435,12 +472,29 @@ export class StoreBackedStorage implements StorageHelpers {
     });
   }
 
+  public async markJobCancelled(
+    jobId: string,
+    retryCount: number,
+    reason: string,
+  ): Promise<void> {
+    await this.stores.interactionJobs.patch({
+      id: jobId,
+      value: {
+        status: "cancelled",
+        retryCount,
+        lastError: reason,
+        finishedAt: new Date().toISOString(),
+      },
+    });
+  }
+
   public async createMergeRequestSnapshot(
     input: CreateMergeRequestSnapshotInput,
   ): Promise<MergeRequestSnapshotRecord> {
     const now = new Date().toISOString();
-    return this.stores.mergeRequestSnapshots.upsert({
-      id: createId("snapshot"),
+    const snapshotId = createId("snapshot");
+    await this.stores.mergeRequestSnapshots.upsert({
+      id: snapshotId,
       interactionJobId: input.interactionJobId,
       tenantId: input.tenantId,
       mergeRequestIid: input.mergeRequestIid,
@@ -455,14 +509,21 @@ export class StoreBackedStorage implements StorageHelpers {
       workspaceStrategy: input.workspaceStrategy,
       createdAt: now,
     });
+
+    return getRequiredRecord(
+      this.stores.mergeRequestSnapshots,
+      snapshotId,
+      `Failed to create merge request snapshot ${snapshotId}`,
+    );
   }
 
   public async createInteractionRun(
     input: CreateInteractionRunInput,
   ): Promise<InteractionRunRecord> {
     const now = new Date().toISOString();
-    return this.stores.interactionRuns.upsert({
-      id: createId("run"),
+    const runId = createId("run");
+    await this.stores.interactionRuns.upsert({
+      id: runId,
       interactionJobId: input.interactionJobId,
       tenantId: input.tenantId,
       provider: input.provider,
@@ -477,6 +538,12 @@ export class StoreBackedStorage implements StorageHelpers {
       startedAt: now,
       finishedAt: null,
     });
+
+    return getRequiredRecord(
+      this.stores.interactionRuns,
+      runId,
+      `Failed to create interaction run ${runId}`,
+    );
   }
 
   public async getLatestCompletedInteractionForMergeRequest(
@@ -585,17 +652,27 @@ export class StoreBackedStorage implements StorageHelpers {
     interactionRunId: string,
     error: string,
   ): Promise<void> {
-    const findings = await listAll(this.stores.reviewFindings, {
-      filters: { interactionRunId: { eq: interactionRunId } },
-    });
-    await this.stores.reviewFindings.deleteMany(
-      findings.map((finding) => finding.id),
-    );
+    await this.clearInteractionRunFindings(interactionRunId);
     await this.stores.interactionRuns.patch({
       id: interactionRunId,
       value: {
         status: "failed",
         error,
+        finishedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  public async cancelInteractionRun(
+    interactionRunId: string,
+    reason: string,
+  ): Promise<void> {
+    await this.clearInteractionRunFindings(interactionRunId);
+    await this.stores.interactionRuns.patch({
+      id: interactionRunId,
+      value: {
+        status: "cancelled",
+        error: reason,
         finishedAt: new Date().toISOString(),
       },
     });
@@ -608,9 +685,10 @@ export class StoreBackedStorage implements StorageHelpers {
       interactionRunId: { eq: input.interactionRunId },
     });
     const now = new Date().toISOString();
+    const metricsId = existing?.id ?? createId("metrics");
 
-    return this.stores.interactionRunMetrics.upsert({
-      id: existing?.id ?? createId("metrics"),
+    await this.stores.interactionRunMetrics.upsert({
+      id: metricsId,
       interactionRunId: input.interactionRunId,
       triggerKind: input.triggerKind,
       promptMode: input.promptMode,
@@ -635,6 +713,15 @@ export class StoreBackedStorage implements StorageHelpers {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     });
+
+    const metrics = await this.stores.interactionRunMetrics.find({
+      interactionRunId: { eq: input.interactionRunId },
+    });
+    if (!metrics) {
+      throw new Error(`Failed to persist interaction run metrics ${metricsId}`);
+    }
+
+    return metrics;
   }
 
   public async replaceReviewFindings(
@@ -757,9 +844,10 @@ export class StoreBackedStorage implements StorageHelpers {
       gitlabDiscussionId: { eq: input.gitlabDiscussionId },
     });
     const now = new Date().toISOString();
+    const mappingId = existing?.id ?? input.id ?? createId("mapping");
 
-    return this.stores.discussionMappings.upsert({
-      id: existing?.id ?? input.id ?? createId("mapping"),
+    await this.stores.discussionMappings.upsert({
+      id: mappingId,
       tenantId: input.tenantId,
       projectId: input.projectId,
       mergeRequestIid: input.mergeRequestIid,
@@ -782,6 +870,23 @@ export class StoreBackedStorage implements StorageHelpers {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     });
+
+    return getRequiredRecord(
+      this.stores.discussionMappings,
+      mappingId,
+      `Failed to persist discussion mapping ${mappingId}`,
+    );
+  }
+
+  private async clearInteractionRunFindings(
+    interactionRunId: string,
+  ): Promise<void> {
+    const findings = await listAll(this.stores.reviewFindings, {
+      filters: { interactionRunId: { eq: interactionRunId } },
+    });
+    await this.stores.reviewFindings.deleteMany(
+      findings.map((finding) => finding.id),
+    );
   }
 
   private async buildTenantDeletionSummary(
@@ -960,6 +1065,19 @@ export async function listAll<TEntity, TFilters, TOrder extends string>(
       return results;
     }
   }
+}
+
+async function getRequiredRecord<TEntity, TFilters, TOrder extends string>(
+  store: EntityStore<TEntity, TFilters, TOrder>,
+  id: string,
+  errorMessage: string,
+): Promise<TEntity> {
+  const record = await store.get(id);
+  if (!record) {
+    throw new Error(errorMessage);
+  }
+
+  return record;
 }
 
 function parseJson<T>(value: string | null): T | null {
