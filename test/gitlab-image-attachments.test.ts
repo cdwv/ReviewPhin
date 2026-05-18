@@ -14,7 +14,8 @@ describe("discoverGitLabImageAttachmentReferences", () => {
           description:
             'MR body ![Architecture](../uploads/xyz789/diagram.png)\n<img src="/group/project/-/uploads/qwe123/mockup.webp" />',
           project_id: 1085,
-          web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+          web_url:
+            "https://gitlab.example.com/group/project/-/merge_requests/7",
         },
         triggerNote: {
           noteId: 55,
@@ -46,7 +47,7 @@ describe("discoverGitLabImageAttachmentReferences", () => {
         mergeRequest: {
           description: "",
           project_id: 965,
-          web_url: "https://git.cdwv.pl/-/project/965/merge_requests/12",
+          web_url: "https://gitlab.example.com/-/project/965/merge_requests/12",
         },
         triggerNote: {
           noteId: 77,
@@ -57,7 +58,7 @@ describe("discoverGitLabImageAttachmentReferences", () => {
       {
         sourceKind: "trigger-note",
         noteId: 77,
-        url: "https://git.cdwv.pl/-/project/965/uploads/a4e409a5e0d64b46d62752f4e31aa61f/image.png",
+        url: "https://gitlab.example.com/-/project/965/uploads/a4e409a5e0d64b46d62752f4e31aa61f/image.png",
       },
     ]);
   });
@@ -69,7 +70,7 @@ describe("discoverGitLabImageAttachmentReferences", () => {
           description: "",
           project_id: 1109,
           web_url:
-            "https://git.cdwv.pl/devops/gitlab-agentic-webhooks/-/merge_requests/18",
+            "https://gitlab.example.com/devops/gitlab-agentic-webhooks/-/merge_requests/18",
         },
         triggerNote: {
           noteId: 75943,
@@ -80,7 +81,7 @@ describe("discoverGitLabImageAttachmentReferences", () => {
       {
         sourceKind: "trigger-note",
         noteId: 75943,
-        url: "https://git.cdwv.pl/-/project/1109/uploads/fdb9b4ef02371c7e3271fec3c2b9c790/image.png",
+        url: "https://gitlab.example.com/-/project/1109/uploads/fdb9b4ef02371c7e3271fec3c2b9c790/image.png",
       },
     ]);
   });

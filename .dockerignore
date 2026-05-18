@@ -1,4 +1,5 @@
 .git
+.gitlab-ci.yml
 .gitignore
 .env
 .env.local
