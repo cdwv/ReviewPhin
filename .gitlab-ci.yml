@@ -158,8 +158,8 @@ build_dockerhub_description:
     - if: $CI_COMMIT_TAG
   artifacts:
     when: on_success
-    files:
-      - DOCKERHUB_README.md
+    paths:
+      - README_DOCKERHUB.md
   variables:
     PUBLIC_REPO_URL_PREFIX: ./ # Used for linking to files in the repository, e.g. /blob/main/README.md
     EXT_REGISTRY_REPOSITORY: cdwv/reviewphin
