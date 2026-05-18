@@ -159,7 +159,7 @@ build_dockerhub_description:
   artifacts:
     when: on_success
     paths:
-      - README_DOCKERHUB.md
+      - DOCKERHUB_README.md
   variables:
     PUBLIC_REPO_URL_PREFIX: ./ # Used for linking to files in the repository, e.g. /blob/main/README.md
     EXT_REGISTRY_REPOSITORY: cdwv/reviewphin
