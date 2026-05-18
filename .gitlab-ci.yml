@@ -11,6 +11,26 @@ include:
   - project: "devops/ci-templates"
     ref: main
     file: "/k8s/ensure-namespace.yaml"
+  - component: '$CI_SERVER_FQDN/devops/happy-changelog-gitlab-ci/happy-changelog@v1.4.1'
+    inputs:
+      changelog_file: CHANGELOG.md             # Path to changelog file
+      git_access_token: $AUTOCOMMIT_ACCESS_TOKEN  # Token for git operations
+      git_commit_user_name: "CI Pipeline"      # Optional: Name for git commits
+      git_commit_user_email: "ci@example.com"  # Optional: Email for git commits
+      error_on_template: "Changelog: major/minor/patch (choose one)"
+      validation_example: |                    # Optional: Example shown on validation failure
+        /changelog minor
+        
+        ### Added
+        * New feature
+      default_change_level: "patch"           # Optional: Default level if none specified
+      autotag_stage: "build"
+      validate_changelog_stage: "test"
+      release_stage: "deployment"
+      release_needs: 
+      - "build_image"
+      release_rules:
+        - if: $CI_COMMIT_TAG
 
 stages:
   - test
@@ -108,7 +128,7 @@ test:
         path: coverage/cobertura-coverage.xml
   rules:
     - if: $CI_MERGE_REQUEST_IID
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
 
 build_image:
   extends: .build-image
@@ -123,7 +143,9 @@ build_image:
       allow_failure: true
       variables:
         IMAGE_TAG: ${CI_REGISTRY_IMAGE}:mr-${CI_MERGE_REQUEST_IID}
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+      variables:
+        IMAGE_TAG: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}
 
 deploy_production:
   extends: .deployment
@@ -140,4 +162,6 @@ deploy_production:
       allow_failure: true
       variables:
         IMAGE_TAG: mr-${CI_MERGE_REQUEST_IID}
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+      variables:
+        IMAGE_TAG: ${CI_COMMIT_TAG}
