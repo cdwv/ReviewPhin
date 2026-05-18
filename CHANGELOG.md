@@ -4,6 +4,10 @@ Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-change
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 
+## v0.1.1 - 2026-05-18
+### Fixed
+* make sure .gitlab-ci.yml won't end up in docker image
+
 ## v0.1.0 - 2026-05-18
 ### Added
 * Automated dockerhub publishing
