@@ -14,40 +14,26 @@
 
 ReviewPhin is a hard working dolphin that listens for GitLab merge request comments, runs a multi-agent AI review, and writes findings back as GitLab discussions - while only ever touching content it created itself.
 
-All model calls go through configured harness (currently Copilot CLI, but more may come) so either subscription models, or [OpenAI-compatible API](docs/model-providers.md) can be connected. 
-
-Everything is yours: Storage, Copilot subscription or custom models. **You know what you pay for because it's all yours.**
+All model calls go through a configured harness (currently Copilot CLI, but more may come) so you can plug in either a subscription model or an [OpenAI-compatible API](docs/model-providers.md).
 
 *Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWave](https://codewave.eu)*
 
 
 ## Table of Contents
 
-- [How it works](#how-it-works)
 - [Quickstart with Docker](#quickstart-with-docker)
 - [Kubernetes / Helm](#kubernetes--helm)
 - [Adding tenants](#adding-tenants)
 - [Using ReviewPhin in GitLab](#using-reviewphin-in-gitlab)
+- [How it works](#how-it-works)
 - [Review pipeline](#review-pipeline)
 - [Technologies](#technologies)
 - [Environment variables](#environment-variables)
+- [Inspiration & motivation](#inspiration--motivation)
 - [CLI reference](docs/CLI.md)
 - [Model providers](docs/model-providers.md)
 - [Code review platform providers](docs/code-review-platform-providers.md)
 - [Storage providers](docs/storage-providers.md)
-
----
-
-## How it works
-
-1. A developer mentions the bot in a GitLab merge request comment (`@reviewphin review this`).
-2. ReviewPhin receives the GitLab Note Hook webhook, validates the signature, and queues a job.
-3. The **Router** hydrates the merge request: it checks out the exact commit, fetches diffs, notes, and any project instruction files.
-4. The **Reviewer** (a two-agent pipeline) analyses the changes and produces structured findings with severity, category, optional line anchors, and inline code suggestions.
-5. The **Chatter** handles follow-up replies, conversational questions, and durable project memory updates.
-6. Findings are reconciled back into GitLab as bot-owned discussions. Obsolete threads are resolved; the summary note is updated.
-
-All code and data stay on your infrastructure. The worker calls the configured model API and the GitLab API; nothing else leaves the network.
 
 ---
 
@@ -265,6 +251,19 @@ This selects a named model profile for every review run on that MR. To read more
 
 ---
 
+## How it works
+
+1. A developer mentions the bot in a GitLab merge request comment (`@reviewphin review this`).
+2. ReviewPhin receives the GitLab Note Hook webhook, validates the signature, and queues a job.
+3. The **Router** hydrates the merge request: it checks out the exact commit, fetches diffs, notes, and any project instruction files.
+4. The **Reviewer** (a two-agent pipeline) analyses the changes and produces structured findings with severity, category, optional line anchors, and inline code suggestions.
+5. The **Chatter** handles follow-up replies, conversational questions, and durable project memory updates.
+6. Findings are reconciled back into GitLab as bot-owned discussions. Obsolete threads are resolved; the summary note is updated.
+
+All code and data stay on your infrastructure. The worker calls the configured model API and the GitLab API; nothing else leaves the network.
+
+---
+
 ## Review pipeline
 
 ReviewPhin uses three logical components for each triggered review:
@@ -346,3 +345,21 @@ For custom storage adapters see [Storage providers](docs/storage-providers.md).
 | ------ | ----------------------- | ----------------------------------------- |
 | `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}` |
 | `POST` | `/webhooks/gitlab/note` | GitLab Note Hook receiver                 |
+
+---
+
+## Inspiration & motivation
+
+ReviewPhin exists because of the work other people have already done in this space. It is not trying to compete with them - it is trying to fill a specific gap.
+
+- **[CodeRabbit](https://www.coderabbit.ai/)** is the single biggest inspiration. The shape of the review pipeline, the way findings are reconciled as bot-owned discussions, and the overall feel of conversational follow-ups all started from "what CodeRabbit does, but self-hosted". If you can afford their per-developer pricing, they are almost certainly the better product.
+- **[Greptile](https://www.greptile.com/)** is another tool in a similar space that showed me how effective the conversational, discussion-driven review format can be. I looked into it much less deeply than CodeRabbit, but I'd be lying if I said I didn't read through their docs before starting my own project. Same caveat applies - a polished hosted product run by people who do this full time and probably with better results than what ReviewPhin can provide.
+- **[GitHub Copilot code review](https://docs.github.com/en/copilot/using-github-copilot/code-review)** showed me that copilot is capable of good reviews on some of my projects. The catch for me was that it lives inside GitHub, and the projects I work on primarily live on GitLab.
+
+The motivation, then, is the intersection of three constraints those tools did not cover for me:
+
+1. **Affordability for small teams.** Per-developer pricing scales linearly with headcount even when only a fraction of MRs need AI review. A single Copilot seat (or a self-hosted model) can drive reviews for a whole team and usually costs less than one CodeRabbit/Greptile seat. If you have spare quotas on your Copilot license, you might even be able to run ReviewPhin at no model extra cost.
+2. **Bring-your-own model, including private ones.** I wanted to point the reviewer at models hosted inside our own infrastructure - e.g. a Qwen 3 27B running on internal GPUs - to push the cost down further and keep code inside the network. ReviewPhin's harness/profile system exists primarily to make that possible.
+3. **GitLab first.** ReviewPhin starts from self-hosted GitLab in mind. Why? Because I use it as daily driver for most of my development work. (see [Code review platform providers](docs/code-review-platform-providers.md)).
+
+So: **everything is yours.** Storage, model, subscription, hosting. You know what you pay for because it's all yours - and if any of the projects above fits your team and budget better, please use them. They are great.
