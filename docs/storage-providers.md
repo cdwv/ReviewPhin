@@ -1,6 +1,6 @@
 # Storage providers
 
-Reviewphin uses a pluggable storage layer. The built-in adapter is SQLite. External adapters are loaded dynamically via `STORAGE_PROVIDER_MODULE`.
+ReviewPhin uses a pluggable storage layer. The built-in adapter is SQLite. External adapters are loaded dynamically via `STORAGE_PROVIDER_MODULE`.
 
 ---
 
@@ -34,11 +34,11 @@ reviewphin storage migrate \
 
 ## Flotiq
 
-[Flotiq](https://flotiq.com/) is a headless CMS with a REST API. Reviewphin includes a Flotiq storage adapter as an alternative to SQLite.
+[Flotiq](https://flotiq.com/) is a headless CMS with a REST API. ReviewPhin includes a Flotiq storage adapter as an alternative to SQLite for cases where you want an **admin panel** for managing configuration instead of going through the CLI.
 
 ### When to use Flotiq
 
-Flotiq is useful when you want a managed, API-accessible data store without running a database yourself. It is hosted, so it adds an external dependency; consider whether that aligns with your privacy and self-hosting requirements.
+Flotiq is useful when you want a managed, API-accessible data store without running a database yourself - and when the built-in admin panel for browsing and editing data is more convenient than the CLI. It is hosted, so it adds an external dependency; consider whether that aligns with your privacy and self-hosting requirements.
 
 ### Setup
 
@@ -53,10 +53,8 @@ Flotiq is useful when you want a managed, API-accessible data store without runn
 4. Set `STORAGE_PROVIDER_MODULE` to the built-in Flotiq entrypoint:
 
    ```env
-   STORAGE_PROVIDER_MODULE=./dist/storage/adapters/flotiq/entrypoint.js
+   STORAGE_PROVIDER_MODULE=flotiq
    ```
-
-   When running from a local checkout, the path is relative to the working directory where the worker starts. In Docker, use the absolute path `/app/dist/storage/adapters/flotiq/entrypoint.js`.
 
 5. On first startup, the adapter will create the required Flotiq content type definitions (schema migration). This requires a read-write API key with content-type management permissions.
 
@@ -110,7 +108,7 @@ See `src/storage/adapters/README.md` in the repository for the full adapter auth
 
 ## Future adapters
 
-The following adapters are not yet implemented but are on the roadmap:
+The following adapters are not yet implemented but are probably the first to appear:
 
 | Adapter                      | Notes                                                                   |
 | ---------------------------- | ----------------------------------------------------------------------- |
@@ -118,4 +116,4 @@ The following adapters are not yet implemented but are on the roadmap:
 | **MySQL / MariaDB**          | Alternative relational backend                                          |
 | **DynamoDB / Cloudflare D1** | Serverless-friendly key-value or SQL stores                             |
 
-Contributions welcome — see [CONTRIBUTORS.md](../CONTRIBUTORS.md) for how to submit a pull request.
+Contributions welcome - see [CONTRIBUTORS.md](../CONTRIBUTORS.md) for how to submit a pull request.

@@ -19,6 +19,6 @@ Omit `replyHandoff` entirely when no such reply is needed. If you include it, `r
 
 Do not compose standalone human-facing conversational replies outside bot-owned finding threads. Return review artifacts plus `replyHandoff`, and let chatter handle those local replies.
 
-Whenever the fix is concrete and low-risk, prefer returning a `suggestion` so GitLab can offer an applyable patch. Suggestions must target the exact new-side diff lines they replace. Align the finding anchor with those exact lines. The `replacement` value must be verbatim source code — do not wrap it in code fences or add any Markdown formatting.
+Whenever the fix is concrete and low-risk, prefer returning a `suggestion` so GitLab can offer an applyable patch. Suggestions must target the exact new-side diff lines they replace. Align the finding anchor with those exact lines. The `replacement` value must be verbatim source code - do not wrap it in code fences or add any Markdown formatting.
 
 Never claim that a prior thread is resolved unless the JSON also includes a `priorDispositions` entry with action `resolve` for that thread.

@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="favicon.png" alt="Reviewphin" width="120" />
+  <img src="favicon.png" alt="ReviewPhin" width="120" />
 
-  # Reviewphin
+  # ReviewPhin
 
   **Self-hosted AI code review for GitLab.**
   Run on your own infrastructure. Bring your own model. Use your own agent subscription to pay per review, not per developer.
@@ -12,7 +12,7 @@
 
 ---
 
-Reviewphin is a hard working dolphin that listens for GitLab merge request comments, runs a multi-agent AI review, and writes findings back as GitLab discussions — while only ever touching content it created itself.
+ReviewPhin is a hard working dolphin that listens for GitLab merge request comments, runs a multi-agent AI review, and writes findings back as GitLab discussions - while only ever touching content it created itself.
 
 All model calls go through configured harness (currently Copilot CLI, but more may come) so either subscription models, or [OpenAI-compatible API](docs/model-providers.md) can be connected. 
 
@@ -27,12 +27,13 @@ Everything is yours: Storage, Copilot subscription or custom models. **You know 
 - [Quickstart with Docker](#quickstart-with-docker)
 - [Kubernetes / Helm](#kubernetes--helm)
 - [Adding tenants](#adding-tenants)
-- [Using Reviewphin in GitLab](#using-reviewphin-in-gitlab)
+- [Using ReviewPhin in GitLab](#using-reviewphin-in-gitlab)
 - [Review pipeline](#review-pipeline)
 - [Technologies](#technologies)
 - [Environment variables](#environment-variables)
 - [CLI reference](docs/CLI.md)
 - [Model providers](docs/model-providers.md)
+- [Code review platform providers](docs/code-review-platform-providers.md)
 - [Storage providers](docs/storage-providers.md)
 
 ---
@@ -40,7 +41,7 @@ Everything is yours: Storage, Copilot subscription or custom models. **You know 
 ## How it works
 
 1. A developer mentions the bot in a GitLab merge request comment (`@reviewphin review this`).
-2. Reviewphin receives the GitLab Note Hook webhook, validates the signature, and queues a job.
+2. ReviewPhin receives the GitLab Note Hook webhook, validates the signature, and queues a job.
 3. The **Router** hydrates the merge request: it checks out the exact commit, fetches diffs, notes, and any project instruction files.
 4. The **Reviewer** (a two-agent pipeline) analyses the changes and produces structured findings with severity, category, optional line anchors, and inline code suggestions.
 5. The **Chatter** handles follow-up replies, conversational questions, and durable project memory updates.
@@ -82,7 +83,7 @@ The compose file mounts `./data` to `/app/data` (SQLite database + run logs) and
 
 ### 3. Expose the worker to GitLab
 
-Reviewphin receives GitLab webhooks over HTTPS. If your GitLab instance cannot reach your host directly, create a temporary tunnel:
+ReviewPhin receives GitLab webhooks over HTTPS. If your GitLab instance cannot reach your host directly, create a temporary tunnel:
 
 ```bash
 # Using cloudflared (no account needed for one-off tunnels)
@@ -94,7 +95,7 @@ ngrok http 3000
 
 Note the public HTTPS URL; you will use it in the webhook settings.
 
-For production, place Reviewphin behind a TLS-terminating reverse proxy or use the [Helm chart](#kubernetes--helm).
+For production, place ReviewPhin behind a TLS-terminating reverse proxy or use the [Helm chart](#kubernetes--helm).
 
 ### 4. Confirm it is running
 
@@ -125,7 +126,7 @@ If you prefer to configure separate Github api token for different projects, yop
 
 ## Adding tenants
 
-A **tenant** is a single project on given gitlab instance. One Reviewphin instance can serve multiple tenants, but each tenant is configured only for one project.
+A **tenant** is a single project on given gitlab instance. One ReviewPhin instance can serve multiple tenants, but each tenant is configured only for one project.
 
 ### 1. Create a bot identity in GitLab
 
@@ -135,7 +136,7 @@ Use one of:
 - a **group access token** (scoped to a group)
 - a **personal access token** belonging to a dedicated bot user (you must add it to project with at least Developer role)
 
-Required scope: **`api`** (read/write API access; also covers Git-over-HTTPS used during workspace hydration).
+Required scope: **`api`** - the only scope ReviewPhin uses on the token. It is needed to read merge request data, create/update/resolve bot-owned discussions, and to clone the repository over Git-over-HTTPS during workspace hydration. ReviewPhin never touches content it did not author itself; the `api` scope is used solely for the read/write actions described in [Review pipeline](#review-pipeline).
 
 Required project membership: **Developer or higher** (needed to resolve merge request discussions and read repository contents).
 
@@ -191,7 +192,7 @@ In the project's **Settings → Webhooks**:
 | Secret token | the same value you passed as `--webhook-secret` |
 | Trigger      | **Note events** only                            |
 
-Save, then use the **Test** button (select *Note events*) to verify Reviewphin receives the delivery and returns `200`.
+Save, then use the **Test** button (select *Note events*) to verify ReviewPhin receives the delivery and returns `200`.
 
 ### 5. Verify the tenant is registered
 
@@ -207,7 +208,7 @@ See [CLI reference](docs/CLI.md) for all tenant and model-profile commands.
 
 ---
 
-## Using Reviewphin in GitLab
+## Using ReviewPhin in GitLab
 
 > **Note:** The exact bot username depends on how you registered the tenant. The examples below use `@reviewphin`; substitute your own `--bot-username` value.
 
@@ -219,7 +220,7 @@ Post a merge request comment that mentions the bot:
 @reviewphin review this
 ```
 
-Reviewphin queues a job, hydrates the merge request, and creates or updates bot-owned discussion threads for each finding plus a summary note at the top of the discussion list.
+ReviewPhin queues a job, hydrates the merge request, and creates or updates bot-owned discussion threads for each finding plus a summary note at the top of the discussion list.
 
 On first run this is a **full review** covering all changed files. On subsequent runs for the same merge request it is an **incremental re-review** focused on files changed since the last run.
 
@@ -244,7 +245,7 @@ Can you suggest a more readable variable name here?
 
 ### Teach the bot project conventions
 
-To store a durable note in the project memory (written to the `Reviewphin memory` wiki page):
+To store a durable note in the project memory (written to the `ReviewPhin memory` wiki page):
 
 ```
 @reviewphin for future reference, we always prefer functional React components over class components
@@ -266,7 +267,7 @@ This selects a named model profile for every review run on that MR. To read more
 
 ## Review pipeline
 
-Reviewphin uses three logical components for each triggered review:
+ReviewPhin uses three logical components for each triggered review:
 
 ### Router
 
@@ -276,13 +277,13 @@ The webhook handler validates the GitLab signature, classifies the trigger (dire
 
 The main agent runs as two sequential subagents inside a single model session:
 
-1. **context-analyst** — explores the hydrated workspace using `glob`, `ripgrep`, and file-read tools to gather the context most relevant to the changed files.
-2. **review-author** — produces structured findings: severity, category, body text, optional diff anchor, and optional inline code suggestion.
+1. **context-analyst** - explores the hydrated workspace using `glob`, `ripgrep`, and file-read tools to gather the context most relevant to the changed files.
+2. **review-author** - produces structured findings: severity, category, body text, optional diff anchor, and optional inline code suggestion.
 
 The reviewer selects one of three modes based on trigger context:
-- **first-pass-full** — first review of the MR, or an explicit full rescan
-- **incremental-rereview** — focused on files changed since the last review
-- **follow-up-thread** — scoped to one existing discussion thread
+- **first-pass-full** - first review of the MR, or an explicit full rescan
+- **incremental-rereview** - focused on files changed since the last review
+- **follow-up-thread** - scoped to one existing discussion thread
 
 ### Chatter
 

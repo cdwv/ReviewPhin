@@ -1,6 +1,6 @@
 # Model providers
 
-Reviewphin selects a model through **named profiles** stored in the database. When no profiles exist, it uses the GitHub Copilot CLI directly. When profiles exist, the effective profile for a review run is resolved in this order:
+ReviewPhin selects a model through **named profiles** stored in the database. When no profiles exist, it uses the GitHub Copilot CLI, assuming it is already authenticated. When profiles exist, the effective profile for a review run is resolved in this order:
 
 1. `/reviewphin-profile <name>` directive in the merge request description
 2. the tenant's assigned profile (`tenant set-profile`)
@@ -9,19 +9,31 @@ Reviewphin selects a model through **named profiles** stored in the database. Wh
 
 Manage profiles with the [`model-profile` CLI commands](CLI.md#model-profile-commands).
 
+## Harnesses
+
+A **harness** is the CLI/SDK that ReviewPhin shells out to in order to actually run a model. Today there is only one supported harness - the **GitHub Copilot CLI** - and the sections below describe how to point it at different backends (GitHub Copilot's own models, an OpenAI-compatible endpoint, Azure OpenAI, or Anthropic).
+
+Other harnesses that may be added in the future:
+
+- **Cursor** - Cursor subscriptions expose a wide range of models. If it can be driven from a CLI environment, it will probably be added as another first-class harness.
+- **Codex** - probably the best next-in-line harness to support.
+- **Claude Code** - given recent changes to how programmatic tools are billed in Claude Code, there is little point in supporting it as a built-in harness. It might still serve as a good example of a custom harness if the API is extended to accept custom JS modules.
+
 ---
 
-## GitHub Copilot CLI (default)
+### GitHub Copilot CLI (default harness)
 
-When no model profile is active, Reviewphin drives review sessions through the bundled GitHub Copilot CLI. No `--base-url` or `--provider-type` is needed.
+When no model profile is active, ReviewPhin drives review sessions through the bundled GitHub Copilot CLI. No `--base-url` or `--provider-type` is needed.
 
-### Requirements
+The subsections below all describe the *same harness* - the Copilot CLI - configured to talk to different backends. Selecting OpenAI / Azure / Anthropic does not switch harnesses; it just tells the Copilot CLI where to send requests.
+
+#### Requirements
 
 - A GitHub account with an active **GitHub Copilot** entitlement (individual, organization, or enterprise).
 - If Copilot access comes from an organization or enterprise, **Copilot CLI** must be enabled by org/enterprise policy.
 - A **fine-grained PAT** with the **Copilot Requests** permission, or an interactive `copilot auth login` for local runs.
 
-### Authentication
+#### Authentication
 
 Set exactly one of:
 
@@ -35,7 +47,7 @@ COPILOT_GITHUB_TOKEN=github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 For local runs without a PAT, run `copilot auth login` once before starting the worker.
 
-### Pinning a specific model
+#### Pinning a specific model
 
 Create a profile with a `--review-model` but no `--base-url`:
 
@@ -51,11 +63,11 @@ Available model names depend on your Copilot plan and the models exposed through
 
 ---
 
-## OpenAI-compatible endpoints (BYOK)
+#### OpenAI-compatible endpoints (BYOK)
 
 Any provider that exposes an OpenAI-compatible API can be used. Set `--provider-type openai` and provide the `--base-url`.
 
-### Self-hosted vLLM
+##### Self-hosted vLLM
 
 ```bash
 reviewphin model-profile add \
@@ -67,7 +79,7 @@ reviewphin model-profile add \
 
 No `--auth-token` is needed when vLLM runs without an API key. If your vLLM instance requires one, add `--auth-token your-vllm-key`.
 
-### OpenAI (api.openai.com)
+##### OpenAI (api.openai.com)
 
 ```bash
 reviewphin model-profile add \
@@ -82,7 +94,7 @@ reviewphin model-profile add \
 
 ---
 
-## Azure OpenAI
+#### Azure OpenAI
 
 Use `--provider-type azure` for `*.openai.azure.com` endpoints. The `--review-model` value must be the **deployment name**, not the base model name.
 
@@ -98,7 +110,7 @@ reviewphin model-profile add \
 
 ---
 
-## Anthropic
+#### Anthropic
 
 ```bash
 reviewphin model-profile add \
@@ -112,7 +124,7 @@ reviewphin model-profile add \
 
 ---
 
-## Wire API mode
+#### Wire API mode
 
 The `--wire-api` flag controls the request/response wire format sent to the provider:
 
@@ -166,15 +178,4 @@ reviewphin model-profile add --name my-profile --clear-auth-token
 
 `--clear-base-url` also clears the stored provider type and wire API unless you explicitly set new values in the same command.
 
----
-
-## Future providers
-
-The following platforms are not yet supported as first-class providers but could be connected through their OpenAI-compatible APIs where available:
-
-| Platform                                       | Notes                                                      |
-| ---------------------------------------------- | ---------------------------------------------------------- |
-| **GitHub Actions / Copilot Workspace**         | Alternative GitHub-hosted execution context                |
-| **Bitbucket / GitHub as code review platform** | Using Reviewphin's agent core with a different SCM adapter |
-
-Contributions welcome — see [CONTRIBUTORS.md](../CONTRIBUTORS.md).
+Contributions welcome - see [CONTRIBUTORS.md](../CONTRIBUTORS.md).

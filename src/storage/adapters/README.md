@@ -29,7 +29,7 @@ Your provider owns:
 
 - environment parsing and constructor inputs
 - connection/client setup in `open()`
-- idempotent startup preparation in `prepare()`, which returns `StoragePreparationResult` — `{ providerId, storageContractRevision, appliedMigrationIds }`
+- idempotent startup preparation in `prepare()`, which returns `StoragePreparationResult` - `{ providerId, storageContractRevision, appliedMigrationIds }`
 - store implementations returned by `createStores()`
 - cleanup in `close()`
 

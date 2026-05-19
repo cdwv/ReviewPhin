@@ -1,4 +1,4 @@
-# Reviewphin CLI reference
+# ReviewPhin CLI reference
 
 The CLI manages tenants, model profiles, and storage from the command line.
 
@@ -20,7 +20,7 @@ Both invocations accept the same flags.
 
 ## Tenant commands
 
-Tenants are (GitLab instance URL, project ID) pairs. One Reviewphin instance can serve multiple tenants.
+Tenants are (GitLab instance URL, project ID) pairs. One ReviewPhin instance can serve multiple tenants.
 
 ### `tenant add`
 
@@ -130,7 +130,7 @@ reviewphin tenant remove \
 
 ## Model profile commands
 
-Model profiles store LLM provider configuration. When no profiles exist, Reviewphin uses the Copilot CLI directly. When profiles exist, the effective profile is resolved in this order:
+Model profiles store LLM provider configuration. When no profiles exist, ReviewPhin uses the Copilot CLI directly. When profiles exist, the effective profile is resolved in this order:
 
 1. `/reviewphin-profile <name>` directive in the merge request description
 2. the tenant's assigned profile
