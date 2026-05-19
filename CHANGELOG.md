@@ -4,6 +4,15 @@ Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-change
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 
+## v0.1.2 - 2026-05-19
+### Added
+* Inspiration & Motivation section is now added to the docs. It specifically gives thanks to the tools and teams behind them that inspired ReviewPhin
+
+### Changed
+* Make sure ReviewPhin is mentioned with consistent letter casing in docs
+* Clarify Code Review Platforms state and possible future expansion in docs
+* Docs now correctly describe OpenAI-compatible model providers as features of GitHub Copilot Harness
+
 ## v0.1.1 - 2026-05-18
 ### Fixed
 * make sure .gitlab-ci.yml won't end up in docker image
