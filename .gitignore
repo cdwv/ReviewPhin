@@ -6,4 +6,3 @@ coverage
 data
 tmp
 *.log
-DOCKERHUB_README.md

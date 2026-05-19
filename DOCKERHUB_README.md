@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="favicon.png" alt="ReviewPhin" width="120" />
+  <img src="./favicon.png" alt="ReviewPhin" width="120" />
 
   # ReviewPhin
 
@@ -7,33 +7,48 @@
   Run on your own infrastructure. Bring your own model. Use your own agent subscription to pay per review, not per developer.
 
   [![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)
-  [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](LICENSE)
+  [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](./LICENSE)
 </div>
 
 ---
 
 ReviewPhin is a hard working dolphin that listens for GitLab merge request comments, runs a multi-agent AI review, and writes findings back as GitLab discussions - while only ever touching content it created itself.
 
-All model calls go through a configured harness (currently Copilot CLI, but more may come) so you can plug in either a subscription model or an [OpenAI-compatible API](docs/model-providers.md).
+All model calls go through a configured harness (currently Copilot CLI, but more may come) so you can plug in either a subscription model or an [OpenAI-compatible API](./docs/model-providers.md).
 
 *Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWave](https://codewave.eu)*
 
 
 ## Table of Contents
 
-- [Quickstart with Docker](#quickstart-with-docker)
-- [Kubernetes / Helm](#kubernetes--helm)
-- [Adding tenants](#adding-tenants)
-- [Using ReviewPhin in GitLab](#using-reviewphin-in-gitlab)
-- [How it works](#how-it-works)
-- [Review pipeline](#review-pipeline)
-- [Technologies](#technologies)
-- [Environment variables](#environment-variables)
-- [Inspiration & motivation](#inspiration--motivation)
-- [CLI reference](docs/CLI.md)
-- [Model providers](docs/model-providers.md)
-- [Code review platform providers](docs/code-review-platform-providers.md)
-- [Storage providers](docs/storage-providers.md)
+- [ReviewPhin](#reviewphin)
+  - [Table of Contents](#table-of-contents)
+  - [Quickstart with Docker](#quickstart-with-docker)
+    - [1. Configure the worker](#1-configure-the-worker)
+    - [2. Start the container](#2-start-the-container)
+    - [3. Expose the worker to GitLab](#3-expose-the-worker-to-gitlab)
+    - [4. Confirm it is running](#4-confirm-it-is-running)
+  - [Kubernetes / Helm](#kubernetes--helm)
+  - [Adding tenants](#adding-tenants)
+    - [1. Create a bot identity in GitLab](#1-create-a-bot-identity-in-gitlab)
+    - [2. Find the project ID and bot identity](#2-find-the-project-id-and-bot-identity)
+    - [3. Register the tenant with the CLI](#3-register-the-tenant-with-the-cli)
+      - [In a Docker container](#in-a-docker-container)
+      - [From a local checkout](#from-a-local-checkout)
+    - [4. Add the webhook in GitLab](#4-add-the-webhook-in-gitlab)
+    - [5. Verify the tenant is registered](#5-verify-the-tenant-is-registered)
+  - [Using ReviewPhin in GitLab](#using-reviewphin-in-gitlab)
+    - [Trigger a review](#trigger-a-review)
+    - [Follow-up conversations](#follow-up-conversations)
+    - [Teach the bot project conventions](#teach-the-bot-project-conventions)
+    - [Override the model for one MR](#override-the-model-for-one-mr)
+  - [How it works](#how-it-works)
+  - [Review pipeline](#review-pipeline)
+    - [Router](#router)
+    - [Reviewer](#reviewer)
+  - [Technologies](#technologies)
+  - [Environment variables](#environment-variables)
+  - [Routes](#routes)
 
 ---
 
@@ -57,7 +72,7 @@ GH_TOKEN=<your-github-token>
 
 If you prefer to configure separate GitHub API tokens for different projects, you can skip this environment variable and configure [model profiles through CLI](./docs/CLI.md#model-profile-commands).
 
-See [Environment variables](#environment-variables) and [Model providers](docs/model-providers.md) for full options.
+See [Environment variables](#environment-variables) and [Model providers](./docs/model-providers.md) for full options.
 
 ### 2. Start the container
 
@@ -158,7 +173,7 @@ pnpm cli tenant add \
   --bot-username reviewphin
 ```
 
-To assign a specific model profile at registration time, add `--model-profile <name>`. See [Model providers](docs/model-providers.md) for profile setup.
+To assign a specific model profile at registration time, add `--model-profile <name>`. See [Model providers](./docs/model-providers.md) for profile setup.
 
 ### 4. Add the webhook in GitLab
 
@@ -182,7 +197,7 @@ docker compose run --rm worker reviewphin tenant list
 pnpm cli tenant list
 ```
 
-See [CLI reference](docs/CLI.md) for all tenant and model-profile commands.
+See [CLI reference](./docs/CLI.md) for all tenant and model-profile commands.
 
 ---
 
@@ -201,16 +216,6 @@ Post a merge request comment that mentions the bot:
 ReviewPhin queues a job, hydrates the merge request, and creates or updates bot-owned discussion threads for each finding plus a summary note at the top of the discussion list.
 
 On first run this is a **full review** covering all changed files. On subsequent runs for the same merge request it is an **incremental re-review** focused on files changed since the last run.
-
-### Force a full re-scan
-
-To ignore the previous review and rescan everything from scratch:
-
-```
-@reviewphin full review
-```
-
-Other accepted phrasings: `full rescan`, `fresh full review`, `rescan everything`.
 
 ### Follow-up conversations
 
@@ -276,15 +281,6 @@ The reviewer selects one of three modes based on trigger context:
 - **incremental-rereview** - focused on files changed since the last review
 - **follow-up-thread** - scoped to one existing discussion thread
 
-### Chatter
-
-A lightweight agent that runs after the reviewer (when applicable). It handles:
-- conversational replies to questions or wording requests
-- project memory decisions (`add_memory_entry` tool writes to the wiki page)
-- reply text for explicit follow-up targets
-
-Chatter uses the `textGenerationModel` from the active profile (falling back to the review model when unset), keeping lighter interactions cheaper.
-
 ---
 
 ## Technologies
@@ -306,8 +302,6 @@ Chatter uses the `textGenerationModel` from the active profile (falling back to 
 
 ## Environment variables
 
-All variables are optional unless noted. For local Docker from source, put them in `.env.docker`; for local runs, use `.env`.
-
 | Variable                                             | Default                          | Description                                                                     |
 | ---------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------- |
 | `PORT`                                               | `3000`                           | HTTP port                                                                       |
@@ -326,8 +320,8 @@ All variables are optional unless noted. For local Docker from source, put them 
 | `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS`                 | `5000`                           | Character budget for injected project memory                                    |
 | `GH_TOKEN` / `GITHUB_TOKEN` / `COPILOT_GITHUB_TOKEN` | _(required for Copilot mode)_    | GitHub PAT with **Copilot Requests** permission                                 |
 
-For model profile setup (BYOK providers, Azure OpenAI, etc.) see [Model providers](docs/model-providers.md).
-For custom storage adapters see [Storage providers](docs/storage-providers.md).
+For model profile setup (BYOK providers, Azure OpenAI, etc.) see [Model providers](./docs/model-providers.md).
+For custom storage adapters see [Storage providers](./docs/storage-providers.md).
 
 ---
 
@@ -337,21 +331,3 @@ For custom storage adapters see [Storage providers](docs/storage-providers.md).
 | ------ | ----------------------- | ----------------------------------------- |
 | `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}` |
 | `POST` | `/webhooks/gitlab/note` | GitLab Note Hook receiver                 |
-
----
-
-## Inspiration & motivation
-
-ReviewPhin exists because of the work other people have already done in this space. It is not trying to compete with them - it is trying to fill a specific gap.
-
-- **[CodeRabbit](https://www.coderabbit.ai/)** is the single biggest inspiration. The shape of the review pipeline, the way findings are reconciled as bot-owned discussions, and the overall feel of conversational follow-ups all started from "what CodeRabbit does, but self-hosted". If you can afford their per-developer pricing, they are almost certainly the better product.
-- **[Greptile](https://www.greptile.com/)** is another tool in a similar space that showed me how effective the conversational, discussion-driven review format can be. I looked into it much less deeply than CodeRabbit, but I'd be lying if I said I didn't read through their docs before starting my own project. Same caveat applies - a polished hosted product run by people who do this full time and probably with better results than what ReviewPhin can provide.
-- **[GitHub Copilot code review](https://docs.github.com/en/copilot/using-github-copilot/code-review)** showed me that copilot is capable of good reviews on some of my projects. The catch for me was that it lives inside GitHub, and the projects I work on primarily live on GitLab.
-
-The motivation, then, is the intersection of three constraints those tools did not cover for me:
-
-1. **Affordability for small teams.** Per-developer pricing scales linearly with headcount even when only a fraction of MRs need AI review. A single Copilot seat (or a self-hosted model) can drive reviews for a whole team and usually costs less than one CodeRabbit/Greptile seat. If you have spare quotas on your Copilot license, you might even be able to run ReviewPhin at no model extra cost.
-2. **Bring-your-own model, including private ones.** I wanted to point the reviewer at models hosted inside our own infrastructure - e.g. a Qwen 3 27B running on internal GPUs - to push the cost down further and keep code inside the network. ReviewPhin's harness/profile system exists primarily to make that possible.
-3. **GitLab first.** ReviewPhin starts from self-hosted GitLab in mind. Why? Because I use it as daily driver for most of my development work. (see [Code review platform providers](docs/code-review-platform-providers.md)).
-
-So: **everything is yours.** Storage, model, subscription, hosting. You know what you pay for because it's all yours - and if any of the projects above fits your team and budget better, please use them. They are great.
