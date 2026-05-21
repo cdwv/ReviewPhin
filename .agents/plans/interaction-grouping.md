@@ -7,7 +7,7 @@ Our flow allows multiple targetted comments at once. Now we need to be able to a
 3. Only after debounce window passes, job closes admission and can start running
 4. Jobs that already started at least once can no longer open for webhook admission
 5. Default debounce timeout: 15s, resets each time new interaction is admitted into job
-6. Once run starts for multiple jobs:
+6. Once run starts:
    - We assess all triggering comments to get grouped plan. 
    - If at least one job requires review or chatter to start, whole batch is passed through relevant models.
    - Review & chatter must accept properly multiple response targets and react/respond to each
