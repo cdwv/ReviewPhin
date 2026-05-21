@@ -1,14 +1,118 @@
 # Goal
 
-Our flow allows multiple targetted comments at once. Now we need to be able to apply basic grouping logic and coalesce multiple interactions into one review.
+Our flow allows multiple targeted comments at once. We need to apply basic grouping logic and coalesce multiple webhook interactions for the same MR into one batched review job.
 
-1. Interactions for the same merge request should have basic debounce implemented.
-2. Multiple hooks in the same interaction debounce window are added to one open job
-3. Only after debounce window passes, job closes admission and can start running
-4. Jobs that already started at least once can no longer open for webhook admission
-5. Default debounce timeout: 15s, resets each time new interaction is admitted into job
-6. Once run starts:
-   - We assess all triggering comments to get grouped plan. 
-   - If at least one job requires review or chatter to start, whole batch is passed through relevant models.
-   - Review & chatter must accept properly multiple response targets and react/respond to each
-   - Upon admission, all triggering comments should get eyes emoji (including in-thread comments, not only new discussions as it was up to this point). The same on success and fail.
+## Behaviour
+
+1. Interactions for the same merge request are debounced: multiple webhooks within the window are admitted into one open job.
+2. Debounce timeout is 15s by default and resets each time a new interaction is admitted into the job.
+3. Default debounce timeout can be changed using `REVIEWPTHIN_JOB_DEBOUNCE` env variable in smart format (15s, 1m, unitless means seconds)
+4. Only after the debounce window passes does the job close admission and start running.
+5. Jobs that have already started at least once (i.e. `startedAt IS NOT NULL` or `retryCount > 0`) are closed to new webhook admission — a new group job is opened instead.
+6. Once the run starts, all admitted triggering comments are assessed to produce a grouped plan.
+7. Trigger conflicts are resolved by priority (highest wins): **full review > follow-up review > reply**. A review run can also include chatter/reply targets, so the batch naturally unifies both.
+8. Upon admission, every triggering comment (including in-thread replies, not just new discussions) gets an 👀 reaction. On success all get ✅; on failure all get 😖.
+
+## Architecture decisions
+
+| Decision               | Choice                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| Multi-trigger storage  | JSON array field on the job record (`triggersJson`)                           |
+| Debounce state         | New `startNotBefore` nullable timestamp on the job record; job stays `queued` |
+| headSha drift          | Admitted webhook with newer headSha → group job inherits it                   |
+| Retry + grouping       | `retryCount > 0` closes admission                                             |
+| Grouped plan conflicts | Merge by priority; union all `responseTargets`                                |
+
+## Storage schema changes
+
+### `InteractionJobRecord` — new fields
+
+- `triggersJson: string` — JSON array of `{ noteId: number, payloadJson: string }`, one entry per admitted webhook (first entry is the original trigger).
+- `startNotBefore: string | null` — ISO timestamp; job is not processed until this time passes. Set to `now + 15s` on each admission. Null once the job has started.
+
+The existing `noteId` and `payloadJson` fields remain as the primary/first trigger's values (backward compat for existing code paths that reference them directly). The `dedupeKey` concept changes: instead of per-note, the admission lookup is per open group job for the same `(tenantId, projectId, mergeRequestIid)`.
+
+### `CreateInteractionJobInput` — corresponding updates
+
+Add `triggersJson` and `startNotBefore`.
+
+## Data flow / state machine
+
+```
+Webhook arrives
+  → classify trigger (unchanged)
+  → find open group job for (tenantId, projectId, mergeRequestIid)
+      where startedAt IS NULL AND retryCount = 0
+  → if found: admit
+      - append trigger to triggersJson
+      - reset startNotBefore = now + 15s
+      - update headSha if payload has newer SHA
+      - add 👀 to this note
+      - return { job, admitted: true, created: false }
+  → if not found: create new group job
+      - triggersJson = [first trigger]
+      - startNotBefore = now + 15s
+      - add 👀 to this note
+      - enqueue job
+      - return { job, admitted: true, created: true }
+
+processJob(jobId)
+  → load job
+  → if now < startNotBefore → return { requeueAfterMs: startNotBefore - now }  (uses existing requeueAfterMs mechanism)
+  → clear startNotBefore, proceed with run
+  → parse all triggers from triggersJson
+  → build grouped interaction plan from all triggers (see below)
+  → run review / chatter as normal, but with all response targets
+  → on success: add ✅ to all trigger notes
+  → on failure: add 😖 to all trigger notes
+```
+
+## Component changes
+
+### `InteractionJobRecord` / storage contract
+
+- Add `triggersJson` and `startNotBefore` fields.
+- Add DB migration.
+
+### `StorageHelpers` / `createOrGetInteractionJob`
+
+- Replace per-note dedupe lookup with open-group-job lookup.
+- Add `admitWebhookIntoJob(jobId, trigger)` helper (or extend upsert) for window resets.
+
+### `ReviewWorker.createInteractionJobFromWebhook`
+
+- Use new admission logic.
+- Move 👀 reaction to fire for *every* admission (not only `created`).
+- Return `{ job, created, admitted }`.
+
+### `app.ts`
+
+- Distinguish `admitted: true` (added to existing group) from `deduplicated: true` (exact same note, no-op).
+
+### `buildInteractionPlan` → `buildGroupedInteractionPlan`
+
+- Accept `triggers: ReviewTriggerContext[]`.
+- Resolve `reviewNeeded` = any trigger requests review.
+- Resolve `rerunReason` from highest-priority trigger that sets it.
+- `responseTargets` = deduplicated union of all triggers' response targets.
+- `replyNeeded` = any trigger needs a reply (merged into the single chatter run).
+- Keep a `primaryTrigger` (highest-priority trigger) for context passed to reviewer.
+
+### `ReviewWorker.processJob`
+
+- Load all triggers from `triggersJson`.
+- Build `ReviewTriggerContext[]` for each trigger.
+- Call `buildGroupedInteractionPlan` instead of `buildInteractionPlan`.
+- Pass all `responseTargets` to chatter runner (already accepts an array).
+- On completion/failure, react to all trigger notes (not just the one `triggerNote`).
+
+### Review & chatter prompts
+
+- Chatter already receives `responseTargets[]`; verify it replies to each.
+- Reviewer's `replyHandoff` targets may now span multiple threads; ensure reconciler handles this.
+
+## Open questions / out of scope
+
+- Rate limiting / max triggers per group job (no cap for now).
+- Cross-tenant grouping is impossible by design (each tenant is isolated).
+- The `startNotBefore` field is in-DB only; no in-memory timer is needed — the existing `requeueAfterMs` path handles it.
