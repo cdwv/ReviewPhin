@@ -31,22 +31,20 @@ reviewphin tenant add \
   --base-url https://gitlab.example.com \
   --project-id 123 \
   --api-token glpat-xxxxxxxx \
-  --webhook-secret replace-me \
-  --bot-user-id 999 \
-  --bot-username reviewphin
+  --webhook-secret replace-me
 ```
 
-| Flag                        | Required | Description                                                                                         |
-| --------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
-| `--base-url`                | Yes      | GitLab instance root URL. May include a path prefix for proxied installs. Do not include `/api/v4`. |
-| `--project-id`              | Yes      | Numeric GitLab project ID.                                                                          |
-| `--api-token`               | Yes      | Project, group, or personal access token with `api` scope.                                          |
-| `--webhook-secret`          | Yes      | Value expected in the `X-Gitlab-Token` header for this project's webhooks.                          |
-| `--bot-user-id`             | Yes      | Numeric GitLab user ID of the bot. Enables stricter ownership checks.                               |
-| `--bot-username`            | Yes      | GitLab username of the bot. Used to match direct mentions.                                          |
-| `--model-profile`           | No       | Assign a named model profile to this tenant at registration time.                                   |
-| `--sqlite-database-path`    | No       | Override the SQLite file path instead of reading `SQLITE_DATABASE_PATH` from `.env`.                |
-| `--storage-provider-module` | No       | Override the storage adapter module instead of reading `STORAGE_PROVIDER_MODULE` from `.env`.       |
+| Flag                        | Required | Description                                                                                                                            |
+| --------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `--base-url`                | Yes      | GitLab instance root URL. May include a path prefix for proxied installs. Do not include `/api/v4`.                                    |
+| `--project-id`              | Yes      | Numeric GitLab project ID.                                                                                                             |
+| `--api-token`               | Yes      | Project, group, or personal access token with `api` scope.                                                                             |
+| `--webhook-secret`          | Yes      | Value expected in the `X-Gitlab-Token` header for this project's webhooks.                                                             |
+| `--bot-user-id`             | No       | Numeric GitLab user ID of the bot. If not provided, it will be requested from gitlab api with provided token.                          |
+| `--bot-username`            | No       | GitLab username of the bot. Used to match direct mentions.  If not provided, it will be requested from gitlab api with provided token. |  |
+| `--model-profile`           | No       | Assign a named model profile to this tenant at registration time.                                                                      |
+| `--sqlite-database-path`    | No       | Override the SQLite file path instead of reading `SQLITE_DATABASE_PATH` from `.env`.                                                   |
+| `--storage-provider-module` | No       | Override the storage adapter module instead of reading `STORAGE_PROVIDER_MODULE` from `.env`.                                          |
 
 ---
 
