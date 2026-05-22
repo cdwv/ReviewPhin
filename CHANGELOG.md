@@ -4,6 +4,10 @@ Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-change
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 
+## v0.2.0 - 2026-05-22
+### Changed
+* `--bot-user-id` and `--bot-username` are no longer required and will be fetched from GitLab's user api upon tenant registration
+
 ## v0.1.2 - 2026-05-19
 ### Added
 * Inspiration & Motivation section is now added to the docs. It specifically gives thanks to the tools and teams behind them that inspired ReviewPhin
