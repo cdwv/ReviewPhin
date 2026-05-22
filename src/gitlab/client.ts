@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
-
 import type { GitLabHttpLogEntry } from "../review/run-artifacts.js";
 import type {
   GitLabAwardEmoji,
@@ -196,6 +195,14 @@ export class GitLabClient {
     return this.requestPaginated<GitLabMergeRequestVersion>(
       `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/versions`,
     );
+  }
+
+  public async getCurrentUser() {
+    return this.requestJson<{
+      id: number;
+      username: string;
+      avatar_url: string;
+    }>("GET", `/user`);
   }
 
   public async getMergeRequestChanges(

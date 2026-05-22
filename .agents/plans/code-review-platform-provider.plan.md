@@ -9,13 +9,13 @@ already used by storage providers.
 
 ## Confirmed design decisions
 
-| # | Decision |
-|---|----------|
-| 1 | **TenantRecord schema** — add `platformType: string` + `platformConfig: string` (JSON blob). GitLab-specific fields (`baseUrl`, `projectId`, `apiToken`, `botUserId`, `botUsername`) move into `platformConfig`. `webhookSecret` stays on the root record (needed for pre-DB-query secret validation). |
-| 2 | **Webhook tenant resolution** — provider extracts identity hints from the raw request; app queries DB by `platformType`; provider narrows candidates; provider validates the secret (supports HMAC for GitHub etc.). |
-| 3 | **Setup pages** — providers may optionally declare setup routes under `/setup/<providertype>/<tenantid>[/*]`. GitLab adapter declares none. App registers the routes only when the loaded provider declares them. |
-| 4 | **Module loading** — same ESM dynamic-import pattern as storage: built-in shorthand (`"gitlab"`, future `"github"`) or a file path / npm package specifier. |
-| 5 | **Secret validation** — delegated entirely to the provider (constant-time compare for GitLab, HMAC-SHA256 for GitHub etc.). |
+| #   | Decision                                                                                                                                                                                                                                                                                               |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | **TenantRecord schema** — add `platformType: string` + `platformConfig: string` (JSON blob). GitLab-specific fields (`baseUrl`, `projectId`, `apiToken`, `botUserId`, `botUsername`) move into `platformConfig`. `webhookSecret` stays on the root record (needed for pre-DB-query secret validation). |
+| 2   | **Webhook tenant resolution** — provider extracts identity hints from the raw request; app queries DB by `platformType`; provider narrows candidates; provider validates the secret (supports HMAC for GitHub etc.).                                                                                   |
+| 3   | **Setup pages** — providers may optionally declare setup routes under `/setup/<providertype>/<tenantid>[/*]`. GitLab adapter declares none. App registers the routes only when the loaded provider declares them.                                                                                      |
+| 4   | **Module loading** — same ESM dynamic-import pattern as storage: built-in shorthand (`"gitlab"`, future `"github"`) or a file path / npm package specifier.                                                                                                                                            |
+| 5   | **Secret validation** — delegated entirely to the provider (constant-time compare for GitLab, HMAC-SHA256 for GitHub etc.).                                                                                                                                                                            |
 
 ---
 
@@ -278,20 +278,20 @@ a `InteractionJobRecord` (already persisted) and a `CRReviewAdapter` to run the 
 
 ## Files affected (summary)
 
-| Area | Change |
-|------|--------|
-| `src/cr-platform/` | **New** — provider interface, review adapter interface, module loader, runtime, setup-route type |
-| `src/cr-platform/adapters/gitlab/` | **New** — GitLab implementation wrapping existing `src/gitlab/` code |
-| `src/gitlab/` | Mostly **unchanged** — wrapped by the adapter, not moved |
-| `src/storage/contract/history/storage-v001.d.ts` | **New** — updated `TenantRecord`, deprecated job fields |
-| `src/storage/contract/index.ts` | Bump `CURRENT_STORAGE_CONTRACT_REVISION` |
-| `src/storage/adapters/sqlite/` | **New migration** `v000→v001` |
-| `src/storage/adapters/flotiq/` | **New migration** `v000→v001` |
-| `src/tenants/tenant-registry.ts` | Remove GitLab imports; new `resolveWebhookTenant` signature |
-| `src/app.ts` | Replace hardcoded route; add setup-route registration; add deprecated alias |
-| `src/cli.ts` | Add `--platform-type`; pack GitLab config into `platformConfig` |
-| `src/jobs/review-worker.ts` | Remove GitLab type coupling from public API |
-| `docs/code-review-platform-providers.md` | Update to reflect new provider model |
+| Area                                             | Change                                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `src/cr-platform/`                               | **New** — provider interface, review adapter interface, module loader, runtime, setup-route type |
+| `src/cr-platform/adapters/gitlab/`               | **New** — GitLab implementation wrapping existing `src/gitlab/` code                             |
+| `src/gitlab/`                                    | Mostly **unchanged** — wrapped by the adapter, not moved                                         |
+| `src/storage/contract/history/storage-v001.d.ts` | **New** — updated `TenantRecord`, deprecated job fields                                          |
+| `src/storage/contract/index.ts`                  | Bump `CURRENT_STORAGE_CONTRACT_REVISION`                                                         |
+| `src/storage/adapters/sqlite/`                   | **New migration** `v000→v001`                                                                    |
+| `src/storage/adapters/flotiq/`                   | **New migration** `v000→v001`                                                                    |
+| `src/tenants/tenant-registry.ts`                 | Remove GitLab imports; new `resolveWebhookTenant` signature                                      |
+| `src/app.ts`                                     | Replace hardcoded route; add setup-route registration; add deprecated alias                      |
+| `src/cli.ts`                                     | Add `--platform-type`; pack GitLab config into `platformConfig`                                  |
+| `src/jobs/review-worker.ts`                      | Remove GitLab type coupling from public API                                                      |
+| `docs/code-review-platform-providers.md`         | Update to reflect new provider model                                                             |
 
 ---
 

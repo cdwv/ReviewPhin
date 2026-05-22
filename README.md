@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="favicon.png" alt="ReviewPhin" width="120" />
+  <img src="favicon.jpg" alt="ReviewPhin" width="120" />
 
   # ReviewPhin
 
@@ -128,9 +128,7 @@ Required project membership: **Developer or higher** (needed to resolve merge re
 
 ### 2. Find the project ID and bot identity
 
-Use the GitLab UI or API to collect the project's `id` and the bot account's `id` and `username`.
-
-Use the project's `id`, the user's `id` as `--bot-user-id`, and `username` as `--bot-username`.
+Use the GitLab UI or API to collect the project's `id`.
 
 ### 3. Register the tenant with the CLI
 
@@ -141,9 +139,7 @@ docker compose run --rm worker reviewphin tenant add \
   --base-url https://gitlab.example.com \
   --project-id 123 \
   --api-token <your-gitlab-token> \
-  --webhook-secret <your-webhook-secret> \
-  --bot-user-id 999 \
-  --bot-username reviewphin
+  --webhook-secret <your-webhook-secret>
 ```
 
 #### From a local checkout
@@ -153,9 +149,7 @@ pnpm cli tenant add \
   --base-url https://gitlab.example.com \
   --project-id 123 \
   --api-token <your-gitlab-token> \
-  --webhook-secret <your-webhook-secret> \
-  --bot-user-id 999 \
-  --bot-username reviewphin
+  --webhook-secret <your-webhook-secret>
 ```
 
 To assign a specific model profile at registration time, add `--model-profile <name>`. See [Model providers](docs/model-providers.md) for profile setup.
@@ -187,8 +181,6 @@ See [CLI reference](docs/CLI.md) for all tenant and model-profile commands.
 ---
 
 ## Using ReviewPhin in GitLab
-
-> **Note:** The exact bot username depends on how you registered the tenant. The examples below use `@reviewphin`; substitute your own `--bot-username` value.
 
 ### Trigger a review
 

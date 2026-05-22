@@ -93,9 +93,7 @@ pnpm cli tenant add \
   --base-url https://gitlab.example.com \
   --project-id 123 \
   --api-token glpat-xxxxxxxx \
-  --webhook-secret my-local-secret \
-  --bot-user-id 999 \
-  --bot-username reviewphin-dev
+  --webhook-secret my-local-secret
 ```
 
 ### 3. Add the webhook in GitLab

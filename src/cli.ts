@@ -35,6 +35,8 @@ import type {
   TenantDeletionSummary,
   TenantRecord,
 } from "./storage/contract/index.js";
+import { GitLabClient } from "./gitlab/client.js";
+import { createLogger } from "./logger.js";
 
 interface ParsedCliArgs {
   readonly positionals: string[];
@@ -359,6 +361,15 @@ const storageMigrationSteps: readonly StorageMigrationStep[] = [
   },
 ];
 
+function validateTenantBot(
+  tenant: z.infer<typeof tenantAddSchema>,
+): tenant is z.infer<typeof tenantAddSchema> & {
+  botUserId: number;
+  botUsername: string;
+} {
+  return !!tenant.botUserId && !!tenant.botUsername;
+}
+
 export async function runCli(
   argv: string[] = process.argv.slice(2),
 ): Promise<number> {
@@ -379,6 +390,21 @@ export async function runCli(
       modelProfileName: options["model-profile"],
       databasePath: options["sqlite-database-path"],
     });
+    if (!validateTenantBot(tenant)) {
+      const client = new GitLabClient({
+        baseUrl: tenant.baseUrl,
+        apiToken: tenant.apiToken,
+        logger: createLogger("info"),
+      });
+const botUser = await client.getCurrentUser();
+tenant.botUserId = botUser.id;
+tenant.botUsername = botUser.username;
+    }
+    if (!validateTenantBot(tenant)) {
+      throw new Error(
+        "Failed to determine bot user details from GitLab API. Please provide --bot-user-id and --bot-username explicitly or make sure token you used is correct.",
+      );
+    }
     return withStorage(options, config, async (storage) => {
       const savedTenant = await storage.upsertTenant({
         baseUrl: tenant.baseUrl,
@@ -398,6 +424,7 @@ export async function runCli(
           `key: ${savedTenant.key}`,
           `project: ${savedTenant.baseUrl} :: ${savedTenant.projectId}`,
           `modelProfile: ${savedTenant.modelProfileName ?? "(none)"}`,
+          `username: ${savedTenant.botUsername}`,
         ].join("\n") + "\n",
       );
       return 0;
@@ -896,7 +923,7 @@ function printHelp(): void {
   process.stdout.write(
     [
       "Usage:",
-      "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> --bot-user-id <id> --bot-username <name> [--model-profile <name>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> [--bot-user-id <id>] [--bot-username <name>] [--model-profile <name>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli tenant list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli tenant set-profile --base-url <url> --project-id <id> --model-profile <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli tenant clear-profile --base-url <url> --project-id <id> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
