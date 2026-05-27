@@ -73,7 +73,7 @@ implicit GitLab contract):
 
 ```ts
 export interface CRReviewAdapter {
-  hydrateMergeRequest(jobRecord: InteractionJobRecord): Promise<ReviewContext>;
+  hydrateCodeReview(jobRecord: InteractionJobRecord): Promise<ReviewContext>;
   prepareWorkspace(context: ReviewContext): Promise<string>;  // returns workspacePath
   postDiscussions(context: ReviewContext, result: ReviewResult): Promise<void>;
   resolveDiscussions(tenantId: string, discussionIds: string[]): Promise<void>;

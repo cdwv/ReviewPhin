@@ -1,13 +1,19 @@
 import { z } from "zod";
 
-import type { GitLabWikiPage } from "../gitlab/types.js";
-
 export const REVIEWPHIN_MEMORY_PAGE_TITLE = "Reviewphin memory";
 export const REVIEWPHIN_MEMORY_PAGE_SLUG = "reviewphin-memory";
 export const REVIEWPHIN_MEMORY_SECTION_HEADING = "Remembered project knowledge";
 
 export interface ProjectMemoryEntry {
   text: string;
+}
+
+export interface ProjectMemoryPage {
+  content?: string | undefined;
+  format: string;
+  slug: string;
+  title: string;
+  encoding?: string | undefined;
 }
 
 export type ProjectMemoryCoalesceReason = "prompt-budget" | "save-threshold";
@@ -25,7 +31,7 @@ export type ProjectMemoryCoalescer = (
 
 export interface ProjectMemoryContext {
   enabled: boolean;
-  page: GitLabWikiPage | null;
+  page: ProjectMemoryPage | null;
   entries: ProjectMemoryEntry[];
 }
 

@@ -4,6 +4,7 @@ import type { HarnessSessionRuntime } from "../harness/session.js";
 import type {
   HarnessModelConfig,
   HarnessRunAttachments,
+  HarnessTenantContext,
 } from "../harness/types.js";
 import type {
   ChatterBatchResult,
@@ -37,13 +38,7 @@ export interface ChatterRunContext {
 }
 
 export interface ChatterRuntimeContext {
-  tenant: {
-    id: string;
-    baseUrl: string;
-    projectId: number;
-    apiToken: string;
-    memoryEnabled: boolean;
-  };
+  tenant: HarnessTenantContext;
 }
 
 interface HarnessChatterRunnerOptions {
@@ -90,16 +85,25 @@ export class HarnessChatterRunner {
         sessionKind: context.phase === "memory" ? "memory" : "reply",
       },
       metadata: {
-        mergeRequestIid: context.reviewContext?.mergeRequest.iid ?? null,
+        codeReviewId: context.reviewContext?.codeReview.id ?? null,
         workspacePath: context.reviewContext?.workspacePath ?? null,
       },
+      responseFormat: {
+        schema: chatterBatchResultSchema,
+        looksLike: isChatterBatchResultLike,
+      },
     });
-    const content = response.response?.data.content;
-    if (!content) {
+    if (!response.response?.data.content) {
       throw new Error("Copilot chatter session returned no content");
     }
+    if (!response.parsed) {
+      throw new Error(
+        response.parseError?.message ??
+          "Copilot chatter session returned invalid structured output",
+      );
+    }
 
-    return chatterBatchResultSchema.parse(parseJsonResponse(content));
+    return chatterBatchResultSchema.parse(response.parsed);
   }
 
   public get sessionPaths(): { memory: string[]; reply: string[] } {
@@ -129,17 +133,6 @@ export class HarnessChatterRunnerFactory {
   }
 }
 
-function parseJsonResponse(content: string): unknown {
-  const trimmed = content.trim();
-
-  if (trimmed.startsWith("{")) {
-    return JSON.parse(trimmed);
-  }
-
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) {
-    return JSON.parse(fenced[1].trim());
-  }
-
-  throw new Error("Harness chatter output did not contain a JSON object");
+function isChatterBatchResultLike(value: Record<string, unknown>): boolean {
+  return "memory" in value || "replies" in value;
 }

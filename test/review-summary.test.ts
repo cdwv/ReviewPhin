@@ -1,22 +1,32 @@
 import { describe, expect, it } from "vitest";
 
+import { getPlatformBySlug } from "../src/platforms/platform-registry.js";
 import { buildReviewSummaryNote } from "../src/review/summary.js";
+
+const platform = getPlatformBySlug("gitlab");
+if (!platform) {
+  throw new Error("GitLab platform is not registered");
+}
 import { tmpPath } from "./test-paths.js";
 
 describe("review summary note", () => {
   it("wraps the suggested fixes prompt in a fenced md block and escapes embedded fences", () => {
     const timestamp = "2026-04-27T11:00:00.000Z";
     const note = buildReviewSummaryNote({
+      platform,
       context: {
         tenant: {
           id: "tenant_1",
           key: "https://gitlab.example.com::123",
-          baseUrl: "https://gitlab.example.com",
-          projectId: 123,
-          apiToken: "token",
-          webhookSecret: "secret",
-          botUserId: 999,
-          botUsername: "review-bot",
+          platform: "gitlab",
+          platformConfigJson: JSON.stringify({
+            baseUrl: "https://gitlab.example.com",
+            projectId: 123,
+            apiToken: "token",
+            webhookSecret: "secret",
+            botUserId: 999,
+            botUsername: "review-bot",
+          }),
           modelProfileName: null,
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -25,8 +35,7 @@ describe("review summary note", () => {
           id: "job_1",
           tenantId: "tenant_1",
           dedupeKey: "dedupe_1",
-          projectId: 123,
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           noteId: 55,
           headSha: "abc123",
           status: "completed",
@@ -52,6 +61,15 @@ describe("review summary note", () => {
             username: "developer",
             name: "Dev User",
           },
+        },
+        codeReview: {
+          id: 7,
+          title: 'Add ```worker```',
+          description: "Adds the worker",
+          webUrl: "https://gitlab.example.com/group/project/-/merge_requests/7",
+          sourceBranch: "feature",
+          targetBranch: "main",
+          authorUsername: "developer",
         },
         changes: [
           {
@@ -81,9 +99,9 @@ describe("review summary note", () => {
           id: "snapshot_1",
           interactionJobId: "job_1",
           tenantId: "tenant_1",
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           headSha: "abc123",
-          mergeRequestJson: "{}",
+          codeReviewJson: "{}",
           versionsJson: "[]",
           changesJson: "[]",
           notesJson: "[]",
@@ -93,7 +111,7 @@ describe("review summary note", () => {
           workspaceStrategy: "git",
           createdAt: timestamp,
         },
-      },
+        } as never,
       reviewResult: {
         overview: {
           summary: "One fix remains",
@@ -115,7 +133,7 @@ describe("review summary note", () => {
       "<details><summary>Suggested fixes prompt</summary>",
     );
     expect(note).toContain(
-      '```md\nReview and fix the issues called out for merge request "Add \\`\\`\\`worker\\`\\`\\`"',
+      '```md\nReview and fix the issues called out for code review "Add \\`\\`\\`worker\\`\\`\\`"',
     );
     expect(note).toContain("Preserve content like \\`\\`\\`ts");
     expect(note).toContain("\n```\n\n</details>");
@@ -124,16 +142,20 @@ describe("review summary note", () => {
   it("uses active persisted findings in the suggested fixes prompt when the current run only resolves threads", () => {
     const timestamp = "2026-04-27T11:00:00.000Z";
     const note = buildReviewSummaryNote({
+      platform,
       context: {
         tenant: {
           id: "tenant_1",
           key: "https://gitlab.example.com::123",
-          baseUrl: "https://gitlab.example.com",
-          projectId: 123,
-          apiToken: "token",
-          webhookSecret: "secret",
-          botUserId: 999,
-          botUsername: "review-bot",
+          platform: "gitlab",
+          platformConfigJson: JSON.stringify({
+            baseUrl: "https://gitlab.example.com",
+            projectId: 123,
+            apiToken: "token",
+            webhookSecret: "secret",
+            botUserId: 999,
+            botUsername: "review-bot",
+          }),
           modelProfileName: null,
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -142,8 +164,7 @@ describe("review summary note", () => {
           id: "job_1",
           tenantId: "tenant_1",
           dedupeKey: "dedupe_1",
-          projectId: 123,
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           noteId: 55,
           headSha: "abc123",
           status: "completed",
@@ -170,6 +191,15 @@ describe("review summary note", () => {
             name: "Dev User",
           },
         },
+        codeReview: {
+          id: 7,
+          title: "Keep storage state visible",
+          description: "Adds storage migration follow-up",
+          webUrl: "https://gitlab.example.com/group/project/-/merge_requests/7",
+          sourceBranch: "feature",
+          targetBranch: "main",
+          authorUsername: "developer",
+        },
         changes: [],
         versions: [],
         latestVersion: null,
@@ -190,9 +220,9 @@ describe("review summary note", () => {
           id: "snapshot_2",
           interactionJobId: "job_1",
           tenantId: "tenant_1",
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           headSha: "abc123",
-          mergeRequestJson: "{}",
+          codeReviewJson: "{}",
           versionsJson: "[]",
           changesJson: "[]",
           notesJson: "[]",
@@ -202,7 +232,7 @@ describe("review summary note", () => {
           workspaceStrategy: "git",
           createdAt: timestamp,
         },
-      },
+        } as never,
       reviewResult: {
         overview: {
           summary:
@@ -237,16 +267,20 @@ describe("review summary note", () => {
   it("does not report ready when persisted open findings remain after a rerun", () => {
     const timestamp = "2026-04-27T11:00:00.000Z";
     const note = buildReviewSummaryNote({
+      platform,
       context: {
         tenant: {
           id: "tenant_1",
           key: "https://gitlab.example.com::123",
-          baseUrl: "https://gitlab.example.com",
-          projectId: 123,
-          apiToken: "token",
-          webhookSecret: "secret",
-          botUserId: 999,
-          botUsername: "review-bot",
+          platform: "gitlab",
+          platformConfigJson: JSON.stringify({
+            baseUrl: "https://gitlab.example.com",
+            projectId: 123,
+            apiToken: "token",
+            webhookSecret: "secret",
+            botUserId: 999,
+            botUsername: "review-bot",
+          }),
           modelProfileName: null,
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -255,8 +289,7 @@ describe("review summary note", () => {
           id: "job_1",
           tenantId: "tenant_1",
           dedupeKey: "dedupe_1",
-          projectId: 123,
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           noteId: 55,
           headSha: "abc123",
           status: "completed",
@@ -283,6 +316,15 @@ describe("review summary note", () => {
             name: "Dev User",
           },
         },
+        codeReview: {
+          id: 7,
+          title: "Keep reruns blocked until the open fix lands",
+          description: "Carries the rerun state forward",
+          webUrl: "https://gitlab.example.com/group/project/-/merge_requests/7",
+          sourceBranch: "feature",
+          targetBranch: "main",
+          authorUsername: "developer",
+        },
         changes: [],
         versions: [],
         latestVersion: null,
@@ -303,9 +345,9 @@ describe("review summary note", () => {
           id: "snapshot_3",
           interactionJobId: "job_1",
           tenantId: "tenant_1",
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           headSha: "abc123",
-          mergeRequestJson: "{}",
+          codeReviewJson: "{}",
           versionsJson: "[]",
           changesJson: "[]",
           notesJson: "[]",
@@ -315,7 +357,7 @@ describe("review summary note", () => {
           workspaceStrategy: "git",
           createdAt: timestamp,
         },
-      },
+        } as never,
       reviewResult: {
         overview: {
           summary: "The targeted rerun looks good.",

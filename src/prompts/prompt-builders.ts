@@ -43,6 +43,11 @@ export function buildChatterPrompt(context: ChatterRunContext): string {
     renderPrompt(getChatterPromptTemplateId(context), {}),
     ...buildAttachmentRuntimeNote(context.reviewContext),
     "",
+    "Formatting contract:",
+    "- Return exactly one JSON object matching the schema below.",
+    "- Put all human-facing reply text inside JSON string fields such as `replies[].replyBody`.",
+    "- Do not include Markdown fences, introductions, explanations, or trailing text outside the JSON object.",
+    "",
     "JSON schema:",
     JSON.stringify(chatterResponseSchema, null, 2),
     "",
@@ -165,14 +170,14 @@ export function buildCompactReviewContext(
       targetDiscussionId: context.trigger.targetDiscussionId,
       targetThreadTitle: context.trigger.targetThreadTitle,
     },
-    mergeRequest: {
-      iid: context.mergeRequest.iid,
-      title: context.mergeRequest.title,
-      description: truncate(context.mergeRequest.description ?? "", 3_000),
-      webUrl: context.mergeRequest.web_url,
-      author: context.mergeRequest.author.username,
-      sourceBranch: context.mergeRequest.source_branch,
-      targetBranch: context.mergeRequest.target_branch,
+    codeReview: {
+      id: context.codeReview.id,
+      title: context.codeReview.title,
+      description: truncate(context.codeReview.description ?? "", 3_000),
+      webUrl: context.codeReview.webUrl,
+      author: context.codeReview.authorUsername,
+      sourceBranch: context.codeReview.sourceBranch,
+      targetBranch: context.codeReview.targetBranch,
     },
     projectMemory: buildPromptProjectMemory(
       context.projectMemory,
@@ -180,23 +185,23 @@ export function buildCompactReviewContext(
     ),
     instructionFiles: context.instructionFiles.map((file) => file.path),
     changedFiles: context.changes.map((change) => ({
-      oldPath: change.old_path,
-      newPath: change.new_path,
-      newFile: change.new_file,
-      renamedFile: change.renamed_file,
-      deletedFile: change.deleted_file,
+      oldPath: change.oldPath,
+      newPath: change.newPath,
+      newFile: change.newFile,
+      renamedFile: change.renamedFile,
+      deletedFile: change.deletedFile,
       diff: truncate(change.diff ?? "", 6_000),
     })),
     additionalChangedFiles: context.scope.omittedChangedFiles.slice(0, 40),
-    mergeRequestNotes: context.notes
+    codeReviewNotes: context.notes
       .filter((note) => !isReviewSummaryNoteBody(note.body))
       .slice(0, 50)
       .map((note) => ({
         id: note.id,
-        author: note.author.username,
+        author: note.authorUsername,
         body: truncate(note.body, 1_500),
-        resolvable: note.resolvable ?? false,
-        resolved: note.resolved ?? false,
+        resolvable: note.resolvable,
+        resolved: note.resolved,
       })),
     priorThreads: context.priorThreads.map((thread) => ({
       threadId: thread.threadId,
@@ -205,6 +210,7 @@ export function buildCompactReviewContext(
       title: thread.title,
       body: truncate(thread.body, 2_000),
       anchor: thread.anchor,
+      resolvable: thread.resolvable,
       resolved: thread.resolved,
       humanReplies: thread.humanReplies.map((reply) => ({
         noteId: reply.noteId,
@@ -318,10 +324,10 @@ const reviewResponseSchema = {
     summary: "string",
     targets: [
       {
-        kind: "merge-request-note | discussion-reply | summary-discussion-reply | finding-thread-reply",
+        kind: "code-review-note | discussion-reply | summary-discussion-reply | finding-thread-reply",
         noteId: 1,
         discussionId:
-          "required for threaded reply kinds; optional for merge-request-note",
+          "required for threaded reply kinds; optional for code-review-note",
         guidance: "string",
       },
     ],
@@ -336,10 +342,10 @@ const chatterResponseSchema = {
   replies: [
     {
       target: {
-        kind: "merge-request-note | discussion-reply | summary-discussion-reply | finding-thread-reply",
+        kind: "code-review-note | discussion-reply | summary-discussion-reply | finding-thread-reply",
         noteId: 1,
         discussionId:
-          "required for threaded reply kinds; optional for merge-request-note",
+          "required for threaded reply kinds; optional for code-review-note",
       },
       replyBody: "string",
     },
@@ -374,7 +380,7 @@ function buildCompactChatterContext(
     reviewMode: sharedReviewContext?.reviewMode ?? null,
     reviewScope: sharedReviewContext?.reviewScope ?? null,
     reviewTrigger: sharedReviewContext?.reviewTrigger ?? compactTrigger,
-    mergeRequest: sharedReviewContext?.mergeRequest ?? null,
+    codeReview: sharedReviewContext?.codeReview ?? null,
     trigger: {
       ...compactTrigger,
       responseTarget: context.trigger.responseTarget,
@@ -392,7 +398,7 @@ function buildCompactChatterContext(
     instructionFiles: sharedReviewContext?.instructionFiles ?? [],
     changedFiles: sharedReviewContext?.changedFiles ?? [],
     additionalChangedFiles: sharedReviewContext?.additionalChangedFiles ?? [],
-    mergeRequestNotes: sharedReviewContext?.mergeRequestNotes ?? [],
+    codeReviewNotes: sharedReviewContext?.codeReviewNotes ?? [],
     priorThreads: sharedReviewContext?.priorThreads ?? [],
     reviewResult: context.reviewResult
       ? {
@@ -440,6 +446,6 @@ function buildAttachmentRuntimeNote(
   return [
     "",
     "Runtime note:",
-    `GitLab failed to download ${context.attachmentIssues.length} referenced image attachment(s) before this run. These images were not sent to you: ${missingDescription}. ${availableDescription} Do not claim to have inspected the missing images. If they seem relevant, explicitly mention that some referenced GitLab images were unavailable because GitLab download requests failed, and reason from the remaining context only.`,
+    `The platform failed to download ${context.attachmentIssues.length} referenced image attachment(s) before this run. These images were not sent to you: ${missingDescription}. ${availableDescription} Do not claim to have inspected the missing images. If they seem relevant, explicitly mention that some referenced platform attachments were unavailable because download requests failed, and reason from the remaining context only.`,
   ];
 }

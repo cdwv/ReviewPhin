@@ -20,7 +20,7 @@ describe("storage migrate ordering", () => {
       modelProfiles: [] as unknown[],
       tenants: [] as unknown[],
       interactionJobs: [] as unknown[],
-      mergeRequestSnapshots: [] as unknown[],
+      codeReviewSnapshots: [] as unknown[],
       interactionRuns: [] as unknown[],
       interactionRunMetrics: [] as unknown[],
       reviewFindings: [] as unknown[],
@@ -56,7 +56,7 @@ describe("storage migrate ordering", () => {
           ],
           orderCalls.interactionJobs,
         ),
-        mergeRequestSnapshots: createSourceStore(
+        codeReviewSnapshots: createSourceStore(
           [
             {
               id: "snapshot-1",
@@ -64,7 +64,7 @@ describe("storage migrate ordering", () => {
               tenantId: "tenant-1",
             },
           ],
-          orderCalls.mergeRequestSnapshots,
+          orderCalls.codeReviewSnapshots,
         ),
         interactionRuns: createSourceStore(
           [
@@ -113,7 +113,7 @@ describe("storage migrate ordering", () => {
         modelProfiles: createTargetStore(),
         tenants: createTargetStore(),
         interactionJobs: createTargetStore(),
-        mergeRequestSnapshots: createTargetStore(),
+        codeReviewSnapshots: createTargetStore(),
         interactionRuns: createTargetStore(),
         interactionRunMetrics: createTargetStore(),
         reviewFindings: createTargetStore(),
@@ -147,7 +147,7 @@ describe("storage migrate ordering", () => {
       [{ field: "id", direction: "asc" }],
       [{ field: "id", direction: "asc" }],
     ]);
-    expect(orderCalls.mergeRequestSnapshots).toEqual([
+    expect(orderCalls.codeReviewSnapshots).toEqual([
       [{ field: "id", direction: "asc" }],
       [{ field: "id", direction: "asc" }],
     ]);

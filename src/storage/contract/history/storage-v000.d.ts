@@ -107,7 +107,7 @@ export type CreateInteractionJobInput = Omit<
   | "finishedAt"
 >;
 
-export interface MergeRequestSnapshotRecord {
+export interface CodeReviewSnapshotRecord {
   id: string;
   interactionJobId: string;
   tenantId: string;
@@ -124,8 +124,8 @@ export interface MergeRequestSnapshotRecord {
   createdAt: string;
 }
 
-export type CreateMergeRequestSnapshotInput = Omit<
-  MergeRequestSnapshotRecord,
+export type CreateCodeReviewSnapshotInput = Omit<
+  CodeReviewSnapshotRecord,
   "id" | "createdAt"
 >;
 
@@ -231,7 +231,7 @@ export interface PreviousCompletedInteractionRecord {
   finishedAt: string;
   headSha: string;
   resultJson: string;
-  snapshot: MergeRequestSnapshotRecord;
+  snapshot: CodeReviewSnapshotRecord;
 }
 
 export type DiscussionMappingStatus = "open" | "resolved";
@@ -363,19 +363,19 @@ export type InteractionJobFilters = StoreFilters<
 
 export type InteractionJobOrderField = InteractionJobQueryField;
 
-export type MergeRequestSnapshotQueryField =
+export type CodeReviewSnapshotQueryField =
   | "id"
   | "interactionJobId"
   | "tenantId"
   | "mergeRequestIid"
   | "createdAt";
 
-export type MergeRequestSnapshotFilters = StoreFilters<
-  MergeRequestSnapshotRecord,
-  MergeRequestSnapshotQueryField
+export type CodeReviewSnapshotFilters = StoreFilters<
+  CodeReviewSnapshotRecord,
+  CodeReviewSnapshotQueryField
 >;
 
-export type MergeRequestSnapshotOrderField = MergeRequestSnapshotQueryField;
+export type CodeReviewSnapshotOrderField = CodeReviewSnapshotQueryField;
 
 export type InteractionRunQueryField =
   | "id"
@@ -452,10 +452,10 @@ export type InteractionJobStore = EntityStore<
   InteractionJobFilters,
   InteractionJobOrderField
 >;
-export type MergeRequestSnapshotStore = EntityStore<
-  MergeRequestSnapshotRecord,
-  MergeRequestSnapshotFilters,
-  MergeRequestSnapshotOrderField
+export type CodeReviewSnapshotStore = EntityStore<
+  CodeReviewSnapshotRecord,
+  CodeReviewSnapshotFilters,
+  CodeReviewSnapshotOrderField
 >;
 export type InteractionRunStore = EntityStore<
   InteractionRunRecord,
@@ -482,7 +482,7 @@ export interface StorageStores {
   readonly modelProfiles: ModelProfileStore;
   readonly tenants: TenantStore;
   readonly interactionJobs: InteractionJobStore;
-  readonly mergeRequestSnapshots: MergeRequestSnapshotStore;
+  readonly mergeRequestSnapshots: CodeReviewSnapshotStore;
   readonly interactionRuns: InteractionRunStore;
   readonly interactionRunMetrics: InteractionRunMetricsStore;
   readonly reviewFindings: ReviewFindingStore;

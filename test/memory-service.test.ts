@@ -148,20 +148,16 @@ describe("ProjectMemoryService", () => {
     const serviceA = createService({
       tenant: {
         id: "tenant-shared",
-        baseUrl: "https://gitlab.example.com",
-        projectId: 1085,
-        apiToken: "token",
         memoryEnabled: true,
+        projectMemoryBackend: backend,
       },
       backend,
     });
     const serviceB = createService({
       tenant: {
         id: "tenant-shared",
-        baseUrl: "https://gitlab.example.com",
-        projectId: 1085,
-        apiToken: "token",
         memoryEnabled: true,
+        projectMemoryBackend: backend,
       },
       backend,
     });
@@ -330,10 +326,11 @@ function createService(input?: {
   logger?: ReturnType<typeof createLogger>;
   tenant?: {
     id: string;
-    baseUrl: string;
-    projectId: number;
-    apiToken: string;
     memoryEnabled: boolean;
+    projectMemoryBackend: {
+      load: ReturnType<typeof vi.fn>;
+      saveEntries: ReturnType<typeof vi.fn>;
+    };
   };
   backend?: {
     load: ReturnType<typeof vi.fn>;
@@ -372,13 +369,24 @@ function createService(input?: {
       providerBaseUrl: null,
       providerType: null,
     },
-    tenant: input?.tenant ?? {
-      id: "tenant_1",
-      baseUrl: "https://gitlab.example.com",
-      projectId: 1085,
-      apiToken: "token",
-      memoryEnabled: true,
-    },
+    tenant:
+      input?.tenant ??
+      ({
+        id: "tenant_1",
+        memoryEnabled: true,
+        projectMemoryBackend: input?.backend ?? {
+          load: vi.fn(async () => ({
+            enabled: true,
+            page: null,
+            entries: [],
+          })),
+          saveEntries: vi.fn(async (entries) => ({
+            enabled: true,
+            page: null,
+            entries,
+          })),
+        },
+      } as const),
     logging: {
       interactionRunId: "run_1",
       interactionJobId: "job_1",

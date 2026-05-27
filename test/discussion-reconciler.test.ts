@@ -2,21 +2,37 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { GitLabApiError } from "../src/gitlab/client.js";
-import type { HydratedMergeRequestContext } from "../src/gitlab/types.js";
+import { GitLabApiError } from "../src/platforms/gitlab/client.js";
+import { getPlatformBySlug } from "../src/platforms/platform-registry.js";
+import { GitLabReviewDiscussionAdapter } from "../src/platforms/gitlab/review-discussion-adapter.js";
+import type { HydratedMergeRequestContext } from "../src/platforms/gitlab/types.js";
 import { createLogger } from "../src/logger.js";
 import {
   buildProviderThreads,
   DiscussionReconciler,
 } from "../src/reconcile/discussion-reconciler.js";
 import { REVIEW_SUMMARY_NOTE_MARKER } from "../src/review/summary.js";
+import type { ReviewSummaryContext } from "../src/review/types.js";
 import { createFindingIdentityKey } from "../src/utils/ids.js";
 
 describe("Discussion reconciler", () => {
   const logger = createLogger("silent");
+  const platform = getPlatformBySlug("gitlab");
+  if (!platform) {
+    throw new Error("GitLab platform is not registered");
+  }
   const tenant = {
     id: "tenant_1",
     key: "https://gitlab.example.com::123",
+    platform: "gitlab",
+    platformConfigJson: JSON.stringify({
+      baseUrl: "https://gitlab.example.com",
+      projectId: 123,
+      apiToken: "token",
+      webhookSecret: "secret",
+      botUserId: 999,
+      botUsername: "review-bot",
+    }),
     baseUrl: "https://gitlab.example.com",
     projectId: 123,
     apiToken: "token",
@@ -27,6 +43,18 @@ describe("Discussion reconciler", () => {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+
+  const createDiscussionAdapter = (
+    context: HydratedMergeRequestContext,
+    client: Record<string, unknown>,
+  ) =>
+    new GitLabReviewDiscussionAdapter({
+      tenant,
+      context,
+      client: client as never,
+      logger,
+      interactionRunId: "test-run",
+    });
 
   it("updates a bot-owned thread when the model revises the finding after a human reply", async () => {
     const storage = {
@@ -44,8 +72,8 @@ describe("Discussion reconciler", () => {
     });
 
     const replyToDiscussion = vi.fn();
-    const createMergeRequestNote = vi.fn(
-      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+    const createCodeReviewNote = vi.fn(
+      async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 90,
         body,
         author: { id: 999, username: "review-bot", name: "Review Bot" },
@@ -54,7 +82,7 @@ describe("Discussion reconciler", () => {
         system: false,
       }),
     );
-    const updateMergeRequestNote = vi.fn();
+    const updateCodeReviewNote = vi.fn();
     const updateDiscussionNote = vi.fn(async () => ({
       id: 10,
       body: "**Old finding**\n\nUpdated body",
@@ -70,16 +98,15 @@ describe("Discussion reconciler", () => {
       {
         id: "map_1",
         tenantId: tenant.id,
-        projectId: tenant.projectId,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         identityKey: "identity",
         findingFingerprint: "old",
         title: "Old finding",
         severity: "medium",
         category: "bug",
         body: "**Old finding**\n\nOld body",
-        gitlabDiscussionId: "disc_1",
-        gitlabNoteId: 10,
+        platformThreadId: "disc_1",
+        platformCommentId: 10,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
@@ -94,6 +121,7 @@ describe("Discussion reconciler", () => {
     ];
 
     const summary = await reconciler.reconcile({
+      platform,
       tenant,
       context,
       mappings,
@@ -114,52 +142,50 @@ describe("Discussion reconciler", () => {
         ],
         priorDispositions: [],
       },
-      client: {
-        createMergeRequestNote,
+      discussionAdapter: createDiscussionAdapter(createHydratedContext(), {
+        createCodeReviewNote,
         replyToDiscussion,
-        updateMergeRequestNote,
+        updateCodeReviewNote,
         updateDiscussionNote,
-        createMergeRequestDiscussion: vi.fn(),
+        createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion: vi.fn(),
-      } as never,
+      }),
     });
 
     expect(summary.updated).toBe(1);
     expect(summary.summaryNoteAction).toBe("created");
     expect(replyToDiscussion).not.toHaveBeenCalled();
     expect(updateDiscussionNote).toHaveBeenCalledTimes(1);
-    expect(createMergeRequestNote).toHaveBeenCalledTimes(1);
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewNote).toHaveBeenCalledTimes(1);
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
       REVIEW_SUMMARY_NOTE_MARKER,
     );
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
       "### Overall assessment",
     );
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
       "\n\nFound one issue\n\n### Merge readiness",
     );
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
       "- **Status:** Needs attention",
     );
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
       "- **Confidence:** Medium",
     );
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
       "<details><summary>Suggested fixes prompt</summary>",
     );
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
-      "\n\n```md\nReview and fix the issues called out for merge request",
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+      "\n\n```md\nReview and fix the issues called out for code review",
     );
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
       "Findings to address (highest severity first):",
     );
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
       "\n```\n\n</details>",
     );
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledTimes(1);
-    expect(
-      createMergeRequestNote.mock.invocationCallOrder[0] ?? 0,
-    ).toBeLessThan(
+    expect(createCodeReviewNote.mock.invocationCallOrder[0] ?? 0).toBeLessThan(
       updateDiscussionNote.mock.invocationCallOrder[0] ??
         Number.MAX_SAFE_INTEGER,
     );
@@ -189,8 +215,8 @@ describe("Discussion reconciler", () => {
       system: false,
       resolved: false,
     }));
-    const createMergeRequestNote = vi.fn(
-      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+    const createCodeReviewNote = vi.fn(
+      async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 91,
         body,
         author: { id: 999, username: "review-bot", name: "Review Bot" },
@@ -199,7 +225,7 @@ describe("Discussion reconciler", () => {
         system: false,
       }),
     );
-    const updateMergeRequestNote = vi.fn();
+    const updateCodeReviewNote = vi.fn();
     const updateDiscussionNote = vi.fn();
 
     const context = createHydratedContext();
@@ -207,16 +233,15 @@ describe("Discussion reconciler", () => {
       {
         id: "map_1",
         tenantId: tenant.id,
-        projectId: tenant.projectId,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         identityKey: "identity",
         findingFingerprint: "old",
         title: "Old finding",
         severity: "medium",
         category: "bug",
         body: "**Old finding**\n\nOld body",
-        gitlabDiscussionId: "disc_1",
-        gitlabNoteId: 10,
+        platformThreadId: "disc_1",
+        platformCommentId: 10,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
@@ -231,6 +256,7 @@ describe("Discussion reconciler", () => {
     ];
 
     const summary = await reconciler.reconcile({
+      platform,
       tenant,
       context,
       mappings,
@@ -249,19 +275,19 @@ describe("Discussion reconciler", () => {
           },
         ],
       },
-      client: {
-        createMergeRequestNote,
+      discussionAdapter: createDiscussionAdapter(createHydratedContext(), {
+        createCodeReviewNote,
         replyToDiscussion,
-        updateMergeRequestNote,
+        updateCodeReviewNote,
         updateDiscussionNote,
-        createMergeRequestDiscussion: vi.fn(),
+        createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion: vi.fn(),
-      } as never,
+      }),
     });
 
     expect(summary.replied).toBe(1);
     expect(summary.summaryNoteAction).toBe("created");
-    expect(createMergeRequestNote).toHaveBeenCalledTimes(1);
+    expect(createCodeReviewNote).toHaveBeenCalledTimes(1);
     expect(replyToDiscussion).toHaveBeenCalledTimes(1);
     expect(updateDiscussionNote).not.toHaveBeenCalled();
   });
@@ -290,8 +316,8 @@ describe("Discussion reconciler", () => {
       system: false,
       resolved: false,
     }));
-    const createMergeRequestNote = vi.fn(
-      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+    const createCodeReviewNote = vi.fn(
+      async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 92,
         body,
         author: { id: 999, username: "review-bot", name: "Review Bot" },
@@ -306,16 +332,15 @@ describe("Discussion reconciler", () => {
       {
         id: "map_1",
         tenantId: tenant.id,
-        projectId: tenant.projectId,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         identityKey: "identity_old",
         findingFingerprint: "old",
         title: "Old finding",
         severity: "medium",
         category: "bug",
         body: "**Old finding**\n\nOld body",
-        gitlabDiscussionId: "disc_1",
-        gitlabNoteId: 10,
+        platformThreadId: "disc_1",
+        platformCommentId: 10,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
@@ -334,6 +359,7 @@ describe("Discussion reconciler", () => {
     });
 
     await reconciler.reconcile({
+      platform,
       tenant,
       context,
       mappings,
@@ -354,20 +380,20 @@ describe("Discussion reconciler", () => {
         ],
         priorDispositions: [],
       },
-      client: {
-        createMergeRequestNote,
+      discussionAdapter: createDiscussionAdapter(createHydratedContext(), {
+        createCodeReviewNote,
         replyToDiscussion: vi.fn(),
-        updateMergeRequestNote: vi.fn(),
+        updateCodeReviewNote: vi.fn(),
         updateDiscussionNote,
-        createMergeRequestDiscussion: vi.fn(),
+        createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion: vi.fn(),
-      } as never,
+      }),
     });
 
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
       expect.objectContaining({
         identityKey: nextIdentityKey,
-        gitlabDiscussionId: "disc_1",
+        platformThreadId: "disc_1",
       }),
     );
     expect(storage.updateReviewFindingStatus).toHaveBeenNthCalledWith(
@@ -397,7 +423,7 @@ describe("Discussion reconciler", () => {
         ...input,
       })),
       updateReviewFindingStatus: vi.fn(
-        async (_tenantId, _mergeRequestIid, identityKey: string, status) => {
+        async (_tenantId, _codeReviewId, identityKey: string, status) => {
           persistedStatuses.set(identityKey, status);
           return true;
         },
@@ -450,8 +476,8 @@ describe("Discussion reconciler", () => {
       system: false,
       resolved: false,
     }));
-    const createMergeRequestNote = vi.fn(
-      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+    const createCodeReviewNote = vi.fn(
+      async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 94,
         body,
         author: { id: 999, username: "review-bot", name: "Review Bot" },
@@ -461,23 +487,25 @@ describe("Discussion reconciler", () => {
       }),
     );
 
+    const context = createHydratedContext();
+
     await reconciler.reconcile({
+      platform,
       tenant,
-      context: createHydratedContext(),
+      context,
       mappings: [
         {
           id: "map_1",
           tenantId: tenant.id,
-          projectId: tenant.projectId,
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           identityKey: "identity_old",
           findingFingerprint: "old",
           title: "Old finding",
           severity: "medium",
           category: "bug",
           body: "**Old finding**\n\nOld body",
-          gitlabDiscussionId: "disc_1",
-          gitlabNoteId: 10,
+          platformThreadId: "disc_1",
+          platformCommentId: 10,
           anchorJson: null,
           positionJson: null,
           botDiscussion: true,
@@ -507,21 +535,21 @@ describe("Discussion reconciler", () => {
         ],
         priorDispositions: [],
       },
-      client: {
-        createMergeRequestNote,
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote,
         replyToDiscussion: vi.fn(),
-        updateMergeRequestNote: vi.fn(),
+        updateCodeReviewNote: vi.fn(),
         updateDiscussionNote,
-        createMergeRequestDiscussion: vi.fn(),
+        createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion: vi.fn(),
-      } as never,
+      }),
     });
 
-    expect(createMergeRequestNote).toHaveBeenCalledOnce();
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewNote).toHaveBeenCalledOnce();
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
       "Replacement finding",
     );
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).not.toContain(
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).not.toContain(
       "Old finding",
     );
   });
@@ -557,8 +585,8 @@ describe("Discussion reconciler", () => {
     });
 
     const resolveDiscussion = vi.fn(async () => undefined);
-    const createMergeRequestNote = vi.fn(
-      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+    const createCodeReviewNote = vi.fn(
+      async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 93,
         body,
         author: { id: 999, username: "review-bot", name: "Review Bot" },
@@ -568,23 +596,25 @@ describe("Discussion reconciler", () => {
       }),
     );
 
+    const context = createHydratedContext();
+
     await reconciler.reconcile({
+      platform,
       tenant,
-      context: createHydratedContext(),
+      context,
       mappings: [
         {
           id: "map_1",
           tenantId: tenant.id,
-          projectId: tenant.projectId,
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           identityKey: "identity",
           findingFingerprint: "old",
           title: "Old finding",
           severity: "medium",
           category: "bug",
           body: "**Old finding**\n\nOld body",
-          gitlabDiscussionId: "disc_1",
-          gitlabNoteId: 10,
+          platformThreadId: "disc_1",
+          platformCommentId: 10,
           anchorJson: null,
           positionJson: null,
           botDiscussion: true,
@@ -612,14 +642,14 @@ describe("Discussion reconciler", () => {
           },
         ],
       },
-      client: {
-        createMergeRequestNote,
-        updateMergeRequestNote: vi.fn(),
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote,
+        updateCodeReviewNote: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
-        createMergeRequestDiscussion: vi.fn(),
+        createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion,
-      } as never,
+      }),
     });
 
     expect(resolveDiscussion).toHaveBeenCalledTimes(1);
@@ -629,7 +659,7 @@ describe("Discussion reconciler", () => {
       "identity",
       "dismissed",
     );
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
       "Remaining storage correctness fix",
     );
   });
@@ -645,7 +675,7 @@ describe("Discussion reconciler", () => {
         ...input,
       })),
       updateReviewFindingStatus: vi.fn(
-        async (_tenantId, _mergeRequestIid, identityKey: string, status) => {
+        async (_tenantId, _codeReviewId, identityKey: string, status) => {
           persistedStatuses.set(identityKey, status);
           return true;
         },
@@ -689,8 +719,8 @@ describe("Discussion reconciler", () => {
       logger,
     });
 
-    const createMergeRequestNote = vi.fn(
-      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+    const createCodeReviewNote = vi.fn(
+      async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 94,
         body,
         author: { id: 999, username: "review-bot", name: "Review Bot" },
@@ -700,23 +730,25 @@ describe("Discussion reconciler", () => {
       }),
     );
 
+    const context = createHydratedContext();
+
     await reconciler.reconcile({
+      platform,
       tenant,
-      context: createHydratedContext(),
+      context,
       mappings: [
         {
           id: "map_1",
           tenantId: tenant.id,
-          projectId: tenant.projectId,
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           identityKey: "identity",
           findingFingerprint: "old",
           title: "Old finding",
           severity: "medium",
           category: "bug",
           body: "**Old finding**\n\nOld body",
-          gitlabDiscussionId: "disc_1",
-          gitlabNoteId: 10,
+          platformThreadId: "disc_1",
+          platformCommentId: 10,
           anchorJson: null,
           positionJson: null,
           botDiscussion: true,
@@ -750,22 +782,22 @@ describe("Discussion reconciler", () => {
           },
         ],
       },
-      client: {
-        createMergeRequestNote,
-        updateMergeRequestNote: vi.fn(),
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote,
+        updateCodeReviewNote: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
-        createMergeRequestDiscussion: vi.fn(),
+        createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion: vi.fn(async () => undefined),
-      } as never,
+      }),
     });
 
-    expect(createMergeRequestNote).toHaveBeenCalledTimes(1);
+    expect(createCodeReviewNote).toHaveBeenCalledTimes(1);
 
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
       "Remaining storage correctness fix",
     );
-    expect(createMergeRequestNote.mock.calls[0]?.[2]).not.toContain(
+    expect(createCodeReviewNote.mock.calls[0]?.[2]).not.toContain(
       "Resolved storage correctness fix",
     );
   });
@@ -792,10 +824,11 @@ describe("Discussion reconciler", () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       system: false,
+      resolvable: true,
       resolved: true,
     }));
-    const createMergeRequestNote = vi.fn(
-      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+    const createCodeReviewNote = vi.fn(
+      async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 92,
         body,
         author: { id: 999, username: "review-bot", name: "Review Bot" },
@@ -804,23 +837,22 @@ describe("Discussion reconciler", () => {
         system: false,
       }),
     );
-    const updateMergeRequestNote = vi.fn();
+    const updateCodeReviewNote = vi.fn();
     const updateDiscussionNote = vi.fn();
     const resolveDiscussion = vi.fn(async () => undefined);
     const mappings = [
       {
         id: "map_1",
         tenantId: tenant.id,
-        projectId: tenant.projectId,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         identityKey: "identity",
         findingFingerprint: "old",
         title: "Old finding",
         severity: "medium",
         category: "bug",
         body: "**Old finding**\n\nOld body",
-        gitlabDiscussionId: "disc_1",
-        gitlabNoteId: 10,
+        platformThreadId: "disc_1",
+        platformCommentId: 10,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
@@ -834,27 +866,31 @@ describe("Discussion reconciler", () => {
       },
     ];
 
+    const context = createHydratedContext({
+      discussions: [
+        {
+          id: "disc_1",
+          individual_note: false,
+          notes: [
+            {
+              id: 10,
+              body: "**Old finding**\n\nOld body",
+              author: { id: 999, username: "review-bot", name: "Review Bot" },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false,
+              resolvable: true,
+              resolved: true,
+            },
+          ],
+        },
+      ],
+    });
+
     const summary = await reconciler.reconcile({
+      platform,
       tenant,
-      context: createHydratedContext({
-        discussions: [
-          {
-            id: "disc_1",
-            individual_note: false,
-            notes: [
-              {
-                id: 10,
-                body: "**Old finding**\n\nOld body",
-                author: { id: 999, username: "review-bot", name: "Review Bot" },
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                system: false,
-                resolved: true,
-              },
-            ],
-          },
-        ],
-      }),
+      context,
       mappings,
       interactionRunId: "run_1",
       reviewResult: {
@@ -873,14 +909,14 @@ describe("Discussion reconciler", () => {
         ],
         priorDispositions: [],
       },
-      client: {
-        createMergeRequestNote,
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote,
         replyToDiscussion,
-        updateMergeRequestNote,
+        updateCodeReviewNote,
         updateDiscussionNote,
-        createMergeRequestDiscussion: vi.fn(),
+        createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion,
-      } as never,
+      }),
     });
 
     expect(summary.replied).toBe(1);
@@ -894,6 +930,261 @@ describe("Discussion reconciler", () => {
     expect(updateDiscussionNote).not.toHaveBeenCalled();
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
       expect.objectContaining({ status: "open" }),
+    );
+  });
+
+  it("skips resolving an unresolvable prior thread instead of calling GitLab", async () => {
+    const storage = {
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_1",
+        ...input,
+      })),
+      updateReviewFindingStatus: vi.fn(async () => true),
+      listLatestReviewFindings: vi.fn(async () => []),
+    };
+
+    const reconciler = new DiscussionReconciler({
+      storage: storage as never,
+      logger,
+    });
+
+    const resolveDiscussion = vi.fn(async () => undefined);
+    const createCodeReviewNote = vi.fn(
+      async (_projectId: number, _codeReviewId: number, body: string) => ({
+        id: 93,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
+
+    const context = createHydratedContext({
+      discussions: [
+        {
+          id: "disc_1",
+          individual_note: false,
+          notes: [
+            {
+              id: 10,
+              body: "**Old finding**\n\nOld body",
+              author: { id: 999, username: "review-bot", name: "Review Bot" },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false,
+              resolvable: false,
+              resolved: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    const summary = await reconciler.reconcile({
+      platform,
+      tenant,
+      context,
+      mappings: [
+        {
+          id: "map_1",
+          tenantId: tenant.id,
+          codeReviewId: 7,
+          identityKey: "identity",
+          findingFingerprint: "old",
+          title: "Old finding",
+          severity: "medium",
+          category: "bug",
+          body: "**Old finding**\n\nOld body",
+          platformThreadId: "disc_1",
+          platformCommentId: 10,
+          anchorJson: null,
+          positionJson: null,
+          botDiscussion: true,
+          botNote: true,
+          noteAuthorId: 999,
+          noteAuthorUsername: "review-bot",
+          status: "open" as const,
+          lastInteractionRunId: "run_old",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      interactionRunId: "run_1",
+      reviewResult: {
+        overview: {
+          summary: "Handled follow-up",
+          overallSeverity: "low",
+        },
+        findings: [],
+        priorDispositions: [
+          {
+            threadId: "map_1",
+            action: "resolve",
+            resolution: "dismissed",
+          },
+        ],
+      },
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote,
+        updateCodeReviewNote: vi.fn(),
+        replyToDiscussion: vi.fn(),
+        updateDiscussionNote: vi.fn(),
+        createCodeReviewDiscussion: vi.fn(),
+        resolveDiscussion,
+      }),
+    });
+
+    expect(summary.resolved).toBe(1);
+    expect(resolveDiscussion).not.toHaveBeenCalled();
+    expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "open" }),
+    );
+    expect(storage.updateReviewFindingStatus).toHaveBeenCalledWith(
+      tenant.id,
+      7,
+      "identity",
+      "dismissed",
+    );
+  });
+
+  it("replies without reopening when the resolved thread is not resolvable", async () => {
+    const storage = {
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_1",
+        ...input,
+      })),
+      updateReviewFindingStatus: vi.fn(async () => true),
+      listLatestReviewFindings: vi.fn(async () => []),
+    };
+
+    const reconciler = new DiscussionReconciler({
+      storage: storage as never,
+      logger,
+    });
+
+    const replyToDiscussion = vi.fn(async () => ({
+      id: 13,
+      body: "**Old finding**\n\nUpdated after resolution",
+      author: { id: 999, username: "review-bot", name: "Review Bot" },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      system: false,
+      resolvable: false,
+      resolved: true,
+    }));
+    const createCodeReviewNote = vi.fn(
+      async (_projectId: number, _codeReviewId: number, body: string) => ({
+        id: 94,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
+    const resolveDiscussion = vi.fn(async () => undefined);
+    const mappings = [
+      {
+        id: "map_1",
+        tenantId: tenant.id,
+        codeReviewId: 7,
+        identityKey: "identity",
+        findingFingerprint: "old",
+        title: "Old finding",
+        severity: "medium",
+        category: "bug",
+        body: "**Old finding**\n\nOld body",
+        platformThreadId: "disc_1",
+        platformCommentId: 10,
+        anchorJson: null,
+        positionJson: null,
+        botDiscussion: true,
+        botNote: true,
+        noteAuthorId: 999,
+        noteAuthorUsername: "review-bot",
+        status: "resolved" as const,
+        lastInteractionRunId: "run_old",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+
+    const context = createHydratedContext({
+      discussions: [
+        {
+          id: "disc_1",
+          individual_note: false,
+          notes: [
+            {
+              id: 10,
+              body: "**Old finding**\n\nOld body",
+              author: { id: 999, username: "review-bot", name: "Review Bot" },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false,
+              resolvable: false,
+              resolved: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    const summary = await reconciler.reconcile({
+      platform,
+      tenant,
+      context,
+      mappings,
+      interactionRunId: "run_1",
+      reviewResult: {
+        overview: {
+          summary: "Handled resolved thread",
+          overallSeverity: "medium",
+        },
+        findings: [
+          {
+            priorThreadId: "map_1",
+            title: "Old finding",
+            body: "Updated after resolution",
+            severity: "medium",
+            category: "bug",
+          },
+        ],
+        priorDispositions: [],
+      },
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote,
+        replyToDiscussion,
+        updateCodeReviewNote: vi.fn(),
+        updateDiscussionNote: vi.fn(),
+        createCodeReviewDiscussion: vi.fn(),
+        resolveDiscussion,
+      }),
+    });
+
+    expect(summary.replied).toBe(1);
+    expect(resolveDiscussion).not.toHaveBeenCalled();
+    expect(replyToDiscussion).toHaveBeenCalledTimes(1);
+    expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "resolved" }),
+    );
+    expect(storage.updateReviewFindingStatus).toHaveBeenNthCalledWith(
+      1,
+      tenant.id,
+      7,
+      createFindingIdentityKey({
+        title: "Old finding",
+        category: "bug",
+      }),
+      "open",
+    );
+    expect(storage.updateReviewFindingStatus).toHaveBeenNthCalledWith(
+      2,
+      tenant.id,
+      7,
+      "identity",
+      "resolved",
     );
   });
 
@@ -912,11 +1203,11 @@ describe("Discussion reconciler", () => {
       logger,
     });
 
-    const createMergeRequestNote = vi.fn();
-    const updateMergeRequestNote = vi.fn(
+    const createCodeReviewNote = vi.fn();
+    const updateCodeReviewNote = vi.fn(
       async (
         _projectId: number,
-        _mergeRequestIid: number,
+        _codeReviewId: number,
         noteId: number,
         body: string,
       ) => ({
@@ -943,6 +1234,7 @@ describe("Discussion reconciler", () => {
     });
 
     const summary = await reconciler.reconcile({
+      platform,
       tenant,
       context,
       mappings: [],
@@ -961,33 +1253,31 @@ describe("Discussion reconciler", () => {
         findings: [],
         priorDispositions: [],
       },
-      client: {
-        createMergeRequestNote,
-        updateMergeRequestNote,
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote,
+        updateCodeReviewNote,
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
-        createMergeRequestDiscussion: vi.fn(),
+        createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion: vi.fn(),
-      } as never,
+      }),
     });
 
     expect(summary.summaryNoteAction).toBe("updated");
-    expect(createMergeRequestNote).not.toHaveBeenCalled();
-    expect(updateMergeRequestNote).toHaveBeenCalledTimes(1);
-    expect(updateMergeRequestNote.mock.calls[0]?.[2]).toBe(70);
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+    expect(createCodeReviewNote).not.toHaveBeenCalled();
+    expect(updateCodeReviewNote).toHaveBeenCalledTimes(1);
+    expect(updateCodeReviewNote.mock.calls[0]?.[2]).toBe(70);
+    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
       "### Merge readiness",
     );
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
       "- **Status:** Ready",
     );
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
       "- **Confidence:** High",
     );
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
-      "### Highlights",
-    );
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).not.toContain(
+    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain("### Highlights");
+    expect(updateCodeReviewNote.mock.calls[0]?.[3]).not.toContain(
       "<details><summary>Suggested fixes prompt</summary>",
     );
   });
@@ -1022,11 +1312,11 @@ describe("Discussion reconciler", () => {
       logger,
     });
 
-    const createMergeRequestNote = vi.fn();
-    const updateMergeRequestNote = vi.fn(
+    const createCodeReviewNote = vi.fn();
+    const updateCodeReviewNote = vi.fn(
       async (
         _projectId: number,
-        _mergeRequestIid: number,
+        _codeReviewId: number,
         noteId: number,
         body: string,
       ) => ({
@@ -1053,6 +1343,7 @@ describe("Discussion reconciler", () => {
     });
 
     const summary = await reconciler.reconcile({
+      platform,
       tenant,
       context,
       mappings: [],
@@ -1072,55 +1363,60 @@ describe("Discussion reconciler", () => {
         findings: [],
         priorDispositions: [],
       },
-      client: {
-        createMergeRequestNote,
-        updateMergeRequestNote,
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote,
+        updateCodeReviewNote,
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
-        createMergeRequestDiscussion: vi.fn(),
+        createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion: vi.fn(),
-      } as never,
+      }),
     });
 
     expect(summary.summaryNoteAction).toBe("updated");
-    expect(createMergeRequestNote).not.toHaveBeenCalled();
-    expect(updateMergeRequestNote).toHaveBeenCalledTimes(1);
-    expect(updateMergeRequestNote.mock.calls[0]?.[2]).toBe(71);
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+    expect(createCodeReviewNote).not.toHaveBeenCalled();
+    expect(updateCodeReviewNote).toHaveBeenCalledTimes(1);
+    expect(updateCodeReviewNote.mock.calls[0]?.[2]).toBe(71);
+    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
       "- **Status:** Needs attention",
     );
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
       "- **Rationale:** Persisted open findings remain and should be reviewed before merge.",
     );
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
       "- **Overall severity:** Medium",
     );
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
       "Remaining storage correctness fix",
     );
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).toContain(
+    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
       "<details><summary>Suggested fixes prompt</summary>",
     );
-    expect(updateMergeRequestNote.mock.calls[0]?.[3]).not.toContain(
+    expect(updateCodeReviewNote.mock.calls[0]?.[3]).not.toContain(
       "- **Status:** Ready",
     );
   });
 
   it("ignores stored mappings when the live root note is not bot-authored", () => {
     const threads = buildProviderThreads({
-      tenant,
       discussions: [
         {
           id: "disc_human",
-          individual_note: false,
-          notes: [
+          resolvable: false,
+          resolved: false,
+          comments: [
             {
-              id: 20,
+              id: "20",
               body: "Human thread",
-              author: { id: 1, username: "dev", name: "Developer" },
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              system: false,
+              authorId: "1",
+              authorUsername: "dev",
+              isBot: false,
+              resolvable: false,
+              resolved: false,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              anchor: null,
+              positionJson: null,
             },
           ],
         },
@@ -1129,16 +1425,15 @@ describe("Discussion reconciler", () => {
         {
           id: "map_human",
           tenantId: tenant.id,
-          projectId: tenant.projectId,
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           identityKey: "identity",
           findingFingerprint: "fingerprint",
           title: "Stored thread",
           severity: "medium",
           category: "bug",
           body: "Stored body",
-          gitlabDiscussionId: "disc_human",
-          gitlabNoteId: 20,
+          platformThreadId: "disc_human",
+          platformCommentId: 20,
           anchorJson: null,
           positionJson: null,
           botDiscussion: true,
@@ -1158,49 +1453,70 @@ describe("Discussion reconciler", () => {
 
   it("excludes review summary discussions from provider threads", () => {
     const threads = buildProviderThreads({
-      tenant,
       discussions: [
         {
           id: "disc_finding",
-          individual_note: false,
-          notes: [
+          resolvable: true,
+          resolved: false,
+          comments: [
             {
-              id: 10,
+              id: "10",
               body: "**Finding**\n\nOriginal wording",
-              author: { id: 999, username: "review-bot", name: "Review Bot" },
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              system: false,
+              authorId: "999",
+              authorUsername: "review-bot",
+              isBot: true,
+              resolvable: true,
+              resolved: false,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              anchor: null,
+              positionJson: null,
             },
             {
-              id: 11,
+              id: "11",
               body: "Please clarify this.",
-              author: { id: 1, username: "dev", name: "Developer" },
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              system: false,
+              authorId: "1",
+              authorUsername: "dev",
+              isBot: false,
+              resolvable: true,
+              resolved: false,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              anchor: null,
+              positionJson: null,
             },
           ],
         },
         {
           id: "disc_summary",
-          individual_note: false,
-          notes: [
+          resolvable: true,
+          resolved: false,
+          comments: [
             {
-              id: 20,
+              id: "20",
               body: `${REVIEW_SUMMARY_NOTE_MARKER}\n\n## Review summary`,
-              author: { id: 999, username: "review-bot", name: "Review Bot" },
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              system: false,
+              authorId: "999",
+              authorUsername: "review-bot",
+              isBot: true,
+              resolvable: true,
+              resolved: false,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              anchor: null,
+              positionJson: null,
             },
             {
-              id: 21,
+              id: "21",
               body: "Please rerun the review.",
-              author: { id: 1, username: "dev", name: "Developer" },
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              system: false,
+              authorId: "1",
+              authorUsername: "dev",
+              isBot: false,
+              resolvable: true,
+              resolved: false,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              anchor: null,
+              positionJson: null,
             },
           ],
         },
@@ -1209,16 +1525,15 @@ describe("Discussion reconciler", () => {
         {
           id: "map_summary",
           tenantId: tenant.id,
-          projectId: tenant.projectId,
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           identityKey: "summary",
           findingFingerprint: "summary",
           title: "Summary thread",
           severity: "low",
           category: "maintainability",
           body: `${REVIEW_SUMMARY_NOTE_MARKER}\n\n## Review summary`,
-          gitlabDiscussionId: "disc_summary",
-          gitlabNoteId: 20,
+          platformThreadId: "disc_summary",
+          platformCommentId: 20,
           anchorJson: null,
           positionJson: null,
           botDiscussion: true,
@@ -1261,7 +1576,7 @@ describe("Discussion reconciler", () => {
       name: "string position validation errors",
       responseBody: '{"message":"position is invalid"}',
     },
-  ])("retries without a diff position for $name", async ({ responseBody }) => {
+  ])("retries with a file position for $name", async ({ responseBody }) => {
     const storage = {
       upsertDiscussionMapping: vi.fn(async (input) => ({
         id: "map_new",
@@ -1276,8 +1591,8 @@ describe("Discussion reconciler", () => {
       logger,
     });
 
-    const createMergeRequestNote = vi.fn(
-      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+    const createCodeReviewNote = vi.fn(
+      async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 90,
         body,
         author: { id: 999, username: "review-bot", name: "Review Bot" },
@@ -1286,7 +1601,7 @@ describe("Discussion reconciler", () => {
         system: false,
       }),
     );
-    const createMergeRequestDraftNote = vi
+    const createCodeReviewDraftNote = vi
       .fn()
       .mockRejectedValueOnce(
         new GitLabApiError(
@@ -1305,8 +1620,8 @@ describe("Discussion reconciler", () => {
         note: "**Broad finding**\n\nAnchor body",
         position: null,
       });
-    const bulkPublishMergeRequestDraftNotes = vi.fn(async () => undefined);
-    const listMergeRequestDiscussions = vi.fn(async () => [
+    const bulkPublishCodeReviewDraftNotes = vi.fn(async () => undefined);
+    const listCodeReviewDiscussions = vi.fn(async () => [
       {
         id: "disc_new",
         individual_note: false,
@@ -1318,32 +1633,43 @@ describe("Discussion reconciler", () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             system: false,
+            position: {
+              base_sha: "base",
+              start_sha: "start",
+              head_sha: "head",
+              position_type: "file",
+              old_path: "src/index.ts",
+              new_path: "src/index.ts",
+            },
           },
         ],
       },
     ]);
 
-    const summary = await reconciler.reconcile({
-      tenant,
-      context: createHydratedContext({
-        latestVersion: {
-          id: 1,
-          base_commit_sha: "base",
-          start_commit_sha: "start",
-          head_commit_sha: "head",
-          created_at: new Date().toISOString(),
+    const context = createHydratedContext({
+      latestVersion: {
+        id: 1,
+        base_commit_sha: "base",
+        start_commit_sha: "start",
+        head_commit_sha: "head",
+        created_at: new Date().toISOString(),
+      },
+      changes: [
+        {
+          old_path: "src/index.ts",
+          new_path: "src/index.ts",
+          diff: "@@ -11,3 +11,4 @@\n context line\n+added line\n trailing context\n",
+          new_file: false,
+          renamed_file: false,
+          deleted_file: false,
         },
-        changes: [
-          {
-            old_path: "src/index.ts",
-            new_path: "src/index.ts",
-            diff: "@@ -11,3 +11,4 @@\n context line\n+added line\n trailing context\n",
-            new_file: false,
-            renamed_file: false,
-            deleted_file: false,
-          },
-        ],
-      }),
+      ],
+    });
+
+    const summary = await reconciler.reconcile({
+      platform,
+      tenant,
+      context,
       mappings: [],
       interactionRunId: "run_1",
       reviewResult: {
@@ -1368,24 +1694,24 @@ describe("Discussion reconciler", () => {
         ],
         priorDispositions: [],
       },
-      client: {
-        createMergeRequestNote,
-        createMergeRequestDraftNote,
-        bulkPublishMergeRequestDraftNotes,
-        listMergeRequestDiscussions,
-        deleteMergeRequestDraftNote: vi.fn(),
-        updateMergeRequestNote: vi.fn(),
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote,
+        createCodeReviewDraftNote,
+        bulkPublishCodeReviewDraftNotes,
+        listCodeReviewDiscussions,
+        deleteCodeReviewDraftNote: vi.fn(),
+        updateCodeReviewNote: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         resolveDiscussion: vi.fn(),
-      } as never,
+      }),
     });
 
     expect(summary.created).toBe(1);
-    expect(createMergeRequestDraftNote).toHaveBeenCalledTimes(2);
-    expect(createMergeRequestDraftNote).toHaveBeenNthCalledWith(1, 123, 7, {
+    expect(createCodeReviewDraftNote).toHaveBeenCalledTimes(2);
+    expect(createCodeReviewDraftNote).toHaveBeenNthCalledWith(1, 123, 7, {
       note: expect.stringMatching(
-        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(gitlab-agentic-review-thread:draftthread_/,
+        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(reviewphin-review-thread:draftthread_/,
       ),
       position: {
         base_sha: "base",
@@ -1397,17 +1723,169 @@ describe("Discussion reconciler", () => {
         new_line: 12,
       },
     });
-    expect(createMergeRequestDraftNote).toHaveBeenNthCalledWith(2, 123, 7, {
+    expect(createCodeReviewDraftNote).toHaveBeenNthCalledWith(2, 123, 7, {
       note: expect.stringMatching(
-        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(gitlab-agentic-review-thread:draftthread_/,
+        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(reviewphin-review-thread:draftthread_/,
       ),
+      position: {
+        base_sha: "base",
+        start_sha: "start",
+        head_sha: "head",
+        position_type: "file",
+        old_path: "src/index.ts",
+        new_path: "src/index.ts",
+      },
     });
-    expect(bulkPublishMergeRequestDraftNotes).toHaveBeenCalledTimes(1);
-    expect(listMergeRequestDiscussions).toHaveBeenCalledTimes(1);
-    expect(listMergeRequestDiscussions).toHaveBeenCalledWith(123, 7, {
+    expect(bulkPublishCodeReviewDraftNotes).toHaveBeenCalledTimes(1);
+    expect(listCodeReviewDiscussions).toHaveBeenCalledTimes(1);
+    expect(listCodeReviewDiscussions).toHaveBeenCalledWith(123, 7, {
       noCache: true,
     });
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a file position when the anchor file is known but no diff line matches", async () => {
+    const storage = {
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_new",
+        ...input,
+      })),
+      updateReviewFindingStatus: vi.fn(async () => true),
+      listLatestReviewFindings: vi.fn(async () => []),
+    };
+
+    const reconciler = new DiscussionReconciler({
+      storage: storage as never,
+      logger,
+    });
+
+    const createCodeReviewNote = vi.fn(
+      async (_projectId: number, _codeReviewId: number, body: string) => ({
+        id: 90,
+        body,
+        author: { id: 999, username: "review-bot", name: "Review Bot" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system: false,
+      }),
+    );
+    const createCodeReviewDraftNote = vi.fn(async () => ({
+      id: 501,
+      author_id: 999,
+      merge_request_id: 7,
+      resolve_discussion: false,
+      discussion_id: null,
+      note: "**Broad finding**\n\nAnchor body",
+      position: {
+        base_sha: "base",
+        start_sha: "start",
+        head_sha: "head",
+        position_type: "file",
+        old_path: "src/index.ts",
+        new_path: "src/index.ts",
+      },
+    }));
+    const bulkPublishCodeReviewDraftNotes = vi.fn(async () => undefined);
+    const listCodeReviewDiscussions = vi.fn(async () => [
+      {
+        id: "disc_new",
+        individual_note: false,
+        notes: [
+          {
+            id: 12,
+            body: "**Broad finding**\n\nAnchor body",
+            author: { id: 999, username: "review-bot", name: "Review Bot" },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            system: false,
+            position: {
+              base_sha: "base",
+              start_sha: "start",
+              head_sha: "head",
+              position_type: "file",
+              old_path: "src/index.ts",
+              new_path: "src/index.ts",
+            },
+          },
+        ],
+      },
+    ]);
+
+    const context = createHydratedContext({
+      latestVersion: {
+        id: 1,
+        base_commit_sha: "base",
+        start_commit_sha: "start",
+        head_commit_sha: "head",
+        created_at: new Date().toISOString(),
+      },
+      changes: [
+        {
+          old_path: "src/index.ts",
+          new_path: "src/index.ts",
+          diff: "@@ -30,2 +30,3 @@\n context line\n+added line\n trailing context\n",
+          new_file: false,
+          renamed_file: false,
+          deleted_file: false,
+        },
+      ],
+    });
+
+    await reconciler.reconcile({
+      platform,
+      tenant,
+      context,
+      mappings: [],
+      interactionRunId: "run_1",
+      reviewResult: {
+        overview: {
+          summary: "Found one issue",
+          overallSeverity: "medium",
+        },
+        findings: [
+          {
+            title: "Broad finding",
+            body: "Anchor body",
+            severity: "medium",
+            category: "bug",
+            anchor: {
+              path: "src/index.ts",
+              oldPath: "src/index.ts",
+              startLine: 11,
+              endLine: 13,
+              side: "new",
+            },
+          },
+        ],
+        priorDispositions: [],
+      },
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote,
+        createCodeReviewDraftNote,
+        bulkPublishCodeReviewDraftNotes,
+        listCodeReviewDiscussions,
+        deleteCodeReviewDraftNote: vi.fn(),
+        updateCodeReviewNote: vi.fn(),
+        replyToDiscussion: vi.fn(),
+        updateDiscussionNote: vi.fn(),
+        resolveDiscussion: vi.fn(),
+      }),
+    });
+
+    expect(createCodeReviewDraftNote).toHaveBeenCalledTimes(1);
+    expect(createCodeReviewDraftNote).toHaveBeenCalledWith(123, 7, {
+      note: expect.stringMatching(
+        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(reviewphin-review-thread:draftthread_/,
+      ),
+      position: {
+        base_sha: "base",
+        start_sha: "start",
+        head_sha: "head",
+        position_type: "file",
+        old_path: "src/index.ts",
+        new_path: "src/index.ts",
+      },
+    });
   });
 
   it("matches the newest published draft discussion when duplicate candidates exist", async () => {
@@ -1428,7 +1906,7 @@ describe("Discussion reconciler", () => {
     const now = new Date();
     const olderCreatedAt = new Date(now.getTime() - 60_000).toISOString();
     const newerCreatedAt = now.toISOString();
-    const createMergeRequestDraftNote = vi.fn(async () => ({
+    const createCodeReviewDraftNote = vi.fn(async () => ({
       id: 601,
       author_id: 999,
       merge_request_id: 7,
@@ -1437,8 +1915,8 @@ describe("Discussion reconciler", () => {
       note: "**New finding**\n\nAnchor body",
       position: null,
     }));
-    const bulkPublishMergeRequestDraftNotes = vi.fn(async () => undefined);
-    const listMergeRequestDiscussions = vi.fn(async () => [
+    const bulkPublishCodeReviewDraftNotes = vi.fn(async () => undefined);
+    const listCodeReviewDiscussions = vi.fn(async () => [
       {
         id: "disc_older",
         individual_note: false,
@@ -1469,9 +1947,12 @@ describe("Discussion reconciler", () => {
       },
     ]);
 
+    const context = createHydratedContext({ discussions: [] });
+
     await reconciler.reconcile({
+      platform,
       tenant,
-      context: createHydratedContext({ discussions: [] }),
+      context,
       mappings: [],
       interactionRunId: "run_1",
       reviewResult: {
@@ -1489,26 +1970,26 @@ describe("Discussion reconciler", () => {
         ],
         priorDispositions: [],
       },
-      client: {
-        createMergeRequestNote: vi.fn(),
-        createMergeRequestDraftNote,
-        bulkPublishMergeRequestDraftNotes,
-        listMergeRequestDiscussions,
-        deleteMergeRequestDraftNote: vi.fn(),
-        updateMergeRequestNote: vi.fn(),
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote: vi.fn(),
+        createCodeReviewDraftNote,
+        bulkPublishCodeReviewDraftNotes,
+        listCodeReviewDiscussions,
+        deleteCodeReviewDraftNote: vi.fn(),
+        updateCodeReviewNote: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         resolveDiscussion: vi.fn(),
-      } as never,
+      }),
     });
 
-    expect(listMergeRequestDiscussions).toHaveBeenCalledWith(123, 7, {
+    expect(listCodeReviewDiscussions).toHaveBeenCalledWith(123, 7, {
       noCache: true,
     });
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
       expect.objectContaining({
-        gitlabDiscussionId: "disc_newer",
-        gitlabNoteId: 12,
+        platformThreadId: "disc_newer",
+        platformCommentId: 12,
       }),
     );
   });
@@ -1529,10 +2010,10 @@ describe("Discussion reconciler", () => {
     });
 
     let createdDraftBody = "";
-    const createMergeRequestDraftNote = vi.fn(
+    const createCodeReviewDraftNote = vi.fn(
       async (
         _projectId: number,
-        _mergeRequestIid: number,
+        _codeReviewId: number,
         input: { note: string },
       ) => {
         createdDraftBody = input.note;
@@ -1547,10 +2028,10 @@ describe("Discussion reconciler", () => {
         };
       },
     );
-    const bulkPublishMergeRequestDraftNotes = vi.fn(async () => undefined);
+    const bulkPublishCodeReviewDraftNotes = vi.fn(async () => undefined);
     const newerCreatedAt = new Date().toISOString();
     const olderCreatedAt = new Date(Date.now() - 60_000).toISOString();
-    const listMergeRequestDiscussions = vi.fn(async () => [
+    const listCodeReviewDiscussions = vi.fn(async () => [
       {
         id: "disc_wrong",
         individual_note: false,
@@ -1581,9 +2062,12 @@ describe("Discussion reconciler", () => {
       },
     ]);
 
+    const context = createHydratedContext({ discussions: [] });
+
     await reconciler.reconcile({
+      platform,
       tenant,
-      context: createHydratedContext({ discussions: [] }),
+      context,
       mappings: [],
       interactionRunId: "run_1",
       reviewResult: {
@@ -1601,23 +2085,23 @@ describe("Discussion reconciler", () => {
         ],
         priorDispositions: [],
       },
-      client: {
-        createMergeRequestNote: vi.fn(),
-        createMergeRequestDraftNote,
-        bulkPublishMergeRequestDraftNotes,
-        listMergeRequestDiscussions,
-        deleteMergeRequestDraftNote: vi.fn(),
-        updateMergeRequestNote: vi.fn(),
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote: vi.fn(),
+        createCodeReviewDraftNote,
+        bulkPublishCodeReviewDraftNotes,
+        listCodeReviewDiscussions,
+        deleteCodeReviewDraftNote: vi.fn(),
+        updateCodeReviewNote: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         resolveDiscussion: vi.fn(),
-      } as never,
+      }),
     });
 
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
       expect.objectContaining({
-        gitlabDiscussionId: "disc_marked",
-        gitlabNoteId: 12,
+        platformThreadId: "disc_marked",
+        platformCommentId: 12,
         body: "**New finding**\n\nAnchor body",
       }),
     );
@@ -1639,8 +2123,8 @@ describe("Discussion reconciler", () => {
       logger: { warn } as never,
     });
 
-    const createMergeRequestNote = vi.fn(
-      async (_projectId: number, _mergeRequestIid: number, body: string) => ({
+    const createCodeReviewNote = vi.fn(
+      async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 90,
         body,
         author: { id: 999, username: "review-bot", name: "Review Bot" },
@@ -1649,7 +2133,7 @@ describe("Discussion reconciler", () => {
         system: false,
       }),
     );
-    const createMergeRequestDraftNote = vi.fn(async () => ({
+    const createCodeReviewDraftNote = vi.fn(async () => ({
       id: 601,
       author_id: 999,
       merge_request_id: 7,
@@ -1658,8 +2142,8 @@ describe("Discussion reconciler", () => {
       note: "**New finding**\n\nAnchor body",
       position: null,
     }));
-    const bulkPublishMergeRequestDraftNotes = vi.fn(async () => undefined);
-    const listMergeRequestDiscussions = vi.fn(async () => [
+    const bulkPublishCodeReviewDraftNotes = vi.fn(async () => undefined);
+    const listCodeReviewDiscussions = vi.fn(async () => [
       {
         id: "disc_new",
         individual_note: false,
@@ -1676,9 +2160,12 @@ describe("Discussion reconciler", () => {
       },
     ]);
 
+    const context = createHydratedContext({ discussions: [] });
+
     await reconciler.reconcile({
+      platform,
       tenant,
-      context: createHydratedContext({ discussions: [] }),
+      context,
       mappings: [],
       interactionRunId: "run_1",
       reviewResult: {
@@ -1696,17 +2183,17 @@ describe("Discussion reconciler", () => {
         ],
         priorDispositions: [],
       },
-      client: {
-        createMergeRequestNote,
-        createMergeRequestDraftNote,
-        bulkPublishMergeRequestDraftNotes,
-        listMergeRequestDiscussions,
-        deleteMergeRequestDraftNote: vi.fn(),
-        updateMergeRequestNote: vi.fn(),
+      discussionAdapter: createDiscussionAdapter(context, {
+        createCodeReviewNote,
+        createCodeReviewDraftNote,
+        bulkPublishCodeReviewDraftNotes,
+        listCodeReviewDiscussions,
+        deleteCodeReviewDraftNote: vi.fn(),
+        updateCodeReviewNote: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         resolveDiscussion: vi.fn(),
-      } as never,
+      }),
     });
 
     expect(storage.updateReviewFindingStatus).toHaveBeenCalledWith(
@@ -1740,7 +2227,7 @@ describe("Discussion reconciler", () => {
       logger,
     });
 
-    const createMergeRequestDraftNote = vi
+    const createCodeReviewDraftNote = vi
       .fn()
       .mockRejectedValueOnce(
         new GitLabApiError(
@@ -1751,28 +2238,31 @@ describe("Discussion reconciler", () => {
         ),
       );
 
+    const context = createHydratedContext({
+      latestVersion: {
+        id: 1,
+        base_commit_sha: "base",
+        start_commit_sha: "start",
+        head_commit_sha: "head",
+        created_at: new Date().toISOString(),
+      },
+      changes: [
+        {
+          old_path: "src/index.ts",
+          new_path: "src/index.ts",
+          diff: "@@ -11,3 +11,4 @@\n context line\n+added line\n trailing context\n",
+          new_file: false,
+          renamed_file: false,
+          deleted_file: false,
+        },
+      ],
+    });
+
     await expect(
       reconciler.reconcile({
+        platform,
         tenant,
-        context: createHydratedContext({
-          latestVersion: {
-            id: 1,
-            base_commit_sha: "base",
-            start_commit_sha: "start",
-            head_commit_sha: "head",
-            created_at: new Date().toISOString(),
-          },
-          changes: [
-            {
-              old_path: "src/index.ts",
-              new_path: "src/index.ts",
-              diff: "@@ -11,3 +11,4 @@\n context line\n+added line\n trailing context\n",
-              new_file: false,
-              renamed_file: false,
-              deleted_file: false,
-            },
-          ],
-        }),
+        context,
         mappings: [],
         interactionRunId: "run_1",
         reviewResult: {
@@ -1797,21 +2287,21 @@ describe("Discussion reconciler", () => {
           ],
           priorDispositions: [],
         },
-        client: {
-          createMergeRequestNote: vi.fn(),
-          createMergeRequestDraftNote,
-          bulkPublishMergeRequestDraftNotes: vi.fn(),
-          listMergeRequestDiscussions: vi.fn(),
-          deleteMergeRequestDraftNote: vi.fn(),
-          updateMergeRequestNote: vi.fn(),
+        discussionAdapter: createDiscussionAdapter(context, {
+          createCodeReviewNote: vi.fn(),
+          createCodeReviewDraftNote,
+          bulkPublishCodeReviewDraftNotes: vi.fn(),
+          listCodeReviewDiscussions: vi.fn(),
+          deleteCodeReviewDraftNote: vi.fn(),
+          updateCodeReviewNote: vi.fn(),
           replyToDiscussion: vi.fn(),
           updateDiscussionNote: vi.fn(),
           resolveDiscussion: vi.fn(),
-        } as never,
+        }),
       }),
     ).rejects.toBeInstanceOf(GitLabApiError);
 
-    expect(createMergeRequestDraftNote).toHaveBeenCalledTimes(1);
+    expect(createCodeReviewDraftNote).toHaveBeenCalledTimes(1);
     expect(storage.upsertDiscussionMapping).not.toHaveBeenCalled();
   });
 
@@ -1830,7 +2320,7 @@ describe("Discussion reconciler", () => {
       logger,
     });
 
-    const createMergeRequestDraftNote = vi.fn(async () => ({
+    const createCodeReviewDraftNote = vi.fn(async () => ({
       id: 701,
       author_id: 999,
       merge_request_id: 7,
@@ -1839,16 +2329,19 @@ describe("Discussion reconciler", () => {
       note: "**New finding**\n\nAnchor body",
       position: null,
     }));
-    const bulkPublishMergeRequestDraftNotes = vi.fn(
+    const bulkPublishCodeReviewDraftNotes = vi.fn(
       async () => await Promise.reject(new Error("publish failed")),
     );
-    const listMergeRequestDiscussions = vi.fn(async () => []);
-    const deleteMergeRequestDraftNote = vi.fn(async () => undefined);
+    const listCodeReviewDiscussions = vi.fn(async () => []);
+    const deleteCodeReviewDraftNote = vi.fn(async () => undefined);
+
+    const context = createHydratedContext({ discussions: [] });
 
     await expect(
       reconciler.reconcile({
+        platform,
         tenant,
-        context: createHydratedContext({ discussions: [] }),
+        context,
         mappings: [],
         interactionRunId: "run_1",
         reviewResult: {
@@ -1866,22 +2359,143 @@ describe("Discussion reconciler", () => {
           ],
           priorDispositions: [],
         },
-        client: {
-          createMergeRequestNote: vi.fn(),
-          createMergeRequestDraftNote,
-          bulkPublishMergeRequestDraftNotes,
-          listMergeRequestDiscussions,
-          deleteMergeRequestDraftNote,
-          updateMergeRequestNote: vi.fn(),
+        discussionAdapter: createDiscussionAdapter(context, {
+          createCodeReviewNote: vi.fn(),
+          createCodeReviewDraftNote,
+          bulkPublishCodeReviewDraftNotes,
+          listCodeReviewDiscussions,
+          deleteCodeReviewDraftNote,
+          updateCodeReviewNote: vi.fn(),
           replyToDiscussion: vi.fn(),
           updateDiscussionNote: vi.fn(),
           resolveDiscussion: vi.fn(),
-        } as never,
+        }),
       }),
     ).rejects.toThrow("publish failed");
 
-    expect(deleteMergeRequestDraftNote).toHaveBeenCalledWith(123, 7, 701);
+    expect(deleteCodeReviewDraftNote).toHaveBeenCalledWith(123, 7, 701);
     expect(storage.upsertDiscussionMapping).not.toHaveBeenCalled();
+  });
+
+  it("recovers published draft threads using the pre-publish thread snapshot", async () => {
+    const storage = {
+      upsertDiscussionMapping: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("persist failed"))
+        .mockImplementation(async (input) => ({
+          id: "map_new",
+          ...input,
+        })),
+      updateReviewFindingStatus: vi.fn(async () => true),
+      listLatestReviewFindings: vi.fn(async () => []),
+    };
+
+    const reconciler = new DiscussionReconciler({
+      storage: storage as never,
+      logger,
+    });
+
+    const publishedThread = {
+      id: "disc_new",
+      comments: [
+        {
+          id: "801",
+          body: "**New finding**\n\nAnchor body",
+          authorId: "999",
+          authorUsername: "review-bot",
+          isBot: true,
+          resolved: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          anchor: null,
+          positionJson: null,
+        },
+      ],
+      resolved: false,
+    };
+
+    const listThreads = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([publishedThread]);
+    const publishDraftThreads = vi.fn(async () => undefined);
+    const deleteDraftThread = vi.fn(async () => undefined);
+    const matchPublishedDraftThreads = vi.fn(
+      async ({ pendingDraftThreads, existingThreadIds }) => {
+        expect(existingThreadIds.has(publishedThread.id)).toBe(false);
+        const pending = pendingDraftThreads[0];
+        if (!pending) {
+          throw new Error("missing pending draft thread");
+        }
+
+        return [
+          {
+            thread: publishedThread,
+            pending,
+            rootComment: publishedThread.comments[0],
+          },
+        ];
+      },
+    );
+
+    const context = createHydratedContext({ discussions: [] });
+
+    const summary = await reconciler.reconcile({
+      platform,
+      tenant,
+      context,
+      mappings: [],
+      interactionRunId: "run_1",
+      reviewResult: {
+        overview: {
+          summary: "Found one issue",
+          overallSeverity: "medium",
+        },
+        findings: [
+          {
+            title: "New finding",
+            body: "Anchor body",
+            severity: "medium",
+            category: "bug",
+          },
+        ],
+        priorDispositions: [],
+      },
+      discussionAdapter: {
+        listThreads,
+        listSummaryNotes: vi.fn(async () => []),
+        replyToThread: vi.fn(),
+        setThreadResolved: vi.fn(),
+        updateComment: vi.fn(),
+        createDraftThread: vi.fn(async (input) => ({
+          id: "draft_1",
+          draftMarker: input.draftMarker,
+          finding: input.finding,
+          body: input.body,
+          positionJson: null,
+        })),
+        publishDraftThreads,
+        deleteDraftThread,
+        matchPublishedDraftThreads,
+        createSummaryNote: vi.fn(async () => undefined),
+        updateSummaryNote: vi.fn(async () => undefined),
+      } as never,
+    });
+
+    expect(summary.created).toBe(1);
+    expect(matchPublishedDraftThreads).toHaveBeenCalledTimes(2);
+    expect(listThreads).toHaveBeenCalledTimes(2);
+    expect(publishDraftThreads).toHaveBeenCalledTimes(1);
+    expect(deleteDraftThread).not.toHaveBeenCalled();
+    expect(storage.upsertDiscussionMapping).toHaveBeenCalledTimes(2);
+    expect(storage.updateReviewFindingStatus).toHaveBeenCalledTimes(1);
+    expect(storage.upsertDiscussionMapping).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        platformThreadId: "disc_new",
+        platformCommentId: 801,
+      }),
+    );
   });
 });
 
@@ -1890,17 +2504,21 @@ function createHydratedContext(overrides?: {
   changes?: HydratedMergeRequestContext["changes"];
   latestVersion?: HydratedMergeRequestContext["latestVersion"];
   discussions?: HydratedMergeRequestContext["discussions"];
-}): HydratedMergeRequestContext {
+}): HydratedMergeRequestContext & ReviewSummaryContext {
+  const changes = overrides?.changes ?? [];
   return {
     tenant: {
       id: "tenant_1",
       key: "https://gitlab.example.com::123",
-      baseUrl: "https://gitlab.example.com",
-      projectId: 123,
-      apiToken: "token",
-      webhookSecret: "secret",
-      botUserId: 999,
-      botUsername: "review-bot",
+      platform: "gitlab",
+      platformConfigJson: JSON.stringify({
+        baseUrl: "https://gitlab.example.com",
+        projectId: 123,
+        apiToken: "token",
+        webhookSecret: "secret",
+        botUserId: 999,
+        botUsername: "review-bot",
+      }),
       modelProfileName: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -1909,8 +2527,7 @@ function createHydratedContext(overrides?: {
       id: "job_1",
       tenantId: "tenant_1",
       dedupeKey: "dedupe",
-      projectId: 123,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 55,
       headSha: "abc123",
       status: "in_progress",
@@ -1938,31 +2555,33 @@ function createHydratedContext(overrides?: {
     },
     versions: [],
     latestVersion: overrides?.latestVersion ?? null,
-    changes: overrides?.changes ?? [],
+    changes,
     notes: overrides?.notes ?? [],
     discussions: overrides?.discussions ?? [
       {
         id: "disc_1",
         individual_note: false,
         notes: [
-          {
-            id: 10,
-            body: "**Old finding**\n\nOld body",
-            author: { id: 999, username: "review-bot", name: "Review Bot" },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            system: false,
-            resolved: false,
-          },
-          {
-            id: 11,
-            body: "Can you clarify this?",
-            author: { id: 1, username: "dev", name: "Developer" },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            system: false,
-            resolved: false,
-          },
+            {
+              id: 10,
+              body: "**Old finding**\n\nOld body",
+              author: { id: 999, username: "review-bot", name: "Review Bot" },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false,
+              resolvable: true,
+              resolved: false,
+            },
+            {
+              id: 11,
+              body: "Can you clarify this?",
+              author: { id: 1, username: "dev", name: "Developer" },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              system: false,
+              resolvable: true,
+              resolved: false,
+            },
         ],
       },
     ],
@@ -1981,9 +2600,9 @@ function createHydratedContext(overrides?: {
       id: "snapshot_1",
       interactionJobId: "job_1",
       tenantId: "tenant_1",
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       headSha: "abc123",
-      mergeRequestJson: "{}",
+      codeReviewJson: "{}",
       versionsJson: "[]",
       changesJson: "[]",
       notesJson: "[]",
@@ -1993,5 +2612,14 @@ function createHydratedContext(overrides?: {
       workspaceStrategy: "archive",
       createdAt: new Date().toISOString(),
     },
-  };
+    codeReview: {
+      id: 7,
+      title: "Add worker",
+      description: "Adds worker",
+      webUrl: "https://gitlab.example.com/group/project/-/merge_requests/7",
+      authorUsername: "developer",
+      sourceBranch: "feature",
+      targetBranch: "main",
+    },
+  } as unknown as HydratedMergeRequestContext & ReviewSummaryContext;
 }

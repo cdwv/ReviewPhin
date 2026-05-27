@@ -189,7 +189,7 @@ export class ProjectMemoryService {
 }
 
 function createMemoryQueueKey(tenant: HarnessTenantContext): string {
-  return `${tenant.baseUrl}::${tenant.projectId}`;
+  return tenant.id;
 }
 
 function shouldCoalescePersistedMemory(

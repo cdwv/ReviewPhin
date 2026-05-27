@@ -39,7 +39,7 @@ declare module "@flotiq/flotiq-api-sdk" {
     | InteractionJob
     | InteractionRun
     | InteractionRunMetrics
-    | MergeRequestSnapshot
+    | CodeReviewSnapshot
     | Migrations
     | ModelProfile
     | PreviousCompletedInteraction
@@ -57,7 +57,7 @@ declare module "@flotiq/flotiq-api-sdk" {
     | InteractionJobHydrated
     | InteractionRunHydrated
     | InteractionRunMetricsHydrated
-    | MergeRequestSnapshotHydrated
+    | CodeReviewSnapshotHydrated
     | MigrationsHydrated
     | ModelProfileHydrated
     | PreviousCompletedInteractionHydrated
@@ -75,7 +75,7 @@ declare module "@flotiq/flotiq-api-sdk" {
     | InteractionJobHydratedTwice
     | InteractionRunHydratedTwice
     | InteractionRunMetricsHydratedTwice
-    | MergeRequestSnapshotHydratedTwice
+    | CodeReviewSnapshotHydratedTwice
     | MigrationsHydratedTwice
     | ModelProfileHydratedTwice
     | PreviousCompletedInteractionHydratedTwice
@@ -93,7 +93,7 @@ declare module "@flotiq/flotiq-api-sdk" {
     | InteractionJobBase
     | InteractionRunBase
     | InteractionRunMetricsBase
-    | MergeRequestSnapshotBase
+    | CodeReviewSnapshotBase
     | MigrationsBase
     | ModelProfileBase
     | PreviousCompletedInteractionBase
@@ -110,16 +110,15 @@ declare module "@flotiq/flotiq-api-sdk" {
 
   export interface DiscussionMappingBase extends BaseObject<"discussion_mapping"> {
     tenantId: string;
-    projectId: number;
-    mergeRequestIid: number;
+    codeReviewId: number;
     identityKey: string;
     findingFingerprint: string;
     title: string;
     severity: string;
     category: string;
     body: string;
-    gitlabDiscussionId: string;
-    gitlabNoteId: number;
+    platformThreadId: string;
+    platformCommentId: number;
     anchorJson?: string;
     positionJson?: string;
     botDiscussion: boolean;
@@ -139,16 +138,15 @@ declare module "@flotiq/flotiq-api-sdk" {
   export namespace DiscussionMapping {
     export type FilterableFields = StringWithAutocomplete<
       | "tenantId"
-      | "projectId"
-      | "mergeRequestIid"
+      | "codeReviewId"
       | "identityKey"
       | "findingFingerprint"
       | "title"
       | "severity"
       | "category"
       | "body"
-      | "gitlabDiscussionId"
-      | "gitlabNoteId"
+      | "platformThreadId"
+      | "platformCommentId"
       | "anchorJson"
       | "positionJson"
       | "botDiscussion"
@@ -167,8 +165,7 @@ declare module "@flotiq/flotiq-api-sdk" {
   export interface InteractionJobBase extends BaseObject<"interaction_job"> {
     tenantId: string;
     dedupeKey: string;
-    projectId: number;
-    mergeRequestIid: number;
+    codeReviewId: number;
     noteId: number;
     headSha: string;
     status: string;
@@ -190,8 +187,7 @@ declare module "@flotiq/flotiq-api-sdk" {
     export type FilterableFields = StringWithAutocomplete<
       | "tenantId"
       | "dedupeKey"
-      | "projectId"
-      | "mergeRequestIid"
+      | "codeReviewId"
       | "noteId"
       | "headSha"
       | "status"
@@ -310,14 +306,14 @@ declare module "@flotiq/flotiq-api-sdk" {
 
   // #endregion
 
-  // #region merge_request_snapshot
+  // #region code_review_snapshot
 
-  export interface MergeRequestSnapshotBase extends BaseObject<"merge_request_snapshot"> {
+  export interface CodeReviewSnapshotBase extends BaseObject<"code_review_snapshot"> {
     interactionJobId: string;
     tenantId: string;
-    mergeRequestIid: number;
+    codeReviewId: number;
     headSha: string;
-    mergeRequestJson: string;
+    codeReviewJson: string;
     versionsJson: string;
     changesJson: string;
     notesJson: string;
@@ -327,19 +323,19 @@ declare module "@flotiq/flotiq-api-sdk" {
     workspaceStrategy: string;
   }
 
-  export interface MergeRequestSnapshot extends MergeRequestSnapshotBase {}
+  export interface CodeReviewSnapshot extends CodeReviewSnapshotBase {}
 
-  export interface MergeRequestSnapshotHydrated extends MergeRequestSnapshotBase {}
+  export interface CodeReviewSnapshotHydrated extends CodeReviewSnapshotBase {}
 
-  export interface MergeRequestSnapshotHydratedTwice extends MergeRequestSnapshotBase {}
+  export interface CodeReviewSnapshotHydratedTwice extends CodeReviewSnapshotBase {}
 
-  export namespace MergeRequestSnapshot {
+  export namespace CodeReviewSnapshot {
     export type FilterableFields = StringWithAutocomplete<
       | "interactionJobId"
       | "tenantId"
-      | "mergeRequestIid"
+      | "codeReviewId"
       | "headSha"
-      | "mergeRequestJson"
+      | "codeReviewJson"
       | "versionsJson"
       | "changesJson"
       | "notesJson"
@@ -516,12 +512,8 @@ declare module "@flotiq/flotiq-api-sdk" {
 
   export interface TenantBase extends BaseObject<"tenant"> {
     key: string;
-    baseUrl: string;
-    projectId: number;
-    apiToken: string;
-    webhookSecret: string;
-    botUserId?: number;
-    botUsername?: string;
+    platform: string;
+    platformConfigJson: string;
     modelProfileName?: string;
   }
 
@@ -533,14 +525,7 @@ declare module "@flotiq/flotiq-api-sdk" {
 
   export namespace Tenant {
     export type FilterableFields = StringWithAutocomplete<
-      | "key"
-      | "baseUrl"
-      | "projectId"
-      | "apiToken"
-      | "webhookSecret"
-      | "botUserId"
-      | "botUsername"
-      | "modelProfileName"
+      "key" | "platform" | "platformConfigJson" | "modelProfileName"
     >;
   }
 
@@ -575,11 +560,11 @@ declare module "@flotiq/flotiq-api-sdk" {
       InteractionRunMetrics.FilterableFields
     >;
 
-    merge_request_snapshot: ApiRequest<
-      MergeRequestSnapshot,
-      MergeRequestSnapshotHydrated,
-      MergeRequestSnapshotHydratedTwice,
-      MergeRequestSnapshot.FilterableFields
+    code_review_snapshot: ApiRequest<
+      CodeReviewSnapshot,
+      CodeReviewSnapshotHydrated,
+      CodeReviewSnapshotHydratedTwice,
+      CodeReviewSnapshot.FilterableFields
     >;
 
     migrations: ApiRequest<

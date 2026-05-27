@@ -14,7 +14,7 @@ describe("Copilot run metrics", () => {
         interactionJobId: "job_1",
         parentInteractionRunId: null,
         tenantId: "tenant_1",
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         workspacePath,
         requestedModel: "gpt-5.4",
         sessionKind: "review",

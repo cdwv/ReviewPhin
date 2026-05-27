@@ -1,14 +1,12 @@
 import type {
-  GitLabDiscussion,
-  GitLabMergeRequest,
-  GitLabMergeRequestChange,
-  GitLabNote,
+  CodeReviewChange,
+  CodeReviewDiscussion,
+  CodeReviewItem,
+  CodeReviewNote,
   InstructionFile,
-} from "../gitlab/types.js";
-import type {
-  GitLabImageAttachmentBreadcrumb,
-  GitLabImageAttachmentIssue,
-} from "../gitlab/image-attachments.js";
+  ReviewAttachment,
+  ReviewAttachmentIssue,
+} from "./types.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
 import { reviewResultSchema } from "./types.js";
 import type {
@@ -32,13 +30,13 @@ interface PreviousReviewSource {
 }
 
 interface BuildScopedReviewContextInput {
-  attachments?: GitLabImageAttachmentBreadcrumb[] | undefined;
-  attachmentIssues?: GitLabImageAttachmentIssue[] | undefined;
+  attachments?: ReviewAttachment[] | undefined;
+  attachmentIssues?: ReviewAttachmentIssue[] | undefined;
   workspacePath: string;
-  mergeRequest: GitLabMergeRequest;
-  changes: GitLabMergeRequestChange[];
-  notes: GitLabNote[];
-  discussions: GitLabDiscussion[];
+  codeReview: CodeReviewItem;
+  changes: CodeReviewChange[];
+  notes: CodeReviewNote[];
+  discussions: CodeReviewDiscussion[];
   instructionFiles: InstructionFile[];
   projectMemory?: ProjectMemoryContext | undefined;
   trigger: ReviewTriggerContext;
@@ -198,7 +196,7 @@ export function buildScopedReviewContext(
     attachments: input.attachments ?? [],
     attachmentIssues: input.attachmentIssues ?? [],
     workspacePath: input.workspacePath,
-    mergeRequest: input.mergeRequest,
+    codeReview: input.codeReview,
     changes: selectedChanges,
     notes: selectedNotes,
     discussions: selectedDiscussions,
@@ -259,23 +257,23 @@ function parsePreviousReviewResult(
 
 function parsePreviousReviewChanges(
   changesJson: string | null,
-): GitLabMergeRequestChange[] {
+): CodeReviewChange[] {
   if (!changesJson) {
     return [];
   }
 
   try {
     const parsed: unknown = JSON.parse(changesJson);
-    return Array.isArray(parsed) ? (parsed as GitLabMergeRequestChange[]) : [];
+    return Array.isArray(parsed) ? (parsed as CodeReviewChange[]) : [];
   } catch {
     return [];
   }
 }
 
 function findDeltaChanges(
-  currentChanges: GitLabMergeRequestChange[],
-  previousChanges: GitLabMergeRequestChange[],
-): GitLabMergeRequestChange[] {
+  currentChanges: CodeReviewChange[],
+  previousChanges: CodeReviewChange[],
+): CodeReviewChange[] {
   const previousSignatureByPath = new Map(
     previousChanges.map((change) => [
       getChangePath(change),
@@ -290,15 +288,15 @@ function findDeltaChanges(
 }
 
 function selectChanges(input: {
-  changes: GitLabMergeRequestChange[];
+  changes: CodeReviewChange[];
   focusPaths: Set<string>;
   mode: ReviewMode;
-  deltaChanges: GitLabMergeRequestChange[];
+  deltaChanges: CodeReviewChange[];
   widenScopeHints: string[];
-}): GitLabMergeRequestChange[] {
+}): CodeReviewChange[] {
   const focusedChanges = input.changes.filter((change) => {
     const path = getChangePath(change);
-    return input.focusPaths.has(path) || input.focusPaths.has(change.old_path);
+    return input.focusPaths.has(path) || input.focusPaths.has(change.oldPath);
   });
 
   const candidatePool = getChangesCandidatePool(input, focusedChanges);
@@ -327,13 +325,13 @@ function selectChanges(input: {
 
 function getChangesCandidatePool(
   input: {
-    changes: GitLabMergeRequestChange[];
+    changes: CodeReviewChange[];
     focusPaths: Set<string>;
     mode: ReviewMode;
-    deltaChanges: GitLabMergeRequestChange[];
+    deltaChanges: CodeReviewChange[];
     widenScopeHints: string[];
   },
-  focusedChanges: GitLabMergeRequestChange[],
+  focusedChanges: CodeReviewChange[],
 ) {
   if (input.mode === "follow-up-thread") {
     return focusedChanges;
@@ -351,9 +349,9 @@ function getChangesCandidatePool(
 }
 
 function mergeChangesPreservingOrder(
-  orderedChanges: GitLabMergeRequestChange[],
-  ...changeGroups: GitLabMergeRequestChange[][]
-): GitLabMergeRequestChange[] {
+  orderedChanges: CodeReviewChange[],
+  ...changeGroups: CodeReviewChange[][]
+): CodeReviewChange[] {
   const included = new Set(
     changeGroups.flat().map((change) => getChangeSignature(change)),
   );
@@ -363,18 +361,18 @@ function mergeChangesPreservingOrder(
 }
 
 function scoreChange(
-  change: GitLabMergeRequestChange,
+  change: CodeReviewChange,
   focusPaths: Set<string>,
   widenScopeHints: string[],
 ): number {
   const path = getChangePath(change);
   let score = 0;
 
-  if (focusPaths.has(path) || focusPaths.has(change.old_path)) {
+  if (focusPaths.has(path) || focusPaths.has(change.oldPath)) {
     score += 1_000;
   }
 
-  if (change.new_file || change.renamed_file || change.deleted_file) {
+  if (change.newFile || change.renamedFile || change.deletedFile) {
     score += 100;
   }
 
@@ -383,7 +381,7 @@ function scoreChange(
   }
 
   if (
-    /^(src\/(gitlab|jobs|reconcile|review|storage)\/|package\.json$|pnpm-lock\.yaml$|tsconfig(\..+)?\.json$|Dockerfile$|docker-compose\.yml$)/.test(
+    /^(src\/(platforms|jobs|reconcile|review|storage)\/|package\.json$|pnpm-lock\.yaml$|tsconfig(\..+)?\.json$|Dockerfile$|docker-compose\.yml$)/.test(
       path,
     )
   ) {
@@ -401,7 +399,7 @@ function scoreChange(
   return score;
 }
 
-function collectWidenScopeHints(changes: GitLabMergeRequestChange[]): string[] {
+function collectWidenScopeHints(changes: CodeReviewChange[]): string[] {
   const hints = new Set<string>();
 
   for (const change of changes) {
@@ -422,7 +420,7 @@ function collectWidenScopeHints(changes: GitLabMergeRequestChange[]): string[] {
     if (path.startsWith("src/storage/") || /migration/i.test(path)) {
       hints.add("storage or migration behavior changed");
     }
-    if (/^src\/(gitlab|review|reconcile|jobs)\//.test(path)) {
+    if (/^src\/(platforms|review|reconcile|jobs)\//.test(path)) {
       hints.add("core review workflow code changed");
     }
   }
@@ -469,7 +467,7 @@ function selectPriorThreads(input: {
     .map((entry) => entry.thread);
 }
 
-function selectNotes(notes: GitLabNote[], mode: ReviewMode): GitLabNote[] {
+function selectNotes(notes: CodeReviewNote[], mode: ReviewMode): CodeReviewNote[] {
   const limit = NOTE_LIMIT_BY_MODE[mode];
   return limit > 0 ? notes.slice(-limit) : [];
 }
@@ -481,10 +479,10 @@ function buildScope(input: {
   previousReview: PreviousReviewSource | null;
   previousReviewResult: ReviewResult | null;
   priorFindings: PriorReviewFindingContext[];
-  selectedChanges: GitLabMergeRequestChange[];
+  selectedChanges: CodeReviewChange[];
   allChangedFiles: ReviewChangeSummary[];
   omittedChangedFiles: ReviewChangeSummary[];
-  deltaChanges: GitLabMergeRequestChange[];
+  deltaChanges: CodeReviewChange[];
   widenScopeHints: string[];
 }): ReviewScopeContext {
   const previousReview = buildPreviousReviewContext(
@@ -526,10 +524,10 @@ function buildScopeSummary(
     previousReview: PreviousReviewSource | null;
     previousReviewResult: ReviewResult | null;
     priorFindings: PriorReviewFindingContext[];
-    selectedChanges: GitLabMergeRequestChange[];
+    selectedChanges: CodeReviewChange[];
     allChangedFiles: ReviewChangeSummary[];
     omittedChangedFiles: ReviewChangeSummary[];
-    deltaChanges: GitLabMergeRequestChange[];
+    deltaChanges: CodeReviewChange[];
     widenScopeHints: string[];
   },
   selectedChangeCount: number,
@@ -581,8 +579,8 @@ function buildScopeSummary(
 
   return [
     input.previousReview
-      ? "A fresh full rescan was explicitly requested even though a previous review exists."
-      : "This is the first full review request for this merge request.",
+        ? "A fresh full rescan was explicitly requested even though a previous review exists."
+      : "This is the first full review request for this code review.",
     input.omittedChangedFiles.length > 0
       ? `${input.omittedChangedFiles.length} changed file(s) are summarized without inline diffs to keep the starting context bounded.`
       : "All changed files are included in detail.",
@@ -608,30 +606,30 @@ function buildPreviousReviewContext(
 }
 
 function toChangeSummary(
-  change: GitLabMergeRequestChange,
+  change: CodeReviewChange,
   reason?: string,
 ): ReviewChangeSummary {
   return {
     path: getChangePath(change),
-    oldPath: change.old_path,
-    newFile: change.new_file,
-    renamedFile: change.renamed_file,
-    deletedFile: change.deleted_file,
+    oldPath: change.oldPath,
+    newFile: change.newFile,
+    renamedFile: change.renamedFile,
+    deletedFile: change.deletedFile,
     ...(reason ? { reason } : {}),
   };
 }
 
-function getChangePath(change: GitLabMergeRequestChange): string {
-  return change.new_path || change.old_path;
+function getChangePath(change: CodeReviewChange): string {
+  return change.newPath || change.oldPath;
 }
 
-function getChangeSignature(change: GitLabMergeRequestChange): string {
+function getChangeSignature(change: CodeReviewChange): string {
   return JSON.stringify({
-    oldPath: change.old_path,
-    newPath: change.new_path,
+    oldPath: change.oldPath,
+    newPath: change.newPath,
     diff: change.diff ?? "",
-    newFile: change.new_file,
-    renamedFile: change.renamed_file,
-    deletedFile: change.deleted_file,
+    newFile: change.newFile,
+    renamedFile: change.renamedFile,
+    deletedFile: change.deletedFile,
   });
 }

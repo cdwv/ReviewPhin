@@ -1,11 +1,8 @@
 import { loadConfig } from "./config.js";
-import { MergeRequestContextHydrator } from "./gitlab/hydrator.js";
-import { WorkspaceMaterializer } from "./gitlab/workspace.js";
 import { HarnessSessionRuntime } from "./harness/session.js";
 import { JobQueue } from "./jobs/job-queue.js";
 import { ReviewWorker } from "./jobs/review-worker.js";
 import { createLogger } from "./logger.js";
-import { GitLabProjectMemoryBackendFactory } from "./memory/gitlab-wiki-backend.js";
 import { DiscussionReconciler } from "./reconcile/discussion-reconciler.js";
 import { HarnessChatterRunnerFactory } from "./review/harness-chatter.js";
 import { HarnessReviewProviderFactory } from "./review/harness-review-provider.js";
@@ -30,15 +27,8 @@ async function main(): Promise<void> {
     storage,
   });
 
-  const workspaceMaterializer = new WorkspaceMaterializer({
-    workspaceRoot: config.workspaceRoot,
-    logger,
-  });
-
-  const projectMemoryBackendFactory = new GitLabProjectMemoryBackendFactory();
   const harnessRuntime = new HarnessSessionRuntime({
     logger,
-    projectMemoryBackendFactory,
     runLogDir: config.runLogDir,
     timeoutMs: config.copilotTimeoutMs,
     maxPromptMemoryChars: config.maxPromptMemoryChars,
@@ -60,24 +50,16 @@ async function main(): Promise<void> {
     logger,
   });
 
-  const hydrator = new MergeRequestContextHydrator({
-    storage,
-    workspaceMaterializer,
-    memoryEnabled: config.memoryEnabled,
-    logger,
-    projectMemoryBackendFactory,
-  });
-
   const reviewWorker = new ReviewWorker({
     storage,
     tenantRegistry,
-    hydrator,
-    workspaceMaterializer,
     reviewProviderFactory,
     chatterRunnerFactory,
     reconciler,
     logger,
     runLogDir: config.runLogDir,
+    workspaceRoot: config.workspaceRoot,
+    memoryEnabled: config.memoryEnabled,
     maxJobRetries: config.maxJobRetries,
     retryBackoffMs: config.retryBackoffMs,
   });
@@ -122,10 +104,10 @@ async function main(): Promise<void> {
     port: config.port,
   });
 
-  logger.info("GitLab interaction worker listening.");
+  logger.info("Interaction worker listening.");
   logger.info(
     { host: config.host, port: config.port },
-    `Point your GitLab webhooks to http://${config.host}:${config.port}/webhooks/gitlab/note`,
+    `Webhook base is http://${config.host}:${config.port}/webhooks/{platformSlug}`,
   );
 }
 

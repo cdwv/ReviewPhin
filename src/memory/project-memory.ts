@@ -1,57 +1,9 @@
-import { GitLabApiError, type GitLabClient } from "../gitlab/client.js";
-import type { GitLabWikiPage } from "../gitlab/types.js";
 import {
-  REVIEWPHIN_MEMORY_PAGE_SLUG,
   REVIEWPHIN_MEMORY_PAGE_TITLE,
   REVIEWPHIN_MEMORY_SECTION_HEADING,
   type ProjectMemoryEntry,
   type ProjectMemoryToolInput,
 } from "./types.js";
-
-export async function resolveProjectMemoryPage(
-  client: GitLabClient,
-  projectId: number,
-): Promise<GitLabWikiPage | null> {
-  const attemptedSlugs = new Set<string>();
-  for (const slug of buildWikiSlugCandidates(REVIEWPHIN_MEMORY_PAGE_TITLE)) {
-    attemptedSlugs.add(slug);
-    try {
-      return await client.getProjectWikiPage(projectId, slug);
-    } catch (error) {
-      if (!(error instanceof GitLabApiError) || error.status !== 404) {
-        throw error;
-      }
-    }
-  }
-
-  const pages = await client.listProjectWikiPages(projectId);
-  const exactMatch = pages.find(
-    (page) =>
-      normalizeWikiTitle(page.title) ===
-      normalizeWikiTitle(REVIEWPHIN_MEMORY_PAGE_TITLE),
-  );
-  if (!exactMatch) {
-    return null;
-  }
-
-  if (exactMatch.content !== undefined) {
-    return exactMatch;
-  }
-
-  if (attemptedSlugs.has(exactMatch.slug)) {
-    return null;
-  }
-
-  try {
-    return await client.getProjectWikiPage(projectId, exactMatch.slug);
-  } catch (error) {
-    if (error instanceof GitLabApiError && error.status === 404) {
-      return null;
-    }
-
-    throw error;
-  }
-}
 
 export function parseProjectMemoryContent(
   content: string,
@@ -109,7 +61,7 @@ export function renderProjectMemory(entries: ProjectMemoryEntry[]): string {
     "",
     "## Update policy",
     "- Keep durable project facts, team conventions, preferences, and long-term policies.",
-    "- Do not store merge-request-specific remarks, temporary incidents, or one-off review requests.",
+    "- Do not store code-review-specific remarks, temporary incidents, or one-off review requests.",
   ].join("\n");
 }
 
@@ -173,20 +125,6 @@ export function dedupeProjectMemoryEntries(
   }
 
   return dedupedEntries;
-}
-
-function buildWikiSlugCandidates(title: string): string[] {
-  return Array.from(
-    new Set([
-      REVIEWPHIN_MEMORY_PAGE_SLUG,
-      title.replace(/\s+/g, "-"),
-      title.toLowerCase().replace(/\s+/g, "-"),
-    ]),
-  );
-}
-
-function normalizeWikiTitle(title: string): string {
-  return title.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 export function normalizeProjectMemoryText(value: string): string {

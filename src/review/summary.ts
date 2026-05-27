@@ -1,15 +1,15 @@
 import type {
-  GitLabNote,
-  HydratedMergeRequestContext,
-} from "../gitlab/types.js";
-import type {
   ReviewFinding,
   ReviewMergeReadiness,
   ReviewResult,
+  ReviewSummaryContext,
 } from "./types.js";
+import type { IPlatform } from "../platforms/IPlatform.js";
+import type { TenantRecord } from "../storage/contract/index.js";
 
-export const REVIEW_SUMMARY_NOTE_MARKER =
-  "<!-- gitlab-agentic-review-summary -->";
+export const REVIEW_SUMMARY_NOTE_MARKER = "<!-- reviewphin-review-summary -->";
+export const REVIEW_SUMMARY_DETECTION_REGEX =
+  /<!--\s*(gitlab-agentic|reviewphin)-review-summary\s*-->/;
 
 const severityRank = {
   critical: 0,
@@ -31,13 +31,16 @@ type SummaryFinding = Pick<
 >;
 
 export function isReviewSummaryNoteBody(body: string): boolean {
-  return body.includes(REVIEW_SUMMARY_NOTE_MARKER);
+  return REVIEW_SUMMARY_DETECTION_REGEX.test(body);
 }
 
-export function findLatestReviewSummaryNote(
-  notes: GitLabNote[],
-  isBotAuthored: (note: GitLabNote) => boolean,
-): GitLabNote | null {
+export function findLatestReviewSummaryNote<
+  TNote extends {
+    body: string;
+    updatedAt?: string | null;
+    updated_at?: string | null;
+  },
+>(notes: TNote[], isBotAuthored: (note: TNote) => boolean): TNote | null {
   const summaryNotes = notes.filter(
     (note) => isBotAuthored(note) && isReviewSummaryNoteBody(note.body),
   );
@@ -49,7 +52,9 @@ export function findLatestReviewSummaryNote(
 }
 
 export function buildReviewSummaryNote(input: {
-  context: HydratedMergeRequestContext;
+  platform: IPlatform;
+  tenant?: TenantRecord;
+  context: ReviewSummaryContext;
   reviewResult: ReviewResult;
   activeFindings?: SummaryFinding[];
 }): string {
@@ -115,11 +120,12 @@ export function buildReviewSummaryNote(input: {
     );
   }
 
-  lines.push(
-    `- If you made changes to the code, you can request a re-review to get new feedback by leaving new comment, e.g. \`@${input.context.tenant.botUsername} review\``,
-    `- You can ask \`@${input.context.tenant.botUsername}\` for help or to clarify anything regarding this codebase`,
-    "",
-  );
+  const tenant = input.tenant ?? input.context.tenant;
+  if (!tenant) {
+    throw new Error("Review summary note requires tenant context");
+  }
+
+  lines.push(...input.platform.getReviewSummaryInstructions(tenant), "");
 
   if (shouldIncludeSuggestedFixesPrompt(overview)) {
     lines.push(
@@ -221,6 +227,17 @@ function deriveMergeReadinessFromFindings(
   };
 }
 
+function compareNotesByUpdatedAtDesc<
+  TNote extends {
+    updatedAt?: string | null;
+    updated_at?: string | null;
+  },
+>(left: TNote, right: TNote): number {
+  const leftUpdatedAt = left.updatedAt ?? left.updated_at;
+  const rightUpdatedAt = right.updatedAt ?? right.updated_at;
+  return Date.parse(rightUpdatedAt ?? "") - Date.parse(leftUpdatedAt ?? "");
+}
+
 function deriveOverallAssessmentFromFindings(
   findings: ReadonlyArray<SummaryFinding>,
 ): string {
@@ -272,10 +289,10 @@ function areEquivalentFindings(
   );
 }
 
-function formatScopeReviewed(context: HydratedMergeRequestContext): string {
+function formatScopeReviewed(context: ReviewSummaryContext): string {
   const fileCount = context.changes.length;
   const fileLabel = fileCount === 1 ? "file" : "files";
-  return `${fileCount} changed ${fileLabel} on \`${context.mergeRequest.source_branch}\` -> \`${context.mergeRequest.target_branch}\``;
+  return `${fileCount} changed ${fileLabel} on \`${context.codeReview.sourceBranch}\` -> \`${context.codeReview.targetBranch}\``;
 }
 
 function compareFindingsBySeverity(
@@ -285,13 +302,6 @@ function compareFindingsBySeverity(
   return severityRank[left.severity] - severityRank[right.severity];
 }
 
-function compareNotesByUpdatedAtDesc(
-  left: GitLabNote,
-  right: GitLabNote,
-): number {
-  return Date.parse(right.updated_at) - Date.parse(left.updated_at);
-}
-
 function shouldIncludeSuggestedFixesPrompt(
   overview: ResolvedReviewSummaryOverview,
 ): boolean {
@@ -299,20 +309,20 @@ function shouldIncludeSuggestedFixesPrompt(
 }
 
 function buildSuggestedFixesPrompt(input: {
-  context: HydratedMergeRequestContext;
+  context: ReviewSummaryContext;
   overview: ResolvedReviewSummaryOverview;
   findings: SummaryFinding[];
 }): string {
   const lines = [
-    `Review and fix the issues called out for merge request "${input.context.mergeRequest.title}" (${input.context.mergeRequest.web_url}).`,
+    `Review and fix the issues called out for code review "${input.context.codeReview.title}" (${input.context.codeReview.webUrl}).`,
     "",
     "Goal:",
     `- Move merge readiness from ${formatMergeReadinessStatus(input.overview.mergeReadiness.status)} to Ready.`,
     "- Resolve the actionable review findings without regressing existing behavior.",
     "",
     "Context:",
-    `- Source branch: ${input.context.mergeRequest.source_branch}`,
-    `- Target branch: ${input.context.mergeRequest.target_branch}`,
+    `- Source branch: ${input.context.codeReview.sourceBranch}`,
+    `- Target branch: ${input.context.codeReview.targetBranch}`,
     `- Overall assessment: ${input.overview.overallAssessment}`,
     `- Readiness rationale: ${input.overview.mergeReadiness.summary}`,
   ];
@@ -342,14 +352,14 @@ function buildSuggestedFixesPrompt(input: {
     "When finished:",
     "- Keep unrelated changes untouched.",
     "- Update tests or documentation if the fix changes behavior or public expectations.",
-    "- Make sure the merge request is ready to re-review.",
+    "- Make sure the changes are ready to re-review.",
   );
 
   return lines.join("\n");
 }
 
 function buildSuggestedFixesPromptBlock(input: {
-  context: HydratedMergeRequestContext;
+  context: ReviewSummaryContext;
   overview: ResolvedReviewSummaryOverview;
   findings: SummaryFinding[];
 }): string {

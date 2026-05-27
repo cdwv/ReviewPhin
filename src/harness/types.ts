@@ -4,9 +4,11 @@ import type {
   ProviderConfig,
   SessionEvent,
 } from "@github/copilot-sdk";
+import type { ZodIssue, ZodType } from "zod";
+import type { ProjectMemoryBackend } from "../memory/backend.js";
 
 export type HarnessSelectionSource =
-  | "merge-request-override"
+  | "code-review-override"
   | "tenant"
   | "default"
   | "fallback";
@@ -29,10 +31,8 @@ export interface HarnessModelConfig {
 
 export interface HarnessTenantContext {
   id: string;
-  baseUrl: string;
-  projectId: number;
-  apiToken: string;
   memoryEnabled: boolean;
+  projectMemoryBackend: ProjectMemoryBackend;
 }
 
 export interface HarnessRunLoggingContext {
@@ -46,11 +46,24 @@ export interface HarnessRunLoggingContext {
 }
 
 export interface HarnessRunMetadata {
-  mergeRequestIid?: number | null | undefined;
+  codeReviewId?: number | null | undefined;
   workspacePath?: string | null | undefined;
 }
 
-export interface HarnessRunSpec {
+export interface HarnessResponseFormat<TParsed = unknown> {
+  schema: ZodType<TParsed>;
+  looksLike?:
+    | ((value: Record<string, unknown>) => boolean)
+    | undefined;
+}
+
+export interface HarnessRunParseError {
+  reason: "no-json" | "schema-mismatch";
+  message: string;
+  zodIssues?: ZodIssue[] | undefined;
+}
+
+export interface HarnessRunSpec<TParsed = unknown> {
   prompt: string;
   attachments?: HarnessRunAttachments | undefined;
   modelConfig: HarnessModelConfig;
@@ -63,9 +76,12 @@ export interface HarnessRunSpec {
   logging?: HarnessRunLoggingContext | undefined;
   metadata?: HarnessRunMetadata | undefined;
   timeoutMs?: number | undefined;
+  responseFormat?: HarnessResponseFormat<TParsed> | undefined;
 }
 
-export interface HarnessRunResult {
+export interface HarnessRunResult<TParsed = unknown> {
   response: AssistantMessageEvent | undefined;
   events: SessionEvent[];
+  parsed?: TParsed | undefined;
+  parseError?: HarnessRunParseError | undefined;
 }

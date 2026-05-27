@@ -23,7 +23,7 @@ describe("HarnessRunLog", () => {
         sessionKind: "review",
       },
       metadata: {
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         workspacePath: join("workspace", "review"),
       },
     });

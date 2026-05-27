@@ -1,8 +1,6 @@
 import { resolve } from "node:path";
 import { z } from "zod";
 
-import { normalizeGitLabBaseUrl } from "./gitlab/url.js";
-
 export const modelProfileNameSchema = z
   .string()
   .trim()
@@ -14,15 +12,6 @@ export const modelProfileNameSchema = z
   });
 
 export const tenantConfigSchema = z.object({
-  baseUrl: z
-    .string()
-    .url()
-    .transform((value) => normalizeGitLabBaseUrl(value)),
-  projectId: z.coerce.number().int().positive(),
-  apiToken: z.string().min(1),
-  webhookSecret: z.string().min(1),
-  botUserId: z.coerce.number().int().positive().optional(),
-  botUsername: z.string().min(1).optional(),
   modelProfileName: modelProfileNameSchema.optional(),
 });
 

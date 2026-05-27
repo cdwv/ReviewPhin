@@ -1,4 +1,4 @@
-export const CURRENT_STORAGE_CONTRACT_REVISION = "storage-v000";
+export const CURRENT_STORAGE_CONTRACT_REVISION = "storage-v001";
 
 export type {
   StorageContractRevisionId,
@@ -8,7 +8,7 @@ export { STORAGE_CONTRACT_HISTORY } from "./history/index.js";
 export type {
   CreateInteractionJobInput,
   CreateInteractionRunInput,
-  CreateMergeRequestSnapshotInput,
+  CreateCodeReviewSnapshotInput,
   CreateReviewFindingInput,
   DiscussionMappingRecord,
   DiscussionMappingStatus,
@@ -30,10 +30,10 @@ export type {
   InteractionRunFilters,
   InteractionRunOrderField,
   InteractionRunStore,
-  MergeRequestSnapshotRecord,
-  MergeRequestSnapshotFilters,
-  MergeRequestSnapshotOrderField,
-  MergeRequestSnapshotStore,
+  CodeReviewSnapshotRecord,
+  CodeReviewSnapshotFilters,
+  CodeReviewSnapshotOrderField,
+  CodeReviewSnapshotStore,
   ModelProfileRecord,
   ModelProfileFilters,
   ModelProfileOrderField,

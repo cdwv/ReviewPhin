@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type {
   HarnessModelConfig,
   HarnessRunLoggingContext,
@@ -13,7 +14,9 @@ import type {
 } from "./types.js";
 
 interface ProjectMemoryConsolidatorOptions {
-  runSession: (spec: HarnessRunSpec) => Promise<HarnessRunResult>;
+  runSession: <TParsed = unknown>(
+    spec: HarnessRunSpec<TParsed>,
+  ) => Promise<HarnessRunResult<TParsed>>;
 }
 
 export class ProjectMemoryConsolidator {
@@ -56,9 +59,17 @@ export class ProjectMemoryConsolidator {
         ],
         sessionKind: "memory-consolidation",
       },
+      responseFormat: {
+        schema: coalescedEntriesResponseSchema,
+        looksLike: (value) => "entries" in value,
+      },
     });
 
-    return parseCoalescedEntries(response.response?.data.content);
+    return parseCoalescedEntries(
+      response.parsed,
+      response.response?.data.content,
+      response.parseError?.message,
+    );
   }
 }
 
@@ -69,21 +80,23 @@ function selectConsolidationModel(
 }
 
 function parseCoalescedEntries(
+  payload: { entries: unknown[] } | undefined,
   content: string | undefined,
+  parseErrorMessage: string | undefined,
 ): ProjectMemoryEntry[] {
   const trimmed = content?.trim();
   if (!trimmed) {
     throw new Error("Project memory consolidator returned no content");
   }
 
-  const parsed = parseJsonResponse(trimmed) as { entries?: unknown };
-  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.entries)) {
+  if (!payload || !Array.isArray(payload.entries)) {
     throw new Error(
-      "Project memory consolidator did not return an entries array",
+      parseErrorMessage ??
+        "Project memory consolidator did not return an entries array",
     );
   }
 
-  const entries = parsed.entries
+  const entries = payload.entries
     .filter((entry): entry is string => typeof entry === "string")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
@@ -96,15 +109,6 @@ function parseCoalescedEntries(
   return entries;
 }
 
-function parseJsonResponse(content: string): unknown {
-  if (content.startsWith("{")) {
-    return JSON.parse(content);
-  }
-
-  const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) {
-    return JSON.parse(fenced[1].trim());
-  }
-
-  throw new Error("Project memory consolidator output did not contain JSON");
-}
+const coalescedEntriesResponseSchema = z.object({
+  entries: z.array(z.unknown()),
+});

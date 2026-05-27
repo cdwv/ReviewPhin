@@ -1,6 +1,5 @@
 import { monotonicFactory } from "ulidx";
 
-import { normalizeGitLabBaseUrl } from "../gitlab/url.js";
 import { sha256 } from "./hash.js";
 
 const ulid = monotonicFactory();
@@ -10,13 +9,13 @@ export function createId(prefix: string): string {
 }
 
 export function createTenantKey(baseUrl: string, projectId: number): string {
-  return `${normalizeGitLabBaseUrl(baseUrl)}::${projectId}`;
+  return `${normalizeBaseUrl(baseUrl)}::${projectId}`;
 }
 
 export function createInteractionJobDedupeKey(input: {
   baseUrl: string;
   projectId: number;
-  mergeRequestIid: number;
+  codeReviewId: number;
   noteId: number;
   noteAction?: "create" | "update" | undefined;
   noteUpdatedAt?: string | undefined;
@@ -24,9 +23,9 @@ export function createInteractionJobDedupeKey(input: {
 }): string {
   return sha256(
     [
-      normalizeGitLabBaseUrl(input.baseUrl),
+      normalizeBaseUrl(input.baseUrl),
       input.projectId,
-      input.mergeRequestIid,
+      input.codeReviewId,
       input.noteId,
       input.noteAction ?? "create",
       resolveInteractionJobNoteRevision(input),
@@ -86,4 +85,21 @@ function resolveInteractionJobNoteRevision(input: {
   }
 
   return `body:${sha256(input.noteBody ?? "")}`;
+}
+
+function normalizeBaseUrl(value: string): string {
+  const parsed = new URL(value);
+  const normalizedPath = stripTrailingSlashes(parsed.pathname).replace(
+    /\/api\/v4$/i,
+    "",
+  );
+  return `${parsed.origin}${normalizedPath}`;
+}
+
+function stripTrailingSlashes(value: string): string {
+  if (value === "/") {
+    return "";
+  }
+
+  return value.replace(/\/+$/, "");
 }

@@ -1,6 +1,5 @@
 import type { HarnessModelConfig } from "../harness/types.js";
 import type { ProviderConfig } from "@github/copilot-sdk";
-import type { GitLabMergeRequest } from "../gitlab/types.js";
 import type {
   ModelProfileRecord,
   StorageStores,
@@ -17,7 +16,7 @@ export class ModelProfileConfigurationError extends Error {
   }
 }
 
-export function extractMergeRequestModelProfileOverride(
+export function extractCodeReviewModelProfileOverride(
   description: string,
 ): string | null {
   const match = description.match(REVIEWPHIN_PROFILE_OVERRIDE_PATTERN);
@@ -31,20 +30,22 @@ export async function resolveReviewProviderConfig(input: {
     };
   };
   tenant: TenantRecord;
-  mergeRequest: Pick<GitLabMergeRequest, "description">;
+  codeReview: {
+    description: string;
+  };
 }): Promise<HarnessModelConfig> {
-  const overrideName = extractMergeRequestModelProfileOverride(
-    input.mergeRequest.description,
+  const overrideName = extractCodeReviewModelProfileOverride(
+    input.codeReview.description,
   );
   if (overrideName) {
     const profile = await input.storage.stores.modelProfiles.get(overrideName);
     if (!profile) {
       throw new ModelProfileConfigurationError(
-        `Merge request requested unknown model profile "${overrideName}"`,
+        `Code review requested unknown model profile "${overrideName}"`,
       );
     }
 
-    return mapResolvedProfile(profile, "merge-request-override");
+    return mapResolvedProfile(profile, "code-review-override");
   }
 
   if (input.tenant.modelProfileName) {

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../src/cli.js";
 import { listAll } from "../src/storage/storage-helpers.js";
+import { createGitLabTenantInput } from "./helpers/gitlab-tenant.js";
 import { openSqliteTestStorage } from "./helpers/storage.js";
 
 describe("storage migrate CLI", () => {
@@ -31,32 +32,29 @@ describe("storage migrate CLI", () => {
         });
       }
 
-      const tenant = await sourceStorage.upsertTenant({
-        baseUrl: "https://gitlab.example.com",
-        projectId: 123,
-        apiToken: "glpat-source",
-        webhookSecret: "replace-me",
-        botUserId: 999,
-        botUsername: "review-bot",
-        modelProfileName: "native-gpt5",
-      });
+      const tenant = await sourceStorage.upsertTenant(
+        createGitLabTenantInput({
+          apiToken: "glpat-source",
+          webhookSecret: "replace-me",
+          modelProfileName: "native-gpt5",
+        }),
+      );
 
       const interactionJob = await sourceStorage.createOrGetInteractionJob({
         tenantId: tenant.id,
         dedupeKey: "storage-migrate-job",
-        projectId: tenant.projectId,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         noteId: 55,
         headSha: "abc123",
         payloadJson: "{}",
       });
 
-      await sourceStorage.createMergeRequestSnapshot({
+      await sourceStorage.createCodeReviewSnapshot({
         interactionJobId: interactionJob.job.id,
         tenantId: tenant.id,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         headSha: "abc123",
-        mergeRequestJson: "{}",
+        codeReviewJson: "{}",
         versionsJson: "[]",
         changesJson: "[]",
         notesJson: "[]",
@@ -117,16 +115,15 @@ describe("storage migrate CLI", () => {
 
       await sourceStorage.upsertDiscussionMapping({
         tenantId: tenant.id,
-        projectId: tenant.projectId,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         identityKey: "finding-1",
         findingFingerprint: "finding-1-fingerprint",
         title: "Migrated finding",
         severity: "medium",
         category: "correctness",
         body: "This record should be copied",
-        gitlabDiscussionId: "discussion-1",
-        gitlabNoteId: 501,
+        platformThreadId: "discussion-1",
+        platformCommentId: 501,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
@@ -175,7 +172,7 @@ describe("storage migrate CLI", () => {
     expect(stdout).toContain("- modelProfiles: 51");
     expect(stdout).toContain("- tenants: 1");
     expect(stdout).toContain("- interactionJobs: 1");
-    expect(stdout).toContain("- mergeRequestSnapshots: 1");
+    expect(stdout).toContain("- codeReviewSnapshots: 1");
     expect(stdout).toContain("- interactionRuns: 1");
     expect(stdout).toContain("- interactionRunMetrics: 1");
     expect(stdout).toContain("- reviewFindings: 1");
@@ -201,7 +198,7 @@ describe("storage migrate CLI", () => {
         1,
       );
       expect(
-        await listAll(targetStorage.stores.mergeRequestSnapshots),
+        await listAll(targetStorage.stores.codeReviewSnapshots),
       ).toHaveLength(1);
       expect(await listAll(targetStorage.stores.interactionRuns)).toHaveLength(
         1,
@@ -217,8 +214,7 @@ describe("storage migrate CLI", () => {
       ).toHaveLength(1);
 
       expect((await listAll(targetStorage.stores.tenants))[0]).toMatchObject({
-        baseUrl: "https://gitlab.example.com",
-        projectId: 123,
+        key: "https://gitlab.example.com::123",
         modelProfileName: "native-gpt5",
       });
     } finally {

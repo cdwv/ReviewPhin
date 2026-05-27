@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { createId, createTenantKey } from "../../../utils/ids.js";
+import { createId } from "../../../utils/ids.js";
 import type {
   DiscussionMappingRecord,
   DiscussionMappingFilters,
@@ -14,9 +14,9 @@ import type {
   InteractionRunMetricsOrderField,
   InteractionRunMetricsRecord,
   InteractionRunOrderField,
-  MergeRequestSnapshotRecord,
-  MergeRequestSnapshotFilters,
-  MergeRequestSnapshotOrderField,
+  CodeReviewSnapshotRecord,
+  CodeReviewSnapshotFilters,
+  CodeReviewSnapshotOrderField,
   ModelProfileRecord,
   ModelProfileFilters,
   ModelProfileOrderField,
@@ -190,41 +190,41 @@ export class SqliteStoreDatabase {
         delete: (id) => this.deleteInteractionJobRecord(id),
         deleteMany: (ids) => this.deleteInteractionJobRecords(ids),
       },
-      mergeRequestSnapshots: {
-        get: (id) => this.getMergeRequestSnapshotRecord(id),
-        getMany: (ids) => this.getMergeRequestSnapshotRecordsByIds(ids),
-        find: (filters) => this.findMergeRequestSnapshotRecord(filters),
-        list: (input) => this.listMergeRequestSnapshotRecords(input),
+      codeReviewSnapshots: {
+        get: (id) => this.getCodeReviewSnapshotRecord(id),
+        getMany: (ids) => this.getCodeReviewSnapshotRecordsByIds(ids),
+        find: (filters) => this.findCodeReviewSnapshotRecord(filters),
+        list: (input) => this.listCodeReviewSnapshotRecords(input),
         upsert: async (entity) => {
-          await this.upsertMergeRequestSnapshotRecord(entity);
+          await this.upsertCodeReviewSnapshotRecord(entity);
         },
         upsertMany: (entities) =>
           this.applyMany(entities, (entity) =>
-            this.upsertMergeRequestSnapshotRecord(entity),
+            this.upsertCodeReviewSnapshotRecord(entity),
           ),
         replace: async (entity) => {
-          await this.replaceMergeRequestSnapshotRecord(entity);
+          await this.replaceCodeReviewSnapshotRecord(entity);
         },
         replaceMany: (entities) =>
           this.applyMany(entities, (entity) =>
-            this.replaceMergeRequestSnapshotRecord(entity),
+            this.replaceCodeReviewSnapshotRecord(entity),
           ),
         update: async ({ value }) => {
-          await this.replaceMergeRequestSnapshotRecord(value);
+          await this.replaceCodeReviewSnapshotRecord(value);
         },
         updateMany: (inputs) =>
           this.applyMany(inputs, ({ value }) =>
-            this.replaceMergeRequestSnapshotRecord(value),
+            this.replaceCodeReviewSnapshotRecord(value),
           ),
         patch: async (input) => {
-          await this.patchMergeRequestSnapshotRecord(input.id, input.value);
+          await this.patchCodeReviewSnapshotRecord(input.id, input.value);
         },
         patchMany: (inputs) =>
           this.applyMany(inputs, (input) =>
-            this.patchMergeRequestSnapshotRecord(input.id, input.value),
+            this.patchCodeReviewSnapshotRecord(input.id, input.value),
           ),
-        delete: (id) => this.deleteMergeRequestSnapshotRecord(id),
-        deleteMany: (ids) => this.deleteMergeRequestSnapshotRecords(ids),
+        delete: (id) => this.deleteCodeReviewSnapshotRecord(id),
+        deleteMany: (ids) => this.deleteCodeReviewSnapshotRecords(ids),
       },
       interactionRuns: {
         get: (id) => this.getInteractionRunRecord(id),
@@ -503,8 +503,8 @@ export class SqliteStoreDatabase {
   ): Promise<TenantRecord> {
     const database = this.getDb();
     const existingRow = database
-      .prepare("SELECT * FROM tenants WHERE base_url = ? AND project_id = ?")
-      .get(tenant.baseUrl, tenant.projectId) as Row | undefined;
+      .prepare("SELECT * FROM tenants WHERE tenant_key = ?")
+      .get(tenant.key) as Row | undefined;
     const existing = existingRow ? mapTenantRow(existingRow) : null;
     const resolvedModelProfileName =
       tenant.modelProfileName === undefined
@@ -514,65 +514,26 @@ export class SqliteStoreDatabase {
       assertModelProfileExists(database, resolvedModelProfileName);
     }
 
-    const statement = database.prepare(`
-      INSERT INTO tenants (
-        id,
-        tenant_key,
-        base_url,
-        project_id,
-        api_token,
-        webhook_secret,
-        bot_user_id,
-        bot_username,
-        model_profile_name,
-        created_at,
-        updated_at
-      )
-      VALUES (
-        :id,
-        :tenantKey,
-        :baseUrl,
-        :projectId,
-        :apiToken,
-        :webhookSecret,
-        :botUserId,
-        :botUsername,
-        :modelProfileName,
-        :createdAt,
-        :updatedAt
-      )
-      ON CONFLICT(base_url, project_id) DO UPDATE SET
-        tenant_key = excluded.tenant_key,
-        api_token = excluded.api_token,
-        webhook_secret = excluded.webhook_secret,
-        bot_user_id = excluded.bot_user_id,
-        bot_username = excluded.bot_username,
-        model_profile_name = excluded.model_profile_name,
-        updated_at = excluded.updated_at
-    `);
+    const statement = database.prepare(buildTenantUpsertSql("tenant_key"));
 
     const now = new Date().toISOString();
-    statement.run({
-      id: createId("tenant"),
-      tenantKey: createTenantKey(tenant.baseUrl, tenant.projectId),
-      baseUrl: tenant.baseUrl,
-      projectId: tenant.projectId,
-      apiToken: tenant.apiToken,
-      webhookSecret: tenant.webhookSecret,
-      botUserId: tenant.botUserId,
-      botUsername: tenant.botUsername,
-      modelProfileName: resolvedModelProfileName,
-      createdAt: now,
-      updatedAt: now,
-    });
+    statement.run(
+      buildTenantUpsertParams({
+        id: existing?.id ?? createId("tenant"),
+        key: tenant.key,
+        platform: tenant.platform,
+        platformConfigJson: tenant.platformConfigJson,
+        modelProfileName: resolvedModelProfileName,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      }),
+    );
 
     const row = database
-      .prepare("SELECT * FROM tenants WHERE base_url = ? AND project_id = ?")
-      .get(tenant.baseUrl, tenant.projectId) as Row | undefined;
+      .prepare("SELECT * FROM tenants WHERE tenant_key = ?")
+      .get(tenant.key) as Row | undefined;
     if (!row) {
-      throw new Error(
-        `Failed to upsert tenant ${tenant.baseUrl} project ${tenant.projectId}`,
-      );
+      throw new Error(`Failed to upsert tenant ${tenant.key}`);
     }
 
     return mapTenantRow(row);
@@ -707,9 +668,9 @@ export class SqliteStoreDatabase {
     const database = this.getDb();
     const existing = database
       .prepare(
-        "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND merge_request_iid = ? AND gitlab_discussion_id = ?",
+        "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND code_review_id = ? AND platform_thread_id = ?",
       )
-      .get(input.tenantId, input.mergeRequestIid, input.gitlabDiscussionId) as
+      .get(input.tenantId, input.codeReviewId, input.platformThreadId) as
       | Row
       | undefined;
 
@@ -724,16 +685,15 @@ export class SqliteStoreDatabase {
         INSERT INTO discussion_mappings (
           id,
           tenant_id,
-          project_id,
-          merge_request_iid,
+          code_review_id,
           identity_key,
           finding_fingerprint,
           title,
           severity,
           category,
           body,
-          gitlab_discussion_id,
-          gitlab_note_id,
+          platform_thread_id,
+          platform_comment_id,
           anchor_json,
           position_json,
           bot_discussion,
@@ -745,15 +705,15 @@ export class SqliteStoreDatabase {
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(tenant_id, merge_request_iid, gitlab_discussion_id) DO UPDATE SET
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(tenant_id, code_review_id, platform_thread_id) DO UPDATE SET
           identity_key = excluded.identity_key,
           finding_fingerprint = excluded.finding_fingerprint,
           title = excluded.title,
           severity = excluded.severity,
           category = excluded.category,
           body = excluded.body,
-          gitlab_note_id = excluded.gitlab_note_id,
+          platform_comment_id = excluded.platform_comment_id,
           anchor_json = excluded.anchor_json,
           position_json = excluded.position_json,
           bot_discussion = excluded.bot_discussion,
@@ -768,16 +728,15 @@ export class SqliteStoreDatabase {
       .run(
         id,
         input.tenantId,
-        input.projectId,
-        input.mergeRequestIid,
+        input.codeReviewId,
         input.identityKey,
         input.findingFingerprint,
         input.title,
         input.severity,
         input.category,
         input.body,
-        input.gitlabDiscussionId,
-        input.gitlabNoteId,
+        input.platformThreadId,
+        input.platformCommentId,
         input.anchorJson,
         input.positionJson,
         input.botDiscussion ? 1 : 0,
@@ -792,15 +751,15 @@ export class SqliteStoreDatabase {
 
     const row = database
       .prepare(
-        "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND merge_request_iid = ? AND gitlab_discussion_id = ?",
+        "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND code_review_id = ? AND platform_thread_id = ?",
       )
-      .get(input.tenantId, input.mergeRequestIid, input.gitlabDiscussionId) as
+      .get(input.tenantId, input.codeReviewId, input.platformThreadId) as
       | Row
       | undefined;
 
     if (!row) {
       throw new Error(
-        `Failed to upsert discussion mapping for discussion ${input.gitlabDiscussionId}`,
+        `Failed to upsert discussion mapping for discussion ${input.platformThreadId}`,
       );
     }
 
@@ -933,49 +892,17 @@ export class SqliteStoreDatabase {
       assertModelProfileExists(database, entity.modelProfileName);
     }
 
-    database
-      .prepare(
-        `
-        INSERT INTO tenants (
-          id,
-          tenant_key,
-          base_url,
-          project_id,
-          api_token,
-          webhook_secret,
-          bot_user_id,
-          bot_username,
-          model_profile_name,
-          created_at,
-          updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          tenant_key = excluded.tenant_key,
-          base_url = excluded.base_url,
-          project_id = excluded.project_id,
-          api_token = excluded.api_token,
-          webhook_secret = excluded.webhook_secret,
-          bot_user_id = excluded.bot_user_id,
-          bot_username = excluded.bot_username,
-          model_profile_name = excluded.model_profile_name,
-          created_at = excluded.created_at,
-          updated_at = excluded.updated_at
-      `,
-      )
-      .run(
-        entity.id,
-        entity.key,
-        entity.baseUrl,
-        entity.projectId,
-        entity.apiToken,
-        entity.webhookSecret,
-        entity.botUserId,
-        entity.botUsername,
-        entity.modelProfileName,
-        entity.createdAt,
-        entity.updatedAt,
-      );
+    database.prepare(buildTenantUpsertSql("id")).run(
+      buildTenantUpsertParams({
+        id: entity.id,
+        key: entity.key,
+        platform: entity.platform,
+        platformConfigJson: entity.platformConfigJson,
+        modelProfileName: entity.modelProfileName,
+        createdAt: entity.createdAt,
+        updatedAt: entity.updatedAt,
+      }),
+    );
 
     return (await this.getTenantById(entity.id))!;
   }
@@ -1063,8 +990,7 @@ export class SqliteStoreDatabase {
           id,
           tenant_id,
           dedupe_key,
-          project_id,
-          merge_request_iid,
+          code_review_id,
           note_id,
           head_sha,
           status,
@@ -1075,7 +1001,7 @@ export class SqliteStoreDatabase {
           started_at,
           finished_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(dedupe_key) DO UPDATE SET
           dedupe_key = interaction_jobs.dedupe_key
       `,
@@ -1084,8 +1010,7 @@ export class SqliteStoreDatabase {
         entity.id,
         entity.tenantId,
         entity.dedupeKey,
-        entity.projectId,
-        entity.mergeRequestIid,
+        entity.codeReviewId,
         entity.noteId,
         entity.headSha,
         entity.status,
@@ -1115,7 +1040,7 @@ export class SqliteStoreDatabase {
       .prepare(
         `
         UPDATE interaction_jobs
-        SET tenant_id = ?, dedupe_key = ?, project_id = ?, merge_request_iid = ?, note_id = ?, head_sha = ?,
+        SET tenant_id = ?, dedupe_key = ?, code_review_id = ?, note_id = ?, head_sha = ?,
             status = ?, payload_json = ?, retry_count = ?, last_error = ?, enqueued_at = ?, started_at = ?, finished_at = ?
         WHERE id = ?
       `,
@@ -1123,8 +1048,7 @@ export class SqliteStoreDatabase {
       .run(
         entity.tenantId,
         entity.dedupeKey,
-        entity.projectId,
-        entity.mergeRequestIid,
+        entity.codeReviewId,
         entity.noteId,
         entity.headSha,
         entity.status,
@@ -1167,68 +1091,68 @@ export class SqliteStoreDatabase {
     deleteRowsByIds(this.getDb(), "interaction_jobs", "id", ids);
   }
 
-  private async getMergeRequestSnapshotRecord(
+  private async getCodeReviewSnapshotRecord(
     id: string,
-  ): Promise<MergeRequestSnapshotRecord | null> {
+  ): Promise<CodeReviewSnapshotRecord | null> {
     const row = this.getDb()
-      .prepare("SELECT * FROM merge_request_snapshots WHERE id = ?")
+      .prepare("SELECT * FROM code_review_snapshots WHERE id = ?")
       .get(id) as Row | undefined;
-    return row ? mapMergeRequestSnapshotRow(row) : null;
+    return row ? mapCodeReviewSnapshotRow(row) : null;
   }
 
-  private async getMergeRequestSnapshotRecordsByIds(
+  private async getCodeReviewSnapshotRecordsByIds(
     ids: string[],
-  ): Promise<MergeRequestSnapshotRecord[]> {
+  ): Promise<CodeReviewSnapshotRecord[]> {
     return selectRowsByIds(
       this.getDb(),
-      "merge_request_snapshots",
+      "code_review_snapshots",
       "id",
       ids,
-      mapMergeRequestSnapshotRow,
+      mapCodeReviewSnapshotRow,
     );
   }
 
-  private async findMergeRequestSnapshotRecord(
-    filters: MergeRequestSnapshotFilters,
-  ): Promise<MergeRequestSnapshotRecord | null> {
+  private async findCodeReviewSnapshotRecord(
+    filters: CodeReviewSnapshotFilters,
+  ): Promise<CodeReviewSnapshotRecord | null> {
     return findRow(
       this.getDb(),
-      "merge_request_snapshots",
+      "code_review_snapshots",
       filters,
-      mergeRequestSnapshotFilterColumns,
-      mapMergeRequestSnapshotRow,
+      codeReviewSnapshotFilterColumns,
+      mapCodeReviewSnapshotRow,
     );
   }
 
-  private async listMergeRequestSnapshotRecords(
+  private async listCodeReviewSnapshotRecords(
     input: StoreListInput<
-      MergeRequestSnapshotFilters,
-      MergeRequestSnapshotOrderField
+      CodeReviewSnapshotFilters,
+      CodeReviewSnapshotOrderField
     >,
-  ): Promise<MergeRequestSnapshotRecord[]> {
+  ): Promise<CodeReviewSnapshotRecord[]> {
     return listRows(
       this.getDb(),
-      "merge_request_snapshots",
+      "code_review_snapshots",
       input,
-      mergeRequestSnapshotFilterColumns,
-      mergeRequestSnapshotOrderColumns,
-      mapMergeRequestSnapshotRow,
+      codeReviewSnapshotFilterColumns,
+      codeReviewSnapshotOrderColumns,
+      mapCodeReviewSnapshotRow,
     );
   }
 
-  private async upsertMergeRequestSnapshotRecord(
-    entity: MergeRequestSnapshotRecord,
-  ): Promise<MergeRequestSnapshotRecord> {
+  private async upsertCodeReviewSnapshotRecord(
+    entity: CodeReviewSnapshotRecord,
+  ): Promise<CodeReviewSnapshotRecord> {
     this.getDb()
       .prepare(
         `
-        INSERT INTO merge_request_snapshots (
+        INSERT INTO code_review_snapshots (
           id,
           interaction_job_id,
           tenant_id,
-          merge_request_iid,
+          code_review_id,
           head_sha,
-          merge_request_json,
+          code_review_json,
           versions_json,
           changes_json,
           notes_json,
@@ -1242,9 +1166,9 @@ export class SqliteStoreDatabase {
         ON CONFLICT(id) DO UPDATE SET
           interaction_job_id = excluded.interaction_job_id,
           tenant_id = excluded.tenant_id,
-          merge_request_iid = excluded.merge_request_iid,
+          code_review_id = excluded.code_review_id,
           head_sha = excluded.head_sha,
-          merge_request_json = excluded.merge_request_json,
+          code_review_json = excluded.code_review_json,
           versions_json = excluded.versions_json,
           changes_json = excluded.changes_json,
           notes_json = excluded.notes_json,
@@ -1259,9 +1183,9 @@ export class SqliteStoreDatabase {
         entity.id,
         entity.interactionJobId,
         entity.tenantId,
-        entity.mergeRequestIid,
+        entity.codeReviewId,
         entity.headSha,
-        entity.mergeRequestJson,
+        entity.codeReviewJson,
         entity.versionsJson,
         entity.changesJson,
         entity.notesJson,
@@ -1272,45 +1196,43 @@ export class SqliteStoreDatabase {
         entity.createdAt,
       );
 
-    return (await this.getMergeRequestSnapshotRecord(entity.id))!;
+    return (await this.getCodeReviewSnapshotRecord(entity.id))!;
   }
 
-  private async replaceMergeRequestSnapshotRecord(
-    entity: MergeRequestSnapshotRecord,
-  ): Promise<MergeRequestSnapshotRecord> {
-    if (!(await this.getMergeRequestSnapshotRecord(entity.id))) {
-      throw new Error(`Unknown merge request snapshot ${entity.id}`);
+  private async replaceCodeReviewSnapshotRecord(
+    entity: CodeReviewSnapshotRecord,
+  ): Promise<CodeReviewSnapshotRecord> {
+    if (!(await this.getCodeReviewSnapshotRecord(entity.id))) {
+      throw new Error(`Unknown code review snapshot ${entity.id}`);
     }
 
-    return this.upsertMergeRequestSnapshotRecord(entity);
+    return this.upsertCodeReviewSnapshotRecord(entity);
   }
 
-  private async patchMergeRequestSnapshotRecord(
+  private async patchCodeReviewSnapshotRecord(
     id: string,
-    value: Partial<MergeRequestSnapshotRecord>,
-  ): Promise<MergeRequestSnapshotRecord> {
-    const existing = await this.getMergeRequestSnapshotRecord(id);
+    value: Partial<CodeReviewSnapshotRecord>,
+  ): Promise<CodeReviewSnapshotRecord> {
+    const existing = await this.getCodeReviewSnapshotRecord(id);
     if (!existing) {
-      throw new Error(`Unknown merge request snapshot ${id}`);
+      throw new Error(`Unknown code review snapshot ${id}`);
     }
 
-    return this.replaceMergeRequestSnapshotRecord({
+    return this.replaceCodeReviewSnapshotRecord({
       ...existing,
       ...value,
       id: existing.id,
     });
   }
 
-  private async deleteMergeRequestSnapshotRecord(id: string): Promise<void> {
+  private async deleteCodeReviewSnapshotRecord(id: string): Promise<void> {
     this.getDb()
-      .prepare("DELETE FROM merge_request_snapshots WHERE id = ?")
+      .prepare("DELETE FROM code_review_snapshots WHERE id = ?")
       .run(id);
   }
 
-  private async deleteMergeRequestSnapshotRecords(
-    ids: string[],
-  ): Promise<void> {
-    deleteRowsByIds(this.getDb(), "merge_request_snapshots", "id", ids);
+  private async deleteCodeReviewSnapshotRecords(ids: string[]): Promise<void> {
+    deleteRowsByIds(this.getDb(), "code_review_snapshots", "id", ids);
   }
 
   private async getInteractionRunRecord(
@@ -1752,16 +1674,15 @@ export class SqliteStoreDatabase {
     return this.upsertDiscussionMapping({
       id: entity.id,
       tenantId: entity.tenantId,
-      projectId: entity.projectId,
-      mergeRequestIid: entity.mergeRequestIid,
+      codeReviewId: entity.codeReviewId,
       identityKey: entity.identityKey,
       findingFingerprint: entity.findingFingerprint,
       title: entity.title,
       severity: entity.severity,
       category: entity.category,
       body: entity.body,
-      gitlabDiscussionId: entity.gitlabDiscussionId,
-      gitlabNoteId: entity.gitlabNoteId,
+      platformThreadId: entity.platformThreadId,
+      platformCommentId: entity.platformCommentId,
       anchorJson: entity.anchorJson,
       positionJson: entity.positionJson,
       botDiscussion: entity.botDiscussion,
@@ -1835,8 +1756,7 @@ const modelProfileOrderColumns: Record<ModelProfileOrderField, string> = {
 const tenantFilterColumns: Record<keyof TenantFilters, string> = {
   id: "id",
   key: "tenant_key",
-  baseUrl: "base_url",
-  projectId: "project_id",
+  platform: "platform",
   modelProfileName: "model_profile_name",
   createdAt: "created_at",
   updatedAt: "updated_at",
@@ -1845,8 +1765,7 @@ const tenantFilterColumns: Record<keyof TenantFilters, string> = {
 const tenantOrderColumns: Record<TenantOrderField, string> = {
   id: "id",
   key: "tenant_key",
-  baseUrl: "base_url",
-  projectId: "project_id",
+  platform: "platform",
   modelProfileName: "model_profile_name",
   createdAt: "created_at",
   updatedAt: "updated_at",
@@ -1857,8 +1776,7 @@ const interactionJobFilterColumns: Record<keyof InteractionJobFilters, string> =
     id: "id",
     tenantId: "tenant_id",
     dedupeKey: "dedupe_key",
-    projectId: "project_id",
-    mergeRequestIid: "merge_request_iid",
+    codeReviewId: "code_review_id",
     status: "status",
     enqueuedAt: "enqueued_at",
     startedAt: "started_at",
@@ -1868,8 +1786,7 @@ const interactionJobFilterColumns: Record<keyof InteractionJobFilters, string> =
 const interactionJobOrderColumns: Record<InteractionJobOrderField, string> = {
   tenantId: "tenant_id",
   dedupeKey: "dedupe_key",
-  projectId: "project_id",
-  mergeRequestIid: "merge_request_iid",
+  codeReviewId: "code_review_id",
   status: "status",
   enqueuedAt: "enqueued_at",
   startedAt: "started_at",
@@ -1877,24 +1794,24 @@ const interactionJobOrderColumns: Record<InteractionJobOrderField, string> = {
   id: "id",
 };
 
-const mergeRequestSnapshotFilterColumns: Record<
-  keyof MergeRequestSnapshotFilters,
+const codeReviewSnapshotFilterColumns: Record<
+  keyof CodeReviewSnapshotFilters,
   string
 > = {
   id: "id",
   interactionJobId: "interaction_job_id",
   tenantId: "tenant_id",
-  mergeRequestIid: "merge_request_iid",
+  codeReviewId: "code_review_id",
   createdAt: "created_at",
 };
 
-const mergeRequestSnapshotOrderColumns: Record<
-  MergeRequestSnapshotOrderField,
+const codeReviewSnapshotOrderColumns: Record<
+  CodeReviewSnapshotOrderField,
   string
 > = {
   interactionJobId: "interaction_job_id",
   tenantId: "tenant_id",
-  mergeRequestIid: "merge_request_iid",
+  codeReviewId: "code_review_id",
   createdAt: "created_at",
   id: "id",
 };
@@ -1962,8 +1879,8 @@ const discussionMappingFilterColumns: Record<
 > = {
   id: "id",
   tenantId: "tenant_id",
-  mergeRequestIid: "merge_request_iid",
-  gitlabDiscussionId: "gitlab_discussion_id",
+  codeReviewId: "code_review_id",
+  platformThreadId: "platform_thread_id",
   identityKey: "identity_key",
   status: "status",
   updatedAt: "updated_at",
@@ -1975,8 +1892,8 @@ const discussionMappingOrderColumns: Record<
   string
 > = {
   tenantId: "tenant_id",
-  mergeRequestIid: "merge_request_iid",
-  gitlabDiscussionId: "gitlab_discussion_id",
+  codeReviewId: "code_review_id",
+  platformThreadId: "platform_thread_id",
   identityKey: "identity_key",
   status: "status",
   updatedAt: "updated_at",
@@ -2132,6 +2049,66 @@ function resolveDefined<T>(value: T | undefined, fallback: T): T {
   return value;
 }
 
+function buildTenantUpsertSql(conflictTarget: "id" | "tenant_key"): string {
+  const columns = [
+    "id",
+    "tenant_key",
+    "platform",
+    "platform_config_json",
+    "model_profile_name",
+    "created_at",
+    "updated_at",
+  ];
+  const updates = [
+    "tenant_key = excluded.tenant_key",
+    "platform = excluded.platform",
+    "platform_config_json = excluded.platform_config_json",
+    "model_profile_name = excluded.model_profile_name",
+    "created_at = excluded.created_at",
+    "updated_at = excluded.updated_at",
+  ];
+
+  return `
+    INSERT INTO tenants (
+      ${columns.join(",\n      ")}
+    )
+    VALUES (
+      ${columns.map((column) => `:${toNamedParameter(column)}`).join(",\n      ")}
+    )
+    ON CONFLICT(${conflictTarget}) DO UPDATE SET
+      ${updates.join(",\n      ")}
+  `;
+}
+
+function buildTenantUpsertParams(
+  entity: Pick<
+    TenantRecord,
+    | "id"
+    | "key"
+    | "platform"
+    | "platformConfigJson"
+    | "modelProfileName"
+    | "createdAt"
+    | "updatedAt"
+  >,
+): Record<string, SqlValue> {
+  return {
+    id: entity.id,
+    tenantKey: entity.key,
+    platform: entity.platform,
+    platformConfigJson: entity.platformConfigJson,
+    modelProfileName: entity.modelProfileName,
+    createdAt: entity.createdAt,
+    updatedAt: entity.updatedAt,
+  };
+}
+
+function toNamedParameter(column: string): string {
+  return column.replace(/_([a-z])/g, (_, character: string) =>
+    character.toUpperCase(),
+  );
+}
+
 function mapModelProfileRow(row: Row): ModelProfileRecord {
   return {
     name: asString(row.name),
@@ -2209,12 +2186,8 @@ function mapTenantRow(row: Row): TenantRecord {
   return {
     id: asString(row.id),
     key: asString(row.tenant_key),
-    baseUrl: asString(row.base_url),
-    projectId: asNumber(row.project_id),
-    apiToken: asString(row.api_token),
-    webhookSecret: asString(row.webhook_secret),
-    botUserId: asNumber(row.bot_user_id),
-    botUsername: asString(row.bot_username),
+    platform: asString(row.platform),
+    platformConfigJson: asString(row.platform_config_json),
     modelProfileName: asNullableString(row.model_profile_name),
     createdAt: asString(row.created_at),
     updatedAt: asString(row.updated_at),
@@ -2226,8 +2199,7 @@ function mapInteractionJobRow(row: Row): InteractionJobRecord {
     id: asString(row.id),
     tenantId: asString(row.tenant_id),
     dedupeKey: asString(row.dedupe_key),
-    projectId: asNumber(row.project_id),
-    mergeRequestIid: asNumber(row.merge_request_iid),
+    codeReviewId: asNumber(row.code_review_id),
     noteId: asNumber(row.note_id),
     headSha: asString(row.head_sha),
     status: asString(row.status) as InteractionJobRecord["status"],
@@ -2244,16 +2216,15 @@ function mapDiscussionMappingRow(row: Row): DiscussionMappingRecord {
   return {
     id: asString(row.id),
     tenantId: asString(row.tenant_id),
-    projectId: asNumber(row.project_id),
-    mergeRequestIid: asNumber(row.merge_request_iid),
+    codeReviewId: asNumber(row.code_review_id),
     identityKey: asString(row.identity_key),
     findingFingerprint: asString(row.finding_fingerprint),
     title: asString(row.title),
     severity: asString(row.severity),
     category: asString(row.category),
     body: asString(row.body),
-    gitlabDiscussionId: asString(row.gitlab_discussion_id),
-    gitlabNoteId: asNumber(row.gitlab_note_id),
+    platformThreadId: asString(row.platform_thread_id),
+    platformCommentId: asNumber(row.platform_comment_id),
     anchorJson: asNullableString(row.anchor_json),
     positionJson: asNullableString(row.position_json),
     botDiscussion: asBoolean(row.bot_discussion),
@@ -2267,14 +2238,14 @@ function mapDiscussionMappingRow(row: Row): DiscussionMappingRecord {
   };
 }
 
-function mapMergeRequestSnapshotRow(row: Row): MergeRequestSnapshotRecord {
+function mapCodeReviewSnapshotRow(row: Row): CodeReviewSnapshotRecord {
   return {
     id: asString(row.id),
     interactionJobId: asString(row.interaction_job_id),
     tenantId: asString(row.tenant_id),
-    mergeRequestIid: asNumber(row.merge_request_iid),
+    codeReviewId: asNumber(row.code_review_id),
     headSha: asString(row.head_sha),
-    mergeRequestJson: asString(row.merge_request_json),
+    codeReviewJson: asString(row.code_review_json),
     versionsJson: asString(row.versions_json),
     changesJson: asString(row.changes_json),
     notesJson: asString(row.notes_json),

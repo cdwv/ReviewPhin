@@ -4,11 +4,22 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
-import type { GitLabNoteHookPayload } from "../src/gitlab/types.js";
+import type { GitLabNoteHookPayload } from "../src/platforms/gitlab/types.js";
+import { wrapGitLabPlatformContext } from "./helpers/platform-context.js";
+import { overridePlatformRuntime } from "./helpers/platform-runtime.js";
 
 const tenant = {
   id: "tenant_1",
   key: "https://gitlab.example.com::123",
+  platform: "gitlab",
+  platformConfigJson: JSON.stringify({
+    baseUrl: "https://gitlab.example.com",
+    projectId: 123,
+    apiToken: "token",
+    webhookSecret: "secret",
+    botUserId: 999,
+    botUsername: "review-bot",
+  }),
   baseUrl: "https://gitlab.example.com",
   projectId: 123,
   apiToken: "token",
@@ -114,7 +125,7 @@ describe("ReviewWorker cleanup", () => {
       tenantId: tenant.id,
       dedupeKey: "dedupe",
       projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 55,
       headSha: "abc123",
       status: "queued" as const,
@@ -160,7 +171,7 @@ describe("ReviewWorker cleanup", () => {
       })),
       getModelProfileByName: vi.fn(async () => null),
       getDefaultModelProfile: vi.fn(async () => null),
-      getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+      getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
       listPriorReviewFindings: vi.fn(async () => []),
       completeInteractionRun: vi.fn(async () => {}),
       replaceReviewFindings: vi.fn(async () => {}),
@@ -171,105 +182,111 @@ describe("ReviewWorker cleanup", () => {
       markJobQueued: vi.fn(async () => {}),
       markJobFailed: vi.fn(async () => {}),
     };
+    const loadRoutingContext = vi.fn(async () =>
+      wrapGitLabPlatformContext({
+        tenant,
+        job,
+        mergeRequest: {
+          id: 1,
+          iid: 7,
+          project_id: tenant.projectId,
+          title: "Add worker",
+          description: "Adds the worker",
+          web_url:
+            "https://gitlab.example.com/group/project/-/merge_requests/7",
+          source_branch: "feature",
+          target_branch: "main",
+          author: {
+            id: 42,
+            username: "developer",
+            name: "Dev User",
+          },
+        },
+        changes: [],
+        notes: [],
+        discussions: [],
+        workspace: {
+          rootPath: join("tmp", "workspace-routing"),
+          cleanupRoot: join("tmp", "cleanup-routing"),
+          strategy: "git",
+          instructionFiles: [],
+        },
+        projectMemory: {
+          enabled: true,
+          page: null,
+          entries: [],
+        },
+      }),
+    );
+    const hydrateContext = vi.fn(async () =>
+      wrapGitLabPlatformContext({
+        tenant,
+        job,
+        mergeRequest: {
+          id: 1,
+          iid: 7,
+          project_id: tenant.projectId,
+          title: "Add worker",
+          description: "Adds the worker",
+          web_url:
+            "https://gitlab.example.com/group/project/-/merge_requests/7",
+          source_branch: "feature",
+          target_branch: "main",
+          author: {
+            id: 42,
+            username: "developer",
+            name: "Dev User",
+          },
+        },
+        versions: [],
+        latestVersion: null,
+        changes: [],
+        notes: [],
+        discussions: [],
+        workspace: {
+          rootPath: join("tmp", "workspace"),
+          cleanupRoot: join("tmp", "cleanup"),
+          strategy: "git",
+          instructionFiles: [],
+        },
+        projectMemory: {
+          enabled: true,
+          page: null,
+          entries: [],
+        },
+        snapshot: {
+          id: "snapshot_1",
+          interactionJobId: "job_1",
+          tenantId: tenant.id,
+          codeReviewId: 7,
+          headSha: "abc123",
+          codeReviewJson: "{}",
+          versionsJson: "[]",
+          changesJson: "[]",
+          notesJson: "[]",
+          discussionsJson: "[]",
+          instructionsJson: "[]",
+          projectMemoryJson: null,
+          workspaceStrategy: "git",
+          createdAt: new Date().toISOString(),
+        },
+      }),
+    );
+    const cleanupWorkspace = vi.fn(async () => {
+      throw Object.assign(new Error("busy"), { code: "EBUSY" });
+    });
 
     const worker = new ReviewWorker({
       storage: storage as never,
       tenantRegistry: {
         getTenantById: vi.fn(async () => tenant),
       } as never,
-      hydrator: {
-        loadRoutingContext: vi.fn(async () => ({
-          tenant,
-          job,
-          mergeRequest: {
-            id: 1,
-            iid: 7,
-            project_id: tenant.projectId,
-            title: "Add worker",
-            description: "Adds the worker",
-            web_url:
-              "https://gitlab.example.com/group/project/-/merge_requests/7",
-            source_branch: "feature",
-            target_branch: "main",
-            author: {
-              id: 42,
-              username: "developer",
-              name: "Dev User",
-            },
-          },
-          changes: [],
-          notes: [],
-          discussions: [],
-          workspace: {
-            rootPath: join("tmp", "workspace-routing"),
-            cleanupRoot: join("tmp", "cleanup-routing"),
-            strategy: "git",
-            instructionFiles: [],
-          },
-          projectMemory: {
-            enabled: true,
-            page: null,
-            entries: [],
-          },
-        })),
-        hydrate: vi.fn(async () => ({
-          tenant,
-          job,
-          mergeRequest: {
-            id: 1,
-            iid: 7,
-            project_id: tenant.projectId,
-            title: "Add worker",
-            description: "Adds the worker",
-            web_url:
-              "https://gitlab.example.com/group/project/-/merge_requests/7",
-            source_branch: "feature",
-            target_branch: "main",
-            author: {
-              id: 42,
-              username: "developer",
-              name: "Dev User",
-            },
-          },
-          versions: [],
-          latestVersion: null,
-          changes: [],
-          notes: [],
-          discussions: [],
-          workspace: {
-            rootPath: join("tmp", "workspace"),
-            cleanupRoot: join("tmp", "cleanup"),
-            strategy: "git",
-            instructionFiles: [],
-          },
-          projectMemory: {
-            enabled: true,
-            page: null,
-            entries: [],
-          },
-          snapshot: {
-            id: "snapshot_1",
-            interactionJobId: "job_1",
-            tenantId: tenant.id,
-            mergeRequestIid: 7,
-            headSha: "abc123",
-            mergeRequestJson: "{}",
-            versionsJson: "[]",
-            changesJson: "[]",
-            notesJson: "[]",
-            discussionsJson: "[]",
-            instructionsJson: "[]",
-            projectMemoryJson: null,
-            workspaceStrategy: "git",
-            createdAt: new Date().toISOString(),
-          },
-        })),
-      } as never,
-      workspaceMaterializer: {
-        cleanup: vi.fn(async () => {
-          throw Object.assign(new Error("busy"), { code: "EBUSY" });
+      reviewRuntimeFactory: ({ platform, ...runtimeInput }) =>
+        overridePlatformRuntime(platform.createReviewRuntime(runtimeInput), {
+          loadRoutingContext,
+          hydrate: hydrateContext,
+          cleanupWorkspace,
         }),
-      } as never,
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
@@ -384,7 +401,7 @@ describe("ReviewWorker cleanup", () => {
       tenantId: tenant.id,
       dedupeKey: "dedupe",
       projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 55,
       headSha: "abc123",
       status: "queued" as const,
@@ -430,7 +447,7 @@ describe("ReviewWorker cleanup", () => {
       })),
       getModelProfileByName: vi.fn(async () => null),
       getDefaultModelProfile: vi.fn(async () => null),
-      getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+      getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
       listPriorReviewFindings: vi.fn(async () => []),
       completeInteractionRun: vi.fn(async () => {}),
       replaceReviewFindings: vi.fn(async () => {}),
@@ -442,6 +459,96 @@ describe("ReviewWorker cleanup", () => {
       markJobFailed: vi.fn(async () => {}),
     };
     const cleanup = vi.fn(async () => {});
+    const loadRoutingContext = vi.fn(async () =>
+      wrapGitLabPlatformContext({
+        tenant,
+        job,
+        mergeRequest: {
+          id: 1,
+          iid: 7,
+          project_id: tenant.projectId,
+          title: "Add worker",
+          description: "Adds the worker",
+          web_url:
+            "https://gitlab.example.com/group/project/-/merge_requests/7",
+          source_branch: "feature",
+          target_branch: "main",
+          author: {
+            id: 42,
+            username: "developer",
+            name: "Dev User",
+          },
+        },
+        changes: [],
+        notes: [],
+        discussions: [],
+        workspace: {
+          rootPath: join("tmp", "workspace-routing"),
+          cleanupRoot: join("tmp", "cleanup-routing"),
+          strategy: "git",
+          instructionFiles: [],
+        },
+        projectMemory: {
+          enabled: true,
+          page: null,
+          entries: [],
+        },
+      }),
+    );
+    const hydrateContext = vi.fn(async () =>
+      wrapGitLabPlatformContext({
+        tenant,
+        job,
+        mergeRequest: {
+          id: 1,
+          iid: 7,
+          project_id: tenant.projectId,
+          title: "Add worker",
+          description: "Adds the worker",
+          web_url:
+            "https://gitlab.example.com/group/project/-/merge_requests/7",
+          source_branch: "feature",
+          target_branch: "main",
+          author: {
+            id: 42,
+            username: "developer",
+            name: "Dev User",
+          },
+        },
+        versions: [],
+        latestVersion: null,
+        changes: [],
+        notes: [],
+        discussions: [],
+        workspace: {
+          rootPath: join("tmp", "workspace"),
+          cleanupRoot: join("tmp", "cleanup"),
+          strategy: "git",
+          instructionFiles: [],
+        },
+        projectMemory: {
+          enabled: true,
+          page: null,
+          entries: [],
+        },
+        snapshot: {
+          id: "snapshot_1",
+          interactionJobId: "job_1",
+          tenantId: tenant.id,
+          codeReviewId: 7,
+          headSha: "abc123",
+          codeReviewJson: "{}",
+          versionsJson: "[]",
+          changesJson: "[]",
+          notesJson: "[]",
+          discussionsJson: "[]",
+          instructionsJson: "[]",
+          projectMemoryJson: null,
+          workspaceStrategy: "git",
+          createdAt: new Date().toISOString(),
+        },
+      }),
+    );
 
     const worker = new ReviewWorker({
       storage: storage as never,
@@ -451,97 +558,12 @@ describe("ReviewWorker cleanup", () => {
           modelProfileName: "missing-profile",
         })),
       } as never,
-      hydrator: {
-        loadRoutingContext: vi.fn(async () => ({
-          tenant,
-          job,
-          mergeRequest: {
-            id: 1,
-            iid: 7,
-            project_id: tenant.projectId,
-            title: "Add worker",
-            description: "Adds the worker",
-            web_url:
-              "https://gitlab.example.com/group/project/-/merge_requests/7",
-            source_branch: "feature",
-            target_branch: "main",
-            author: {
-              id: 42,
-              username: "developer",
-              name: "Dev User",
-            },
-          },
-          changes: [],
-          notes: [],
-          discussions: [],
-          workspace: {
-            rootPath: join("tmp", "workspace-routing"),
-            cleanupRoot: join("tmp", "cleanup-routing"),
-            strategy: "git",
-            instructionFiles: [],
-          },
-          projectMemory: {
-            enabled: true,
-            page: null,
-            entries: [],
-          },
-        })),
-        hydrate: vi.fn(async () => ({
-          tenant,
-          job,
-          mergeRequest: {
-            id: 1,
-            iid: 7,
-            project_id: tenant.projectId,
-            title: "Add worker",
-            description: "Adds the worker",
-            web_url:
-              "https://gitlab.example.com/group/project/-/merge_requests/7",
-            source_branch: "feature",
-            target_branch: "main",
-            author: {
-              id: 42,
-              username: "developer",
-              name: "Dev User",
-            },
-          },
-          versions: [],
-          latestVersion: null,
-          changes: [],
-          notes: [],
-          discussions: [],
-          workspace: {
-            rootPath: join("tmp", "workspace"),
-            cleanupRoot: join("tmp", "cleanup"),
-            strategy: "git",
-            instructionFiles: [],
-          },
-          projectMemory: {
-            enabled: true,
-            page: null,
-            entries: [],
-          },
-          snapshot: {
-            id: "snapshot_1",
-            interactionJobId: "job_1",
-            tenantId: tenant.id,
-            mergeRequestIid: 7,
-            headSha: "abc123",
-            mergeRequestJson: "{}",
-            versionsJson: "[]",
-            changesJson: "[]",
-            notesJson: "[]",
-            discussionsJson: "[]",
-            instructionsJson: "[]",
-            projectMemoryJson: null,
-            workspaceStrategy: "git",
-            createdAt: new Date().toISOString(),
-          },
-        })),
-      } as never,
-      workspaceMaterializer: {
-        cleanup,
-      } as never,
+      reviewRuntimeFactory: ({ platform, ...runtimeInput }) =>
+        overridePlatformRuntime(platform.createReviewRuntime(runtimeInput), {
+          loadRoutingContext,
+          hydrate: hydrateContext,
+          cleanupWorkspace: cleanup,
+        }),
       reviewProviderFactory: {
         createProvider: vi.fn(),
       },
