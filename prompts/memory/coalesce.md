@@ -10,7 +10,7 @@ Goals:
 - Preserve durable team policy, conventions, preferences, and project facts.
 - Do not invent new facts.
 - Do not add explanations or commentary.
-- Do not keep one-off review requests, temporary incidents, or merge-request-specific remarks.
+- Do not keep one-off review requests, temporary incidents, or code-review-specific remarks.
 
 Output format:
 

@@ -10,10 +10,10 @@ import {
 } from "@github/copilot-sdk";
 import type { Logger } from "pino";
 
-import type { ProjectMemoryBackendFactory } from "../memory/backend.js";
 import { ProjectMemoryConsolidator } from "../memory/consolidator.js";
 import { ProjectMemoryService } from "../memory/service.js";
 import { createId } from "../utils/ids.js";
+import { parseHarnessStructuredResponse } from "./response-format.js";
 import { resolveHarnessSubagents, resolveHarnessTools } from "./registry.js";
 import { HarnessRunLog } from "./run-log.js";
 import type {
@@ -24,7 +24,6 @@ import type {
 
 interface HarnessSessionRuntimeOptions {
   logger: Logger;
-  projectMemoryBackendFactory: ProjectMemoryBackendFactory;
   runLogDir: string;
   timeoutMs: number;
   maxPromptMemoryChars: number;
@@ -41,7 +40,6 @@ interface HarnessSessionRuntimeOptions {
 
 export class HarnessSessionRuntime {
   private readonly logger: Logger;
-  private readonly projectMemoryBackendFactory: ProjectMemoryBackendFactory;
   private readonly runLogDir: string;
   private readonly timeoutMs: number;
   private readonly maxPromptMemoryChars: number;
@@ -51,7 +49,6 @@ export class HarnessSessionRuntime {
 
   public constructor(options: HarnessSessionRuntimeOptions) {
     this.logger = options.logger;
-    this.projectMemoryBackendFactory = options.projectMemoryBackendFactory;
     this.runLogDir = options.runLogDir;
     this.timeoutMs = options.timeoutMs;
     this.maxPromptMemoryChars = options.maxPromptMemoryChars;
@@ -62,7 +59,9 @@ export class HarnessSessionRuntime {
     });
   }
 
-  public async run(spec: HarnessRunSpec): Promise<HarnessRunResult> {
+  public async run<TParsed = unknown>(
+    spec: HarnessRunSpec<TParsed>,
+  ): Promise<HarnessRunResult<TParsed>> {
     const client = new CopilotClient({
       ...(!spec.modelConfig.provider && spec.modelConfig.authToken
         ? { gitHubToken: spec.modelConfig.authToken }
@@ -139,9 +138,14 @@ export class HarnessSessionRuntime {
             spec.timeoutMs ?? this.timeoutMs,
           );
         runLog.setResponse(response);
+        const structuredResponse = parseHarnessStructuredResponse(
+          response?.data.content,
+          spec.responseFormat,
+        );
         return {
           response,
           events,
+          ...structuredResponse,
         };
       } finally {
         unsubscribe();
@@ -250,12 +254,6 @@ export class HarnessSessionRuntime {
       return null;
     }
 
-    const memoryBackend = this.projectMemoryBackendFactory.createForHarnessRun({
-      tenant: spec.tenant,
-      logger: this.logger,
-      logging: spec.logging,
-    });
-
     return new ProjectMemoryService({
       logger: this.logger.child({
         interactionRunId: spec.logging?.interactionRunId ?? null,
@@ -263,7 +261,7 @@ export class HarnessSessionRuntime {
         tenantId: spec.logging?.tenantId ?? spec.tenant.id,
         component: "project-memory-service",
       }),
-      backend: memoryBackend,
+      backend: spec.tenant.projectMemoryBackend,
       consolidator: this.memoryConsolidator,
       modelConfig: spec.modelConfig,
       tenant: spec.tenant,

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { GitLabApiError } from "../src/gitlab/client.js";
-import { GitLabWikiProjectMemoryBackend } from "../src/memory/gitlab-wiki-backend.js";
+import { GitLabApiError } from "../src/platforms/gitlab/client.js";
+import { GitLabWikiProjectMemoryBackend } from "../src/platforms/gitlab/project-memory-backend.js";
 import {
   mergeProjectMemoryEntries,
   parseProjectMemoryContent,

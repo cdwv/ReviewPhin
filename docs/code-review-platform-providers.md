@@ -1,19 +1,21 @@
 # Code review platform providers
 
-ReviewPhin connects to a code review platform (currently GitLab) to receive webhooks, read merge request data, and write back bot-owned discussions. A future API expansion may allow additional first-class adapters as well as custom platform modules.
+ReviewPhin connects to a code review platform to receive webhooks, read code review data, and write back bot-owned discussions. The app now routes those responsibilities through an internal platform adapter layer, but GitLab is still the only built-in platform exposed to users today.
 
 ---
 
 ## GitLab
 
-GitLab is currently the only supported platform. A tenant registration needs the following pieces of information - reducing the number of steps required to onboard a project is on the roadmap.
+GitLab is currently the only supported platform. `reviewphin tenant add` accepts `--platform gitlab`, but that flag is optional because GitLab is the default today.
 
-- **GitLab access token** - personal, group, or project access token. Must have the `api` scope (used for reading the merge request, creating/updating/resolving bot-owned discussions, and cloning the repository over Git-over-HTTPS) and the token's user must have at least the **Developer** role on the project.
-- **Bot username** - the username associated with the token. Required so ReviewPhin can recognise mentions.
-- **Bot user ID** - to Identify our bot in past comments, even if it changes name.
+A GitLab tenant registration needs the following pieces of information - reducing the number of steps required to onboard a project is on the roadmap.
+
+- **GitLab access token** - personal, group, or project access token. Must have the `api` scope (used for reading code review data, creating/updating/resolving bot-owned discussions, and cloning the repository over Git-over-HTTPS) and the token's user must have at least the **Developer** role on the project.
+- **Bot username** - usually discovered automatically from the GitLab token during `tenant add`. You can still pass it explicitly as an override if auto-discovery fails or you want to avoid the extra API lookup.
+- **Bot user ID** - usually discovered automatically from the GitLab token during `tenant add`. You can still pass it explicitly as an override if auto-discovery fails or you want to avoid the extra API lookup.
 - **GitLab base URL** - e.g. `https://gitlab.example.com`.
 - **GitLab project ID** - the numeric ID of the project to support.
-- **Webhook + webhook secret** - point the GitLab project webhook at `https://<reviewphin-instance-host>/webhooks/gitlab/note`. A webhook secret is required to protect against malicious traffic burning your tokens.
+- **Webhook + webhook secret** - point the GitLab project webhook at `https://<reviewphin-instance-host>/webhooks/gitlab`. A webhook secret is required to protect against malicious traffic burning your tokens. The older `/webhooks/gitlab/note` path is still accepted as a compatibility alias for existing setups.
 
 See the [Adding tenants](../README.md#adding-tenants) section of the README for the step-by-step setup, and the [`tenant` CLI commands](CLI.md#tenant-commands) for registration details.
 
@@ -21,7 +23,7 @@ See the [Adding tenants](../README.md#adding-tenants) section of the README for 
 
 ## Future providers
 
-The following platforms are not yet supported as first-class providers. Adding them likely also means extending the API so that custom code-review-platform modules can be plugged in the same way as custom storage adapters.
+The following platforms are not yet supported as built-in providers. The internal adapter boundary is in place, but additional built-in adapters and any external module-loading story are still future work.
 
 | Platform      | Notes                                                                                                                                                                                                                                                        |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

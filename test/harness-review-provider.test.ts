@@ -64,6 +64,14 @@ describe("HarnessReviewProvider", () => {
           }),
         },
       },
+      parsed: {
+        overview: {
+          summary: "Looks good",
+          overallSeverity: "low",
+        },
+        findings: [],
+        priorDispositions: [],
+      },
       events: [],
     }));
 
@@ -78,6 +86,7 @@ describe("HarnessReviewProvider", () => {
       } as never,
       maxPromptMemoryChars: 5_000,
     });
+    const tenantRuntime = createTenantRuntimeContext();
 
     const result = await provider.review(createReviewContext(), {
       attachments: [
@@ -88,7 +97,7 @@ describe("HarnessReviewProvider", () => {
           displayName: "trigger-note-55-diagram.png",
         },
       ],
-      tenant: createTenantRuntimeContext(),
+      tenant: tenantRuntime,
     });
 
     expect(result.overview.summary).toBe("Looks good");
@@ -103,10 +112,14 @@ describe("HarnessReviewProvider", () => {
           },
         ],
         model: "gpt-5.4",
-        tenant: createTenantRuntimeContext(),
+        tenant: tenantRuntime,
         tools: ["glob", "rg", "view"],
         subagents: ["context-analyst", "review-author"],
         agent: "review-author",
+        responseFormat: expect.objectContaining({
+          schema: expect.anything(),
+          looksLike: expect.any(Function),
+        }),
       }),
     );
   });
@@ -141,6 +154,32 @@ describe("HarnessReviewProvider", () => {
               ],
             },
           }),
+        },
+      },
+      parsed: {
+        overview: {
+          summary: "Looks good",
+          overallSeverity: "low",
+        },
+        findings: [],
+        priorDispositions: [
+          {
+            threadId: "thread_1",
+            action: "resolve",
+            resolution: "dismissed",
+          },
+        ],
+        replyHandoff: {
+          summary: "   ",
+          targets: [
+            {
+              kind: "discussion-reply",
+              noteId: 55,
+              discussionId: "disc_1",
+              guidance:
+                "The concern is not applicable because the value is validated before this path runs.",
+            },
+          ],
         },
       },
       events: [],
@@ -229,6 +268,36 @@ describe("HarnessReviewProvider", () => {
           }),
         },
       },
+      parsed: {
+        overview: {
+          summary: "The rerun found no remaining blocking issues.",
+          overallSeverity: "low",
+          mergeReadiness: {
+            status: "ready",
+            confidence: "high",
+            summary: "Everything needed for merge readiness is now addressed.",
+          },
+        },
+        findings: [],
+        priorDispositions: [
+          {
+            threadId: "thread_1",
+            action: "resolve",
+            resolution: "resolved",
+          },
+        ],
+        replyHandoff: {
+          summary: "   ",
+          targets: [
+            {
+              kind: "discussion-reply",
+              noteId: 55,
+              discussionId: "disc_1",
+              guidance: "   ",
+            },
+          ],
+        },
+      },
       events: [],
     }));
 
@@ -286,10 +355,19 @@ function createModelConfig(): HarnessModelConfig {
 function createTenantRuntimeContext(): HarnessTenantContext {
   return {
     id: "tenant_1",
-    baseUrl: "https://gitlab.example.com",
-    projectId: 1085,
-    apiToken: "token",
     memoryEnabled: true,
+    projectMemoryBackend: {
+      load: vi.fn(async () => ({
+        enabled: true,
+        page: null,
+        entries: [],
+      })),
+      saveEntries: vi.fn(async (entries) => ({
+        enabled: true,
+        page: null,
+        entries,
+      })),
+    },
   };
 }
 
@@ -305,20 +383,14 @@ function createReviewContext(): ReviewContext {
     ],
     attachmentIssues: [],
     workspacePath: repoPath(),
-    mergeRequest: {
-      id: 1,
-      iid: 7,
-      project_id: 1085,
+    codeReview: {
+      id: 7,
       title: "Add prompt memory context",
       description: "Description",
-      web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
-      source_branch: "feature",
-      target_branch: "main",
-      author: {
-        id: 1,
-        username: "developer",
-        name: "Dev",
-      },
+      webUrl: "https://gitlab.example.com/group/project/-/merge_requests/7",
+      sourceBranch: "feature",
+      targetBranch: "main",
+      authorUsername: "developer",
     },
     changes: [],
     notes: [],

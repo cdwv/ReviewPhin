@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { GitLabClient } from "../src/gitlab/client.js";
+import { GitLabClient } from "../src/platforms/gitlab/client.js";
 import { createLogger } from "../src/logger.js";
 
 function getRequestUrl(input: URL | RequestInfo): string {
@@ -350,7 +350,7 @@ describe("GitLabClient headers", () => {
       requestLogger,
     });
 
-    await client.createMergeRequestDiscussion(1085, 7, {
+    await client.createCodeReviewDiscussion(1085, 7, {
       body: "Test body",
     });
 
@@ -428,7 +428,7 @@ describe("GitLabClient headers", () => {
     });
 
     await expect(
-      client.createMergeRequestDraftNote(1085, 7, {
+      client.createCodeReviewDraftNote(1085, 7, {
         note: "Draft body",
         position: {
           base_sha: "base",
@@ -467,7 +467,7 @@ describe("GitLabClient headers", () => {
     });
 
     await expect(
-      client.bulkPublishMergeRequestDraftNotes(1085, 7),
+      client.bulkPublishCodeReviewDraftNotes(1085, 7),
     ).resolves.toBeUndefined();
   });
 
@@ -500,7 +500,7 @@ describe("GitLabClient headers", () => {
     });
 
     await expect(
-      client.listMergeRequestDiscussions(1085, 7, { noCache: true }),
+      client.listCodeReviewDiscussions(1085, 7, { noCache: true }),
     ).resolves.toEqual([]);
   });
 
@@ -533,7 +533,7 @@ describe("GitLabClient headers", () => {
     });
 
     await expect(
-      client.listMergeRequestNotes(1085, 7, { noCache: true }),
+      client.listCodeReviewNotes(1085, 7, { noCache: true }),
     ).resolves.toEqual([]);
   });
 
@@ -558,7 +558,7 @@ describe("GitLabClient headers", () => {
     });
 
     await expect(
-      client.deleteMergeRequestDraftNote(1085, 7, 12),
+      client.deleteCodeReviewDraftNote(1085, 7, 12),
     ).resolves.toBeUndefined();
   });
 });

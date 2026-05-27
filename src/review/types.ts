@@ -1,19 +1,7 @@
 import { z } from "zod";
 
-import type {
-  GitLabDiscussion,
-  GitLabMergeRequest,
-  GitLabMergeRequestChange,
-  GitLabNote,
-  InstructionFile,
-  TriggerNoteReference,
-} from "../gitlab/types.js";
-import type {
-  GitLabImageAttachmentBreadcrumb,
-  GitLabImageAttachmentIssue,
-} from "../gitlab/image-attachments.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
-import type { ReviewFindingStatus } from "../storage/contract/index.js";
+import type { ReviewFindingStatus, TenantRecord } from "../storage/contract/index.js";
 
 export const reviewAnchorSchema = z
   .object({
@@ -64,13 +52,13 @@ export const priorDispositionSchema = z.object({
 
 export const responseTargetSchema = z.object({
   kind: z.enum([
-    "merge-request-note",
+    "code-review-note",
     "discussion-reply",
     "summary-discussion-reply",
     "finding-thread-reply",
   ]),
   locationType: z.enum([
-    "merge-request-note",
+    "code-review-note",
     "discussion-note",
     "summary-discussion",
     "finding-thread",
@@ -95,7 +83,7 @@ export const reviewerReplyTargetHandoffSchema = z
     guidance: z.string().min(1),
   })
   .superRefine((target, context) => {
-    if (target.kind !== "merge-request-note" && !target.discussionId) {
+    if (target.kind !== "code-review-note" && !target.discussionId) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "discussionId is required for threaded reply targets",
@@ -143,7 +131,7 @@ export const chatterReplySchema = z.object({
       discussionId: z.string().min(1).optional(),
     })
     .superRefine((target, context) => {
-      if (target.kind !== "merge-request-note" && !target.discussionId) {
+      if (target.kind !== "code-review-note" && !target.discussionId) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           message: "discussionId is required for threaded reply targets",
@@ -194,6 +182,77 @@ export interface ReviewChangeSummary {
   reason?: string | undefined;
 }
 
+export interface CodeReviewItem {
+  id: number;
+  title: string;
+  description: string;
+  webUrl: string;
+  authorUsername: string | null;
+  sourceBranch: string;
+  targetBranch: string;
+}
+
+export interface CodeReviewChange {
+  oldPath: string;
+  newPath: string;
+  diff?: string | undefined;
+  newFile: boolean;
+  renamedFile: boolean;
+  deletedFile: boolean;
+}
+
+export interface CodeReviewNote {
+  id: number;
+  body: string;
+  authorUsername: string | null;
+  resolvable: boolean;
+  resolved: boolean;
+}
+
+export interface CodeReviewDiscussionNote {
+  id: number;
+  body: string;
+  authorUsername: string | null;
+  resolvable: boolean;
+  resolved: boolean;
+  anchor: ReviewAnchor | null;
+  positionJson: string | null;
+  isBot: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface CodeReviewDiscussion {
+  id: string;
+  resolved: boolean;
+  comments: CodeReviewDiscussionNote[];
+}
+
+export interface InstructionFile {
+  path: string;
+  content: string;
+}
+
+export type ReviewAttachmentSourceKind =
+  | "trigger-note"
+  | "code-review-description";
+
+export interface ReviewAttachment {
+  contentType: string;
+  displayName: string;
+  noteId: number | null;
+  sourceKind: ReviewAttachmentSourceKind;
+}
+
+export interface ReviewAttachmentIssue {
+  displayName: string;
+  message: string;
+  noteId: number | null;
+  sourceKind: ReviewAttachmentSourceKind;
+  status: number;
+  url: string;
+}
+
 export interface PriorReviewFindingContext {
   findingId: string;
   identityKey: string;
@@ -216,6 +275,7 @@ export interface ProviderThreadContext {
   title: string;
   body: string;
   anchor: ReviewAnchor | null;
+  resolvable: boolean;
   resolved: boolean;
   humanReplies: Array<{
     noteId: number;
@@ -223,6 +283,17 @@ export interface ProviderThreadContext {
     body: string;
   }>;
 }
+
+export type TriggerNoteReference =
+  | {
+      kind: "code-review-note";
+      noteId: number;
+    }
+  | {
+      kind: "discussion-note";
+      discussionId: string;
+      noteId: number;
+    };
 
 export type ReviewTriggerKind =
   | "direct-mention"
@@ -244,6 +315,13 @@ export interface ReviewTriggerContext {
 export interface WebhookReviewTrigger {
   kind: ReviewTriggerKind;
   note: TriggerNoteReference;
+}
+
+export interface ReviewSummaryContext {
+  tenant?: TenantRecord | undefined;
+  job?: unknown;
+  codeReview: CodeReviewItem;
+  changes: ReadonlyArray<CodeReviewChange>;
 }
 
 export interface PlannedResponseAction {
@@ -291,13 +369,13 @@ export interface ReviewScopeContext {
 }
 
 export interface ReviewContext {
-  attachments: GitLabImageAttachmentBreadcrumb[];
-  attachmentIssues: GitLabImageAttachmentIssue[];
+  attachments: ReviewAttachment[];
+  attachmentIssues: ReviewAttachmentIssue[];
   workspacePath: string;
-  mergeRequest: GitLabMergeRequest;
-  changes: GitLabMergeRequestChange[];
-  notes: GitLabNote[];
-  discussions: GitLabDiscussion[];
+  codeReview: CodeReviewItem;
+  changes: CodeReviewChange[];
+  notes: CodeReviewNote[];
+  discussions: CodeReviewDiscussion[];
   instructionFiles: InstructionFile[];
   projectMemory: ProjectMemoryContext;
   trigger: ReviewTriggerContext;

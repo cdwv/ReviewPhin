@@ -27,7 +27,7 @@ import type {
   EntityStore,
   InteractionJobRecord,
   InteractionRunRecord,
-  MergeRequestSnapshotRecord,
+  CodeReviewSnapshotRecord,
   PreviousCompletedInteractionRecord,
   PriorReviewFindingRecord,
   StorageStores,
@@ -35,8 +35,8 @@ import type {
   TenantDeletionSummary,
   TenantRecord,
 } from "./storage/contract/index.js";
-import { GitLabClient } from "./gitlab/client.js";
-import { createLogger } from "./logger.js";
+import { getPlatforms } from "./platforms/platform-registry.js";
+import { getGitLabTenantConfig } from "./platforms/gitlab/tenant-config.js";
 
 interface ParsedCliArgs {
   readonly positionals: string[];
@@ -83,21 +83,24 @@ interface TenantArtifactSummary {
 }
 
 const tenantAddSchema = tenantConfigSchema.extend({
+  platform: z.string().default("gitlab"),
   databasePath: z.string().min(1).optional(),
 });
 
-const tenantLookupSchema = tenantConfigSchema
-  .pick({
-    baseUrl: true,
-    projectId: true,
-  })
-  .extend({
-    databasePath: z.string().min(1).optional(),
-  });
-
-const tenantProfileSchema = tenantLookupSchema.extend({
-  modelProfileName: modelProfileNameSchema,
+const tenantLookupBaseSchema = tenantConfigSchema.extend({
+  databasePath: z.string().min(1).optional(),
+  tenantId: z.string().min(1).optional(),
+  tenantKey: z.string().min(1).optional(),
 });
+
+const tenantLookupSchema =
+  tenantLookupBaseSchema.superRefine(refineTenantLookup);
+
+const tenantProfileSchema = tenantLookupBaseSchema
+  .extend({
+    modelProfileName: modelProfileNameSchema,
+  })
+  .superRefine(refineTenantLookup);
 
 const modelProfileSchema = z.object({
   name: modelProfileNameSchema,
@@ -135,9 +138,8 @@ const storageMigrationSchema = z.object({
 const mergeRequestDescribeSchema = z
   .object({
     tenantId: z.string().min(1).optional(),
-    baseUrl: z.string().url().optional(),
-    projectId: z.coerce.number().int().optional(),
-    mergeRequestIid: z.coerce.number().int().nonnegative(),
+    tenantKey: z.string().min(1).optional(),
+    codeReviewId: z.coerce.number().int().nonnegative(),
     currentInteractionJobId: z.string().min(1).optional(),
     triggerNoteId: z.coerce.number().int().positive().optional(),
     triggerNoteAction: z.enum(["create", "update"]).optional(),
@@ -146,28 +148,26 @@ const mergeRequestDescribeSchema = z
   })
   .superRefine((value, ctx) => {
     const hasTenantId = value.tenantId !== undefined;
-    const hasBaseUrl = value.baseUrl !== undefined;
-    const hasProjectId = value.projectId !== undefined;
+    const hasTenantKey = value.tenantKey !== undefined;
     const hasTriggerDetails =
       value.triggerNoteId !== undefined ||
       value.triggerNoteAction !== undefined ||
       value.triggerNoteUpdatedAt !== undefined ||
       value.triggerNoteBody !== undefined;
 
-    if (!hasTenantId && !(hasBaseUrl && hasProjectId)) {
+    if (!hasTenantId && !hasTenantKey) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Provide --tenant-id or both --base-url and --project-id.",
+        message: "Provide --tenant-id or --key.",
         path: ["tenantId"],
       });
     }
 
-    if (!hasTenantId && hasBaseUrl !== hasProjectId) {
+    if (hasTenantId && hasTenantKey) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message:
-          "When using project lookup, provide both --base-url and --project-id.",
-        path: hasBaseUrl ? ["projectId"] : ["baseUrl"],
+        message: "Provide either --tenant-id or --key, not both.",
+        path: ["tenantId"],
       });
     }
 
@@ -194,7 +194,7 @@ const mergeRequestDescribeSchema = z
     }
   });
 
-interface MergeRequestTriggerDedupeInput {
+interface CodeReviewTriggerDedupeInput {
   readonly noteId: number;
   readonly noteAction: "create" | "update";
   readonly noteUpdatedAt?: string | undefined;
@@ -256,12 +256,12 @@ const storageMigrationSteps: readonly StorageMigrationStep[] = [
       ),
   },
   {
-    label: "mergeRequestSnapshots",
+    label: "codeReviewSnapshots",
     run: (source, target, context) =>
       migrateEntityStore(
-        source.mergeRequestSnapshots,
-        target.mergeRequestSnapshots,
-        "mergeRequestSnapshots",
+        source.codeReviewSnapshots,
+        target.codeReviewSnapshots,
+        "codeReviewSnapshots",
         {
           order: ascendingOrder("id"),
           mapEntity: (entity) => ({
@@ -361,15 +361,6 @@ const storageMigrationSteps: readonly StorageMigrationStep[] = [
   },
 ];
 
-function validateTenantBot(
-  tenant: z.infer<typeof tenantAddSchema>,
-): tenant is z.infer<typeof tenantAddSchema> & {
-  botUserId: number;
-  botUsername: string;
-} {
-  return !!tenant.botUserId && !!tenant.botUsername;
-}
-
 export async function runCli(
   argv: string[] = process.argv.slice(2),
 ): Promise<number> {
@@ -380,51 +371,50 @@ export async function runCli(
   const [resource, action] = positionals;
 
   if (resource === "tenant" && action === "add") {
-    const tenant = tenantAddSchema.parse({
-      baseUrl: options["base-url"],
-      projectId: options["project-id"],
-      apiToken: options["api-token"],
-      webhookSecret: options["webhook-secret"],
-      botUserId: options["bot-user-id"],
-      botUsername: options["bot-username"],
-      modelProfileName: options["model-profile"],
-      databasePath: options["sqlite-database-path"],
-    });
-    if (!validateTenantBot(tenant)) {
-      const client = new GitLabClient({
-        baseUrl: tenant.baseUrl,
-        apiToken: tenant.apiToken,
-        logger: createLogger("info"),
-      });
-const botUser = await client.getCurrentUser();
-tenant.botUserId = botUser.id;
-tenant.botUsername = botUser.username;
+    const rawData: Record<string, unknown> = {};
+    for (const key in options) {
+      const camelKey = key.replace(/-([a-z])/g, (match, p1: string) =>
+        p1.toUpperCase(),
+      );
+      rawData[camelKey] = options[key];
     }
-    if (!validateTenantBot(tenant)) {
+    rawData.modelProfileName = options["model-profile"];
+    const tenant = tenantAddSchema.parse(rawData);
+    const platform = getPlatforms().find(
+      (p) => p.getPlatformInfo().slug === tenant.platform,
+    );
+    if (!platform) {
       throw new Error(
-        "Failed to determine bot user details from GitLab API. Please provide --bot-user-id and --bot-username explicitly or make sure token you used is correct.",
+        `Unsupported platform: ${tenant.platform}. Supported platforms are: ${getPlatforms()
+          .map((p) => p.getPlatformInfo().slug)
+          .join(", ")}`,
       );
     }
+    const platformSchema = platform.getRegistrationSchema();
+    const parsedPlatformConfig = platformSchema.parse(rawData) as Record<
+      string,
+      unknown
+    >;
+
+    await platform.onBeforeRegisterTenant?.(tenant, parsedPlatformConfig);
+
+    const newTenant = {
+      key: platform.getTenantKey(parsedPlatformConfig),
+      platform: platform.getPlatformInfo().slug,
+      platformConfigJson: JSON.stringify(parsedPlatformConfig),
+      ...(tenant.modelProfileName !== undefined
+        ? { modelProfileName: tenant.modelProfileName }
+        : {}),
+    };
+
     return withStorage(options, config, async (storage) => {
-      const savedTenant = await storage.upsertTenant({
-        baseUrl: tenant.baseUrl,
-        projectId: tenant.projectId,
-        apiToken: tenant.apiToken,
-        webhookSecret: tenant.webhookSecret,
-        botUserId: tenant.botUserId,
-        botUsername: tenant.botUsername,
-        ...(tenant.modelProfileName === undefined
-          ? {}
-          : { modelProfileName: tenant.modelProfileName }),
-      });
+      const savedTenant = await storage.upsertTenant(newTenant);
       process.stdout.write(
         [
           "Tenant saved.",
           `id: ${savedTenant.id}`,
           `key: ${savedTenant.key}`,
-          `project: ${savedTenant.baseUrl} :: ${savedTenant.projectId}`,
           `modelProfile: ${savedTenant.modelProfileName ?? "(none)"}`,
-          `username: ${savedTenant.botUsername}`,
         ].join("\n") + "\n",
       );
       return 0;
@@ -434,10 +424,7 @@ tenant.botUsername = botUser.username;
   if (resource === "tenant" && action === "list") {
     return withStorage(options, config, async (storage) => {
       const tenants = await listAll(storage.stores.tenants, {
-        order: [
-          { field: "baseUrl", direction: "asc" },
-          { field: "projectId", direction: "asc" },
-        ],
+        order: [{ field: "key", direction: "asc" }],
       });
       if (tenants.length === 0) {
         process.stdout.write("No tenants registered.\n");
@@ -449,10 +436,7 @@ tenant.botUsername = botUser.username;
           tenants.map((tenant) => ({
             id: tenant.id,
             key: tenant.key,
-            baseUrl: tenant.baseUrl,
-            projectId: tenant.projectId,
-            botUserId: tenant.botUserId,
-            botUsername: tenant.botUsername,
+            platform: tenant.platform,
             modelProfileName: tenant.modelProfileName,
           })),
           null,
@@ -465,15 +449,22 @@ tenant.botUsername = botUser.username;
 
   if (resource === "tenant" && action === "set-profile") {
     const tenant = tenantProfileSchema.parse({
-      baseUrl: options["base-url"],
-      projectId: options["project-id"],
+      tenantId: options["tenant-id"],
+      tenantKey: options.key,
       modelProfileName: options["model-profile"],
       databasePath: options["sqlite-database-path"],
     });
     return withStorage(options, config, async (storage) => {
+      const persistedTenant = await resolveTenantByLookup(storage, tenant);
+      if (!persistedTenant) {
+        throw new Error(
+          tenant.tenantId
+            ? `Tenant ${tenant.tenantId} not found`
+            : `Tenant ${tenant.tenantKey} not found`,
+        );
+      }
       const updatedTenant = await storage.setTenantModelProfile(
-        tenant.baseUrl,
-        tenant.projectId,
+        persistedTenant.key,
         tenant.modelProfileName,
       );
       process.stdout.write(
@@ -481,7 +472,6 @@ tenant.botUsername = botUser.username;
           "Tenant profile updated.",
           `id: ${updatedTenant.id}`,
           `key: ${updatedTenant.key}`,
-          `project: ${updatedTenant.baseUrl} :: ${updatedTenant.projectId}`,
           `modelProfile: ${updatedTenant.modelProfileName ?? "(none)"}`,
         ].join("\n") + "\n",
       );
@@ -491,14 +481,21 @@ tenant.botUsername = botUser.username;
 
   if (resource === "tenant" && action === "clear-profile") {
     const tenant = tenantLookupSchema.parse({
-      baseUrl: options["base-url"],
-      projectId: options["project-id"],
+      tenantId: options["tenant-id"],
+      tenantKey: options.key,
       databasePath: options["sqlite-database-path"],
     });
     return withStorage(options, config, async (storage) => {
+      const persistedTenant = await resolveTenantByLookup(storage, tenant);
+      if (!persistedTenant) {
+        throw new Error(
+          tenant.tenantId
+            ? `Tenant ${tenant.tenantId} not found`
+            : `Tenant ${tenant.tenantKey} not found`,
+        );
+      }
       const updatedTenant = await storage.setTenantModelProfile(
-        tenant.baseUrl,
-        tenant.projectId,
+        persistedTenant.key,
         null,
       );
       process.stdout.write(
@@ -506,7 +503,6 @@ tenant.botUsername = botUser.username;
           "Tenant profile cleared.",
           `id: ${updatedTenant.id}`,
           `key: ${updatedTenant.key}`,
-          `project: ${updatedTenant.baseUrl} :: ${updatedTenant.projectId}`,
         ].join("\n") + "\n",
       );
       return 0;
@@ -515,8 +511,8 @@ tenant.botUsername = botUser.username;
 
   if (resource === "tenant" && action === "remove") {
     const tenant = tenantLookupSchema.parse({
-      baseUrl: options["base-url"],
-      projectId: options["project-id"],
+      tenantId: options["tenant-id"],
+      tenantKey: options.key,
       databasePath: options["sqlite-database-path"],
     });
     const workspaceRoot =
@@ -529,14 +525,20 @@ tenant.botUsername = botUser.username;
         : config.runLogDir;
     const assumeYes = options.yes === true || options.yes === "true";
     return withStorage(options, config, async (storage, storageContext) => {
+      const persistedTenant = await resolveTenantByLookup(storage, tenant);
+      if (!persistedTenant) {
+        process.stdout.write(
+          tenant.tenantId
+            ? `Tenant ${tenant.tenantId} not found.\n`
+            : `Tenant not found for ${tenant.tenantKey}.\n`,
+        );
+        return 1;
+      }
       const deletionSummary = await storage.getTenantDeletionSummary(
-        tenant.baseUrl,
-        tenant.projectId,
+        persistedTenant.key,
       );
       if (!deletionSummary) {
-        process.stdout.write(
-          `Tenant not found for ${tenant.baseUrl} :: ${tenant.projectId}\n`,
-        );
+        process.stdout.write(`Tenant not found for ${persistedTenant.key}\n`);
         return 1;
       }
 
@@ -574,12 +576,11 @@ tenant.botUsername = botUser.username;
       }
 
       const deletedSummary = await storage.deleteTenantWithSummary(
-        tenant.baseUrl,
-        tenant.projectId,
+        persistedTenant.key,
       );
       if (!deletedSummary) {
         throw new Error(
-          `Tenant ${tenant.baseUrl} :: ${tenant.projectId} disappeared during removal`,
+          `Tenant ${persistedTenant.key} disappeared during removal`,
         );
       }
 
@@ -594,7 +595,6 @@ tenant.botUsername = botUser.username;
           "Tenant removed.",
           `id: ${deletedSummary.tenant.id}`,
           `key: ${deletedSummary.tenant.key}`,
-          `project: ${deletedSummary.tenant.baseUrl} :: ${deletedSummary.tenant.projectId}`,
         ].join("\n") + "\n",
       );
       return 0;
@@ -813,7 +813,7 @@ tenant.botUsername = botUser.username;
   }
 
   if (resource === "mr" && action === "describe") {
-    return runMergeRequestDescribeCommand(options, config);
+    return runCodeReviewDescribeCommand(options, config);
   }
 
   if (resource === "metrics" && action === "sessions") {
@@ -920,36 +920,97 @@ async function withStorage<T>(
 }
 
 function printHelp(): void {
+  const platforms = getPlatforms();
+  const platformAddCommands: string[] = [];
+  for (const platform of platforms) {
+    const info = platform.getPlatformInfo();
+
+    const platformParams: {
+      paramString: string;
+      isOptional: boolean;
+      priority?: number | undefined;
+    }[] = [
+      {
+        paramString: `--platform ${info.slug}`,
+        /**
+         * even though technically optional and has defaults, platform probably should be always provided for clarity
+         */
+        isOptional: false,
+        priority: -1,
+      },
+      {
+        paramString: `--model-profile <name>`,
+        isOptional: true,
+      },
+      {
+        paramString: `--sqlite-database-path <path>`,
+        isOptional: true,
+        priority: 1,
+      },
+      {
+        paramString: `--storage-provider-module <module>`,
+        isOptional: true,
+        priority: 2,
+      },
+    ];
+    process.stdout.write(`  ${info.name} (${info.slug})\n`);
+    const schema = platform.getRegistrationSchema();
+    // for each property, translate it to a CLI option and add it to the help text
+    for (const [key, propertySchema] of Object.entries(schema.shape)) {
+      const optionName = key
+        .split(/(?=[A-Z])/)
+        .join("-")
+        .toLowerCase();
+
+      const isOptional = propertySchema.isOptional();
+
+      const optionSyntax = `--${optionName} <value>`;
+      platformParams.push({
+        paramString: optionSyntax,
+        isOptional,
+        priority: isOptional ? 0 : -0.5, // required options should come before optional ones, but after platform which has priority -1
+      });
+    }
+
+    const sortedParams = platformParams.toSorted(
+      (a, b) => (a.priority ?? 0) - (b.priority ?? 0),
+    );
+
+    const paramStrings = sortedParams.map((p) =>
+      p.isOptional ? `[${p.paramString}]` : p.paramString,
+    );
+
+    platformAddCommands.push(`  pnpm cli tenant add ${paramStrings.join(" ")}`);
+  }
   process.stdout.write(
     [
       "Usage:",
-      "  pnpm cli tenant add --base-url <url> --project-id <id> --api-token <token> --webhook-secret <secret> [--bot-user-id <id>] [--bot-username <name>] [--model-profile <name>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      ...platformAddCommands,
       "  pnpm cli tenant list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-      "  pnpm cli tenant set-profile --base-url <url> --project-id <id> --model-profile <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-      "  pnpm cli tenant clear-profile --base-url <url> --project-id <id> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-      "  pnpm cli tenant remove --base-url <url> --project-id <id> [--sqlite-database-path <path>] [--storage-provider-module <module>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
+      "  pnpm cli tenant set-profile (--tenant-id <id> | --key <key>) --model-profile <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli tenant clear-profile (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli tenant remove (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
       "  pnpm cli model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--default] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli model-profile list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli model-profile remove --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli model-profile set-default --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli storage migrate --from-storage-provider-module <module> [--from-sqlite-database-path <path>] --to-storage-provider-module <module> [--to-sqlite-database-path <path>]",
-      "  pnpm cli mr describe (--tenant-id <id> | --base-url <url> --project-id <id>) --merge-request-iid <iid> [--current-interaction-job-id <id>] [--trigger-note-id <id> --trigger-note-action <create|update> [--trigger-note-updated-at <iso>] [--trigger-note-body <text>]] [--json] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli mr describe (--tenant-id <id> | --key <key>) --code-review-id <id> [--current-interaction-job-id <id>] [--trigger-note-id <id> --trigger-note-action <create|update> [--trigger-note-updated-at <iso>] [--trigger-note-body <text>]] [--json] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli metrics sessions [--run-log-dir <path>]",
     ].join("\n") + "\n",
   );
 }
 
-async function runMergeRequestDescribeCommand(
+async function runCodeReviewDescribeCommand(
   options: Record<string, string | boolean>,
   config: ReturnType<typeof loadConfig>,
 ): Promise<number> {
   const jsonOutput = options.json === true || options.json === "true";
   const input = mergeRequestDescribeSchema.parse({
     tenantId: options["tenant-id"],
-    baseUrl: options["base-url"],
-    projectId: options["project-id"],
-    mergeRequestIid: options["merge-request-iid"],
+    tenantKey: options.key,
+    codeReviewId: options["code-review-id"] ?? options["merge-request-iid"],
     currentInteractionJobId: options["current-interaction-job-id"],
     triggerNoteId: options["trigger-note-id"],
     triggerNoteAction: options["trigger-note-action"],
@@ -961,45 +1022,41 @@ async function runMergeRequestDescribeCommand(
     const tenant = await resolveDescribeTenant(storage, input);
     if (!tenant) {
       process.stdout.write(
-        formatMissingDescribeTenantMessage(
-          input.tenantId,
-          input.baseUrl,
-          input.projectId,
-        ),
+        formatMissingDescribeTenantMessage(input.tenantId, input.tenantKey),
       );
       return 1;
     }
 
-    const interactionJobs = await listMergeRequestInteractionJobs(
+    const interactionJobs = await listCodeReviewInteractionJobs(
       storage,
       tenant,
-      input.mergeRequestIid,
+      input.codeReviewId,
     );
     if (
       input.currentInteractionJobId &&
       !interactionJobs.some((job) => job.id === input.currentInteractionJobId)
     ) {
       process.stdout.write(
-        `Interaction job ${input.currentInteractionJobId} not found for tenant ${tenant.id} merge request ${input.mergeRequestIid}.\n`,
+        `Interaction job ${input.currentInteractionJobId} not found for tenant ${tenant.id} merge request ${input.codeReviewId}.\n`,
       );
       return 1;
     }
 
     const currentInteractionJobId =
       input.currentInteractionJobId ?? interactionJobs[0]?.id ?? null;
-    const description = await buildMergeRequestDescription(
+    const description = await buildCodeReviewDescription(
       storage,
       tenant,
-      input.mergeRequestIid,
+      input.codeReviewId,
       interactionJobs,
       currentInteractionJobId,
-      resolveMergeRequestTriggerDedupeInput(input),
+      resolveCodeReviewTriggerDedupeInput(input),
     );
 
     process.stdout.write(
       jsonOutput
         ? `${JSON.stringify(description, null, 2)}\n`
-        : formatMergeRequestDescription(description),
+        : formatCodeReviewDescription(description),
     );
     return 0;
   });
@@ -1009,8 +1066,7 @@ async function resolveDescribeTenant(
   storage: StorageHelpers,
   input: {
     tenantId?: string | undefined;
-    baseUrl?: string | undefined;
-    projectId?: number | undefined;
+    tenantKey?: string | undefined;
   },
 ): Promise<TenantRecord | null> {
   if (input.tenantId) {
@@ -1018,32 +1074,67 @@ async function resolveDescribeTenant(
   }
 
   return storage.stores.tenants.find({
-    baseUrl: { eq: input.baseUrl! },
-    projectId: { eq: input.projectId! },
+    key: { eq: input.tenantKey! },
   });
 }
 
-async function listMergeRequestInteractionJobs(
+async function resolveTenantByLookup(
+  storage: StorageHelpers,
+  input: {
+    tenantId?: string | undefined;
+    tenantKey?: string | undefined;
+  },
+): Promise<TenantRecord | null> {
+  return resolveDescribeTenant(storage, input);
+}
+
+function refineTenantLookup(
+  value: {
+    tenantId?: string | undefined;
+    tenantKey?: string | undefined;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const hasTenantId = value.tenantId !== undefined;
+  const hasTenantKey = value.tenantKey !== undefined;
+
+  if (!hasTenantId && !hasTenantKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Provide --tenant-id or --key.",
+      path: ["tenantId"],
+    });
+  }
+
+  if (hasTenantId && hasTenantKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Provide either --tenant-id or --key, not both.",
+      path: ["tenantId"],
+    });
+  }
+}
+
+async function listCodeReviewInteractionJobs(
   storage: StorageHelpers,
   tenant: TenantRecord,
-  mergeRequestIid: number,
+  codeReviewId: number,
 ): Promise<InteractionJobRecord[]> {
-  return listProjectScopedMergeRequestInteractionJobs(
+  return listProjectScopedCodeReviewInteractionJobs(
     storage,
     tenant,
-    mergeRequestIid,
+    codeReviewId,
   );
 }
 
-async function listProjectScopedMergeRequestInteractionJobs(
+async function listProjectScopedCodeReviewInteractionJobs(
   storage: StorageHelpers,
   tenant: TenantRecord,
-  mergeRequestIid: number,
+  codeReviewId: number,
 ): Promise<InteractionJobRecord[]> {
   return listAll(storage.stores.interactionJobs, {
     filters: {
-      projectId: { eq: tenant.projectId },
-      mergeRequestIid: { eq: mergeRequestIid },
+      codeReviewId: { eq: codeReviewId },
       tenantId: { eq: tenant.id },
     },
     order: [
@@ -1053,13 +1144,13 @@ async function listProjectScopedMergeRequestInteractionJobs(
   });
 }
 
-async function buildMergeRequestDescription(
+async function buildCodeReviewDescription(
   storage: StorageHelpers,
   tenant: TenantRecord,
-  mergeRequestIid: number,
+  codeReviewId: number,
   interactionJobs: readonly InteractionJobRecord[],
   currentInteractionJobId: string | null,
-  triggerDedupeInput?: MergeRequestTriggerDedupeInput,
+  triggerDedupeInput?: CodeReviewTriggerDedupeInput,
 ) {
   const interactionJobIds = interactionJobs.map((job) => job.id);
   const hasInteractionJobs = interactionJobIds.length > 0;
@@ -1079,33 +1170,33 @@ async function buildMergeRequestDescription(
     listAll(storage.stores.discussionMappings, {
       filters: {
         tenantId: { eq: tenant.id },
-        mergeRequestIid: { eq: mergeRequestIid },
+        codeReviewId: { eq: codeReviewId },
       },
       order: [
         { field: "updatedAt", direction: "desc" },
         { field: "id", direction: "desc" },
       ],
     }),
-    buildInteractionJobDiagnostics(storage, tenant, mergeRequestIid),
-    storage.listLatestReviewFindings(tenant.id, mergeRequestIid),
+    buildInteractionJobDiagnostics(storage, tenant, codeReviewId),
+    storage.listLatestReviewFindings(tenant.id, codeReviewId),
     hasInteractionJobs
-      ? storage.getLatestCompletedInteractionForMergeRequest(
+      ? storage.getLatestCompletedInteractionForCodeReview(
           tenant.id,
-          mergeRequestIid,
+          codeReviewId,
           "",
         )
       : Promise.resolve(null),
     currentInteractionJobId
-      ? storage.getLatestCompletedInteractionForMergeRequest(
+      ? storage.getLatestCompletedInteractionForCodeReview(
           tenant.id,
-          mergeRequestIid,
+          codeReviewId,
           currentInteractionJobId,
         )
       : Promise.resolve(null),
     currentInteractionJobId
       ? storage.listPriorReviewFindings(
           tenant.id,
-          mergeRequestIid,
+          codeReviewId,
           currentInteractionJobId,
         )
       : Promise.resolve([]),
@@ -1113,11 +1204,11 @@ async function buildMergeRequestDescription(
 
   return {
     tenant: summarizeTenant(tenant),
-    mergeRequestIid,
+    codeReviewId,
     currentInteractionJobId,
     dedupeInspection: summarizeTriggerDedupeInspection(
       tenant,
-      mergeRequestIid,
+      codeReviewId,
       interactionJobs,
       triggerDedupeInput,
     ),
@@ -1125,7 +1216,7 @@ async function buildMergeRequestDescription(
     counts: {
       interactionJobs: interactionJobs.length,
       interactionRuns: interactionRuns.length,
-      mergeRequestSnapshots: snapshots.length,
+      codeReviewSnapshots: snapshots.length,
       discussionMappings: discussionMappings.length,
       latestReviewFindingsOverall: latestReviewFindingsOverall.length,
       priorReviewFindingsRelativeToCurrent:
@@ -1148,7 +1239,7 @@ async function buildMergeRequestDescription(
       priorReviewFindingsRelativeToCurrent.map(summarizePriorReviewFinding),
     interactionJobs: interactionJobs.map(summarizeInteractionJob),
     interactionRuns: interactionRuns.map(summarizeInteractionRun),
-    mergeRequestSnapshots: snapshots.map(summarizeSnapshot),
+    codeReviewSnapshots: snapshots.map(summarizeSnapshot),
     discussionMappings: discussionMappings.map(summarizeDiscussionMapping),
   };
 }
@@ -1156,27 +1247,13 @@ async function buildMergeRequestDescription(
 async function buildInteractionJobDiagnostics(
   storage: StorageHelpers,
   tenant: TenantRecord,
-  mergeRequestIid: number,
+  codeReviewId: number,
 ) {
-  const [
-    jobsByTenantAndMergeRequest,
-    jobsByProjectAndMergeRequest,
-    jobsByTenantOnly,
-  ] = await Promise.all([
+  const [jobsByTenantAndCodeReview, jobsByTenantOnly] = await Promise.all([
     listAll(storage.stores.interactionJobs, {
       filters: {
         tenantId: { eq: tenant.id },
-        mergeRequestIid: { eq: mergeRequestIid },
-      },
-      order: [
-        { field: "enqueuedAt", direction: "desc" },
-        { field: "id", direction: "desc" },
-      ],
-    }),
-    listAll(storage.stores.interactionJobs, {
-      filters: {
-        projectId: { eq: tenant.projectId },
-        mergeRequestIid: { eq: mergeRequestIid },
+        codeReviewId: { eq: codeReviewId },
       },
       order: [
         { field: "enqueuedAt", direction: "desc" },
@@ -1196,15 +1273,11 @@ async function buildInteractionJobDiagnostics(
 
   return {
     counts: {
-      byTenantAndMergeRequest: jobsByTenantAndMergeRequest.length,
-      byProjectAndMergeRequest: jobsByProjectAndMergeRequest.length,
+      byTenantAndCodeReview: jobsByTenantAndCodeReview.length,
       byTenantOnly: jobsByTenantOnly.length,
     },
     samples: {
-      byTenantAndMergeRequest: jobsByTenantAndMergeRequest
-        .slice(0, 10)
-        .map(summarizeInteractionJob),
-      byProjectAndMergeRequest: jobsByProjectAndMergeRequest
+      byTenantAndCodeReview: jobsByTenantAndCodeReview
         .slice(0, 10)
         .map(summarizeInteractionJob),
       byTenantOnly: jobsByTenantOnly.slice(0, 10).map(summarizeInteractionJob),
@@ -1234,12 +1307,12 @@ async function loadInteractionRunsForJobs(
 async function loadSnapshotsForJobs(
   storage: StorageHelpers,
   interactionJobIds: readonly string[],
-): Promise<MergeRequestSnapshotRecord[]> {
+): Promise<CodeReviewSnapshotRecord[]> {
   if (interactionJobIds.length === 0) {
     return [];
   }
 
-  return listAll(storage.stores.mergeRequestSnapshots, {
+  return listAll(storage.stores.codeReviewSnapshots, {
     filters: {
       interactionJobId: { in: interactionJobIds },
     },
@@ -1249,24 +1322,31 @@ async function loadSnapshotsForJobs(
 
 function formatMissingDescribeTenantMessage(
   tenantId: string | undefined,
-  baseUrl: string | undefined,
-  projectId: number | undefined,
+  tenantKey: string | undefined,
 ): string {
   if (tenantId) {
     return `Tenant ${tenantId} not found.\n`;
   }
 
-  return `Tenant not found for ${baseUrl} :: ${projectId}.\n`;
+  return `Tenant not found for ${tenantKey}.\n`;
 }
 
 function summarizeTenant(tenant: TenantRecord) {
+  const gitLabConfig =
+    tenant.platform === "gitlab" ? getGitLabTenantConfig(tenant) : null;
+
   return {
     id: tenant.id,
     key: tenant.key,
-    baseUrl: tenant.baseUrl,
-    projectId: tenant.projectId,
-    botUserId: tenant.botUserId,
-    botUsername: tenant.botUsername,
+    platform: tenant.platform,
+    ...(gitLabConfig
+      ? {
+          baseUrl: gitLabConfig.baseUrl,
+          projectId: gitLabConfig.projectId,
+          botUserId: gitLabConfig.botUserId,
+          botUsername: gitLabConfig.botUsername,
+        }
+      : {}),
     modelProfileName: tenant.modelProfileName,
   };
 }
@@ -1276,8 +1356,7 @@ function summarizeInteractionJob(interactionJob: InteractionJobRecord) {
     id: interactionJob.id,
     dedupeKey: interactionJob.dedupeKey,
     tenantId: interactionJob.tenantId,
-    projectId: interactionJob.projectId,
-    mergeRequestIid: interactionJob.mergeRequestIid,
+    codeReviewId: interactionJob.codeReviewId,
     noteId: interactionJob.noteId,
     headSha: interactionJob.headSha,
     status: interactionJob.status,
@@ -1309,16 +1388,16 @@ function summarizeInteractionRun(interactionRun: InteractionRunRecord) {
   };
 }
 
-function summarizeSnapshot(snapshot: MergeRequestSnapshotRecord) {
+function summarizeSnapshot(snapshot: CodeReviewSnapshotRecord) {
   return {
     id: snapshot.id,
     interactionJobId: snapshot.interactionJobId,
     tenantId: snapshot.tenantId,
-    mergeRequestIid: snapshot.mergeRequestIid,
+    codeReviewId: snapshot.codeReviewId,
     headSha: snapshot.headSha,
     workspaceStrategy: snapshot.workspaceStrategy,
     createdAt: snapshot.createdAt,
-    mergeRequestJsonBytes: snapshot.mergeRequestJson.length,
+    codeReviewJsonBytes: snapshot.codeReviewJson.length,
     versionsJsonBytes: snapshot.versionsJson.length,
     changesJsonBytes: snapshot.changesJson.length,
     notesJsonBytes: snapshot.notesJson.length,
@@ -1368,12 +1447,11 @@ function summarizeDiscussionMapping(
   return {
     id: discussionMapping.id,
     tenantId: discussionMapping.tenantId,
-    projectId: discussionMapping.projectId,
-    mergeRequestIid: discussionMapping.mergeRequestIid,
+    codeReviewId: discussionMapping.codeReviewId,
     identityKey: discussionMapping.identityKey,
     status: discussionMapping.status,
-    gitlabDiscussionId: discussionMapping.gitlabDiscussionId,
-    gitlabNoteId: discussionMapping.gitlabNoteId,
+    platformThreadId: discussionMapping.platformThreadId,
+    platformCommentId: discussionMapping.platformCommentId,
     botDiscussion: discussionMapping.botDiscussion,
     botNote: discussionMapping.botNote,
     noteAuthorId: discussionMapping.noteAuthorId,
@@ -1384,9 +1462,9 @@ function summarizeDiscussionMapping(
   };
 }
 
-function resolveMergeRequestTriggerDedupeInput(
+function resolveCodeReviewTriggerDedupeInput(
   input: z.infer<typeof mergeRequestDescribeSchema>,
-): MergeRequestTriggerDedupeInput | undefined {
+): CodeReviewTriggerDedupeInput | undefined {
   if (input.triggerNoteId === undefined) {
     return undefined;
   }
@@ -1401,10 +1479,11 @@ function resolveMergeRequestTriggerDedupeInput(
 
 function summarizeTriggerDedupeInspection(
   tenant: TenantRecord,
-  mergeRequestIid: number,
+  codeReviewId: number,
   interactionJobs: readonly InteractionJobRecord[],
-  triggerInput?: MergeRequestTriggerDedupeInput,
+  triggerInput?: CodeReviewTriggerDedupeInput,
 ) {
+  const tenantConfig = getGitLabTenantConfig(tenant);
   const existingJobs = interactionJobs.map((job) => ({
     jobId: job.id,
     noteId: job.noteId,
@@ -1421,9 +1500,9 @@ function summarizeTriggerDedupeInspection(
   }
 
   const candidateDedupeKey = createInteractionJobDedupeKey({
-    baseUrl: tenant.baseUrl,
-    projectId: tenant.projectId,
-    mergeRequestIid,
+    baseUrl: tenantConfig.baseUrl,
+    projectId: tenantConfig.projectId,
+    codeReviewId,
     noteId: triggerInput.noteId,
     noteAction: triggerInput.noteAction,
     noteUpdatedAt: triggerInput.noteUpdatedAt,
@@ -1448,12 +1527,12 @@ function summarizeTriggerDedupeInspection(
   };
 }
 
-type MergeRequestDescribeOutput = Awaited<
-  ReturnType<typeof buildMergeRequestDescription>
+type CodeReviewDescribeOutput = Awaited<
+  ReturnType<typeof buildCodeReviewDescription>
 >;
 
-function formatMergeRequestDescription(
-  description: MergeRequestDescribeOutput,
+function formatCodeReviewDescription(
+  description: CodeReviewDescribeOutput,
 ): string {
   const latestReviewLines = description.latestInteractionJob
     ? [
@@ -1477,25 +1556,24 @@ function formatMergeRequestDescription(
 
   const lines = [
     "Merge Request",
-    `project: ${description.tenant.baseUrl} :: ${description.tenant.projectId}`,
+    `tenant: ${description.tenant.key} (${description.tenant.platform})`,
     `tenant: ${description.tenant.id}`,
-    `mergeRequestIid: ${description.mergeRequestIid}`,
+    `codeReviewId: ${description.codeReviewId}`,
     "",
     "Current State",
     `currentInteractionJobId: ${description.currentInteractionJobId ?? "(none)"}`,
     `interactionJobs: ${description.counts.interactionJobs}`,
     `interactionRuns: ${description.counts.interactionRuns}`,
-    `mergeRequestSnapshots: ${description.counts.mergeRequestSnapshots}`,
+    `codeReviewSnapshots: ${description.counts.codeReviewSnapshots}`,
     `discussionMappings: ${description.counts.discussionMappings}`,
     `latestReviewFindingsOverall: ${description.counts.latestReviewFindingsOverall}`,
     `priorReviewFindingsRelativeToCurrent: ${description.counts.priorReviewFindingsRelativeToCurrent}`,
     ...latestReviewLines,
     "",
     "History Signal",
-    `tenant+mr jobs: ${description.interactionJobDiagnostics.counts.byTenantAndMergeRequest}`,
-    `project+mr jobs: ${description.interactionJobDiagnostics.counts.byProjectAndMergeRequest}`,
+    `tenant+mr jobs: ${description.interactionJobDiagnostics.counts.byTenantAndCodeReview}`,
     `tenant jobs total: ${description.interactionJobDiagnostics.counts.byTenantOnly}`,
-    `assessment: ${buildMergeRequestAssessment(description)}`,
+    `assessment: ${buildCodeReviewAssessment(description)}`,
     "",
     "Previous Review",
     `latestCompletedInteractionOverall: ${formatPreviousInteractionSummary(description.latestCompletedInteractionOverall)}`,
@@ -1509,24 +1587,15 @@ function formatMergeRequestDescription(
   return `${lines.join("\n")}\n`;
 }
 
-function buildMergeRequestAssessment(
-  description: MergeRequestDescribeOutput,
+function buildCodeReviewAssessment(
+  description: CodeReviewDescribeOutput,
 ): string {
   const diagnostics = description.interactionJobDiagnostics.counts;
-  if (
-    diagnostics.byTenantOnly > diagnostics.byTenantAndMergeRequest &&
-    diagnostics.byProjectAndMergeRequest === diagnostics.byTenantAndMergeRequest
-  ) {
-    return "MR-specific history is sparse in storage; tenant relation filtering is unlikely to be the main issue.";
+  if (diagnostics.byTenantOnly > diagnostics.byTenantAndCodeReview) {
+    return "Tenant-wide history exceeds merge-request-scoped history; this tenant has additional review activity outside the current merge request.";
   }
 
-  if (
-    diagnostics.byProjectAndMergeRequest > diagnostics.byTenantAndMergeRequest
-  ) {
-    return "Project-level MR history exceeds tenant-scoped MR history; tenant relation filtering is suspicious.";
-  }
-
-  if (diagnostics.byTenantAndMergeRequest > 1) {
+  if (diagnostics.byTenantAndCodeReview > 1) {
     return "Multiple MR jobs are visible in storage.";
   }
 
@@ -1534,7 +1603,7 @@ function buildMergeRequestAssessment(
 }
 
 function formatPreviousInteractionSummary(
-  interaction: MergeRequestDescribeOutput["latestCompletedInteractionOverall"],
+  interaction: CodeReviewDescribeOutput["latestCompletedInteractionOverall"],
 ): string {
   if (!interaction) {
     return "none";
@@ -1544,7 +1613,7 @@ function formatPreviousInteractionSummary(
 }
 
 function formatDedupeInspection(
-  dedupeInspection: MergeRequestDescribeOutput["dedupeInspection"],
+  dedupeInspection: CodeReviewDescribeOutput["dedupeInspection"],
 ): string[] {
   if (!dedupeInspection.triggerProvided) {
     return [
@@ -1568,7 +1637,7 @@ function formatDedupeInspection(
 }
 
 function formatFindingsSummary(
-  findings: MergeRequestDescribeOutput["latestReviewFindingsOverall"],
+  findings: CodeReviewDescribeOutput["latestReviewFindingsOverall"],
 ): string[] {
   const visibleFindings = findings
     .slice(0, 5)
@@ -1945,12 +2014,12 @@ function formatTenantRemovalSummary(
   runLogDir: string,
 ): string {
   return [
-    `Preparing to remove tenant ${summary.tenant.baseUrl} :: ${summary.tenant.projectId}`,
+    `Preparing to remove tenant ${summary.tenant.key} (${summary.tenant.platform})`,
     `database: ${databasePath}`,
     "This will delete:",
     `- 1 tenant record`,
     `- ${summary.interactionJobCount} ${pluralize("interaction job", summary.interactionJobCount)}`,
-    `- ${summary.mergeRequestSnapshotCount} ${pluralize("merge request snapshot", summary.mergeRequestSnapshotCount)}`,
+    `- ${summary.codeReviewSnapshotCount} ${pluralize("code review snapshot", summary.codeReviewSnapshotCount)}`,
     `- ${summary.interactionRunCount} ${pluralize("interaction run", summary.interactionRunCount)}`,
     `- ${summary.reviewFindingCount} ${pluralize("review finding", summary.reviewFindingCount)}`,
     `- ${summary.interactionRunMetricCount} ${pluralize("interaction run metric", summary.interactionRunMetricCount)}`,

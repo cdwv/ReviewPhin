@@ -1,15 +1,15 @@
-import { createTenantKey, createId } from "../utils/ids.js";
+import { createId } from "../utils/ids.js";
 import type {
   CreateInteractionJobInput,
   CreateInteractionRunInput,
-  CreateMergeRequestSnapshotInput,
+  CreateCodeReviewSnapshotInput,
   CreateReviewFindingInput,
   DiscussionMappingRecord,
   EntityStore,
   InteractionJobRecord,
   InteractionRunMetricsRecord,
   InteractionRunRecord,
-  MergeRequestSnapshotRecord,
+  CodeReviewSnapshotRecord,
   ModelProfileRecord,
   PreviousCompletedInteractionRecord,
   PriorReviewFindingRecord,
@@ -48,17 +48,14 @@ export interface StorageHelpers {
   deleteModelProfile(name: string): Promise<ModelProfileRecord | null>;
   upsertTenant(tenant: StorageTenantInput): Promise<TenantRecord>;
   setTenantModelProfile(
-    baseUrl: string,
-    projectId: number,
+    tenantKey: string,
     modelProfileName: string | null,
   ): Promise<TenantRecord>;
   getTenantDeletionSummary(
-    baseUrl: string,
-    projectId: number,
+    tenantKey: string,
   ): Promise<TenantDeletionSummary | null>;
   deleteTenantWithSummary(
-    baseUrl: string,
-    projectId: number,
+    tenantKey: string,
   ): Promise<TenantDeletionSummary | null>;
   createOrGetInteractionJob(
     input: CreateInteractionJobInput,
@@ -80,15 +77,15 @@ export interface StorageHelpers {
     retryCount: number,
     reason: string,
   ): Promise<void>;
-  createMergeRequestSnapshot(
-    input: CreateMergeRequestSnapshotInput,
-  ): Promise<MergeRequestSnapshotRecord>;
+  createCodeReviewSnapshot(
+    input: CreateCodeReviewSnapshotInput,
+  ): Promise<CodeReviewSnapshotRecord>;
   createInteractionRun(
     input: CreateInteractionRunInput,
   ): Promise<InteractionRunRecord>;
-  getLatestCompletedInteractionForMergeRequest(
+  getLatestCompletedInteractionForCodeReview(
     tenantId: string,
-    mergeRequestIid: number,
+    codeReviewId: number,
     currentInteractionJobId: string,
   ): Promise<PreviousCompletedInteractionRecord | null>;
   completeInteractionRun(
@@ -106,16 +103,16 @@ export interface StorageHelpers {
   ): Promise<void>;
   listPriorReviewFindings(
     tenantId: string,
-    mergeRequestIid: number,
+    codeReviewId: number,
     currentInteractionJobId: string,
   ): Promise<PriorReviewFindingRecord[]>;
   listLatestReviewFindings(
     tenantId: string,
-    mergeRequestIid: number,
+    codeReviewId: number,
   ): Promise<PriorReviewFindingRecord[]>;
   updateReviewFindingStatus(
     tenantId: string,
-    mergeRequestIid: number,
+    codeReviewId: number,
     identityKey: string,
     status: ReviewFindingStatus,
     options?: {
@@ -230,9 +227,8 @@ export class StoreBackedStorage implements StorageHelpers {
   }
 
   public async upsertTenant(tenant: StorageTenantInput): Promise<TenantRecord> {
-    const tenantKey = createTenantKey(tenant.baseUrl, tenant.projectId);
     const existing = await this.stores.tenants.find({
-      key: { eq: tenantKey },
+      key: { eq: tenant.key },
     });
     const resolvedModelProfileName =
       tenant.modelProfileName === undefined
@@ -252,13 +248,9 @@ export class StoreBackedStorage implements StorageHelpers {
     const tenantId = existing?.id ?? createId("tenant");
     await this.stores.tenants.upsert({
       id: tenantId,
-      key: tenantKey,
-      baseUrl: tenant.baseUrl,
-      projectId: tenant.projectId,
-      apiToken: tenant.apiToken,
-      webhookSecret: tenant.webhookSecret,
-      botUserId: tenant.botUserId,
-      botUsername: tenant.botUsername,
+      key: tenant.key,
+      platform: tenant.platform,
+      platformConfigJson: tenant.platformConfigJson,
       modelProfileName: resolvedModelProfileName,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
@@ -267,21 +259,19 @@ export class StoreBackedStorage implements StorageHelpers {
     return getRequiredRecord(
       this.stores.tenants,
       tenantId,
-      `Failed to persist tenant ${tenantKey}`,
+      `Failed to persist tenant ${tenant.key}`,
     );
   }
 
   public async setTenantModelProfile(
-    baseUrl: string,
-    projectId: number,
+    tenantKey: string,
     modelProfileName: string | null,
   ): Promise<TenantRecord> {
-    const tenantKey = createTenantKey(baseUrl, projectId);
     const tenant = await this.stores.tenants.find({
       key: { eq: tenantKey },
     });
     if (!tenant) {
-      throw new Error(`Tenant not found for ${baseUrl} :: ${projectId}`);
+      throw new Error(`Tenant not found for ${tenantKey}`);
     }
 
     if (modelProfileName) {
@@ -308,10 +298,8 @@ export class StoreBackedStorage implements StorageHelpers {
   }
 
   public async getTenantDeletionSummary(
-    baseUrl: string,
-    projectId: number,
+    tenantKey: string,
   ): Promise<TenantDeletionSummary | null> {
-    const tenantKey = createTenantKey(baseUrl, projectId);
     const tenant = await this.stores.tenants.find({
       key: { eq: tenantKey },
     });
@@ -323,10 +311,8 @@ export class StoreBackedStorage implements StorageHelpers {
   }
 
   public async deleteTenantWithSummary(
-    baseUrl: string,
-    projectId: number,
+    tenantKey: string,
   ): Promise<TenantDeletionSummary | null> {
-    const tenantKey = createTenantKey(baseUrl, projectId);
     const tenant = await this.stores.tenants.find({
       key: { eq: tenantKey },
     });
@@ -362,9 +348,9 @@ export class StoreBackedStorage implements StorageHelpers {
       );
     }
 
-    await this.stores.mergeRequestSnapshots.deleteMany(
+    await this.stores.codeReviewSnapshots.deleteMany(
       (
-        await listAll(this.stores.mergeRequestSnapshots, {
+        await listAll(this.stores.codeReviewSnapshots, {
           filters: { tenantId: { eq: tenant.id } },
         })
       ).map((snapshot) => snapshot.id),
@@ -392,8 +378,7 @@ export class StoreBackedStorage implements StorageHelpers {
       id: expectedId,
       tenantId: input.tenantId,
       dedupeKey: input.dedupeKey,
-      projectId: input.projectId,
-      mergeRequestIid: input.mergeRequestIid,
+      codeReviewId: input.codeReviewId,
       noteId: input.noteId,
       headSha: input.headSha,
       status: "queued",
@@ -488,18 +473,18 @@ export class StoreBackedStorage implements StorageHelpers {
     });
   }
 
-  public async createMergeRequestSnapshot(
-    input: CreateMergeRequestSnapshotInput,
-  ): Promise<MergeRequestSnapshotRecord> {
+  public async createCodeReviewSnapshot(
+    input: CreateCodeReviewSnapshotInput,
+  ): Promise<CodeReviewSnapshotRecord> {
     const now = new Date().toISOString();
     const snapshotId = createId("snapshot");
-    await this.stores.mergeRequestSnapshots.upsert({
+    await this.stores.codeReviewSnapshots.upsert({
       id: snapshotId,
       interactionJobId: input.interactionJobId,
       tenantId: input.tenantId,
-      mergeRequestIid: input.mergeRequestIid,
+      codeReviewId: input.codeReviewId,
       headSha: input.headSha,
-      mergeRequestJson: input.mergeRequestJson,
+      codeReviewJson: input.codeReviewJson,
       versionsJson: input.versionsJson,
       changesJson: input.changesJson,
       notesJson: input.notesJson,
@@ -511,9 +496,9 @@ export class StoreBackedStorage implements StorageHelpers {
     });
 
     return getRequiredRecord(
-      this.stores.mergeRequestSnapshots,
+      this.stores.codeReviewSnapshots,
       snapshotId,
-      `Failed to create merge request snapshot ${snapshotId}`,
+      `Failed to create code review snapshot ${snapshotId}`,
     );
   }
 
@@ -546,16 +531,16 @@ export class StoreBackedStorage implements StorageHelpers {
     );
   }
 
-  public async getLatestCompletedInteractionForMergeRequest(
+  public async getLatestCompletedInteractionForCodeReview(
     tenantId: string,
-    mergeRequestIid: number,
+    codeReviewId: number,
     currentInteractionJobId: string,
   ): Promise<PreviousCompletedInteractionRecord | null> {
     const interactionJobs = (
       await listAll(this.stores.interactionJobs, {
         filters: {
           tenantId: { eq: tenantId },
-          mergeRequestIid: { eq: mergeRequestIid },
+          codeReviewId: { eq: codeReviewId },
         },
         order: [
           { field: "enqueuedAt", direction: "desc" },
@@ -577,13 +562,13 @@ export class StoreBackedStorage implements StorageHelpers {
           resultJson: { isNull: false },
         },
       }),
-      listAll(this.stores.mergeRequestSnapshots, {
+      listAll(this.stores.codeReviewSnapshots, {
         filters: { interactionJobId: { in: jobIds } },
         order: [{ field: "createdAt", direction: "desc" }],
       }),
     ]);
 
-    const latestSnapshotByJobId = new Map<string, MergeRequestSnapshotRecord>();
+    const latestSnapshotByJobId = new Map<string, CodeReviewSnapshotRecord>();
     for (const snapshot of snapshots) {
       const existing = latestSnapshotByJobId.get(snapshot.interactionJobId);
       if (
@@ -763,26 +748,26 @@ export class StoreBackedStorage implements StorageHelpers {
 
   public async listPriorReviewFindings(
     tenantId: string,
-    mergeRequestIid: number,
+    codeReviewId: number,
     currentInteractionJobId: string,
   ): Promise<PriorReviewFindingRecord[]> {
-    return this.listLatestFindingsForMergeRequest(
+    return this.listLatestFindingsForCodeReview(
       tenantId,
-      mergeRequestIid,
+      codeReviewId,
       currentInteractionJobId,
     );
   }
 
   public async listLatestReviewFindings(
     tenantId: string,
-    mergeRequestIid: number,
+    codeReviewId: number,
   ): Promise<PriorReviewFindingRecord[]> {
-    return this.listLatestFindingsForMergeRequest(tenantId, mergeRequestIid);
+    return this.listLatestFindingsForCodeReview(tenantId, codeReviewId);
   }
 
   public async updateReviewFindingStatus(
     tenantId: string,
-    mergeRequestIid: number,
+    codeReviewId: number,
     identityKey: string,
     status: ReviewFindingStatus,
     options?: {
@@ -792,7 +777,7 @@ export class StoreBackedStorage implements StorageHelpers {
     const interactionJobs = await listAll(this.stores.interactionJobs, {
       filters: {
         tenantId: { eq: tenantId },
-        mergeRequestIid: { eq: mergeRequestIid },
+        codeReviewId: { eq: codeReviewId },
       },
     });
     if (interactionJobs.length === 0) {
@@ -840,8 +825,8 @@ export class StoreBackedStorage implements StorageHelpers {
   ): Promise<DiscussionMappingRecord> {
     const existing = await this.stores.discussionMappings.find({
       tenantId: { eq: input.tenantId },
-      mergeRequestIid: { eq: input.mergeRequestIid },
-      gitlabDiscussionId: { eq: input.gitlabDiscussionId },
+      codeReviewId: { eq: input.codeReviewId },
+      platformThreadId: { eq: input.platformThreadId },
     });
     const now = new Date().toISOString();
     const mappingId = existing?.id ?? input.id ?? createId("mapping");
@@ -849,16 +834,15 @@ export class StoreBackedStorage implements StorageHelpers {
     await this.stores.discussionMappings.upsert({
       id: mappingId,
       tenantId: input.tenantId,
-      projectId: input.projectId,
-      mergeRequestIid: input.mergeRequestIid,
+      codeReviewId: input.codeReviewId,
       identityKey: input.identityKey,
       findingFingerprint: input.findingFingerprint,
       title: input.title,
       severity: input.severity,
       category: input.category,
       body: input.body,
-      gitlabDiscussionId: input.gitlabDiscussionId,
-      gitlabNoteId: input.gitlabNoteId,
+      platformThreadId: input.platformThreadId,
+      platformCommentId: input.platformCommentId,
       anchorJson: input.anchorJson,
       positionJson: input.positionJson,
       botDiscussion: input.botDiscussion,
@@ -894,14 +878,14 @@ export class StoreBackedStorage implements StorageHelpers {
   ): Promise<TenantDeletionSummary> {
     const [
       interactionJobs,
-      mergeRequestSnapshots,
+      codeReviewSnapshots,
       interactionRuns,
       discussionMappings,
     ] = await Promise.all([
       listAll(this.stores.interactionJobs, {
         filters: { tenantId: { eq: tenant.id } },
       }),
-      listAll(this.stores.mergeRequestSnapshots, {
+      listAll(this.stores.codeReviewSnapshots, {
         filters: { tenantId: { eq: tenant.id } },
       }),
       listAll(this.stores.interactionRuns, {
@@ -928,7 +912,7 @@ export class StoreBackedStorage implements StorageHelpers {
     return {
       tenant,
       interactionJobCount: interactionJobs.length,
-      mergeRequestSnapshotCount: mergeRequestSnapshots.length,
+      codeReviewSnapshotCount: codeReviewSnapshots.length,
       interactionRunCount: interactionRuns.length,
       reviewFindingCount: reviewFindings.length,
       interactionRunMetricCount: interactionRunMetrics.length,
@@ -938,16 +922,16 @@ export class StoreBackedStorage implements StorageHelpers {
     };
   }
 
-  private async listLatestFindingsForMergeRequest(
+  private async listLatestFindingsForCodeReview(
     tenantId: string,
-    mergeRequestIid: number,
+    codeReviewId: number,
     excludeInteractionJobId?: string,
   ): Promise<PriorReviewFindingRecord[]> {
     const interactionJobs = (
       await listAll(this.stores.interactionJobs, {
         filters: {
           tenantId: { eq: tenantId },
-          mergeRequestIid: { eq: mergeRequestIid },
+          codeReviewId: { eq: codeReviewId },
         },
         order: [
           { field: "enqueuedAt", direction: "desc" },

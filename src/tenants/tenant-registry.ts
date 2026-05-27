@@ -1,10 +1,6 @@
-import type { GitLabNoteHookPayload } from "../gitlab/types.js";
+import type { IPlatform, PlatformWebhookRequest } from "../platforms/IPlatform.js";
 import { listAll, type StorageHelpers } from "../storage/storage-helpers.js";
 import type { TenantRecord } from "../storage/contract/index.js";
-import { normalizeGitLabBaseUrl } from "../gitlab/url.js";
-import { webhookMatchesGitLabBase } from "../gitlab/webhook.js";
-import { constantTimeEqual } from "../utils/hash.js";
-import { createTenantKey } from "../utils/ids.js";
 
 export class TenantRegistry {
   private readonly storage: StorageHelpers;
@@ -18,49 +14,36 @@ export class TenantRegistry {
   }
 
   public async resolveWebhookTenant(
-    payload: GitLabNoteHookPayload,
-    providedSecret: string | undefined,
+    platform: IPlatform,
+    payload: unknown,
+    req: PlatformWebhookRequest,
   ): Promise<TenantRecord | null> {
-    if (!providedSecret) {
+    const tenantKey = await platform.identifyTenantKey(payload, req);
+    if (!tenantKey) {
       return null;
     }
 
-    const projectTenants = await listAll(this.storage.stores.tenants, {
-      filters: { projectId: { eq: payload.project.id } },
-      order: [
-        { field: "baseUrl", direction: "asc" },
-        { field: "projectId", direction: "asc" },
-      ],
+    const tenant = await this.storage.stores.tenants.find({
+      key: { eq: tenantKey },
+      platform: { eq: platform.getPlatformInfo().slug },
     });
-    if (projectTenants.length === 0) {
+    if (!tenant) {
       return null;
     }
 
-    const narrowed = projectTenants.length
-      ? projectTenants.filter((tenant) =>
-          webhookMatchesGitLabBase(payload, tenant.baseUrl),
-        )
-      : projectTenants;
+    return (await platform.isWebhookRequestAuthorized(tenant, req))
+      ? tenant
+      : null;
+  }
 
-    const candidates = (
-      narrowed.length > 0 ? narrowed : projectTenants
-    ).toSorted((left, right) => {
-      return (
-        normalizeGitLabBaseUrl(right.baseUrl).length -
-        normalizeGitLabBaseUrl(left.baseUrl).length
-      );
+  public async listTenantsForPlatform(platform: string): Promise<TenantRecord[]> {
+    return listAll(this.storage.stores.tenants, {
+      filters: { platform: { eq: platform } },
+      order: [{ field: "key", direction: "asc" }],
     });
-
-    for (const tenant of candidates) {
-      if (constantTimeEqual(tenant.webhookSecret, providedSecret)) {
-        return tenant;
-      }
-    }
-
-    return null;
   }
 
   public getTenantKey(tenant: TenantRecord): string {
-    return createTenantKey(tenant.baseUrl, tenant.projectId);
+    return tenant.key;
   }
 }

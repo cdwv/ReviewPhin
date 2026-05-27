@@ -1,7 +1,12 @@
 import type {
   HarnessRunAttachment,
   HarnessRunAttachments,
-} from "../harness/types.js";
+} from "../../harness/types.js";
+import type {
+  ReviewAttachment,
+  ReviewAttachmentIssue,
+  ReviewAttachmentSourceKind,
+} from "../../review/types.js";
 import {
   GitLabApiError,
   type GitLabClient,
@@ -12,23 +17,7 @@ import type { GitLabMergeRequest } from "./types.js";
 
 export type GitLabImageAttachmentSourceKind =
   | "trigger-note"
-  | "merge-request-description";
-
-export interface GitLabImageAttachmentBreadcrumb {
-  contentType: string;
-  displayName: string;
-  noteId: number | null;
-  sourceKind: GitLabImageAttachmentSourceKind;
-}
-
-export interface GitLabImageAttachmentIssue {
-  displayName: string;
-  message: string;
-  noteId: number | null;
-  sourceKind: GitLabImageAttachmentSourceKind;
-  status: number;
-  url: string;
-}
+  | "code-review-description";
 
 export interface GitLabImageAttachmentReference {
   noteId: number | null;
@@ -45,8 +34,8 @@ export interface GitLabImageAttachmentSkip {
 
 export interface GitLabImageAttachmentMaterializationResult {
   attachments: HarnessRunAttachments;
-  breadcrumbs: GitLabImageAttachmentBreadcrumb[];
-  issues: GitLabImageAttachmentIssue[];
+  breadcrumbs: ReviewAttachment[];
+  issues: ReviewAttachmentIssue[];
   skipped: GitLabImageAttachmentSkip[];
 }
 
@@ -75,9 +64,9 @@ export function discoverGitLabImageAttachmentReferences(input: {
         input.gitLabBaseUrl ?? new URL(input.mergeRequest.web_url).origin,
       projectUrl: input.mergeRequest.web_url,
       projectId: input.mergeRequest.project_id,
-      noteId: null,
-      sourceKind: "merge-request-description",
-    }),
+        noteId: null,
+        sourceKind: "code-review-description",
+      }),
   ];
 
   return dedupeAttachmentReferences(references);
@@ -88,8 +77,8 @@ export async function materializeGitLabImageAttachments(input: {
   references: ReadonlyArray<GitLabImageAttachmentReference>;
 }): Promise<GitLabImageAttachmentMaterializationResult> {
   const attachments: HarnessRunAttachments = [];
-  const breadcrumbs: GitLabImageAttachmentBreadcrumb[] = [];
-  const issues: GitLabImageAttachmentIssue[] = [];
+  const breadcrumbs: ReviewAttachment[] = [];
+  const issues: ReviewAttachmentIssue[] = [];
   const skipped: GitLabImageAttachmentSkip[] = [];
 
   for (const [index, reference] of input.references.entries()) {
@@ -146,7 +135,7 @@ function extractImageReferencesFromText(
     projectUrl: string;
     projectId: number;
     noteId: number | null;
-    sourceKind: GitLabImageAttachmentSourceKind;
+      sourceKind: ReviewAttachmentSourceKind;
   },
 ): GitLabImageAttachmentReference[] {
   const references: GitLabImageAttachmentReference[] = [];
@@ -295,7 +284,7 @@ function inferAttachmentLabel(
   const prefix =
     reference.sourceKind === "trigger-note"
       ? `trigger-note-${reference.noteId ?? "unknown"}`
-      : "merge-request-description";
+      : "code-review-description";
   return `${prefix}-${fileName ?? `image-${index + 1}`}`;
 }
 

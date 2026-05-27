@@ -12,9 +12,11 @@
 
 ---
 
-ReviewPhin is a hard working dolphin that listens for GitLab merge request comments, runs a multi-agent AI review, and writes findings back as GitLab discussions - while only ever touching content it created itself.
+ReviewPhin is a hard working dolphin that listens for GitLab code review comments, runs a multi-agent AI review, and writes findings back as GitLab discussions - while only ever touching content it created itself.
 
 All model calls go through a configured harness (currently Copilot CLI, but more may come) so you can plug in either a subscription model or an [OpenAI-compatible API](./docs/model-providers.md).
+
+Internally, code-review operations now flow through a platform adapter layer. GitLab is still the only built-in platform today, but tenant records and webhook routing already carry platform metadata.
 
 *Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWave](https://codewave.eu)*
 
@@ -41,7 +43,7 @@ All model calls go through a configured harness (currently Copilot CLI, but more
     - [Trigger a review](#trigger-a-review)
     - [Follow-up conversations](#follow-up-conversations)
     - [Teach the bot project conventions](#teach-the-bot-project-conventions)
-    - [Override the model for one MR](#override-the-model-for-one-mr)
+    - [Override the model for one code review](#override-the-model-for-one-code-review)
   - [How it works](#how-it-works)
   - [Review pipeline](#review-pipeline)
     - [Router](#router)
@@ -137,9 +139,9 @@ Use one of:
 - a **group access token** (scoped to a group)
 - a **personal access token** belonging to a dedicated bot user (you must add it to project with at least Developer role)
 
-Required scope: **`api`** - the only scope ReviewPhin uses on the token. It is needed to read merge request data, create/update/resolve bot-owned discussions, and to clone the repository over Git-over-HTTPS during workspace hydration. ReviewPhin never touches content it did not author itself; the `api` scope is used solely for the read/write actions described in [Review pipeline](#review-pipeline).
+Required scope: **`api`** - the only scope ReviewPhin uses on the token. It is needed to read code review data, create/update/resolve bot-owned discussions, and to clone the repository over Git-over-HTTPS during workspace hydration. ReviewPhin never touches content it did not author itself; the `api` scope is used solely for the read/write actions described in [Review pipeline](#review-pipeline).
 
-Required project membership: **Developer or higher** (needed to resolve merge request discussions and read repository contents).
+Required project membership: **Developer or higher** (needed to resolve code review discussions and read repository contents).
 
 ### 2. Find the project ID and bot identity
 
@@ -151,6 +153,7 @@ Use the GitLab UI or API to collect the project's `id`.
 
 ```bash
 docker compose run --rm worker reviewphin tenant add \
+  --platform gitlab \
   --base-url https://gitlab.example.com \
   --project-id 123 \
   --api-token <your-gitlab-token> \
@@ -161,13 +164,14 @@ docker compose run --rm worker reviewphin tenant add \
 
 ```bash
 pnpm cli tenant add \
+  --platform gitlab \
   --base-url https://gitlab.example.com \
   --project-id 123 \
   --api-token <your-gitlab-token> \
   --webhook-secret <your-webhook-secret>
 ```
 
-To assign a specific model profile at registration time, add `--model-profile <name>`. See [Model providers](./docs/model-providers.md) for profile setup.
+`--platform` currently defaults to `gitlab`, so the flag is optional. To assign a specific model profile at registration time, add `--model-profile <name>`. See [Model providers](./docs/model-providers.md) for profile setup.
 
 ### 4. Add the webhook in GitLab
 
@@ -175,11 +179,13 @@ In the project's **Settings → Webhooks**:
 
 | Field        | Value                                           |
 | ------------ | ----------------------------------------------- |
-| URL          | `https://your-host/webhooks/gitlab/note`        |
+| URL          | `https://your-host/webhooks/gitlab`             |
 | Secret token | the same value you passed as `--webhook-secret` |
 | Trigger      | **Note events** only                            |
 
-Save, then use the **Test** button (select *Note events*) to verify ReviewPhin receives the delivery and returns `200`.
+`/webhooks/gitlab/note` is still accepted as a backward-compatible legacy alias, but `/webhooks/gitlab` is the canonical route for new setups.
+
+Save, then use the **Test** button (select *Note events*) to verify ReviewPhin receives the delivery and returns `202 Accepted`.
 
 ### 5. Verify the tenant is registered
 
@@ -191,7 +197,7 @@ docker compose run --rm worker reviewphin tenant list
 pnpm cli tenant list
 ```
 
-See [CLI reference](./docs/CLI.md) for all tenant and model-profile commands.
+The JSON output includes each tenant's `id`, `key`, and `platform`. See [CLI reference](./docs/CLI.md) for all tenant and model-profile commands.
 
 ---
 
@@ -205,9 +211,9 @@ Post a merge request comment that mentions the bot:
 @reviewphin review this
 ```
 
-ReviewPhin queues a job, hydrates the merge request, and creates or updates bot-owned discussion threads for each finding plus a summary note at the top of the discussion list.
+ReviewPhin queues a job, hydrates the code review, and creates or updates bot-owned discussion threads for each finding plus a summary note at the top of the discussion list.
 
-On first run this is a **full review** covering all changed files. On subsequent runs for the same merge request it is an **incremental re-review** focused on files changed since the last run.
+On first run this is a **full review** covering all changed files. On subsequent runs for the same code review it is an **incremental re-review** focused on files changed since the last run.
 
 ### Follow-up conversations
 
@@ -228,15 +234,15 @@ To store a durable note in the project memory (written to the `ReviewPhin memory
 
 Other triggers: `remember`, `going forward`, `team policy`, `always prefer`, `please prefer`.
 
-### Override the model for one MR
+### Override the model for one code review
 
-Add a directive in the merge request **description** (not a comment):
+Add a directive in the code review **description** (the merge request description in GitLab, not a comment):
 
 ```
 /reviewphin-profile byok-gpt4
 ```
 
-This selects a named model profile for every review run on that MR. To read more about named model profiles, read [about model profile management through CLI](./docs/CLI.md#model-profile-commands)
+This selects a named model profile for every review run on that code review. To read more about named model profiles, read [about model profile management through CLI](./docs/CLI.md#model-profile-commands)
 
 ---
 
@@ -244,7 +250,7 @@ This selects a named model profile for every review run on that MR. To read more
 
 1. A developer mentions the bot in a GitLab merge request comment (`@reviewphin review this`).
 2. ReviewPhin receives the GitLab Note Hook webhook, validates the signature, and queues a job.
-3. The **Router** hydrates the merge request: it checks out the exact commit, fetches diffs, notes, and any project instruction files.
+3. The **Router** hydrates the code review: it checks out the exact commit, fetches diffs, notes, and any project instruction files.
 4. The **Reviewer** (a two-agent pipeline) analyses the changes and produces structured findings with severity, category, optional line anchors, and inline code suggestions.
 5. The **Chatter** handles follow-up replies, conversational questions, and durable project memory updates.
 6. Findings are reconciled back into GitLab as bot-owned discussions. Obsolete threads are resolved; the summary note is updated.
@@ -319,7 +325,8 @@ For custom storage adapters see [Storage providers](./docs/storage-providers.md)
 
 ## Routes
 
-| Method | Path                    | Description                               |
-| ------ | ----------------------- | ----------------------------------------- |
-| `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}` |
-| `POST` | `/webhooks/gitlab/note` | GitLab Note Hook receiver                 |
+| Method | Path                    | Description                                                       |
+| ------ | ----------------------- | ----------------------------------------------------------------- |
+| `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}`                         |
+| `POST` | `/webhooks/<platform>`  | Platform webhook receiver. GitLab currently uses `/webhooks/gitlab` |
+| `POST` | `/webhooks/gitlab/note` | Deprecated GitLab compatibility alias                             |

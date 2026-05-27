@@ -1,20 +1,12 @@
 import type { Logger } from "pino";
 
-import { isBotUser } from "../gitlab/bot-user.js";
-import {
-  appendSuggestion,
-  buildDiffPosition,
-  renderSuggestionMarkdown,
-} from "../gitlab/positions.js";
-import { GitLabApiError, type GitLabClient } from "../gitlab/client.js";
-import type {
-  GitLabDiscussion,
-  GitLabDiffPosition,
-  GitLabDraftNote,
-  GitLabNote,
-  HydratedMergeRequestContext,
-} from "../gitlab/types.js";
 import type { StorageHelpers } from "../storage/storage-helpers.js";
+import type { IPlatform } from "../platforms/IPlatform.js";
+import type {
+  PlatformReviewComment,
+  PlatformReviewDiscussionAdapter,
+  PlatformReviewThread,
+} from "../platforms/review-adapter.js";
 import type {
   DiscussionMappingRecord,
   ReviewFindingStatus,
@@ -31,21 +23,27 @@ import {
   findLatestReviewSummaryNote,
   isReviewSummaryNoteBody,
 } from "../review/summary.js";
+import {
+  renderReviewFindingBody,
+  stripReviewThreadMarker,
+} from "../review/discussion-format.js";
 import type {
   PriorDisposition,
   ProviderThreadContext,
   ReviewAnchor,
   ReviewFinding,
   ReviewResult,
+  ReviewSummaryContext,
 } from "../review/types.js";
 
 interface KnownThread {
   threadId: string;
   discussionId: string;
-  discussion: GitLabDiscussion;
+  discussion: PlatformReviewThread;
   mapping: DiscussionMappingRecord | null;
-  latestBotNote: GitLabNote | null;
+  latestBotNote: PlatformReviewComment | null;
   anchor: ReviewAnchor | null;
+  resolvable: boolean;
   resolved: boolean;
   title: string;
   body: string;
@@ -71,19 +69,19 @@ interface DiscussionReconcilerOptions {
 }
 
 interface PendingDraftThread {
+  id: string;
   body: string;
   draftMarker: string;
-  draftNoteId: number;
   finding: ReviewFinding;
   fingerprint: string;
   identityKey: string;
-  position: GitLabDiffPosition | null;
+  positionJson: string | null;
 }
 
 interface PublishedDraftThreadMatch {
-  discussion: GitLabDiscussion;
+  discussion: PlatformReviewThread;
   pending: PendingDraftThread;
-  rootNote: GitLabNote;
+  rootNote: PlatformReviewComment;
 }
 
 type ThreadReconcileAction =
@@ -103,16 +101,17 @@ export class DiscussionReconciler {
   }
 
   public async reconcile(input: {
+    platform: IPlatform;
     tenant: TenantRecord;
-    context: HydratedMergeRequestContext;
+    context: ReviewSummaryContext;
     mappings: DiscussionMappingRecord[];
     interactionRunId: string;
     reviewResult: ReviewResult;
-    client: GitLabClient;
+    discussionAdapter: PlatformReviewDiscussionAdapter;
   }): Promise<ReconcileSummary> {
+    const discussions = await input.discussionAdapter.listThreads();
     const knownThreads = buildKnownThreads({
-      tenant: input.tenant,
-      discussions: input.context.discussions,
+      discussions,
       mappings: input.mappings,
     });
 
@@ -141,7 +140,7 @@ export class DiscussionReconciler {
     );
     const projectedActiveFindings = await this.projectActiveFindings({
       tenant: input.tenant,
-      mergeRequestIid: input.context.mergeRequest.iid,
+      codeReviewId: input.context.codeReview.id,
       reviewResult: input.reviewResult,
       threadById,
       referencedThreadIds,
@@ -163,7 +162,7 @@ export class DiscussionReconciler {
           const action = await this.applyFindingToExistingThread({
             tenant: input.tenant,
             context: input.context,
-            client: input.client,
+            discussionAdapter: input.discussionAdapter,
             interactionRunId: input.interactionRunId,
             thread: matchedThread,
             finding,
@@ -177,7 +176,7 @@ export class DiscussionReconciler {
           await this.createPendingDraftThread({
             tenant: input.tenant,
             context: input.context,
-            client: input.client,
+            discussionAdapter: input.discussionAdapter,
             interactionRunId: input.interactionRunId,
             finding,
           }),
@@ -187,8 +186,8 @@ export class DiscussionReconciler {
     } catch (error) {
       await this.cleanupPendingDraftThreads({
         tenant: input.tenant,
-        mergeRequestIid: input.context.mergeRequest.iid,
-        client: input.client,
+        codeReviewId: input.context.codeReview.id,
+        discussionAdapter: input.discussionAdapter,
         pendingDraftThreads,
       });
       throw error;
@@ -198,7 +197,7 @@ export class DiscussionReconciler {
       await this.publishPendingDraftThreads({
         tenant: input.tenant,
         context: input.context,
-        client: input.client,
+        discussionAdapter: input.discussionAdapter,
         interactionRunId: input.interactionRunId,
         pendingDraftThreads,
       });
@@ -216,12 +215,20 @@ export class DiscussionReconciler {
 
       if (disposition.action === "resolve") {
         if (!thread.resolved) {
-          await input.client.resolveDiscussion(
-            input.tenant.projectId,
-            input.context.mergeRequest.iid,
-            thread.discussionId,
-            true,
-          );
+          if (thread.resolvable) {
+            await input.discussionAdapter.setThreadResolved(
+              thread.discussionId,
+              true,
+            );
+          } else {
+            this.logSkippedThreadResolutionChange({
+              tenant: input.tenant,
+              codeReviewId: input.context.codeReview.id,
+              interactionRunId: input.interactionRunId,
+              thread,
+              resolved: true,
+            });
+          }
         }
 
         await this.persistThreadState({
@@ -229,7 +236,7 @@ export class DiscussionReconciler {
           context: input.context,
           interactionRunId: input.interactionRunId,
           thread,
-          note: thread.latestBotNote ?? thread.discussion.notes[0] ?? null,
+          note: thread.latestBotNote ?? thread.discussion.comments[0] ?? null,
           identityKey:
             thread.mapping?.identityKey ??
             createFindingIdentityKey({
@@ -259,15 +266,14 @@ export class DiscussionReconciler {
           body: thread.body,
           severity: thread.mapping?.severity ?? "medium",
           category: thread.mapping?.category ?? "correctness",
-          position: thread.discussion.notes[0]?.position ?? null,
-          discussionStatus: "resolved",
+          positionJson: thread.discussion.comments[0]?.positionJson ?? null,
+          discussionStatus:
+            thread.resolved || thread.resolvable ? "resolved" : "open",
           findingStatus: disposition.resolution ?? "resolved",
         });
         summary.resolved += 1;
       } else if (disposition.action === "reply" && disposition.replyBody) {
-        const note = await input.client.replyToDiscussion(
-          input.tenant.projectId,
-          input.context.mergeRequest.iid,
+        const note = await input.discussionAdapter.replyToThread(
           thread.discussionId,
           disposition.replyBody,
         );
@@ -306,8 +312,10 @@ export class DiscussionReconciler {
           body: disposition.replyBody,
           severity: thread.mapping?.severity ?? "medium",
           category: thread.mapping?.category ?? "correctness",
-          position:
-            note.position ?? thread.discussion.notes[0]?.position ?? null,
+          positionJson:
+            note.positionJson ??
+            thread.discussion.comments[0]?.positionJson ??
+            null,
           discussionStatus: thread.resolved ? "resolved" : "open",
           findingStatus: thread.resolved ? "resolved" : "open",
         });
@@ -320,14 +328,14 @@ export class DiscussionReconciler {
 
   private async applyFindingToExistingThread(input: {
     tenant: TenantRecord;
-    context: HydratedMergeRequestContext;
-    client: GitLabClient;
+    context: ReviewSummaryContext;
+    discussionAdapter: PlatformReviewDiscussionAdapter;
     interactionRunId: string;
     thread: KnownThread;
     finding: ReviewFinding;
     disposition: PriorDisposition | undefined;
   }): Promise<ThreadReconcileAction> {
-    const body = renderFindingBody(input.finding);
+    const body = renderReviewFindingBody(input.finding);
     const identityKey = createFindingIdentityKey({
       title: input.finding.title,
       category: input.finding.category,
@@ -359,7 +367,7 @@ export class DiscussionReconciler {
         thread: input.thread,
         note:
           input.thread.latestBotNote ??
-          input.thread.discussion.notes[0] ??
+          input.thread.discussion.comments[0] ??
           null,
         identityKey,
         fingerprint,
@@ -367,7 +375,7 @@ export class DiscussionReconciler {
         body,
         severity: input.finding.severity,
         category: input.finding.category,
-        position: input.thread.discussion.notes[0]?.position ?? null,
+        positionJson: input.thread.discussion.comments[0]?.positionJson ?? null,
         discussionStatus: "open",
         findingStatus: "open",
       });
@@ -375,18 +383,26 @@ export class DiscussionReconciler {
     }
 
     if (shouldReply) {
+      let discussionStatus: "open" | "resolved" = "open";
       if (input.thread.resolved) {
-        await input.client.resolveDiscussion(
-          input.tenant.projectId,
-          input.context.mergeRequest.iid,
-          input.thread.discussionId,
-          false,
-        );
+        if (input.thread.resolvable) {
+          await input.discussionAdapter.setThreadResolved(
+            input.thread.discussionId,
+            false,
+          );
+        } else {
+          discussionStatus = "resolved";
+          this.logSkippedThreadResolutionChange({
+            tenant: input.tenant,
+            codeReviewId: input.context.codeReview.id,
+            interactionRunId: input.interactionRunId,
+            thread: input.thread,
+            resolved: false,
+          });
+        }
       }
 
-      const note = await input.client.replyToDiscussion(
-        input.tenant.projectId,
-        input.context.mergeRequest.iid,
+      const note = await input.discussionAdapter.replyToThread(
         input.thread.discussionId,
         input.disposition?.replyBody ?? body,
       );
@@ -402,9 +418,11 @@ export class DiscussionReconciler {
         body: input.disposition?.replyBody ?? body,
         severity: input.finding.severity,
         category: input.finding.category,
-        position:
-          note.position ?? input.thread.discussion.notes[0]?.position ?? null,
-        discussionStatus: "open",
+        positionJson:
+          note.positionJson ??
+          input.thread.discussion.comments[0]?.positionJson ??
+          null,
+        discussionStatus,
         findingStatus: "open",
       });
       return "replied";
@@ -417,9 +435,7 @@ export class DiscussionReconciler {
       );
     }
 
-    const updatedNote = await input.client.updateDiscussionNote(
-      input.tenant.projectId,
-      input.context.mergeRequest.iid,
+    const updatedNote = await input.discussionAdapter.updateComment(
       input.thread.discussionId,
       latestBotNote.id,
       body,
@@ -436,9 +452,9 @@ export class DiscussionReconciler {
       body,
       severity: input.finding.severity,
       category: input.finding.category,
-      position:
-        updatedNote.position ??
-        input.thread.discussion.notes[0]?.position ??
+      positionJson:
+        updatedNote.positionJson ??
+        input.thread.discussion.comments[0]?.positionJson ??
         null,
       discussionStatus: "open",
       findingStatus: "open",
@@ -448,12 +464,12 @@ export class DiscussionReconciler {
 
   private async createPendingDraftThread(input: {
     tenant: TenantRecord;
-    context: HydratedMergeRequestContext;
-    client: GitLabClient;
+    context: ReviewSummaryContext;
+    discussionAdapter: PlatformReviewDiscussionAdapter;
     interactionRunId: string;
     finding: ReviewFinding;
   }): Promise<PendingDraftThread> {
-    const body = renderFindingBody(input.finding);
+    const body = renderReviewFindingBody(input.finding);
     const draftMarker = createId("draftthread");
     const identityKey = createFindingIdentityKey({
       title: input.finding.title,
@@ -468,122 +484,44 @@ export class DiscussionReconciler {
       body,
       suggestionReplacement: input.finding.suggestion?.replacement,
     });
-    const position = input.finding.anchor
-      ? buildDiffPosition(
-          input.finding.anchor,
-          input.context.changes,
-          input.context.latestVersion,
-        )
-      : null;
-    const createdDraft = await this.createDraftDiscussion({
-      client: input.client,
-      projectId: input.tenant.projectId,
-      mergeRequestIid: input.context.mergeRequest.iid,
-      interactionRunId: input.interactionRunId,
+    const createdDraft = await input.discussionAdapter.createDraftThread({
       finding: input.finding,
-      noteBody: appendDraftThreadMarker(body, draftMarker),
-      position,
+      body,
+      draftMarker,
     });
     return {
+      id: createdDraft.id,
       draftMarker,
-      draftNoteId: createdDraft.draftNote.id,
       finding: input.finding,
       body,
       identityKey,
       fingerprint,
-      position: createdDraft.position,
+      positionJson: createdDraft.positionJson,
     };
-  }
-
-  private async createDraftDiscussion(input: {
-    client: GitLabClient;
-    projectId: number;
-    mergeRequestIid: number;
-    interactionRunId: string;
-    finding: ReviewFinding;
-    noteBody: string;
-    position: GitLabDiffPosition | null;
-  }): Promise<{
-    draftNote: GitLabDraftNote;
-    position: GitLabDiffPosition | null;
-  }> {
-    if (!input.position) {
-      return {
-        draftNote: await input.client.createMergeRequestDraftNote(
-          input.projectId,
-          input.mergeRequestIid,
-          {
-            note: input.noteBody,
-          },
-        ),
-        position: null,
-      };
-    }
-
-    try {
-      return {
-        draftNote: await input.client.createMergeRequestDraftNote(
-          input.projectId,
-          input.mergeRequestIid,
-          {
-            note: input.noteBody,
-            position: input.position,
-          },
-        ),
-        position: input.position,
-      };
-    } catch (error) {
-      if (!isInvalidDiffPositionError(error)) {
-        throw error;
-      }
-
-      this.logger.warn(
-        {
-          err: error,
-          interactionRunId: input.interactionRunId,
-          projectId: input.projectId,
-          mergeRequestIid: input.mergeRequestIid,
-          findingTitle: input.finding.title,
-          anchor: input.finding.anchor,
-          position: input.position,
-        },
-        "GitLab rejected diff note position; retrying as an overview thread",
-      );
-
-      return {
-        draftNote: await input.client.createMergeRequestDraftNote(
-          input.projectId,
-          input.mergeRequestIid,
-          {
-            note: input.noteBody,
-          },
-        ),
-        position: null,
-      };
-    }
   }
 
   private async publishPendingDraftThreads(input: {
     tenant: TenantRecord;
-    context: HydratedMergeRequestContext;
-    client: GitLabClient;
+    context: ReviewSummaryContext;
+    discussionAdapter: PlatformReviewDiscussionAdapter;
     interactionRunId: string;
     pendingDraftThreads: PendingDraftThread[];
   }): Promise<void> {
+    const existingThreadIds = new Set(
+      (await input.discussionAdapter.listThreads()).map((discussion) => discussion.id),
+    );
     try {
-      await input.client.bulkPublishMergeRequestDraftNotes(
-        input.tenant.projectId,
-        input.context.mergeRequest.iid,
-      );
-      const matched = await this.findPublishedDraftThreadMatches({
-        tenant: input.tenant,
-        mergeRequestIid: input.context.mergeRequest.iid,
-        client: input.client,
-        pendingDraftThreads: input.pendingDraftThreads,
-        existingDiscussionIds: new Set(
-          input.context.discussions.map((discussion) => discussion.id),
-        ),
-      });
+      await input.discussionAdapter.publishDraftThreads();
+      const matched = (
+        await input.discussionAdapter.matchPublishedDraftThreads({
+          pendingDraftThreads: input.pendingDraftThreads,
+          existingThreadIds,
+        })
+      ).map((match) => ({
+        discussion: match.thread,
+        pending: match.pending,
+        rootNote: match.rootComment,
+      }));
       await this.persistPublishedDraftThreadMatches({
         tenant: input.tenant,
         context: input.context,
@@ -594,9 +532,10 @@ export class DiscussionReconciler {
       const recovered = await this.tryRecoverPublishedDraftThreads({
         tenant: input.tenant,
         context: input.context,
-        client: input.client,
+        discussionAdapter: input.discussionAdapter,
         interactionRunId: input.interactionRunId,
         pendingDraftThreads: input.pendingDraftThreads,
+        existingThreadIds,
       });
       if (recovered) {
         return;
@@ -604,8 +543,8 @@ export class DiscussionReconciler {
 
       await this.cleanupPendingDraftThreads({
         tenant: input.tenant,
-        mergeRequestIid: input.context.mergeRequest.iid,
-        client: input.client,
+        codeReviewId: input.context.codeReview.id,
+        discussionAdapter: input.discussionAdapter,
         pendingDraftThreads: input.pendingDraftThreads,
       });
       throw error;
@@ -614,22 +553,24 @@ export class DiscussionReconciler {
 
   private async tryRecoverPublishedDraftThreads(input: {
     tenant: TenantRecord;
-    context: HydratedMergeRequestContext;
-    client: GitLabClient;
+    context: ReviewSummaryContext;
+    discussionAdapter: PlatformReviewDiscussionAdapter;
     interactionRunId: string;
     pendingDraftThreads: PendingDraftThread[];
+    existingThreadIds: ReadonlySet<string>;
   }): Promise<boolean> {
     try {
-      const matches = await this.findPublishedDraftThreadMatches({
-        tenant: input.tenant,
-        mergeRequestIid: input.context.mergeRequest.iid,
-        client: input.client,
-        pendingDraftThreads: input.pendingDraftThreads,
-        existingDiscussionIds: new Set(
-          input.context.discussions.map((discussion) => discussion.id),
-        ),
-        maxAttempts: 1,
-      });
+      const matches = (
+        await input.discussionAdapter.matchPublishedDraftThreads({
+          pendingDraftThreads: input.pendingDraftThreads,
+          existingThreadIds: input.existingThreadIds,
+          maxAttempts: 1,
+        })
+      ).map((match) => ({
+        discussion: match.thread,
+        pending: match.pending,
+        rootNote: match.rootComment,
+      }));
       await this.persistPublishedDraftThreadMatches({
         tenant: input.tenant,
         context: input.context,
@@ -644,19 +585,15 @@ export class DiscussionReconciler {
 
   private async cleanupPendingDraftThreads(input: {
     tenant: TenantRecord;
-    mergeRequestIid: number;
-    client: GitLabClient;
+    codeReviewId: number;
+    discussionAdapter: PlatformReviewDiscussionAdapter;
     pendingDraftThreads: PendingDraftThread[];
   }): Promise<void> {
     for (const pending of input.pendingDraftThreads) {
       try {
-        await input.client.deleteMergeRequestDraftNote(
-          input.tenant.projectId,
-          input.mergeRequestIid,
-          pending.draftNoteId,
-        );
+        await input.discussionAdapter.deleteDraftThread(pending.id);
       } catch (error) {
-        if (error instanceof GitLabApiError && error.status === 404) {
+        if (isNotFoundError(error)) {
           continue;
         }
 
@@ -664,56 +601,18 @@ export class DiscussionReconciler {
           {
             err: error,
             tenantId: input.tenant.id,
-            mergeRequestIid: input.mergeRequestIid,
-            draftNoteId: pending.draftNoteId,
+            codeReviewId: input.codeReviewId,
+            draftNoteId: pending.id,
           },
-          "failed to clean up GitLab draft note",
+          "failed to clean up platform draft thread",
         );
       }
     }
   }
 
-  private async findPublishedDraftThreadMatches(input: {
-    tenant: TenantRecord;
-    mergeRequestIid: number;
-    client: GitLabClient;
-    pendingDraftThreads: PendingDraftThread[];
-    existingDiscussionIds: ReadonlySet<string>;
-    maxAttempts?: number | undefined;
-  }): Promise<PublishedDraftThreadMatch[]> {
-    const maxAttempts = input.maxAttempts ?? 3;
-    let lastError: Error | null = null;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const liveDiscussions = await input.client.listMergeRequestDiscussions(
-        input.tenant.projectId,
-        input.mergeRequestIid,
-        { noCache: true },
-      );
-      const matched = matchPublishedDraftThreads({
-        tenant: input.tenant,
-        pendingDraftThreads: input.pendingDraftThreads,
-        discussions: liveDiscussions,
-        existingDiscussionIds: input.existingDiscussionIds,
-      });
-      if (matched.length === input.pendingDraftThreads.length) {
-        return matched;
-      }
-
-      lastError = new Error(
-        `Expected ${input.pendingDraftThreads.length} published draft discussions but matched ${matched.length}`,
-      );
-      if (attempt < maxAttempts) {
-        await sleep(250 * attempt);
-      }
-    }
-
-    throw lastError ?? new Error("Failed to match published draft threads");
-  }
-
   private async persistPublishedDraftThreadMatches(input: {
     tenant: TenantRecord;
-    context: HydratedMergeRequestContext;
+    context: ReviewSummaryContext;
     interactionRunId: string;
     matches: PublishedDraftThreadMatch[];
   }): Promise<void> {
@@ -734,48 +633,42 @@ export class DiscussionReconciler {
 
   private async persistCreatedThread(input: {
     tenant: TenantRecord;
-    context: HydratedMergeRequestContext;
+    context: ReviewSummaryContext;
     interactionRunId: string;
     finding: ReviewFinding;
     identityKey: string;
     fingerprint: string;
     body: string;
-    discussion: GitLabDiscussion;
-    note: GitLabNote;
+    discussion: PlatformReviewThread;
+    note: PlatformReviewComment;
   }): Promise<void> {
     await this.storage.upsertDiscussionMapping({
       tenantId: input.tenant.id,
-      projectId: input.tenant.projectId,
-      mergeRequestIid: input.context.mergeRequest.iid,
+      codeReviewId: input.context.codeReview.id,
       identityKey: input.identityKey,
       findingFingerprint: input.fingerprint,
       title: input.finding.title,
       severity: input.finding.severity,
       category: input.finding.category,
       body: input.body,
-      gitlabDiscussionId: input.discussion.id,
-      gitlabNoteId: input.note.id,
+      platformThreadId: input.discussion.id,
+      platformCommentId: Number(input.note.id),
       anchorJson: input.finding.anchor
         ? JSON.stringify(input.finding.anchor)
         : null,
-      positionJson: input.note.position
-        ? JSON.stringify(input.note.position)
-        : null,
-      botDiscussion: isBotUser(
-        input.discussion.notes[0]?.author ?? input.note.author,
-        input.tenant,
-      ),
-      botNote: isBotUser(input.note.author, input.tenant),
-      noteAuthorId: input.note.author.id,
-      noteAuthorUsername: input.note.author.username,
-      status: input.discussion.notes.some((note) => note.resolved === true)
+      positionJson: input.note.positionJson,
+      botDiscussion: input.discussion.comments[0]?.isBot ?? input.note.isBot,
+      botNote: input.note.isBot,
+      noteAuthorId: parseNumericId(input.note.authorId),
+      noteAuthorUsername: input.note.authorUsername,
+      status: input.discussion.comments.some((note) => note.resolved === true)
         ? "resolved"
         : "open",
       lastInteractionRunId: input.interactionRunId,
     });
     await this.storage.updateReviewFindingStatus(
       input.tenant.id,
-      input.context.mergeRequest.iid,
+      input.context.codeReview.id,
       input.identityKey,
       "open",
     );
@@ -783,21 +676,21 @@ export class DiscussionReconciler {
 
   private async persistThreadState(input: {
     tenant: TenantRecord;
-    context: HydratedMergeRequestContext;
+    context: ReviewSummaryContext;
     interactionRunId: string;
     thread: KnownThread;
-    note: GitLabNote | null;
+    note: PlatformReviewComment | null;
     identityKey: string;
     fingerprint: string;
     title: string;
     body: string;
     severity: string;
     category: string;
-    position: GitLabDiffPosition | null;
+    positionJson: string | null;
     discussionStatus: "open" | "resolved";
     findingStatus: ReviewFindingStatus;
   }): Promise<void> {
-    const rootNote = input.thread.discussion.notes[0];
+    const rootNote = input.thread.discussion.comments[0];
     if (!rootNote || !input.note) {
       return;
     }
@@ -805,31 +698,30 @@ export class DiscussionReconciler {
     await this.storage.upsertDiscussionMapping({
       ...(input.thread.mapping ? { id: input.thread.mapping.id } : {}),
       tenantId: input.tenant.id,
-      projectId: input.tenant.projectId,
-      mergeRequestIid: input.context.mergeRequest.iid,
+      codeReviewId: input.context.codeReview.id,
       identityKey: input.identityKey,
       findingFingerprint: input.fingerprint,
       title: input.title,
       severity: input.severity,
       category: input.category,
       body: input.body,
-      gitlabDiscussionId: input.thread.discussionId,
-      gitlabNoteId: input.note.id,
+      platformThreadId: input.thread.discussionId,
+      platformCommentId: Number(input.note.id),
       anchorJson: input.thread.anchor
         ? JSON.stringify(input.thread.anchor)
         : null,
-      positionJson: input.position ? JSON.stringify(input.position) : null,
-      botDiscussion: isBotUser(rootNote.author, input.tenant),
-      botNote: isBotUser(input.note.author, input.tenant),
-      noteAuthorId: input.note.author.id,
-      noteAuthorUsername: input.note.author.username,
+      positionJson: input.positionJson,
+      botDiscussion: rootNote.isBot,
+      botNote: input.note.isBot,
+      noteAuthorId: parseNumericId(input.note.authorId),
+      noteAuthorUsername: input.note.authorUsername,
       status: input.discussionStatus,
       lastInteractionRunId: input.interactionRunId,
     });
 
     const updatedFinding = await this.storage.updateReviewFindingStatus(
       input.tenant.id,
-      input.context.mergeRequest.iid,
+      input.context.codeReview.id,
       input.identityKey,
       input.findingStatus,
     );
@@ -840,7 +732,7 @@ export class DiscussionReconciler {
       this.logger.warn(
         {
           tenantId: input.tenant.id,
-          mergeRequestIid: input.context.mergeRequest.iid,
+          codeReviewId: input.context.codeReview.id,
           identityKey: input.identityKey,
           findingStatus: input.findingStatus,
         },
@@ -850,51 +742,65 @@ export class DiscussionReconciler {
 
     await this.retireReplacedFinding({
       tenantId: input.tenant.id,
-      mergeRequestIid: input.context.mergeRequest.iid,
+      codeReviewId: input.context.codeReview.id,
       previousIdentityKey: input.thread.mapping?.identityKey ?? null,
       nextIdentityKey: input.identityKey,
     });
   }
 
-  private async syncSummaryNote(input: {
+  private logSkippedThreadResolutionChange(input: {
     tenant: TenantRecord;
-    context: HydratedMergeRequestContext;
+    codeReviewId: number;
+    interactionRunId: string;
+    thread: KnownThread;
+    resolved: boolean;
+  }): void {
+    this.logger.warn(
+      {
+        tenantId: input.tenant.id,
+        codeReviewId: input.codeReviewId,
+        interactionRunId: input.interactionRunId,
+        threadId: input.thread.threadId,
+        discussionId: input.thread.discussionId,
+        requestedResolved: input.resolved,
+      },
+      "skipping discussion resolution change because the thread is not resolvable",
+    );
+  }
+
+  private async syncSummaryNote(input: {
+    platform: IPlatform;
+    tenant: TenantRecord;
+    context: ReviewSummaryContext;
     interactionRunId: string;
     reviewResult: ReviewResult;
-    client: GitLabClient;
+    discussionAdapter: PlatformReviewDiscussionAdapter;
     activeFindings: SummaryFinding[];
   }): Promise<ReconcileSummary["summaryNoteAction"]> {
     const body = buildReviewSummaryNote({
+      platform: input.platform,
+      tenant: input.tenant,
       context: input.context,
       reviewResult: input.reviewResult,
       activeFindings: input.activeFindings,
     });
     const existingNote = findLatestReviewSummaryNote(
-      input.context.notes,
-      (note) => isBotUser(note.author, input.tenant),
+      await input.discussionAdapter.listSummaryNotes(),
+      (note) => note.isBot,
     );
 
     if (existingNote) {
-      await input.client.updateMergeRequestNote(
-        input.tenant.projectId,
-        input.context.mergeRequest.iid,
-        existingNote.id,
-        body,
-      );
+      await input.discussionAdapter.updateSummaryNote(existingNote.id, body);
       return "updated";
     }
 
-    await input.client.createMergeRequestNote(
-      input.tenant.projectId,
-      input.context.mergeRequest.iid,
-      body,
-    );
+    await input.discussionAdapter.createSummaryNote(body);
     return "created";
   }
 
   private async retireReplacedFinding(input: {
     tenantId: string;
-    mergeRequestIid: number;
+    codeReviewId: number;
     previousIdentityKey: string | null;
     nextIdentityKey: string;
   }): Promise<void> {
@@ -907,7 +813,7 @@ export class DiscussionReconciler {
 
     const retiredFinding = await this.storage.updateReviewFindingStatus(
       input.tenantId,
-      input.mergeRequestIid,
+      input.codeReviewId,
       input.previousIdentityKey,
       "resolved",
     );
@@ -915,7 +821,7 @@ export class DiscussionReconciler {
       this.logger.warn(
         {
           tenantId: input.tenantId,
-          mergeRequestIid: input.mergeRequestIid,
+          codeReviewId: input.codeReviewId,
           previousIdentityKey: input.previousIdentityKey,
           nextIdentityKey: input.nextIdentityKey,
           findingStatus: "resolved",
@@ -927,7 +833,7 @@ export class DiscussionReconciler {
 
   private async projectActiveFindings(input: {
     tenant: TenantRecord;
-    mergeRequestIid: number;
+    codeReviewId: number;
     reviewResult: ReviewResult;
     threadById: ReadonlyMap<string, KnownThread>;
     referencedThreadIds: ReadonlySet<string>;
@@ -935,7 +841,7 @@ export class DiscussionReconciler {
     const activeFindings = new Map<string, SummaryFinding>();
     const persistedFindings = await this.storage.listLatestReviewFindings(
       input.tenant.id,
-      input.mergeRequestIid,
+      input.codeReviewId,
     );
 
     for (const finding of persistedFindings) {
@@ -1013,54 +919,45 @@ type SummaryFinding = Pick<
   "title" | "body" | "severity" | "category"
 >;
 
-function isInvalidDiffPositionError(error: unknown): error is GitLabApiError {
-  return (
-    error instanceof GitLabApiError &&
-    error.status === 400 &&
-    /\bline_code\b|\bvalid line code\b|\bposition\b[\s\S]*\b(?:invalid|incomplete)\b/i.test(
-      error.responseBody,
-    )
-  );
-}
-
 export function buildProviderThreads(input: {
-  tenant: TenantRecord;
-  discussions: GitLabDiscussion[];
+  discussions: PlatformReviewThread[];
   mappings: DiscussionMappingRecord[];
 }): ProviderThreadContext[] {
   return buildKnownThreads(input).map((thread) => ({
     threadId: thread.threadId,
     discussionId: thread.discussionId,
-    noteId: thread.latestBotNote?.id ?? thread.discussion.notes[0]?.id ?? 0,
+    noteId: Number(
+      thread.latestBotNote?.id ?? thread.discussion.comments[0]?.id ?? 0,
+    ),
     title: thread.title,
     body: thread.body,
     anchor: thread.anchor,
+    resolvable: thread.resolvable,
     resolved: thread.resolved,
     humanReplies: thread.humanReplies,
   }));
 }
 
 function buildKnownThreads(input: {
-  tenant: TenantRecord;
-  discussions: GitLabDiscussion[];
+  discussions: PlatformReviewThread[];
   mappings: DiscussionMappingRecord[];
 }): KnownThread[] {
   const mappingByDiscussionId = new Map(
     input.mappings.map(
-      (mapping) => [mapping.gitlabDiscussionId, mapping] as const,
+      (mapping) => [mapping.platformThreadId, mapping] as const,
     ),
   );
 
   const threads: KnownThread[] = [];
 
   for (const discussion of input.discussions) {
-    const rootNote = discussion.notes[0];
+    const rootNote = discussion.comments[0];
     if (!rootNote) {
       continue;
     }
 
     const mapping = mappingByDiscussionId.get(discussion.id) ?? null;
-    const botOwnedDiscussion = isBotUser(rootNote.author, input.tenant);
+    const botOwnedDiscussion = rootNote.isBot;
     if (!botOwnedDiscussion) {
       continue;
     }
@@ -1069,24 +966,24 @@ function buildKnownThreads(input: {
     }
 
     const latestBotNote =
-      discussion.notes
+      discussion.comments
         .slice()
         .reverse()
-        .find((note) => isBotUser(note.author, input.tenant)) ?? null;
+        .find((note) => note.isBot) ?? null;
 
     const anchor = mapping?.anchorJson
       ? (JSON.parse(mapping.anchorJson) as ReviewAnchor)
-      : extractAnchorFromNote(latestBotNote ?? rootNote);
+      : (latestBotNote?.anchor ?? rootNote.anchor);
 
     const threadTitle = stripTitleDecoration(
       mapping?.title ??
         firstNonEmptyLine(
-          stripDraftThreadMarker(
+          stripReviewThreadMarker(
             mapping?.body ?? latestBotNote?.body ?? rootNote.body,
           ),
         ),
     );
-    const threadBody = stripDraftThreadMarker(
+    const threadBody = stripReviewThreadMarker(
       mapping?.body ?? latestBotNote?.body ?? rootNote.body,
     );
 
@@ -1097,77 +994,21 @@ function buildKnownThreads(input: {
       mapping,
       latestBotNote,
       anchor,
-      resolved: discussion.notes.some((note) => note.resolved === true),
+      resolvable: discussion.resolvable,
+      resolved: discussion.comments.some((note) => note.resolved === true),
       title: threadTitle || "Review finding",
       body: threadBody,
-      humanReplies: discussion.notes
-        .filter((note) => !isBotUser(note.author, input.tenant))
+      humanReplies: discussion.comments
+        .filter((note) => !note.isBot)
         .map((note) => ({
-          noteId: note.id,
-          authorUsername: note.author.username,
+          noteId: Number(note.id),
+          authorUsername: note.authorUsername ?? "(unknown)",
           body: note.body,
         })),
     });
   }
 
   return threads;
-}
-
-function renderFindingBody(finding: ReviewFinding): string {
-  const suggestion = renderSuggestionMarkdown(
-    finding.suggestion,
-    finding.anchor ?? null,
-  );
-  return appendSuggestion(
-    `**${finding.title.trim()}**\n\n${finding.body.trim()}`,
-    suggestion,
-  );
-}
-
-const DRAFT_THREAD_MARKER_PREFIX = "gitlab-agentic-review-thread:";
-const DRAFT_THREAD_MARKER_PATTERN =
-  /\n*\[comment\]: <> \(gitlab-agentic-review-thread:([^\s)]+)\)\s*/g;
-
-function appendDraftThreadMarker(body: string, marker: string): string {
-  return `${body}\n\n[comment]: <> (${DRAFT_THREAD_MARKER_PREFIX}${marker})`;
-}
-
-function extractDraftThreadMarker(body: string): string | null {
-  const match =
-    /\[comment\]: <> \(gitlab-agentic-review-thread:([^\s)]+)\)/.exec(body);
-  return match?.[1] ?? null;
-}
-
-function stripDraftThreadMarker(body: string): string {
-  return body.replace(DRAFT_THREAD_MARKER_PATTERN, "\n").trim();
-}
-
-function extractAnchorFromNote(note: GitLabNote | null): ReviewAnchor | null {
-  if (!note?.position) {
-    return null;
-  }
-
-  if (note.position.new_line) {
-    return {
-      path: note.position.new_path,
-      oldPath: note.position.old_path,
-      startLine: note.position.new_line,
-      endLine: note.position.new_line,
-      side: "new",
-    };
-  }
-
-  if (note.position.old_line) {
-    return {
-      path: note.position.old_path,
-      oldPath: note.position.old_path,
-      startLine: note.position.old_line,
-      endLine: note.position.old_line,
-      side: "old",
-    };
-  }
-
-  return null;
 }
 
 function stripTitleDecoration(value: string): string {
@@ -1191,146 +1032,20 @@ function collectReferencedThreadIds(
   return referencedThreadIds;
 }
 
-function matchPublishedDraftThreads(input: {
-  tenant: TenantRecord;
-  pendingDraftThreads: ReadonlyArray<PendingDraftThread>;
-  discussions: ReadonlyArray<GitLabDiscussion>;
-  existingDiscussionIds: ReadonlySet<string>;
-}): PublishedDraftThreadMatch[] {
-  const availableDiscussions = input.discussions
-    .filter((discussion) => {
-      if (input.existingDiscussionIds.has(discussion.id)) {
-        return false;
-      }
-
-      const rootNote = discussion.notes[0];
-      if (!rootNote) {
-        return false;
-      }
-
-      if (!isBotUser(rootNote.author, input.tenant)) {
-        return false;
-      }
-
-      return !isReviewSummaryNoteBody(rootNote.body);
-    })
-    .sort(compareDiscussionsByRecency);
-  const usedDiscussionIds = new Set<string>();
-  const matched: PublishedDraftThreadMatch[] = [];
-  const sortedPendingDraftThreads = [...input.pendingDraftThreads].sort(
-    (left, right) =>
-      Number(right.position !== null) - Number(left.position !== null) ||
-      right.draftNoteId - left.draftNoteId,
-  );
-
-  for (const pending of sortedPendingDraftThreads) {
-    const markerMatches = availableDiscussions.filter((discussion) => {
-      if (usedDiscussionIds.has(discussion.id)) {
-        return false;
-      }
-
-      const rootNote = discussion.notes[0];
-      if (!rootNote) {
-        return false;
-      }
-
-      const rootDraftMarker = extractDraftThreadMarker(rootNote.body);
-      return rootDraftMarker === pending.draftMarker;
-    });
-    const fallbackMatches = markerMatches.length
-      ? []
-      : availableDiscussions.filter((discussion) => {
-          if (usedDiscussionIds.has(discussion.id)) {
-            return false;
-          }
-
-          const rootNote = discussion.notes[0];
-          if (!rootNote) {
-            return false;
-          }
-
-          const rootDraftMarker = extractDraftThreadMarker(rootNote.body);
-          if (rootDraftMarker !== null) {
-            return false;
-          }
-
-          return (
-            stripDraftThreadMarker(rootNote.body) === pending.body &&
-            positionsMatch(rootNote.position ?? null, pending.position)
-          );
-        });
-    const candidates =
-      markerMatches.length > 0 ? markerMatches : fallbackMatches;
-    if (candidates.length === 0) {
-      continue;
-    }
-
-    const discussion = candidates[0];
-    const rootNote = discussion?.notes[0];
-    if (!discussion || !rootNote) {
-      continue;
-    }
-
-    usedDiscussionIds.add(discussion.id);
-    matched.push({
-      pending,
-      discussion,
-      rootNote,
-    });
+function parseNumericId(value: string | null): number | null {
+  if (value === null || value.trim().length === 0) {
+    return null;
   }
 
-  return matched;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-function compareDiscussionsByRecency(
-  left: GitLabDiscussion,
-  right: GitLabDiscussion,
-): number {
-  const leftRootNote = left.notes[0];
-  const rightRootNote = right.notes[0];
-  const leftCreatedAt = leftRootNote
-    ? Date.parse(leftRootNote.created_at)
-    : Number.NaN;
-  const rightCreatedAt = rightRootNote
-    ? Date.parse(rightRootNote.created_at)
-    : Number.NaN;
-
-  if (Number.isFinite(leftCreatedAt) && Number.isFinite(rightCreatedAt)) {
-    const createdAtDelta = rightCreatedAt - leftCreatedAt;
-    if (createdAtDelta !== 0) {
-      return createdAtDelta;
-    }
-  }
-
-  return (rightRootNote?.id ?? 0) - (leftRootNote?.id ?? 0);
-}
-
-function positionsMatch(
-  actual: GitLabNote["position"] | null,
-  expected: GitLabDiffPosition | null,
-): boolean {
-  if (!actual && !expected) {
-    return true;
-  }
-
-  if (!actual || !expected) {
-    return false;
-  }
-
+function isNotFoundError(error: unknown): boolean {
   return (
-    actual.base_sha === expected.base_sha &&
-    actual.start_sha === expected.start_sha &&
-    actual.head_sha === expected.head_sha &&
-    actual.position_type === expected.position_type &&
-    actual.old_path === expected.old_path &&
-    actual.new_path === expected.new_path &&
-    actual.old_line === expected.old_line &&
-    actual.new_line === expected.new_line
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    (error as { status?: unknown }).status === 404
   );
-}
-
-async function sleep(durationMs: number): Promise<void> {
-  await new Promise((resolve) => {
-    setTimeout(resolve, durationMs);
-  });
 }

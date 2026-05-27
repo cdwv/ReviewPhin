@@ -1,6 +1,6 @@
 # Summary follow-up trigger
 
-The latest user instruction came from a reply to the bot's merge request summary note.
+The latest user instruction came from a reply to the bot's code review summary note.
 
 - Treat it as broad review guidance or durable preference input, not as a request to edit a specific finding thread.
 - Do not force a `priorThreadId`, `replyInDiscussion`, or `priorDispositions` entry unless other evidence independently requires one.

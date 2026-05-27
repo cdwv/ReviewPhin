@@ -7,8 +7,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../src/cli.js";
 import { createLogger } from "../src/logger.js";
+import GitLabPlatform from "../src/platforms/gitlab/platform.js";
+import { getGitLabTenantConfig } from "../src/platforms/gitlab/tenant-config.js";
 import { StoreBackedStorage, listAll } from "../src/storage/storage-helpers.js";
 import { TenantRegistry } from "../src/tenants/tenant-registry.js";
+import { createGitLabTenantInput } from "./helpers/gitlab-tenant.js";
 import { openSqliteTestStorage } from "./helpers/storage.js";
 
 function createPayload() {
@@ -17,6 +20,7 @@ function createPayload() {
     project: {
       id: 123,
       web_url: "https://gitlab.example.com/group/project",
+      path_with_namespace: "group/project",
     },
     repository: {
       homepage: "https://gitlab.example.com/group/project",
@@ -68,14 +72,14 @@ describe("tenant CLI", () => {
 
     const storage = await openSqliteTestStorage(databasePath);
 
-    const tenants = await listAll(storage.stores.tenants, {
-      order: [
-        { field: "baseUrl", direction: "asc" },
-        { field: "projectId", direction: "asc" },
-      ],
-    });
+    const tenants = await listAll(storage.stores.tenants);
     expect(tenants).toHaveLength(1);
-    expect(tenants[0]).toMatchObject({
+    const persistedTenant = tenants[0];
+    expect(persistedTenant).toBeDefined();
+    expect(persistedTenant).toMatchObject({
+      key: "https://gitlab.example.com::123",
+    });
+    expect(getGitLabTenantConfig(persistedTenant!)).toMatchObject({
       baseUrl: "https://gitlab.example.com",
       projectId: 123,
       botUserId: 999,
@@ -85,13 +89,20 @@ describe("tenant CLI", () => {
     const registry = new TenantRegistry({
       storage,
     });
+    const platform = new GitLabPlatform(createLogger("silent"));
 
     const tenant = await registry.resolveWebhookTenant(
+      platform,
       createPayload(),
-      "replace-me",
+      {
+        headers: {
+          "x-gitlab-token": "replace-me",
+        },
+        body: createPayload(),
+      },
     );
     expect(tenant).not.toBeNull();
-    expect(tenant?.projectId).toBe(123);
+    expect(tenant?.key).toBe("https://gitlab.example.com::123");
 
     const logger = createLogger("silent");
     logger.info({ tenantId: tenant?.id }, "tenant resolved");
@@ -365,10 +376,8 @@ describe("tenant CLI", () => {
       "set-profile",
       "--sqlite-database-path",
       databasePath,
-      "--base-url",
-      "https://gitlab.example.com",
-      "--project-id",
-      "123",
+      "--key",
+      "https://gitlab.example.com::123",
       "--model-profile",
       "native-gpt5",
     ]);
@@ -378,10 +387,7 @@ describe("tenant CLI", () => {
     expect(
       (
         await listAll(storage.stores.tenants, {
-          order: [
-            { field: "baseUrl", direction: "asc" },
-            { field: "projectId", direction: "asc" },
-          ],
+          order: [{ field: "key", direction: "asc" }],
         })
       )[0]?.modelProfileName,
     ).toBe("native-gpt5");
@@ -391,19 +397,14 @@ describe("tenant CLI", () => {
       "clear-profile",
       "--sqlite-database-path",
       databasePath,
-      "--base-url",
-      "https://gitlab.example.com",
-      "--project-id",
-      "123",
+      "--key",
+      "https://gitlab.example.com::123",
     ]);
     expect(clearExitCode).toBe(0);
     expect(
       (
         await listAll(storage.stores.tenants, {
-          order: [
-            { field: "baseUrl", direction: "asc" },
-            { field: "projectId", direction: "asc" },
-          ],
+          order: [{ field: "key", direction: "asc" }],
         })
       )[0]?.modelProfileName,
     ).toBeNull();
@@ -470,16 +471,17 @@ describe("tenant CLI", () => {
     expect(
       (
         await listAll(storage.stores.tenants, {
-          order: [
-            { field: "baseUrl", direction: "asc" },
-            { field: "projectId", direction: "asc" },
-          ],
+          order: [{ field: "key", direction: "asc" }],
         })
       )[0],
     ).toMatchObject({
+      modelProfileName: "native-gpt5",
+    });
+    const persistedTenant = (await listAll(storage.stores.tenants))[0];
+    expect(persistedTenant).toBeDefined();
+    expect(getGitLabTenantConfig(persistedTenant!)).toMatchObject({
       apiToken: "glpat-rotated",
       webhookSecret: "replace-me-2",
-      modelProfileName: "native-gpt5",
     });
   });
 
@@ -523,17 +525,15 @@ describe("tenant CLI", () => {
       "--sqlite-database-path",
       databasePath,
       "--yes",
-      "--base-url",
-      "https://gitlab.example.com/gitlab",
-      "--project-id",
-      "123",
+      "--key",
+      "https://gitlab.example.com/gitlab::123",
     ]);
 
     stdoutSpy.mockRestore();
 
     expect(exitCode).toBe(0);
     expect(stdout).toContain("Tenant removed.");
-    expect(stdout).toContain("https://gitlab.example.com/gitlab :: 123");
+    expect(stdout).toContain("key: https://gitlab.example.com/gitlab::123");
 
     const storage = await openSqliteTestStorage(databasePath);
     expect(await listAll(storage.stores.tenants)).toEqual([]);
@@ -541,10 +541,17 @@ describe("tenant CLI", () => {
     const registry = new TenantRegistry({
       storage,
     });
+    const platform = new GitLabPlatform(createLogger("silent"));
 
     const tenant = await registry.resolveWebhookTenant(
+      platform,
       createPayload(),
-      "replace-me",
+      {
+        headers: {
+          "x-gitlab-token": "replace-me",
+        },
+        body: createPayload(),
+      },
     );
     expect(tenant).toBeNull();
   });
@@ -588,17 +595,15 @@ describe("tenant CLI", () => {
       "remove",
       "--sqlite-database-path",
       databasePath,
-      "--base-url",
-      "https://gitlab.example.com",
-      "--project-id",
-      "123",
+      "--key",
+      "https://gitlab.example.com::123",
     ]);
 
     stdoutSpy.mockRestore();
 
     expect(exitCode).toBe(1);
     expect(stdout).toContain(
-      "Preparing to remove tenant https://gitlab.example.com :: 123",
+      "Preparing to remove tenant https://gitlab.example.com::123 (gitlab)",
     );
     expect(stdout).toContain(
       "Tenant removal requires confirmation. Re-run with --yes in non-interactive mode.",
@@ -613,29 +618,27 @@ describe("tenant CLI", () => {
 
     const storage = await openSqliteTestStorage(databasePath);
 
-    const tenant = await storage.upsertTenant({
-      baseUrl: "https://gitlab.example.com/gitlab",
-      projectId: 123,
-      apiToken: "glpat-xxxxxxxx",
-      webhookSecret: "replace-me",
-      botUserId: 999,
-      botUsername: "review-bot",
-    });
+    const tenant = await storage.upsertTenant(
+      createGitLabTenantInput({
+        baseUrl: "https://gitlab.example.com/gitlab",
+        apiToken: "glpat-xxxxxxxx",
+        webhookSecret: "replace-me",
+      }),
+    );
     const reviewJob = await storage.createOrGetInteractionJob({
       tenantId: tenant.id,
       dedupeKey: "tenant-remove-job",
-      projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 55,
       headSha: "abc123",
       payloadJson: "{}",
     });
-    await storage.createMergeRequestSnapshot({
+    await storage.createCodeReviewSnapshot({
       interactionJobId: reviewJob.job.id,
       tenantId: tenant.id,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       headSha: "abc123",
-      mergeRequestJson: "{}",
+      codeReviewJson: "{}",
       versionsJson: "[]",
       changesJson: "[]",
       notesJson: "[]",
@@ -692,16 +695,15 @@ describe("tenant CLI", () => {
     });
     await storage.upsertDiscussionMapping({
       tenantId: tenant.id,
-      projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       identityKey: "tenant-remove-finding",
       findingFingerprint: "tenant-remove-fingerprint",
       title: "Tenant remove finding",
       severity: "medium",
       category: "correctness",
       body: "This data should be removed",
-      gitlabDiscussionId: "discussion-1",
-      gitlabNoteId: 501,
+      platformThreadId: "discussion-1",
+      platformCommentId: 501,
       anchorJson: null,
       positionJson: null,
       botDiscussion: true,
@@ -746,10 +748,8 @@ describe("tenant CLI", () => {
       "--run-log-dir",
       runLogDir,
       "--yes",
-      "--base-url",
-      "https://gitlab.example.com/gitlab",
-      "--project-id",
-      "123",
+      "--key",
+      "https://gitlab.example.com/gitlab::123",
     ]);
 
     stdoutSpy.mockRestore();
@@ -763,7 +763,7 @@ describe("tenant CLI", () => {
 
     expect(await listAll(storage.stores.tenants)).toEqual([]);
     expect(countRows(databasePath, "interaction_jobs")).toBe(0);
-    expect(countRows(databasePath, "merge_request_snapshots")).toBe(0);
+    expect(countRows(databasePath, "code_review_snapshots")).toBe(0);
     expect(countRows(databasePath, "interaction_runs")).toBe(0);
     expect(countRows(databasePath, "review_findings")).toBe(0);
     expect(countRows(databasePath, "interaction_run_metrics")).toBe(0);
@@ -784,19 +784,17 @@ describe("tenant CLI", () => {
 
     const seedStorage = await openSqliteTestStorage(databasePath);
 
-    const tenant = await seedStorage.upsertTenant({
-      baseUrl: "https://gitlab.example.com/gitlab",
-      projectId: 123,
-      apiToken: "glpat-xxxxxxxx",
-      webhookSecret: "replace-me",
-      botUserId: 999,
-      botUsername: "review-bot",
-    });
+    const tenant = await seedStorage.upsertTenant(
+      createGitLabTenantInput({
+        baseUrl: "https://gitlab.example.com/gitlab",
+        apiToken: "glpat-xxxxxxxx",
+        webhookSecret: "replace-me",
+      }),
+    );
     const initialJob = await seedStorage.createOrGetInteractionJob({
       tenantId: tenant.id,
       dedupeKey: "tenant-remove-job-initial",
-      projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 55,
       headSha: "abc123",
       payloadJson: "{}",
@@ -830,20 +828,17 @@ describe("tenant CLI", () => {
       .spyOn(StoreBackedStorage.prototype, "getTenantDeletionSummary")
       .mockImplementationOnce(async function (
         this: StoreBackedStorage,
-        baseUrl: string,
-        projectId: number,
+        tenantKey: string,
       ) {
         const summary = await originalGetTenantDeletionSummary.call(
           this,
-          baseUrl,
-          projectId,
+          tenantKey,
         );
         const lateStorage = await openSqliteTestStorage(databasePath);
         const lateJob = await lateStorage.createOrGetInteractionJob({
           tenantId: tenant.id,
           dedupeKey: "tenant-remove-job-late",
-          projectId: tenant.projectId,
-          mergeRequestIid: 8,
+          codeReviewId: 8,
           noteId: 56,
           headSha: "def456",
           payloadJson: "{}",
@@ -885,10 +880,8 @@ describe("tenant CLI", () => {
       "--run-log-dir",
       runLogDir,
       "--yes",
-      "--base-url",
-      "https://gitlab.example.com/gitlab",
-      "--project-id",
-      "123",
+      "--key",
+      "https://gitlab.example.com/gitlab::123",
     ]);
 
     summarySpy.mockRestore();

@@ -3,13 +3,22 @@ import { describe, expect, it } from "vitest";
 import {
   buildReviewTriggerContext,
   classifyWebhookTrigger,
-} from "../src/review/trigger.js";
+} from "../src/platforms/gitlab/trigger.js";
 import { REVIEW_SUMMARY_NOTE_MARKER } from "../src/review/summary.js";
 import { createInteractionJobDedupeKey } from "../src/utils/ids.js";
 
 const tenant = {
   id: "tenant_1",
   key: "https://gitlab.example.com::123",
+  platform: "gitlab",
+  platformConfigJson: JSON.stringify({
+    baseUrl: "https://gitlab.example.com",
+    projectId: 123,
+    apiToken: "token",
+    webhookSecret: "secret",
+    botUserId: 999,
+    botUsername: "review-bot",
+  }),
   baseUrl: "https://gitlab.example.com",
   projectId: 123,
   apiToken: "token",
@@ -53,7 +62,7 @@ describe("review trigger helpers", () => {
         },
       },
       client: {
-        listMergeRequestDiscussions: async () => [
+        listCodeReviewDiscussions: async () => [
           {
             id: "disc_1",
             individual_note: false,
@@ -123,14 +132,14 @@ describe("review trigger helpers", () => {
         },
       },
       client: {
-        listMergeRequestDiscussions: async () => [],
+        listCodeReviewDiscussions: async () => [],
       },
     });
 
     expect(trigger).toEqual({
       kind: "direct-mention",
       note: {
-        kind: "merge-request-note",
+        kind: "code-review-note",
         noteId: 56,
       },
     });
@@ -167,7 +176,7 @@ describe("review trigger helpers", () => {
         },
       },
       client: {
-        listMergeRequestDiscussions: async () => [
+        listCodeReviewDiscussions: async () => [
           {
             id: "disc_summary",
             individual_note: false,
@@ -238,7 +247,7 @@ describe("review trigger helpers", () => {
         },
       },
       client: {
-        listMergeRequestDiscussions: async () => {
+        listCodeReviewDiscussions: async () => {
           throw new Error("draft notes should not fetch discussions");
         },
       },
@@ -278,7 +287,7 @@ describe("review trigger helpers", () => {
         },
       },
       client: {
-        listMergeRequestDiscussions: async () => [],
+        listCodeReviewDiscussions: async () => [],
       },
     });
 
@@ -294,6 +303,7 @@ describe("review trigger helpers", () => {
         title: "Old finding",
         body: "**Old finding**\n\nOriginal wording",
         anchor: null,
+        resolvable: true,
         resolved: false,
         humanReplies: [
           {
@@ -414,7 +424,7 @@ describe("review trigger helpers", () => {
       instruction: "please make the descriptions more human",
       targetThreadId: null,
       responseTarget: {
-        kind: "merge-request-note",
+        kind: "code-review-note",
         noteId: 56,
       },
     });
@@ -554,14 +564,14 @@ describe("review trigger helpers", () => {
     const createKey = createInteractionJobDedupeKey({
       baseUrl: tenant.baseUrl,
       projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 55,
     });
 
     const firstUpdateKey = createInteractionJobDedupeKey({
       baseUrl: tenant.baseUrl,
       projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 55,
       noteAction: "update",
       noteUpdatedAt: "2026-04-27T11:00:00.000Z",
@@ -571,7 +581,7 @@ describe("review trigger helpers", () => {
     const secondUpdateKey = createInteractionJobDedupeKey({
       baseUrl: tenant.baseUrl,
       projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 55,
       noteAction: "update",
       noteUpdatedAt: "2026-04-27T11:05:00.000Z",
@@ -584,7 +594,7 @@ describe("review trigger helpers", () => {
       createInteractionJobDedupeKey({
         baseUrl: tenant.baseUrl,
         projectId: tenant.projectId,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         noteId: 55,
         noteAction: "update",
         noteUpdatedAt: "2026-04-27T11:00:00.000Z",
@@ -598,7 +608,7 @@ describe("review trigger helpers", () => {
       createInteractionJobDedupeKey({
         baseUrl: tenant.baseUrl,
         projectId: tenant.projectId,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         noteId: 55,
         noteAction: "update",
         noteBody: "@review-bot first edit",
@@ -607,7 +617,7 @@ describe("review trigger helpers", () => {
       createInteractionJobDedupeKey({
         baseUrl: tenant.baseUrl,
         projectId: tenant.projectId,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         noteId: 55,
         noteAction: "update",
         noteBody: "@review-bot second edit",

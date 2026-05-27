@@ -8,7 +8,7 @@ interface AppLogEntry {
   data?: Record<string, unknown> | undefined;
 }
 
-export interface GitLabHttpLogEntry {
+export interface PlatformHttpLogEntry {
   timestamp: string;
   requestId: string;
   phase: "request" | "response" | "error";
@@ -49,8 +49,8 @@ export class InteractionRunArtifacts {
     return join(this.runDirectory, "app.ndjson");
   }
 
-  public get gitLabHttpLogPath(): string {
-    return join(this.runDirectory, "gitlab-http.ndjson");
+  public get platformHttpLogPath(): string {
+    return join(this.runDirectory, "platform-http.ndjson");
   }
 
   public get copilotSessionLogPath(): string {
@@ -69,8 +69,8 @@ export class InteractionRunArtifacts {
     await this.appendNdjson(this.appLogPath, entry);
   }
 
-  public async appendGitLabHttpLog(entry: GitLabHttpLogEntry): Promise<void> {
-    await this.appendNdjson(this.gitLabHttpLogPath, entry);
+  public async appendPlatformHttpLog(entry: PlatformHttpLogEntry): Promise<void> {
+    await this.appendNdjson(this.platformHttpLogPath, entry);
   }
 
   public async writeJsonArtifact(

@@ -4,7 +4,7 @@ import type {
   InteractionJob,
   InteractionRun,
   InteractionRunMetrics,
-  MergeRequestSnapshot,
+  CodeReviewSnapshot,
   ModelProfile,
   ReviewFinding,
   Tenant,
@@ -24,9 +24,9 @@ import {
   type InteractionRunMetricsRecord,
   type InteractionRunOrderField,
   type InteractionRunRecord,
-  type MergeRequestSnapshotFilters,
-  type MergeRequestSnapshotOrderField,
-  type MergeRequestSnapshotRecord,
+  type CodeReviewSnapshotFilters,
+  type CodeReviewSnapshotOrderField,
+  type CodeReviewSnapshotRecord,
   type ModelProfileFilters,
   type ModelProfileOrderField,
   type ModelProfileRecord,
@@ -42,7 +42,7 @@ import type {
   StorageProvider,
   StorageProviderFactoryContext,
 } from "../../provider.js";
-import ensureCTDsExist from "./migrations/v000.js";
+import ensureV001CtdsExist from "./migrations/v001.js";
 import { createFlotiqEntityStore } from "./store.js";
 import type { Logger } from "pino";
 
@@ -99,15 +99,15 @@ export function createStorageProvider(
       return "flotiq";
     },
     getSupportedStorageContract() {
-      return "storage-v000";
+      return "storage-v001";
     },
     async open() {
       // Flotiq is accessed over HTTP, so there is no persistent connection.
     },
     async prepare() {
       const migrations = {
-        v000: () =>
-          ensureCTDsExist(
+        v001: () =>
+          ensureV001CtdsExist(
             parsedEnv.FLOTIQ_API_KEY,
             logger?.child({ component: "migrations" }),
           ),
@@ -211,16 +211,16 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
       emptyStringNullFields: ["lastError", "startedAt", "finishedAt"],
       relationFields: interactionJobRelationFields,
     }),
-    mergeRequestSnapshots: createFlotiqEntityStore<
-      MergeRequestSnapshotRecord,
-      MergeRequestSnapshotFilters,
-      MergeRequestSnapshotOrderField,
-      MergeRequestSnapshot,
-      MergeRequestSnapshot.FilterableFields
+    codeReviewSnapshots: createFlotiqEntityStore<
+      CodeReviewSnapshotRecord,
+      CodeReviewSnapshotFilters,
+      CodeReviewSnapshotOrderField,
+      CodeReviewSnapshot,
+      CodeReviewSnapshot.FilterableFields
     >({
-      logger: createStoreLogger("mergeRequestSnapshots"),
-      api: flotiqClient.content.merge_request_snapshot,
-      toRecord: mapMergeRequestSnapshotRecord,
+      logger: createStoreLogger("codeReviewSnapshots"),
+      api: flotiqClient.content.code_review_snapshot,
+      toRecord: mapCodeReviewSnapshotRecord,
       toRemote: mapIdentityEntity,
       emptyStringNullFields: ["projectMemoryJson"],
       relationFields: mergeRequestSnapshotRelationFields,
@@ -331,12 +331,8 @@ function mapTenantRecord(entity: Tenant): TenantRecord {
   return {
     id: readRequiredString(entity, "id"),
     key: readRequiredString(entity, "key"),
-    baseUrl: readRequiredString(entity, "baseUrl"),
-    projectId: readRequiredNumber(entity, "projectId"),
-    apiToken: readRequiredString(entity, "apiToken"),
-    webhookSecret: readRequiredString(entity, "webhookSecret"),
-    botUserId: readRequiredNumber(entity, "botUserId"),
-    botUsername: readRequiredString(entity, "botUsername"),
+    platform: readRequiredString(entity, "platform"),
+    platformConfigJson: readRequiredString(entity, "platformConfigJson"),
     modelProfileName: readNullableRelationId(entity, "modelProfileName"),
     createdAt: readInternalTimestamp(entity, "createdAt"),
     updatedAt: readInternalTimestamp(entity, "updatedAt"),
@@ -355,8 +351,11 @@ function mapInteractionJobRecord(entity: InteractionJob): InteractionJobRecord {
     id: readRequiredString(entity, "id"),
     tenantId: readRequiredRelationId(entity, "tenantId"),
     dedupeKey: readRequiredString(entity, "dedupeKey"),
-    projectId: readRequiredNumber(entity, "projectId"),
-    mergeRequestIid: readRequiredNumber(entity, "mergeRequestIid"),
+    codeReviewId: readRequiredNumberWithFallback(
+      entity,
+      "codeReviewId",
+      "codeReviewId",
+    ),
     noteId: readRequiredNumber(entity, "noteId"),
     headSha: readRequiredString(entity, "headSha"),
     status: readRequiredString(
@@ -372,16 +371,20 @@ function mapInteractionJobRecord(entity: InteractionJob): InteractionJobRecord {
   };
 }
 
-function mapMergeRequestSnapshotRecord(
-  entity: MergeRequestSnapshot,
-): MergeRequestSnapshotRecord {
+function mapCodeReviewSnapshotRecord(
+  entity: CodeReviewSnapshot,
+): CodeReviewSnapshotRecord {
   return {
     id: readRequiredString(entity, "id"),
     interactionJobId: readRequiredRelationId(entity, "interactionJobId"),
     tenantId: readRequiredRelationId(entity, "tenantId"),
-    mergeRequestIid: readRequiredNumber(entity, "mergeRequestIid"),
+    codeReviewId: readRequiredNumberWithFallback(
+      entity,
+      "codeReviewId",
+      "mergeRequestIid",
+    ),
     headSha: readRequiredString(entity, "headSha"),
-    mergeRequestJson: readRequiredString(entity, "mergeRequestJson"),
+    codeReviewJson: readRequiredString(entity, "codeReviewJson"),
     versionsJson: readRequiredString(entity, "versionsJson"),
     changesJson: readRequiredString(entity, "changesJson"),
     notesJson: readRequiredString(entity, "notesJson"),
@@ -484,16 +487,27 @@ function mapDiscussionMappingRecord(
   return {
     id: readRequiredString(entity, "id"),
     tenantId: readRequiredRelationId(entity, "tenantId"),
-    projectId: readRequiredNumber(entity, "projectId"),
-    mergeRequestIid: readRequiredNumber(entity, "mergeRequestIid"),
+    codeReviewId: readRequiredNumberWithFallback(
+      entity,
+      "codeReviewId",
+      "mergeRequestIid",
+    ),
     identityKey: readRequiredString(entity, "identityKey"),
     findingFingerprint: readRequiredString(entity, "findingFingerprint"),
     title: readRequiredString(entity, "title"),
     severity: readRequiredString(entity, "severity"),
     category: readRequiredString(entity, "category"),
     body: readRequiredString(entity, "body"),
-    gitlabDiscussionId: readRequiredString(entity, "gitlabDiscussionId"),
-    gitlabNoteId: readRequiredNumber(entity, "gitlabNoteId"),
+    platformThreadId: readRequiredStringWithFallback(
+      entity,
+      "platformThreadId",
+      "gitlabDiscussionId",
+    ),
+    platformCommentId: readRequiredNumberWithFallback(
+      entity,
+      "platformCommentId",
+      "gitlabNoteId",
+    ),
     anchorJson: readNullableString(entity, "anchorJson"),
     positionJson: readNullableString(entity, "positionJson"),
     botDiscussion: readBoolean(entity, "botDiscussion") ?? false,
@@ -541,6 +555,21 @@ function readRequiredString(entity: object, key: string): string {
   return value;
 }
 
+function readRequiredStringWithFallback(
+  entity: object,
+  key: string,
+  legacyKey: string,
+): string {
+  const value = readString(entity, key) ?? readString(entity, legacyKey);
+  if (value === null) {
+    throw new Error(
+      `Flotiq object is missing required string field ${key} or legacy field ${legacyKey}`,
+    );
+  }
+
+  return value;
+}
+
 function readRequiredRelationId(entity: object, key: string): string {
   const value = readNullableRelationId(entity, key);
   if (value === null) {
@@ -576,6 +605,21 @@ function readRequiredNumber(entity: object, key: string): number {
   const value = readNumber(entity, key);
   if (value === null) {
     throw new Error(`Flotiq object is missing required number field ${key}`);
+  }
+
+  return value;
+}
+
+function readRequiredNumberWithFallback(
+  entity: object,
+  key: string,
+  legacyKey: string,
+): number {
+  const value = readNumber(entity, key) ?? readNumber(entity, legacyKey);
+  if (value === null) {
+    throw new Error(
+      `Flotiq object is missing required number field ${key} or legacy field ${legacyKey}`,
+    );
   }
 
   return value;

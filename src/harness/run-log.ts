@@ -28,7 +28,7 @@ export interface HarnessRunLogRecord {
     interactionJobId: string | null;
     parentInteractionRunId: string | null;
     tenantId: string | null;
-    mergeRequestIid: number | null;
+    codeReviewId: number | null;
     workspacePath: string | null;
     requestedModel: string | null;
     sessionKind: string | null;
@@ -58,7 +58,7 @@ export class HarnessRunLog {
         interactionJobId: options.logging?.interactionJobId ?? null,
         parentInteractionRunId: options.logging?.parentInteractionRunId ?? null,
         tenantId: options.logging?.tenantId ?? null,
-        mergeRequestIid: options.metadata?.mergeRequestIid ?? null,
+        codeReviewId: options.metadata?.codeReviewId ?? null,
         workspacePath: options.metadata?.workspacePath ?? null,
         requestedModel: options.model ?? null,
         sessionKind: options.logging?.sessionKind ?? null,

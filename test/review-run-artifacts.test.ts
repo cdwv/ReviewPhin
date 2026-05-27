@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { InteractionRunArtifacts } from "../src/review/run-artifacts.js";
 
 describe("InteractionRunArtifacts", () => {
-  it("writes app and GitLab HTTP logs into the review run directory", async () => {
+  it("writes app and platform HTTP logs into the review run directory", async () => {
     const rootDir = await mkdtemp(
       join(tmpdir(), "gitlab-agentic-webhooks-run-logs-"),
     );
@@ -22,7 +22,7 @@ describe("InteractionRunArtifacts", () => {
         jobId: "job_123",
       },
     });
-    await artifacts.appendGitLabHttpLog({
+    await artifacts.appendPlatformHttpLog({
       timestamp: new Date().toISOString(),
       requestId: "req_1",
       phase: "response",
@@ -45,7 +45,7 @@ describe("InteractionRunArtifacts", () => {
       },
     });
     expect(
-      JSON.parse((await readFile(artifacts.gitLabHttpLogPath, "utf8")).trim()),
+      JSON.parse((await readFile(artifacts.platformHttpLogPath, "utf8")).trim()),
     ).toMatchObject({
       requestId: "req_1",
       status: 400,

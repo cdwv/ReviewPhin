@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { HarnessChatterRunner } from "../src/review/harness-chatter.js";
-import type { HarnessModelConfig } from "../src/harness/types.js";
+import type {
+  HarnessModelConfig,
+  HarnessTenantContext,
+} from "../src/harness/types.js";
 import type { ReviewContext } from "../src/review/types.js";
 
 describe("HarnessChatterRunner", () => {
@@ -17,6 +20,13 @@ describe("HarnessChatterRunner", () => {
             replies: [],
           }),
         },
+      },
+      parsed: {
+        memory: {
+          status: "written",
+          summary: "Saved a durable tone preference.",
+        },
+        replies: [],
       },
       events: [],
     }));
@@ -50,13 +60,7 @@ describe("HarnessChatterRunner", () => {
         },
       },
       {
-        tenant: {
-          id: "tenant_1",
-          baseUrl: "https://gitlab.example.com",
-          projectId: 1085,
-          apiToken: "token",
-          memoryEnabled: true,
-        },
+        tenant: createTenantRuntimeContext(),
       },
     );
 
@@ -76,6 +80,10 @@ describe("HarnessChatterRunner", () => {
         workingDirectory: "H:\\repo",
         tools: ["glob", "rg", "view", "add_memory_entry"],
         subagents: [],
+        responseFormat: expect.objectContaining({
+          schema: expect.anything(),
+          looksLike: expect.any(Function),
+        }),
       }),
     );
   });
@@ -89,6 +97,10 @@ describe("HarnessChatterRunner", () => {
             replies: [],
           }),
         },
+      },
+      parsed: {
+        memory: null,
+        replies: [],
       },
       events: [],
     }));
@@ -122,13 +134,7 @@ describe("HarnessChatterRunner", () => {
         },
       },
       {
-        tenant: {
-          id: "tenant_1",
-          baseUrl: "https://gitlab.example.com",
-          projectId: 1085,
-          apiToken: "token",
-          memoryEnabled: true,
-        },
+        tenant: createTenantRuntimeContext(),
       },
     );
 
@@ -146,33 +152,100 @@ describe("HarnessChatterRunner", () => {
         workingDirectory: "H:\\repo",
         tools: ["glob", "rg", "view"],
         metadata: {
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           workspacePath: "H:\\repo",
         },
+        responseFormat: expect.objectContaining({
+          schema: expect.anything(),
+          looksLike: expect.any(Function),
+        }),
       }),
     );
   });
 
-  it("rejects threaded replies that omit discussion ids", async () => {
+  it("uses the parsed shared-harness response payload for replies", async () => {
     const runner = new HarnessChatterRunner({
       modelConfig: createModelConfig(),
       harnessRuntime: {
         run: vi.fn(async () => ({
           response: {
             data: {
-              content: JSON.stringify({
-                memory: null,
-                replies: [
-                  {
-                    target: {
-                      kind: "discussion-reply",
-                      noteId: 55,
-                    },
-                    replyBody: "Here is the explanation.",
-                  },
-                ],
-              }),
+              content: "Good question first.\n\n{\"note\":\"ignored here\"}",
             },
+          },
+          parsed: {
+            memory: null,
+            replies: [
+              {
+                target: {
+                  kind: "summary-discussion-reply",
+                  noteId: 55,
+                  discussionId: "disc_summary",
+                },
+                replyBody: "The payload is still valid.",
+              },
+            ],
+          },
+          events: [],
+        })),
+      } as never,
+    });
+
+    const result = await runner.run(
+      {
+        attachments: [
+          {
+            type: "blob",
+            data: "AQID",
+            mimeType: "image/png",
+            displayName: "trigger-note-55-diagram.png",
+          },
+        ],
+        phase: "reply",
+        replyStyle: "direct-answer",
+        trigger: createTrigger(),
+        responseTargets: [createTrigger().responseTarget],
+        reviewContext: createReviewContext(),
+        projectMemory: {
+          enabled: true,
+          page: null,
+          entries: [],
+        },
+      },
+      {
+        tenant: createTenantRuntimeContext(),
+      },
+    );
+
+    expect(result).toEqual({
+      memory: null,
+      replies: [
+        {
+          target: {
+            kind: "summary-discussion-reply",
+            noteId: 55,
+            discussionId: "disc_summary",
+          },
+          replyBody: "The payload is still valid.",
+        },
+      ],
+    });
+  });
+
+  it("surfaces shared harness parse errors for malformed chatter output", async () => {
+    const runner = new HarnessChatterRunner({
+      modelConfig: createModelConfig(),
+      harnessRuntime: {
+        run: vi.fn(async () => ({
+          response: {
+            data: {
+              content: "Not valid structured output",
+            },
+          },
+          parseError: {
+            reason: "schema-mismatch",
+            message:
+              "Harness response contained JSON objects, but none matched the expected schema",
           },
           events: [],
         })),
@@ -202,16 +275,12 @@ describe("HarnessChatterRunner", () => {
           },
         },
         {
-          tenant: {
-            id: "tenant_1",
-            baseUrl: "https://gitlab.example.com",
-            projectId: 1085,
-            apiToken: "token",
-            memoryEnabled: true,
-          },
+          tenant: createTenantRuntimeContext(),
         },
       ),
-    ).rejects.toThrow(/discussionId is required for threaded reply targets/);
+    ).rejects.toThrow(
+      /Harness response contained JSON objects, but none matched the expected schema/,
+    );
   });
 });
 
@@ -225,6 +294,25 @@ function createModelConfig(): HarnessModelConfig {
     provider: undefined,
     providerBaseUrl: null,
     providerType: null,
+  };
+}
+
+function createTenantRuntimeContext(): HarnessTenantContext {
+  return {
+    id: "tenant_1",
+    memoryEnabled: true,
+    projectMemoryBackend: {
+      load: vi.fn(async () => ({
+        enabled: true,
+        page: null,
+        entries: [],
+      })),
+      saveEntries: vi.fn(async (entries) => ({
+        enabled: true,
+        page: null,
+        entries,
+      })),
+    },
   };
 }
 
@@ -263,20 +351,14 @@ function createReviewContext(): ReviewContext {
     ],
     attachmentIssues: [],
     workspacePath: "H:\\repo",
-    mergeRequest: {
-      id: 1,
-      iid: 7,
-      project_id: 1085,
+    codeReview: {
+      id: 7,
       title: "Add worker summary",
       description: "Description",
-      web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
-      source_branch: "feature",
-      target_branch: "main",
-      author: {
-        id: 42,
-        username: "developer",
-        name: "Dev User",
-      },
+      webUrl: "https://gitlab.example.com/group/project/-/merge_requests/7",
+      sourceBranch: "feature",
+      targetBranch: "main",
+      authorUsername: "developer",
     },
     changes: [],
     notes: [],

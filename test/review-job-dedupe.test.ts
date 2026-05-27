@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { GitLabNoteHookPayload } from "../src/gitlab/types.js";
+import type { GitLabNoteHookPayload } from "../src/platforms/gitlab/types.js";
 import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
 import type { CreateInteractionJobInput } from "../src/storage/contract/index.js";
@@ -10,6 +10,15 @@ import { tmpPath } from "./test-paths.js";
 const tenant = {
   id: "tenant_1",
   key: "https://gitlab.example.com::123",
+  platform: "gitlab",
+  platformConfigJson: JSON.stringify({
+    baseUrl: "https://gitlab.example.com",
+    projectId: 123,
+    apiToken: "token",
+    webhookSecret: "secret",
+    botUserId: 999,
+    botUsername: "review-bot",
+  }),
   baseUrl: "https://gitlab.example.com",
   projectId: 123,
   apiToken: "token",
@@ -28,6 +37,7 @@ describe("review job dedupe", () => {
       project: {
         id: 123,
         web_url: "https://gitlab.example.com/group/project",
+        path_with_namespace: "group/project",
       },
       repository: {
         homepage: "https://gitlab.example.com/group/project",
@@ -65,8 +75,7 @@ describe("review job dedupe", () => {
             id: "job_1",
             tenantId: tenant.id,
             dedupeKey: input.dedupeKey,
-            projectId: input.projectId,
-            mergeRequestIid: input.mergeRequestIid,
+            codeReviewId: input.codeReviewId,
             noteId: input.noteId,
             headSha: input.headSha,
             status: "queued" as const,
@@ -85,8 +94,6 @@ describe("review job dedupe", () => {
     const worker = new ReviewWorker({
       storage: storage as never,
       tenantRegistry: {} as never,
-      hydrator: {} as never,
-      workspaceMaterializer: {} as never,
       reviewProviderFactory: {} as never,
       chatterRunnerFactory: {} as never,
       reconciler: {} as never,
@@ -99,7 +106,7 @@ describe("review job dedupe", () => {
     await worker.createInteractionJobFromWebhook(payload, tenant, {
       kind: "direct-mention",
       note: {
-        kind: "merge-request-note",
+        kind: "code-review-note",
         noteId: 55,
       },
     });
@@ -109,7 +116,7 @@ describe("review job dedupe", () => {
         dedupeKey: createInteractionJobDedupeKey({
           baseUrl: tenant.baseUrl,
           projectId: tenant.projectId,
-          mergeRequestIid: 7,
+          codeReviewId: 7,
           noteId: 55,
           noteAction: "update",
           noteUpdatedAt: "2026-04-27T11:00:00.000Z",

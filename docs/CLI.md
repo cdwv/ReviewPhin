@@ -20,14 +20,15 @@ Both invocations accept the same flags.
 
 ## Tenant commands
 
-Tenants are (GitLab instance URL, project ID) pairs. One ReviewPhin instance can serve multiple tenants.
+Tenants belong to a code review platform. Today the only supported platform is GitLab, so a tenant is effectively a `(GitLab instance URL, project ID)` pair plus platform metadata.
 
 ### `tenant add`
 
-Register a new GitLab project as a tenant.
+Register a new tenant. Today GitLab is the only supported platform, so `--platform gitlab` is optional and defaults to GitLab.
 
 ```bash
 reviewphin tenant add \
+  --platform gitlab \
   --base-url https://gitlab.example.com \
   --project-id 123 \
   --api-token glpat-xxxxxxxx \
@@ -36,6 +37,7 @@ reviewphin tenant add \
 
 | Flag                        | Required | Description                                                                                                                            |
 | --------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `--platform`                | No       | Code review platform slug. Currently only `gitlab` is supported. Defaults to `gitlab`.                                                |
 | `--base-url`                | Yes      | GitLab instance root URL. May include a path prefix for proxied installs. Do not include `/api/v4`.                                    |
 | `--project-id`              | Yes      | Numeric GitLab project ID.                                                                                                             |
 | `--api-token`               | Yes      | Project, group, or personal access token with `api` scope.                                                                             |
@@ -56,6 +58,8 @@ Print all registered tenants.
 reviewphin tenant list
 ```
 
+The JSON output includes each tenant's `id`, `key`, `platform`, and `modelProfileName`.
+
 | Flag                        | Required | Description                  |
 | --------------------------- | -------- | ---------------------------- |
 | `--sqlite-database-path`    | No       | Override the SQLite path.    |
@@ -69,18 +73,19 @@ Assign an existing model profile to a tenant.
 
 ```bash
 reviewphin tenant set-profile \
-  --base-url https://gitlab.example.com \
-  --project-id 123 \
+  --key https://gitlab.example.com::123 \
   --model-profile byok-gpt4
 ```
 
-| Flag                        | Required | Description                    |
-| --------------------------- | -------- | ------------------------------ |
-| `--base-url`                | Yes      | GitLab instance root URL.      |
-| `--project-id`              | Yes      | Numeric project ID.            |
-| `--model-profile`           | Yes      | Name of the profile to assign. |
-| `--sqlite-database-path`    | No       | Override the SQLite path.      |
-| `--storage-provider-module` | No       | Override the storage module.   |
+| Flag                        | Required | Description                                     |
+| --------------------------- | -------- | ----------------------------------------------- |
+| `--tenant-id`               | Yes*     | Internal tenant ID (ULID).                      |
+| `--key`                     | Yes*     | Stable tenant key printed by `tenant list`.     |
+| `--model-profile`           | Yes      | Name of the profile to assign.                  |
+| `--sqlite-database-path`    | No       | Override the SQLite path.                       |
+| `--storage-provider-module` | No       | Override the storage module.                    |
+
+\* Provide either `--tenant-id` or `--key`.
 
 ---
 
@@ -90,16 +95,17 @@ Remove the model profile assignment from a tenant (falls back to the database de
 
 ```bash
 reviewphin tenant clear-profile \
-  --base-url https://gitlab.example.com \
-  --project-id 123
+  --key https://gitlab.example.com::123
 ```
 
-| Flag                        | Required | Description                  |
-| --------------------------- | -------- | ---------------------------- |
-| `--base-url`                | Yes      | GitLab instance root URL.    |
-| `--project-id`              | Yes      | Numeric project ID.          |
-| `--sqlite-database-path`    | No       | Override the SQLite path.    |
-| `--storage-provider-module` | No       | Override the storage module. |
+| Flag                        | Required | Description                                 |
+| --------------------------- | -------- | ------------------------------------------- |
+| `--tenant-id`               | Yes*     | Internal tenant ID (ULID).                  |
+| `--key`                     | Yes*     | Stable tenant key printed by `tenant list`. |
+| `--sqlite-database-path`    | No       | Override the SQLite path.                   |
+| `--storage-provider-module` | No       | Override the storage module.                |
+
+\* Provide either `--tenant-id` or `--key`.
 
 ---
 
@@ -109,20 +115,21 @@ Deregister a tenant and clean up its data. Prints a deletion summary (database r
 
 ```bash
 reviewphin tenant remove \
-  --base-url https://gitlab.example.com \
-  --project-id 123 \
+  --key https://gitlab.example.com::123 \
   --yes
 ```
 
 | Flag                        | Required | Description                                                                  |
 | --------------------------- | -------- | ---------------------------------------------------------------------------- |
-| `--base-url`                | Yes      | GitLab instance root URL.                                                    |
-| `--project-id`              | Yes      | Numeric project ID.                                                          |
+| `--tenant-id`               | Yes*     | Internal tenant ID (ULID).                                                   |
+| `--key`                     | Yes*     | Stable tenant key printed by `tenant list`.                                  |
 | `--sqlite-database-path`    | No       | Override the SQLite path.                                                    |
 | `--storage-provider-module` | No       | Override the storage module.                                                 |
 | `--workspace-root`          | No       | Override the workspace scratch root (default: `WORKSPACE_ROOT` from `.env`). |
 | `--run-log-dir`             | No       | Override the run-log root (default: `RUN_LOG_DIR` from `.env`).              |
 | `--yes`                     | No       | Skip the interactive confirmation prompt.                                    |
+
+\* Provide either `--tenant-id` or `--key`.
 
 ---
 
@@ -130,7 +137,7 @@ reviewphin tenant remove \
 
 Model profiles store LLM provider configuration. When no profiles exist, ReviewPhin uses the Copilot CLI directly. When profiles exist, the effective profile is resolved in this order:
 
-1. `/reviewphin-profile <name>` directive in the merge request description
+1. `/reviewphin-profile <name>` directive in the code review description (the merge request description in GitLab today)
 2. the tenant's assigned profile
 3. the database default profile
 4. plain Copilot CLI fallback
@@ -277,30 +284,31 @@ reviewphin storage migrate \
 
 ### `mr describe`
 
-Print the hydrated merge request context for a given MR. Useful for debugging review inputs without triggering a full review.
+Print the hydrated code review context for a given code review. Useful for debugging review inputs without triggering a full review. The data is still GitLab-shaped today because GitLab is the only supported platform.
 
 ```bash
 reviewphin mr describe \
-  --base-url https://gitlab.example.com \
-  --project-id 123 \
-  --merge-request-iid 42 \
+  --key https://gitlab.example.com::123 \
+  --code-review-id 42 \
   --json
 ```
 
-| Flag                           | Required                               | Description                                          |
-| ------------------------------ | -------------------------------------- | ---------------------------------------------------- |
-| `--base-url`                   | Yes (or `--tenant-id`)                 | GitLab instance root URL.                            |
-| `--project-id`                 | Yes (or `--tenant-id`)                 | Numeric project ID.                                  |
-| `--tenant-id`                  | Yes (or `--base-url` + `--project-id`) | Internal tenant ID (ULID).                           |
-| `--merge-request-iid`          | Yes                                    | Merge request IID (the `!N` number shown in GitLab). |
-| `--current-interaction-job-id` | No                                     | Attach a specific interaction job ID to the context. |
-| `--trigger-note-id`            | No                                     | Simulate a specific trigger note.                    |
-| `--trigger-note-action`        | No                                     | `create` or `update`.                                |
-| `--trigger-note-updated-at`    | No                                     | ISO timestamp for the simulated trigger.             |
-| `--trigger-note-body`          | No                                     | Body text for the simulated trigger note.            |
-| `--json`                       | No                                     | Output raw JSON instead of formatted text.           |
-| `--sqlite-database-path`       | No                                     | Override the SQLite path.                            |
-| `--storage-provider-module`    | No                                     | Override the storage module.                         |
+| Flag                           | Required | Description                                                                         |
+| ------------------------------ | -------- | ----------------------------------------------------------------------------------- |
+| `--tenant-id`                  | Yes*     | Internal tenant ID (ULID).                                                          |
+| `--key`                        | Yes*     | Stable tenant key printed by `tenant list`.                                         |
+| `--code-review-id`             | Yes      | Code review ID. For GitLab this is the merge request IID (the `!N` number).         |
+| `--merge-request-iid`          | No       | GitLab-compatible alias for `--code-review-id`.                                     |
+| `--current-interaction-job-id` | No       | Attach a specific interaction job ID to the context.                                |
+| `--trigger-note-id`            | No       | Simulate a specific trigger note.                                                   |
+| `--trigger-note-action`        | No       | `create` or `update`.                                                               |
+| `--trigger-note-updated-at`    | No       | ISO timestamp for the simulated trigger.                                            |
+| `--trigger-note-body`          | No       | Body text for the simulated trigger note.                                           |
+| `--json`                       | No       | Output raw JSON instead of formatted text.                                          |
+| `--sqlite-database-path`       | No       | Override the SQLite path.                                                           |
+| `--storage-provider-module`    | No       | Override the storage module.                                                        |
+
+\* Provide either `--tenant-id` or `--key`.
 
 ---
 

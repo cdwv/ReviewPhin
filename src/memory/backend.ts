@@ -1,10 +1,3 @@
-import type { Logger } from "pino";
-
-import type { GitLabClient } from "../gitlab/client.js";
-import type {
-  HarnessRunLoggingContext,
-  HarnessTenantContext,
-} from "../harness/types.js";
 import type { ProjectMemoryContext, ProjectMemoryEntry } from "./types.js";
 
 export interface ProjectMemorySaveOptions {
@@ -19,15 +12,22 @@ export interface ProjectMemoryBackend {
   ): Promise<ProjectMemoryContext>;
 }
 
-export interface ProjectMemoryBackendFactory {
-  createForHarnessRun(input: {
-    tenant: HarnessTenantContext;
-    logger: Logger;
-    logging?: HarnessRunLoggingContext | undefined;
-  }): ProjectMemoryBackend;
-  createForGitLabClient(input: {
-    client: GitLabClient;
-    projectId: number;
-    enabled: boolean;
-  }): ProjectMemoryBackend;
+export function createDisabledProjectMemoryBackend(): ProjectMemoryBackend {
+  return new DisabledProjectMemoryBackend();
+}
+
+class DisabledProjectMemoryBackend implements ProjectMemoryBackend {
+  public async load(): Promise<ProjectMemoryContext> {
+    return {
+      enabled: false,
+      page: null,
+      entries: [],
+    };
+  }
+
+  public async saveEntries(
+    _entries: ProjectMemoryEntry[],
+  ): Promise<ProjectMemoryContext> {
+    throw new Error("Project memory is disabled");
+  }
 }

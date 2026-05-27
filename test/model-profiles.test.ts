@@ -1,20 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  extractMergeRequestModelProfileOverride,
+  extractCodeReviewModelProfileOverride,
   resolveReviewProviderConfig,
 } from "../src/review/model-profiles.js";
 import type { ModelProfileRecord } from "../src/storage/contract/index.js";
 
 const tenant = {
   id: "tenant_1",
-  key: "https://gitlab.example.com::123",
-  baseUrl: "https://gitlab.example.com",
-  projectId: 123,
-  apiToken: "token",
-  webhookSecret: "secret",
-  botUserId: 999,
-  botUsername: "review-bot",
+  key: "https://gitlab.example.com::123",   platform: "gitlab",   platformConfigJson: JSON.stringify({     baseUrl: "https://gitlab.example.com",     projectId: 123,     apiToken: "token",     webhookSecret: "secret",     botUserId: 999,     botUsername: "review-bot",   }),   baseUrl: "https://gitlab.example.com",   projectId: 123,   apiToken: "token",   webhookSecret: "secret",   botUserId: 999,   botUsername: "review-bot",
   modelProfileName: "tenant-profile",
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
@@ -40,9 +34,9 @@ function createProfile(
 }
 
 describe("model profile resolution", () => {
-  it("extracts merge request overrides from descriptions", () => {
+  it("extracts code review overrides from descriptions", () => {
     expect(
-      extractMergeRequestModelProfileOverride(
+      extractCodeReviewModelProfileOverride(
         [
           "This MR updates the queue worker.",
           "",
@@ -75,14 +69,14 @@ describe("model profile resolution", () => {
     const resolved = await resolveReviewProviderConfig({
       storage: { stores: { modelProfiles } },
       tenant,
-      mergeRequest: {
+      codeReview: {
         description: "Queue changes\n/reviewphin-profile byok-prod",
       },
     });
 
     expect(resolved).toMatchObject({
       modelProfileName: "byok-prod",
-      selectionSource: "merge-request-override",
+      selectionSource: "code-review-override",
       authToken: "secret-token",
       reviewModel: "custom-review",
       textGenerationModel: "custom-text",
@@ -115,7 +109,7 @@ describe("model profile resolution", () => {
         },
       },
       tenant,
-      mergeRequest: {
+      codeReview: {
         description: "No override here",
       },
     });
@@ -155,7 +149,7 @@ describe("model profile resolution", () => {
           ...tenant,
           modelProfileName: null,
         },
-        mergeRequest: {
+        codeReview: {
           description: "/reviewphin-profile missing-profile",
         },
       }),
@@ -167,7 +161,7 @@ describe("model profile resolution", () => {
         ...tenant,
         modelProfileName: null,
       },
-      mergeRequest: {
+      codeReview: {
         description: "No override here",
       },
     });
@@ -196,7 +190,7 @@ describe("model profile resolution", () => {
         },
       },
       tenant,
-      mergeRequest: {
+      codeReview: {
         description: "No override here",
       },
     });

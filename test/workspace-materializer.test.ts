@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import * as tar from "tar";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { GitLabApiError } from "../src/gitlab/client.js";
-import { WorkspaceMaterializer } from "../src/gitlab/workspace.js";
+import { GitLabApiError } from "../src/platforms/gitlab/client.js";
+import { WorkspaceMaterializer } from "../src/platforms/gitlab/workspace.js";
 import { createLogger } from "../src/logger.js";
 
 describe("WorkspaceMaterializer", () => {
@@ -55,7 +55,7 @@ describe("WorkspaceMaterializer", () => {
       } as never,
       jobId: "job_1",
       projectId: 1085,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       headSha: "abc123",
       changes: [],
     });
@@ -114,7 +114,7 @@ describe("WorkspaceMaterializer", () => {
       } as never,
       jobId: "job_2",
       projectId: 1085,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       headSha: "abc123",
       changes: [],
     });
@@ -187,7 +187,7 @@ describe("WorkspaceMaterializer", () => {
       } as never,
       jobId: "job_3",
       projectId: 1085,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       headSha: "abc123",
       changes: [
         {
@@ -210,6 +210,57 @@ describe("WorkspaceMaterializer", () => {
       ".github/instructions/review.instructions.md",
     ]);
     expect(getRawFile).toHaveBeenCalledWith(1085, "src/index.ts", "abc123");
+  });
+
+  it("clears leftover workspace files before attempting git checkout", async () => {
+    const workspaceRoot = await createTempRoot();
+    const staleWorkspaceRoot = join(workspaceRoot, "job_4", "workspace");
+    await mkdir(staleWorkspaceRoot, { recursive: true });
+    await writeFile(join(staleWorkspaceRoot, "stale.txt"), "leftover\n");
+
+    const gitRunner = vi.fn(async ({ cwd, args }) => {
+      if (args[0] === "-c" && args[2] === "checkout") {
+        await expect(
+          readFile(join(cwd, "stale.txt"), "utf8"),
+        ).rejects.toThrow();
+        await mkdir(join(cwd, ".git"), { recursive: true });
+        await writeFile(join(cwd, "AGENTS.md"), "# Fresh instructions\n");
+      }
+
+      return { stdout: "", stderr: "" };
+    });
+
+    const materializer = new WorkspaceMaterializer({
+      workspaceRoot,
+      logger: createLogger("silent"),
+      gitRunner,
+    });
+
+    const workspace = await materializer.materialize({
+      client: {
+        getProject: async () => ({
+          id: 1085,
+          web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
+          http_url_to_repo: "https://gitlab.example.com/group/project.git",
+        }),
+        buildGitAuthEnv: () => ({}),
+        downloadRepositoryArchive: vi.fn(),
+        getRawFile: vi.fn(),
+        listRepositoryTree: vi.fn(),
+      } as never,
+      jobId: "job_4",
+      projectId: 1085,
+      codeReviewId: 7,
+      headSha: "abc123",
+      changes: [],
+    });
+
+    expect(workspace.strategy).toBe("git");
+    await expect(readFile(join(workspace.rootPath, "stale.txt"), "utf8")).rejects.toThrow();
+    expect(await readFile(join(workspace.rootPath, "AGENTS.md"), "utf8")).toBe(
+      "# Fresh instructions\n",
+    );
   });
 
   async function createTempRoot(): Promise<string> {

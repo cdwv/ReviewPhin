@@ -4,34 +4,22 @@ import { StoreBackedStorage } from "../src/storage/storage-helpers.js";
 import type {
   InteractionJobRecord,
   InteractionRunRecord,
-  MergeRequestSnapshotRecord,
+  CodeReviewSnapshotRecord,
   ReviewFindingRecord,
   StorageStores,
   TenantRecord,
 } from "../src/storage/contract/index.js";
+import { createGitLabTenantRecord } from "./helpers/gitlab-tenant.js";
 
 describe("StoreBackedStorage Flotiq MR lookup regression", () => {
   it("uses tenant-scoped MR lookup when loading prior review data", async () => {
-    const tenant: TenantRecord = {
-      id: "tenant-1",
-      key: "https://gitlab.example.com::123",
-      baseUrl: "https://gitlab.example.com",
-      projectId: 123,
-      apiToken: "token",
-      webhookSecret: "secret",
-      botUserId: 999,
-      botUsername: "review-bot",
-      modelProfileName: null,
-      createdAt: "2026-05-08T12:00:00.000Z",
-      updatedAt: "2026-05-08T12:00:00.000Z",
-    };
+    const tenant: TenantRecord = createGitLabTenantRecord();
     const interactionJobs: InteractionJobRecord[] = [
       {
         id: "job-previous",
         tenantId: tenant.id,
         dedupeKey: "previous",
-        projectId: tenant.projectId,
-        mergeRequestIid: 18,
+        codeReviewId: 18,
         noteId: 1,
         headSha: "head-previous",
         status: "completed",
@@ -46,8 +34,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         id: "job-current",
         tenantId: tenant.id,
         dedupeKey: "current",
-        projectId: tenant.projectId,
-        mergeRequestIid: 18,
+        codeReviewId: 18,
         noteId: 2,
         headSha: "head-current",
         status: "completed",
@@ -62,8 +49,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         id: "job-other-tenant",
         tenantId: "tenant-2",
         dedupeKey: "other-tenant",
-        projectId: tenant.projectId,
-        mergeRequestIid: 18,
+        codeReviewId: 18,
         noteId: 3,
         headSha: "head-other",
         status: "completed",
@@ -109,14 +95,14 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         finishedAt: "2026-05-08T11:05:00.000Z",
       },
     ];
-    const snapshots: MergeRequestSnapshotRecord[] = [
+    const snapshots: CodeReviewSnapshotRecord[] = [
       {
         id: "snapshot-previous",
         interactionJobId: "job-previous",
         tenantId: tenant.id,
-        mergeRequestIid: 18,
+        codeReviewId: 18,
         headSha: "head-previous",
-        mergeRequestJson: "{}",
+        codeReviewJson: "{}",
         versionsJson: "[]",
         changesJson: "[]",
         notesJson: "[]",
@@ -130,9 +116,9 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         id: "snapshot-other-tenant",
         interactionJobId: "job-other-tenant",
         tenantId: "tenant-2",
-        mergeRequestIid: 18,
+        codeReviewId: 18,
         headSha: "head-other",
-        mergeRequestJson: "{}",
+        codeReviewJson: "{}",
         versionsJson: "[]",
         changesJson: "[]",
         notesJson: "[]",
@@ -164,17 +150,15 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         const filters = input?.filters as
           | {
               tenantId?: { eq?: string };
-              projectId?: { eq?: number };
-              mergeRequestIid?: { eq?: number };
+              codeReviewId?: { eq?: number };
             }
           | undefined;
 
         return interactionJobs.filter(
           (job) =>
             (!filters?.tenantId || job.tenantId === filters.tenantId.eq) &&
-            (!filters?.projectId || job.projectId === filters.projectId.eq) &&
-            (!filters?.mergeRequestIid ||
-              job.mergeRequestIid === filters.mergeRequestIid.eq),
+            (!filters?.codeReviewId ||
+              job.codeReviewId === filters.codeReviewId.eq),
         );
       },
     );
@@ -199,7 +183,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
             ),
         ),
       },
-      mergeRequestSnapshots: {
+      codeReviewSnapshots: {
         list: vi.fn(
           async (input?: {
             filters?: { interactionJobId?: { in?: readonly string[] } };
@@ -230,7 +214,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
     const storage = new StoreBackedStorage(stores);
 
     const previousInteraction =
-      await storage.getLatestCompletedInteractionForMergeRequest(
+      await storage.getLatestCompletedInteractionForCodeReview(
         tenant.id,
         18,
         "job-current",
@@ -256,33 +240,20 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
     for (const [input] of interactionJobList.mock.calls) {
       expect(input?.filters).toMatchObject({
         tenantId: { eq: tenant.id },
-        mergeRequestIid: { eq: 18 },
+        codeReviewId: { eq: 18 },
       });
-      expect(input?.filters).not.toHaveProperty("projectId");
+      expect(input?.filters).not.toHaveProperty("repositoryId");
     }
   });
 
   it("builds tenant deletion summaries from tenant-scoped interaction job lookup", async () => {
-    const tenant: TenantRecord = {
-      id: "tenant-1",
-      key: "https://gitlab.example.com::123",
-      baseUrl: "https://gitlab.example.com",
-      projectId: 123,
-      apiToken: "token",
-      webhookSecret: "secret",
-      botUserId: 999,
-      botUsername: "review-bot",
-      modelProfileName: null,
-      createdAt: "2026-05-08T12:00:00.000Z",
-      updatedAt: "2026-05-08T12:00:00.000Z",
-    };
+    const tenant: TenantRecord = createGitLabTenantRecord();
     const interactionJobs: InteractionJobRecord[] = [
       {
         id: "job-tenant-1",
         tenantId: tenant.id,
         dedupeKey: "job-tenant-1",
-        projectId: tenant.projectId,
-        mergeRequestIid: 18,
+        codeReviewId: 18,
         noteId: 1,
         headSha: "head-1",
         status: "completed",
@@ -297,8 +268,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         id: "job-tenant-2",
         tenantId: "tenant-2",
         dedupeKey: "job-tenant-2",
-        projectId: tenant.projectId,
-        mergeRequestIid: 18,
+        codeReviewId: 18,
         noteId: 2,
         headSha: "head-2",
         status: "completed",
@@ -329,7 +299,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
       interactionJobs: {
         list: interactionJobList,
       },
-      mergeRequestSnapshots: {
+      codeReviewSnapshots: {
         list: vi.fn(async () => []),
       },
       interactionRuns: {
@@ -342,15 +312,12 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
 
     const storage = new StoreBackedStorage(stores);
 
-    const summary = await storage.getTenantDeletionSummary(
-      tenant.baseUrl,
-      tenant.projectId,
-    );
+    const summary = await storage.getTenantDeletionSummary(tenant.key);
 
     expect(summary).toMatchObject({
       interactionJobCount: 1,
       interactionRunCount: 0,
-      mergeRequestSnapshotCount: 0,
+      codeReviewSnapshotCount: 0,
       discussionMappingCount: 0,
       interactionJobIds: ["job-tenant-1"],
     });

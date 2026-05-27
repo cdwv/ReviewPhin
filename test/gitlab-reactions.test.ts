@@ -2,17 +2,28 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { GitLabClient } from "../src/gitlab/client.js";
+import { GitLabClient } from "../src/platforms/gitlab/client.js";
 import type {
   GitLabDiscussion,
   GitLabNoteHookPayload,
-} from "../src/gitlab/types.js";
+} from "../src/platforms/gitlab/types.js";
 import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
+import { wrapGitLabPlatformContext } from "./helpers/platform-context.js";
+import { overridePlatformRuntime } from "./helpers/platform-runtime.js";
 
 const tenant = {
   id: "tenant_1",
   key: "https://gitlab.example.com::123",
+  platform: "gitlab",
+  platformConfigJson: JSON.stringify({
+    baseUrl: "https://gitlab.example.com",
+    projectId: 123,
+    apiToken: "token",
+    webhookSecret: "secret",
+    botUserId: 999,
+    botUsername: "review-bot",
+  }),
   baseUrl: "https://gitlab.example.com",
   projectId: 123,
   apiToken: "token",
@@ -29,6 +40,7 @@ const directMentionPayload: GitLabNoteHookPayload = {
   project: {
     id: 123,
     web_url: "https://gitlab.example.com/group/project",
+    path_with_namespace: "group/project",
   },
   repository: {
     homepage: "https://gitlab.example.com/group/project",
@@ -153,10 +165,10 @@ describe("GitLab reactions", () => {
       logger: createLogger("silent"),
     });
 
-    const existing = await client.listMergeRequestNoteAwardEmojis(123, 7, 55);
+    const existing = await client.listCodeReviewNoteAwardEmojis(123, 7, 55);
     expect(existing).toEqual([]);
 
-    const created = await client.createMergeRequestNoteAwardEmoji(
+    const created = await client.createCodeReviewNoteAwardEmoji(
       123,
       7,
       55,
@@ -228,7 +240,7 @@ describe("GitLab reactions", () => {
     await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
       kind: "direct-mention",
       note: {
-        kind: "merge-request-note",
+        kind: "code-review-note",
         noteId: 55,
       },
     });
@@ -323,7 +335,7 @@ describe("GitLab reactions", () => {
     await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
       kind: "direct-mention",
       note: {
-        kind: "merge-request-note",
+        kind: "code-review-note",
         noteId: 55,
       },
     });
@@ -407,7 +419,7 @@ describe("GitLab reactions", () => {
     await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
       kind: "direct-mention",
       note: {
-        kind: "merge-request-note",
+        kind: "code-review-note",
         noteId: 55,
       },
     });
@@ -536,7 +548,7 @@ function createWorker(input: {
     tenantId: tenant.id,
     dedupeKey: "dedupe",
     projectId: tenant.projectId,
-    mergeRequestIid: 7,
+    codeReviewId: 7,
     noteId: input.payload.object_attributes.id,
     headSha: "abc123",
     status: "queued" as const,
@@ -586,7 +598,7 @@ function createWorker(input: {
     })),
     getModelProfileByName: vi.fn(async () => null),
     getDefaultModelProfile: vi.fn(async () => null),
-    getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+    getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
     listPriorReviewFindings: vi.fn(async () => []),
     completeInteractionRun: vi.fn(async () => {}),
     replaceReviewFindings: vi.fn(async () => {}),
@@ -597,103 +609,107 @@ function createWorker(input: {
     markJobQueued: vi.fn(async () => {}),
     markJobFailed: vi.fn(async () => {}),
   };
+  const loadRoutingContext = vi.fn(async () =>
+    wrapGitLabPlatformContext({
+      tenant,
+      job,
+      mergeRequest: {
+        id: 1,
+        iid: 7,
+        project_id: tenant.projectId,
+        title: "Add worker",
+        description: "Adds the worker",
+        web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+        source_branch: "feature",
+        target_branch: "main",
+        author: {
+          id: 42,
+          username: "developer",
+          name: "Dev User",
+        },
+      },
+      changes: [],
+      notes: [],
+      discussions: input.discussions,
+      workspace: {
+        rootPath: join("tmp", "workspace-routing"),
+        cleanupRoot: join("tmp", "cleanup-routing"),
+        strategy: "git",
+        instructionFiles: [],
+      },
+      projectMemory: {
+        enabled: true,
+        page: null,
+        entries: [],
+      },
+    }),
+  );
+  const hydrate = vi.fn(async () =>
+    wrapGitLabPlatformContext({
+      tenant,
+      job,
+      mergeRequest: {
+        id: 1,
+        iid: 7,
+        project_id: tenant.projectId,
+        title: "Add worker",
+        description: "Adds the worker",
+        web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+        source_branch: "feature",
+        target_branch: "main",
+        author: {
+          id: 42,
+          username: "developer",
+          name: "Dev User",
+        },
+      },
+      versions: [],
+      latestVersion: null,
+      changes: [],
+      notes: [],
+      discussions: input.discussions,
+      workspace: {
+        rootPath: join("tmp", "workspace"),
+        cleanupRoot: join("tmp", "cleanup"),
+        strategy: "targeted-files",
+        instructionFiles: [],
+      },
+      projectMemory: {
+        enabled: true,
+        page: null,
+        entries: [],
+      },
+      snapshot: {
+        id: "snapshot_1",
+        interactionJobId: "job_1",
+        tenantId: tenant.id,
+        codeReviewId: 7,
+        headSha: "abc123",
+        codeReviewJson: "{}",
+        versionsJson: "[]",
+        changesJson: "[]",
+        notesJson: "[]",
+        discussionsJson: "[]",
+        instructionsJson: "[]",
+        projectMemoryJson: null,
+        workspaceStrategy: "targeted-files",
+        createdAt: new Date().toISOString(),
+      },
+    }),
+  );
+  const cleanupWorkspace = vi.fn(async () => {});
 
   return new ReviewWorker({
     storage: storage as never,
     tenantRegistry: {
       getTenantById: vi.fn(async () => tenant),
     } as never,
-    hydrator: {
-      loadRoutingContext: vi.fn(async () => ({
-        tenant,
-        job,
-        mergeRequest: {
-          id: 1,
-          iid: 7,
-          project_id: tenant.projectId,
-          title: "Add worker",
-          description: "Adds the worker",
-          web_url:
-            "https://gitlab.example.com/group/project/-/merge_requests/7",
-          source_branch: "feature",
-          target_branch: "main",
-          author: {
-            id: 42,
-            username: "developer",
-            name: "Dev User",
-          },
-        },
-        changes: [],
-        notes: [],
-        discussions: input.discussions,
-        workspace: {
-          rootPath: join("tmp", "workspace-routing"),
-          cleanupRoot: join("tmp", "cleanup-routing"),
-          strategy: "git",
-          instructionFiles: [],
-        },
-        projectMemory: {
-          enabled: true,
-          page: null,
-          entries: [],
-        },
-      })),
-      hydrate: vi.fn(async () => ({
-        tenant,
-        job,
-        mergeRequest: {
-          id: 1,
-          iid: 7,
-          project_id: tenant.projectId,
-          title: "Add worker",
-          description: "Adds the worker",
-          web_url:
-            "https://gitlab.example.com/group/project/-/merge_requests/7",
-          source_branch: "feature",
-          target_branch: "main",
-          author: {
-            id: 42,
-            username: "developer",
-            name: "Dev User",
-          },
-        },
-        versions: [],
-        latestVersion: null,
-        changes: [],
-        notes: [],
-        discussions: input.discussions,
-        workspace: {
-          rootPath: join("tmp", "workspace"),
-          cleanupRoot: join("tmp", "cleanup"),
-          strategy: "targeted-files",
-          instructionFiles: [],
-        },
-        projectMemory: {
-          enabled: true,
-          page: null,
-          entries: [],
-        },
-        snapshot: {
-          id: "snapshot_1",
-          interactionJobId: "job_1",
-          tenantId: tenant.id,
-          mergeRequestIid: 7,
-          headSha: "abc123",
-          mergeRequestJson: "{}",
-          versionsJson: "[]",
-          changesJson: "[]",
-          notesJson: "[]",
-          discussionsJson: "[]",
-          instructionsJson: "[]",
-          projectMemoryJson: null,
-          workspaceStrategy: "targeted-files",
-          createdAt: new Date().toISOString(),
-        },
-      })),
-    } as never,
-    workspaceMaterializer: {
-      cleanup: vi.fn(async () => {}),
-    } as never,
+    reviewRuntimeFactory: ({ platform, ...runtimeInput }) =>
+      overridePlatformRuntime(platform.createReviewRuntime(runtimeInput), {
+        loadRoutingContext,
+        hydrate,
+        cleanupWorkspace,
+      }),
     reviewProviderFactory: {
       createProvider: vi.fn(() => ({
         name: "copilot-sdk",

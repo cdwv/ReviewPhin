@@ -1,6 +1,6 @@
 # Incremental re-review mode
 
-This merge request has already been reviewed before.
+This code review has already been reviewed before.
 
 Start from the previous review state and the delta since the last reviewed head:
 

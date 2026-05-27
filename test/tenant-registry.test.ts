@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { GitLabNoteHookPayload } from "../src/gitlab/types.js";
+import { createLogger } from "../src/logger.js";
+import GitLabPlatform from "../src/platforms/gitlab/platform.js";
+import type { GitLabNoteHookPayload } from "../src/platforms/gitlab/types.js";
 import { TenantRegistry } from "../src/tenants/tenant-registry.js";
+import { createGitLabTenantRecord } from "./helpers/gitlab-tenant.js";
 
 function createPayload(): GitLabNoteHookPayload {
   return {
@@ -9,6 +12,7 @@ function createPayload(): GitLabNoteHookPayload {
     project: {
       id: 123,
       web_url: "https://gitlab.example.com/gitlab/group/project",
+      path_with_namespace: "group/project",
     },
     repository: {
       homepage: "https://gitlab.example.com/gitlab/group/project",
@@ -32,52 +36,80 @@ function createPayload(): GitLabNoteHookPayload {
   };
 }
 
+function createStorageForTenants(...tenants: ReturnType<typeof createGitLabTenantRecord>[]) {
+  return {
+    stores: {
+      tenants: {
+        find: async (filters?: {
+          key?: { eq?: string };
+          platform?: { eq?: string };
+        }) =>
+          tenants.find(
+            (tenant) =>
+              tenant.key === filters?.key?.eq &&
+              tenant.platform === filters?.platform?.eq,
+          ) ?? null,
+        get: async () => null,
+      },
+    },
+  };
+}
+
 describe("TenantRegistry", () => {
   it("prefers the most specific baseUrl match for path-prefixed GitLab instances", async () => {
-    const storage = {
-      stores: {
-        tenants: {
-          list: async () => [
-            {
-              id: "tenant_root",
-              key: "https://gitlab.example.com::123",
-              baseUrl: "https://gitlab.example.com",
-              projectId: 123,
-              apiToken: "token-root",
-              webhookSecret: "secret",
-              botUserId: 999,
-              botUsername: "review-bot",
-              modelProfileName: null,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-            {
-              id: "tenant_prefixed",
-              key: "https://gitlab.example.com/gitlab::123",
-              baseUrl: "https://gitlab.example.com/gitlab",
-              projectId: 123,
-              apiToken: "token-prefixed",
-              webhookSecret: "secret",
-              botUserId: 1000,
-              botUsername: "review-bot-prefixed",
-              modelProfileName: null,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-          ],
-          get: async () => null,
-        },
-      },
-    };
+    const storage = createStorageForTenants(
+      createGitLabTenantRecord({
+        id: "tenant_root",
+        apiToken: "token-root",
+      }),
+      createGitLabTenantRecord({
+        id: "tenant_prefixed",
+        baseUrl: "https://gitlab.example.com/gitlab",
+        apiToken: "token-prefixed",
+        botUserId: 1000,
+        botUsername: "review-bot-prefixed",
+      }),
+    );
 
     const registry = new TenantRegistry({
       storage: storage as never,
     });
+    const platform = new GitLabPlatform(createLogger("silent"));
 
     const tenant = await registry.resolveWebhookTenant(
+      platform,
       createPayload(),
-      "secret",
+      {
+        headers: {
+          "x-gitlab-token": "secret",
+        },
+        body: createPayload(),
+      },
     );
     expect(tenant?.id).toBe("tenant_prefixed");
+  });
+
+  it("resolves a tenant from repository.homepage when project.web_url is missing", async () => {
+    const storage = createStorageForTenants(
+      createGitLabTenantRecord({
+        id: "tenant-prefixed",
+        baseUrl: "https://gitlab.example.com/gitlab",
+      }),
+    );
+    const registry = new TenantRegistry({
+      storage: storage as never,
+    });
+    const platform = new GitLabPlatform(createLogger("silent"));
+    const payload = createPayload();
+    delete payload.project.web_url;
+
+    const tenant = await registry.resolveWebhookTenant(platform, payload, {
+      headers: {
+        "x-gitlab-token": "secret",
+      },
+      body: payload,
+    });
+
+    expect(tenant?.id).toBe("tenant-prefixed");
   });
 });

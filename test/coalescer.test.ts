@@ -12,6 +12,9 @@ describe("ProjectMemoryConsolidator", () => {
           }),
         },
       },
+      parsed: {
+        entries: ["Use explicit return types."],
+      },
       events: [],
     }));
     const consolidator = new ProjectMemoryConsolidator({
@@ -43,6 +46,10 @@ describe("ProjectMemoryConsolidator", () => {
         model: "gpt-5.4-mini",
         tools: [],
         subagents: [],
+        responseFormat: expect.objectContaining({
+          schema: expect.anything(),
+          looksLike: expect.any(Function),
+        }),
       }),
     );
   });

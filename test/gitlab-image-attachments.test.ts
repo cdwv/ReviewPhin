@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   discoverGitLabImageAttachmentReferences,
   materializeGitLabImageAttachments,
-} from "../src/gitlab/image-attachments.js";
-import { GitLabApiError } from "../src/gitlab/client.js";
+} from "../src/platforms/gitlab/image-attachments.js";
+import { GitLabApiError } from "../src/platforms/gitlab/client.js";
 
 describe("discoverGitLabImageAttachmentReferences", () => {
   it("finds markdown and html image references and resolves relative GitLab upload urls", () => {
@@ -29,12 +29,12 @@ describe("discoverGitLabImageAttachmentReferences", () => {
         url: "https://gitlab.example.com/-/project/1085/uploads/abc123/note-image.png",
       },
       {
-        sourceKind: "merge-request-description",
+        sourceKind: "code-review-description",
         noteId: null,
         url: "https://gitlab.example.com/-/project/1085/uploads/xyz789/diagram.png",
       },
       {
-        sourceKind: "merge-request-description",
+        sourceKind: "code-review-description",
         noteId: null,
         url: "https://gitlab.example.com/-/project/1085/uploads/qwe123/mockup.webp",
       },
@@ -137,7 +137,7 @@ describe("discoverGitLabImageAttachmentReferences", () => {
           url: "https://gitlab.example.com/-/project/1085/uploads/ok/ok.png",
         },
         {
-          sourceKind: "merge-request-description",
+          sourceKind: "code-review-description",
           noteId: null,
           url: "https://gitlab.example.com/-/project/1085/uploads/fail/broken.png",
         },
@@ -162,9 +162,9 @@ describe("discoverGitLabImageAttachmentReferences", () => {
     ]);
     expect(result.issues).toEqual([
       {
-        sourceKind: "merge-request-description",
+        sourceKind: "code-review-description",
         noteId: null,
-        displayName: "merge-request-description-broken.png",
+        displayName: "code-review-description-broken.png",
         status: 503,
         message:
           "GitLab image request failed for https://gitlab.example.com/-/project/1085/uploads/fail/broken.png with 503",

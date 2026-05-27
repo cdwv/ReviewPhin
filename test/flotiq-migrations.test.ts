@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Logger } from "pino";
 
-import { ensureCTDsExist } from "../src/storage/adapters/flotiq/migrations/v000.js";
+import ensureV001CtdsExist from "../src/storage/adapters/flotiq/migrations/v001.js";
 
 describe("Flotiq CTD migration logging", () => {
   afterEach(() => {
@@ -34,7 +34,7 @@ describe("Flotiq CTD migration logging", () => {
       .mockImplementation(() => undefined);
     const logger = createLoggerMock();
 
-    await ensureCTDsExist("test-api-key", logger);
+    await ensureV001CtdsExist("test-api-key", logger);
 
     expect(fetchMock).toHaveBeenCalled();
     expect(logger.info).toHaveBeenCalled();

@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { MergeRequestContextHydrator } from "../src/gitlab/hydrator.js";
+import { CodeReviewContextHydrator } from "../src/platforms/gitlab/hydrator.js";
 import { createLogger } from "../src/logger.js";
 import { tmpPath } from "./test-paths.js";
 
-describe("MergeRequestContextHydrator project memory", () => {
+describe("CodeReviewContextHydrator project memory", () => {
   it("continues hydration with disabled memory when wiki access fails", async () => {
     const storage = {
-      createMergeRequestSnapshot: vi.fn(async (input) => ({
+      createCodeReviewSnapshot: vi.fn(async (input) => ({
         id: "snapshot_1",
         ...input,
         createdAt: new Date().toISOString(),
@@ -21,33 +21,26 @@ describe("MergeRequestContextHydrator project memory", () => {
         instructionFiles: [],
       })),
     };
-    const createForGitLabClient = vi.fn(() => ({
-      load: vi.fn(async () => {
-        throw new Error("wiki unavailable");
-      }),
-      saveEntries: vi.fn(),
-    }));
-    const hydrator = new MergeRequestContextHydrator({
+    const hydrator = new CodeReviewContextHydrator({
       storage: storage as never,
       workspaceMaterializer: workspaceMaterializer as never,
       memoryEnabled: true,
       logger: createLogger("silent"),
-      projectMemoryBackendFactory: {
-        createForHarnessRun: vi.fn(),
-        createForGitLabClient,
-      },
     });
 
     const context = await hydrator.hydrate({
       tenant: {
         id: "tenant_1",
         key: "https://gitlab.example.com::123",
-        baseUrl: "https://gitlab.example.com",
-        projectId: 123,
-        apiToken: "token",
-        webhookSecret: "secret",
-        botUserId: 1,
-        botUsername: "review-bot",
+        platform: "gitlab",
+        platformConfigJson: JSON.stringify({
+          baseUrl: "https://gitlab.example.com",
+          projectId: 123,
+          apiToken: "token",
+          webhookSecret: "secret",
+          botUserId: 1,
+          botUsername: "review-bot",
+        }),
         modelProfileName: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -56,8 +49,7 @@ describe("MergeRequestContextHydrator project memory", () => {
         id: "job_1",
         tenantId: "tenant_1",
         dedupeKey: "dedupe",
-        projectId: 123,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         noteId: 55,
         headSha: "abc123",
         status: "queued",
@@ -69,7 +61,7 @@ describe("MergeRequestContextHydrator project memory", () => {
         finishedAt: null,
       },
       client: {
-        getMergeRequest: vi.fn(async () => ({
+        getCodeReview: vi.fn(async () => ({
           id: 1,
           iid: 7,
           project_id: 123,
@@ -85,10 +77,10 @@ describe("MergeRequestContextHydrator project memory", () => {
             name: "Dev User",
           },
         })),
-        listMergeRequestVersions: vi.fn(async () => []),
-        getMergeRequestChanges: vi.fn(async () => []),
-        listMergeRequestNotes: vi.fn(async () => []),
-        listMergeRequestDiscussions: vi.fn(async () => []),
+        listCodeReviewVersions: vi.fn(async () => []),
+        getCodeReviewChanges: vi.fn(async () => []),
+        listCodeReviewNotes: vi.fn(async () => []),
+        listCodeReviewDiscussions: vi.fn(async () => []),
         getProjectWikiPage: vi.fn(async () => {
           throw new Error("wiki unavailable");
         }),
@@ -103,19 +95,13 @@ describe("MergeRequestContextHydrator project memory", () => {
       page: null,
       entries: [],
     });
-    expect(storage.createMergeRequestSnapshot).toHaveBeenCalledWith(
+    expect(storage.createCodeReviewSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         projectMemoryJson: JSON.stringify({
           enabled: false,
           page: null,
           entries: [],
         }),
-      }),
-    );
-    expect(createForGitLabClient).toHaveBeenCalledWith(
-      expect.objectContaining({
-        projectId: 123,
-        enabled: true,
       }),
     );
   });

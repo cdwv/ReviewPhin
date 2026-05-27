@@ -1,9 +1,9 @@
 import type {
-  MergeRequestSnapshotRecord,
+  CodeReviewSnapshotRecord,
   InteractionJobRecord,
   TenantRecord,
-} from "../storage/contract/index.js";
-import type { ProjectMemoryContext } from "../memory/types.js";
+} from "../../storage/contract/index.js";
+import type { ProjectMemoryContext } from "../../memory/types.js";
 
 export interface GitLabUser {
   id: number;
@@ -52,7 +52,7 @@ export interface GitLabDiffPosition {
   base_sha: string;
   start_sha: string;
   head_sha: string;
-  position_type: "text";
+  position_type: "text" | "file";
   old_path: string;
   new_path: string;
   old_line?: number;
@@ -78,17 +78,6 @@ export interface GitLabAwardEmoji {
   user: GitLabUser;
   created_at: string;
 }
-
-export type TriggerNoteReference =
-  | {
-      kind: "merge-request-note";
-      noteId: number;
-    }
-  | {
-      kind: "discussion-note";
-      discussionId: string;
-      noteId: number;
-    };
 
 export interface GitLabDiscussion {
   id: string;
@@ -149,6 +138,7 @@ export interface GitLabNoteHookPayload {
   project: {
     id: number;
     web_url?: string | undefined;
+    path_with_namespace: string;
   };
   repository?:
     | {
@@ -211,7 +201,7 @@ export interface MaterializedMergeRequestContext {
 export interface HydratedMergeRequestContext extends MaterializedMergeRequestContext {
   versions: GitLabMergeRequestVersion[];
   latestVersion: GitLabMergeRequestVersion | null;
-  snapshot: MergeRequestSnapshotRecord;
+  snapshot: CodeReviewSnapshotRecord;
 }
 
 export type LightweightMergeRequestContext = MaterializedMergeRequestContext;

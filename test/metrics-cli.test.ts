@@ -220,7 +220,7 @@ async function writeSessionLog(
           reviewRunId: null,
           jobId: null,
           tenantId: null,
-          mergeRequestIid: 1,
+          codeReviewId: 1,
           workspacePath,
           requestedModel: metrics.model,
         },

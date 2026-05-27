@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildFilePosition,
   buildDiffPosition,
   renderSuggestionMarkdown,
-} from "../src/gitlab/positions.js";
+} from "../src/platforms/gitlab/positions.js";
 
 describe("GitLab diff positioning", () => {
   it("builds a diff position for a changed new-side line", () => {
@@ -74,6 +75,41 @@ describe("GitLab diff positioning", () => {
     );
 
     expect(position).toBeNull();
+  });
+
+  it("builds a file position when the anchor maps to a changed file", () => {
+    const position = buildFilePosition(
+      {
+        path: "src/index.ts",
+        oldPath: "src/index.ts",
+      },
+      [
+        {
+          old_path: "src/index.ts",
+          new_path: "src/index.ts",
+          diff: "@@ -30,2 +30,3 @@\n context line\n+added line\n trailing context",
+          new_file: false,
+          renamed_file: false,
+          deleted_file: false,
+        },
+      ],
+      {
+        id: 1,
+        base_commit_sha: "base",
+        start_commit_sha: "start",
+        head_commit_sha: "head",
+        created_at: new Date().toISOString(),
+      },
+    );
+
+    expect(position).toEqual({
+      base_sha: "base",
+      start_sha: "start",
+      head_sha: "head",
+      position_type: "file",
+      old_path: "src/index.ts",
+      new_path: "src/index.ts",
+    });
   });
 
   it("prefers a changed line inside a broader new-side anchor range", () => {

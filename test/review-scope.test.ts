@@ -4,27 +4,21 @@ import { buildScopedReviewContext } from "../src/review/review-scope.js";
 import type { ProviderThreadContext } from "../src/review/types.js";
 import { repoPath } from "./test-paths.js";
 
-const mergeRequest = {
-  id: 1,
-  iid: 7,
-  project_id: 123,
+const codeReview = {
+  id: 7,
   title: "Improve review scoping",
   description: "Optimizes how review context is prepared.",
-  web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
-  source_branch: "feature",
-  target_branch: "main",
-  author: {
-    id: 42,
-    username: "developer",
-    name: "Dev User",
-  },
+  webUrl: "https://gitlab.example.com/group/project/-/merge_requests/7",
+  sourceBranch: "feature",
+  targetBranch: "main",
+  authorUsername: "developer",
 };
 
 describe("buildScopedReviewContext", () => {
   it("uses incremental re-review mode when a previous completed review exists", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
-      mergeRequest,
+      codeReview,
       changes: [
         createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+old"),
         createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new"),
@@ -95,7 +89,7 @@ describe("buildScopedReviewContext", () => {
 
     expect(scoped.scope.mode).toBe("incremental-rereview");
     expect(scoped.changes).toHaveLength(2);
-    expect(scoped.changes.map((change) => change.new_path)).toEqual([
+    expect(scoped.changes.map((change) => change.newPath)).toEqual([
       "src/existing.ts",
       "src/delta.ts",
     ]);
@@ -106,7 +100,7 @@ describe("buildScopedReviewContext", () => {
   it("keeps open prior findings in incremental focus even without live unresolved threads", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
-      mergeRequest,
+      codeReview,
       changes: [
         createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+old"),
         createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new"),
@@ -170,7 +164,7 @@ describe("buildScopedReviewContext", () => {
       },
     });
 
-    expect(scoped.changes.map((change) => change.new_path)).toEqual([
+    expect(scoped.changes.map((change) => change.newPath)).toEqual([
       "src/existing.ts",
       "src/delta.ts",
     ]);
@@ -181,7 +175,7 @@ describe("buildScopedReviewContext", () => {
   it("routes summary follow-up triggers through incremental re-review when a previous review exists", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
-      mergeRequest,
+      codeReview,
       changes: [createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new")],
       notes: [],
       discussions: [],
@@ -230,7 +224,7 @@ describe("buildScopedReviewContext", () => {
   it("keeps current MR diffs for incremental re-reviews when there is no delta", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
-      mergeRequest,
+      codeReview,
       changes: [
         createChange("src/same-head-a.ts", "@@ -1 +1 @@\n-old-a\n+new-a"),
         createChange("src/same-head-b.ts", "@@ -1 +1 @@\n-old-b\n+new-b"),
@@ -276,7 +270,7 @@ describe("buildScopedReviewContext", () => {
 
     expect(scoped.scope.mode).toBe("incremental-rereview");
     expect(scoped.scope.deltaSincePreviousReview?.changedFiles).toEqual([]);
-    expect(scoped.changes.map((change) => change.new_path)).toEqual([
+    expect(scoped.changes.map((change) => change.newPath)).toEqual([
       "src/same-head-a.ts",
       "src/same-head-b.ts",
     ]);
@@ -299,7 +293,7 @@ describe("buildScopedReviewContext", () => {
     );
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
-      mergeRequest,
+      codeReview,
       changes: [
         createChange("src/target.ts", "@@ -1 +1 @@\n-old\n+new"),
         createChange("src/other.ts", "@@ -1 +1 @@\n-old\n+new"),
@@ -308,13 +302,13 @@ describe("buildScopedReviewContext", () => {
       discussions: [
         {
           id: "disc_target",
-          individual_note: false,
-          notes: [createDiscussionNote(10, "Target finding")],
+          resolved: false,
+          comments: [createDiscussionNote(10, "Target finding")],
         },
         {
           id: "disc_other",
-          individual_note: false,
-          notes: [createDiscussionNote(11, "Other finding")],
+          resolved: false,
+          comments: [createDiscussionNote(11, "Other finding")],
         },
       ],
       instructionFiles: [],
@@ -342,7 +336,7 @@ describe("buildScopedReviewContext", () => {
     expect(scoped.scope.mode).toBe("follow-up-thread");
     expect(scoped.priorThreads).toEqual([targetThread]);
     expect(scoped.changes).toHaveLength(1);
-    expect(scoped.changes[0]?.new_path).toBe("src/target.ts");
+    expect(scoped.changes[0]?.newPath).toBe("src/target.ts");
     expect(scoped.notes).toEqual([]);
   });
 
@@ -356,14 +350,14 @@ describe("buildScopedReviewContext", () => {
     );
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
-      mergeRequest,
+      codeReview,
       changes: [createChange("src/other.ts", "@@ -1 +1 @@\n-old\n+new")],
       notes: [createNote(1, "General MR note")],
       discussions: [
         {
           id: "disc_target",
-          individual_note: false,
-          notes: [createDiscussionNote(10, "Target finding")],
+          resolved: false,
+          comments: [createDiscussionNote(10, "Target finding")],
         },
       ],
       instructionFiles: [],
@@ -398,7 +392,7 @@ describe("buildScopedReviewContext", () => {
   it("keeps first-pass direct mentions bounded for large merge requests", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
-      mergeRequest,
+      codeReview,
       changes: Array.from({ length: 16 }, (_, index) =>
         createChange(
           `src/feature-${index + 1}.ts`,
@@ -436,7 +430,7 @@ describe("buildScopedReviewContext", () => {
   it("allows an explicit full rescan override even when previous review data exists", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
-      mergeRequest,
+      codeReview,
       changes: [createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new")],
       notes: [],
       discussions: [],
@@ -480,12 +474,12 @@ describe("buildScopedReviewContext", () => {
 
 function createChange(path: string, diff: string) {
   return {
-    old_path: path,
-    new_path: path,
+    oldPath: path,
+    newPath: path,
     diff,
-    new_file: false,
-    renamed_file: false,
-    deleted_file: false,
+    newFile: false,
+    renamedFile: false,
+    deletedFile: false,
   };
 }
 
@@ -504,7 +498,7 @@ function createResponseTarget(
           ? "finding-thread-reply"
           : discussionId
             ? "discussion-reply"
-            : "merge-request-note",
+            : "code-review-note",
     locationType:
       kind === "summary-follow-up"
         ? "summary-discussion"
@@ -512,7 +506,7 @@ function createResponseTarget(
           ? "finding-thread"
           : discussionId
             ? "discussion-note"
-            : "merge-request-note",
+            : "code-review-note",
     triggerKind: kind,
     noteId,
     discussionId,
@@ -526,21 +520,20 @@ function createNote(id: number, body: string) {
   return {
     id,
     body,
-    author: {
-      id: 42,
-      username: "developer",
-      name: "Dev User",
-    },
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    system: false,
+    authorUsername: "developer",
+    resolvable: false,
+    resolved: false,
   };
 }
 
 function createDiscussionNote(id: number, body: string) {
   return {
     ...createNote(id, body),
-    type: "DiscussionNote",
+    anchor: null,
+    positionJson: null,
+    isBot: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
 }
 
@@ -563,6 +556,7 @@ function createThread(
       endLine: 1,
       side: "new",
     },
+    resolvable: true,
     resolved,
     humanReplies: [],
   };

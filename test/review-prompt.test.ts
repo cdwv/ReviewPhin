@@ -30,9 +30,9 @@ describe("buildReviewPrompt", () => {
     const prompt = buildReviewPrompt(
       createContext(undefined, "direct-mention", "first-pass-full", [
         {
-          sourceKind: "merge-request-description",
+          sourceKind: "code-review-description",
           noteId: null,
-          displayName: "merge-request-description-architecture.png",
+          displayName: "code-review-description-architecture.png",
           status: 503,
           message:
             "GitLab image request failed for https://gitlab.example.com/-/project/1085/uploads/missing/architecture.png with 503",
@@ -43,11 +43,9 @@ describe("buildReviewPrompt", () => {
 
     expect(prompt).toContain("Runtime note:");
     expect(prompt).toContain(
-      "GitLab failed to download 1 referenced image attachment(s) before this run.",
+      "The platform failed to download 1 referenced image attachment(s) before this run.",
     );
-    expect(prompt).toContain(
-      "merge-request-description-architecture.png",
-    );
+    expect(prompt).toContain("code-review-description-architecture.png");
     expect(prompt).toContain(
       '"attachmentIssues": [',
     );
@@ -78,7 +76,7 @@ describe("buildReviewPrompt", () => {
     const prompt = buildReviewPrompt(createContext(null, "summary-follow-up"));
 
     expect(prompt).toContain(
-      "The latest user instruction came from a reply to the bot's merge request summary note.",
+      "The latest user instruction came from a reply to the bot's code review summary note.",
     );
     expect(prompt).toContain('"kind": "summary-follow-up"');
   });
@@ -91,7 +89,7 @@ describe("buildReviewPrompt", () => {
     );
     expect(prompt).toContain("instruction precedence from lowest to highest");
     expect(prompt).toContain(
-      "merge-request-level user comments, then the current `reviewTrigger`",
+      "code-review-level user comments, then the current `reviewTrigger`",
     );
     expect(prompt).toContain(
       "prefer updating that existing thread/finding instead of creating a duplicate",
@@ -100,7 +98,7 @@ describe("buildReviewPrompt", () => {
       "unused locals, helper functions, imports, parameters, or assigned values",
     );
     expect(renderPrompt("subagent.context-analyst", {})).toContain(
-      "merge-request-level user comments, then the current request",
+      "code-review-level user comments, then the current request",
     );
     expect(renderPrompt("subagent.review-author", {})).not.toContain("unused");
   });
@@ -111,10 +109,10 @@ describe("buildReviewPrompt", () => {
     );
 
     expect(prompt).toContain(
-      "This merge request has already been reviewed before.",
+      "This code review has already been reviewed before.",
     );
     expect(prompt).toContain(
-      "The latest user instruction came from a reply to the bot's merge request summary note.",
+      "The latest user instruction came from a reply to the bot's code review summary note.",
     );
   });
 
@@ -141,7 +139,7 @@ describe("buildReviewPrompt", () => {
       "This is a focused follow-up on an existing bot-owned discussion thread.",
     );
     expect(prompt).not.toContain(
-      "The latest user instruction came from a reply to the bot's merge request summary note.",
+      "The latest user instruction came from a reply to the bot's code review summary note.",
     );
   });
 
@@ -201,12 +199,19 @@ describe("buildReviewPrompt", () => {
     });
 
     expect(prompt).toContain('"phase": "reply"');
-    expect(prompt).toContain('"mergeRequest": {');
+    expect(prompt).toContain('"codeReview": {');
     expect(prompt).toContain('"author": "developer"');
     expect(prompt).toContain('"changedFiles": [');
     expect(prompt).toContain('"responseTargets": [');
     expect(prompt).toContain(
       "The prior finding still applies because validation is missing.",
+    );
+    expect(prompt).toContain("Formatting contract:");
+    expect(prompt).toContain(
+      "Return exactly one JSON object matching the schema below.",
+    );
+    expect(prompt).toContain(
+      "Do not include Markdown fences, introductions, explanations, or trailing text outside the JSON object.",
     );
   });
 
@@ -264,43 +269,30 @@ function createContext(
     ],
     attachmentIssues,
     workspacePath: repoPath(),
-    mergeRequest: {
-      id: 1,
-      iid: 7,
-      project_id: 1085,
+    codeReview: {
+      id: 7,
       title: "Add prompt memory context",
       description: "Description",
-      web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
-      source_branch: "feature",
-      target_branch: "main",
-      author: {
-        id: 1,
-        username: "developer",
-        name: "Dev",
-      },
+      webUrl: "https://gitlab.example.com/group/project/-/merge_requests/7",
+      sourceBranch: "feature",
+      targetBranch: "main",
+      authorUsername: "developer",
     },
     changes: [
       {
-        old_path: "src/old-worker.ts",
-        new_path: "src/worker.ts",
+        oldPath: "src/old-worker.ts",
+        newPath: "src/worker.ts",
         diff: "@@ -1,2 +1,4 @@\n-export function oldWorker() {}\n+export function worker() {\n+  return true;\n+}",
-        new_file: false,
-        renamed_file: true,
-        deleted_file: false,
+        newFile: false,
+        renamedFile: true,
+        deletedFile: false,
       },
     ],
     notes: [
       {
         id: 60,
         body: "Can we summarize the worker changes clearly?",
-        author: {
-          id: 2,
-          username: "reviewer",
-          name: "Reviewer",
-        },
-        created_at: "2026-04-27T12:00:00.000Z",
-        updated_at: "2026-04-27T12:00:00.000Z",
-        system: false,
+        authorUsername: "reviewer",
         resolvable: false,
         resolved: false,
       },
@@ -348,11 +340,11 @@ function createContext(
         kind:
           triggerKind === "summary-follow-up"
             ? "summary-discussion-reply"
-            : "merge-request-note",
+            : "code-review-note",
         locationType:
           triggerKind === "summary-follow-up"
             ? "summary-discussion"
-            : "merge-request-note",
+            : "code-review-note",
         triggerKind,
         noteId: 55,
         ...(triggerKind === "summary-follow-up"

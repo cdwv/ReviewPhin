@@ -66,18 +66,27 @@ export class HarnessReviewProvider implements ReviewProvider {
         sessionKind: "review",
       },
       metadata: {
-        mergeRequestIid: effectiveContext.mergeRequest.iid,
+        codeReviewId: effectiveContext.codeReview.id,
         workspacePath: effectiveContext.workspacePath,
       },
+      responseFormat: {
+        schema: reviewResultSchema,
+        looksLike: isReviewResultLike,
+      },
     });
-    const content = response.response?.data.content;
-    if (!content) {
+    if (!response.response?.data.content) {
       throw new Error("Copilot review session returned no content");
+    }
+    if (!response.parsed) {
+      throw new Error(
+        response.parseError?.message ??
+          "Copilot review session returned invalid structured output",
+      );
     }
 
     return reviewResultSchema.parse(
       this.normalizeOptionalReplyHandoff(
-        parseJsonResponse(content),
+        response.parsed,
         effectiveContext,
       ),
     );
@@ -285,23 +294,12 @@ export class HarnessReviewProviderFactory implements ReviewProviderFactory {
   }
 }
 
-function parseJsonResponse(content: string): unknown {
-  const trimmed = content.trim();
-
-  if (trimmed.startsWith("{")) {
-    return JSON.parse(trimmed);
-  }
-
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) {
-    return JSON.parse(fenced[1].trim());
-  }
-
-  throw new Error("Harness review output did not contain a JSON object");
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isReviewResultLike(value: Record<string, unknown>): boolean {
+  return "overview" in value || "findings" in value;
 }
 
 function normalizeNonEmptyString(value: unknown): string | null {

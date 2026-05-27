@@ -2,7 +2,7 @@
 
 ReviewPhin selects a model through **named profiles** stored in the database. When no profiles exist, it uses the GitHub Copilot CLI, assuming it is already authenticated. When profiles exist, the effective profile for a review run is resolved in this order:
 
-1. `/reviewphin-profile <name>` directive in the merge request description
+1. `/reviewphin-profile <name>` directive in the code review description (the merge request description in GitLab today)
 2. the tenant's assigned profile (`tenant set-profile`)
 3. the database default profile (`model-profile set-default`)
 4. plain Copilot CLI fallback (no profile)

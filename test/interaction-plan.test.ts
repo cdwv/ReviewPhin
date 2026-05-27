@@ -163,7 +163,7 @@ function createTrigger(
             ? "finding-thread-reply"
             : discussionId
               ? "discussion-reply"
-              : "merge-request-note",
+              : "code-review-note",
       locationType:
         kind === "summary-follow-up"
           ? "summary-discussion"
@@ -171,7 +171,7 @@ function createTrigger(
             ? "finding-thread"
             : discussionId
               ? "discussion-note"
-              : "merge-request-note",
+              : "code-review-note",
       triggerKind: kind,
       noteId: 55,
       discussionId,

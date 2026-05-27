@@ -1,31 +1,18 @@
 import type { Logger } from "pino";
 import { join } from "node:path";
 
-import { isBotUser } from "../gitlab/bot-user.js";
-import { GitLabClient } from "../gitlab/client.js";
-import {
-  discoverGitLabImageAttachmentReferences,
-  materializeGitLabImageAttachments,
-} from "../gitlab/image-attachments.js";
 import type {
-  GitLabDiscussion,
-  GitLabNoteHookPayload,
-  MaterializedWorkspace,
-  TriggerNoteReference,
-} from "../gitlab/types.js";
-import {
-  extractWebhookHeadSha,
-  parseGitLabNoteHook,
-} from "../gitlab/webhook.js";
-import type { MergeRequestContextHydrator } from "../gitlab/hydrator.js";
-import type { WorkspaceMaterializer } from "../gitlab/workspace.js";
-import {
-  buildProviderThreads,
-  type DiscussionReconciler,
-  type ReconcileSummary,
+  IPlatform,
+  PlatformMaterializedWorkspace,
+  PlatformReviewRoutingContext,
+  PlatformReviewRuntime,
+} from "../platforms/IPlatform.js";
+import { getPlatformBySlug } from "../platforms/platform-registry.js";
+import type {
+  DiscussionReconciler,
+  ReconcileSummary,
 } from "../reconcile/discussion-reconciler.js";
 import type { HarnessChatterRunnerFactory } from "../review/harness-chatter.js";
-import type { HarnessRunAttachments } from "../harness/types.js";
 import { buildInteractionPlan } from "../review/interaction-plan.js";
 import { readHarnessRunMetrics } from "../harness/run-metrics.js";
 import {
@@ -34,133 +21,147 @@ import {
 } from "../review/model-profiles.js";
 import type { ReviewProviderFactory } from "../review/provider.js";
 import { InteractionRunArtifacts } from "../review/run-artifacts.js";
-import { buildScopedReviewContext } from "../review/review-scope.js";
-import {
-  buildReviewTriggerContext,
-  classifyWebhookTrigger,
-  locateTriggerNoteReference,
-} from "../review/trigger.js";
 import type {
-  ChatterBatchResult,
-  ResponseTarget,
   ReviewContext,
   ReviewResult,
+  TriggerNoteReference,
   WebhookReviewTrigger,
 } from "../review/types.js";
 import type {
   CreateReviewFindingInput,
-  DiscussionMappingRecord,
   InteractionJobRecord,
-  PreviousCompletedInteractionRecord,
   TenantRecord,
 } from "../storage/contract/index.js";
 import { listAll, type StorageHelpers } from "../storage/storage-helpers.js";
 import type { TenantRegistry } from "../tenants/tenant-registry.js";
-import {
-  createInteractionJobDedupeKey,
-  createFindingIdentityKey,
-} from "../utils/ids.js";
+import { createFindingIdentityKey } from "../utils/ids.js";
 
 const REVIEW_STARTED_REACTION = "eyes";
 const REVIEW_COMPLETED_REACTION = "white_check_mark";
 const REVIEW_FAILED_REACTION = "confounded";
 
+interface ReviewRuntimeFactoryInput {
+  platform: IPlatform;
+  storage: StorageHelpers;
+  logger: Logger;
+  tenant: TenantRecord;
+  interactionJobId: string;
+  workspaceRoot: string;
+  memoryEnabled: boolean;
+  interactionRunId?: string | undefined;
+  runArtifacts?: InteractionRunArtifacts | undefined;
+}
+
 interface ReviewWorkerOptions {
   storage: StorageHelpers;
   tenantRegistry: TenantRegistry;
-  hydrator: MergeRequestContextHydrator;
-  workspaceMaterializer: WorkspaceMaterializer;
   reviewProviderFactory: ReviewProviderFactory;
   chatterRunnerFactory: HarnessChatterRunnerFactory;
   reconciler: DiscussionReconciler;
   logger: Logger;
   runLogDir: string;
+  workspaceRoot?: string | undefined;
+  memoryEnabled?: boolean | undefined;
   maxJobRetries: number;
   retryBackoffMs: number;
+  reviewRuntimeFactory?:
+    | ((input: ReviewRuntimeFactoryInput) => PlatformReviewRuntime)
+    | undefined;
 }
 
 export class ReviewWorker {
   private readonly storage: StorageHelpers;
   private readonly tenantRegistry: TenantRegistry;
-  private readonly hydrator: MergeRequestContextHydrator;
-  private readonly workspaceMaterializer: WorkspaceMaterializer;
   private readonly reviewProviderFactory: ReviewProviderFactory;
   private readonly chatterRunnerFactory: HarnessChatterRunnerFactory;
   private readonly reconciler: DiscussionReconciler;
   private readonly logger: Logger;
   private readonly runLogDir: string;
+  private readonly workspaceRoot: string;
+  private readonly memoryEnabled: boolean;
   private readonly maxJobRetries: number;
   private readonly retryBackoffMs: number;
+  private readonly reviewRuntimeFactory: (
+    input: ReviewRuntimeFactoryInput,
+  ) => PlatformReviewRuntime;
 
   public constructor(options: ReviewWorkerOptions) {
     this.storage = options.storage;
     this.tenantRegistry = options.tenantRegistry;
-    this.hydrator = options.hydrator;
-    this.workspaceMaterializer = options.workspaceMaterializer;
     this.reviewProviderFactory = options.reviewProviderFactory;
     this.chatterRunnerFactory = options.chatterRunnerFactory;
     this.reconciler = options.reconciler;
     this.logger = options.logger;
     this.runLogDir = options.runLogDir;
+    this.workspaceRoot =
+      options.workspaceRoot ?? join("tmp", "review-worker-workspaces");
+    this.memoryEnabled = options.memoryEnabled ?? false;
     this.maxJobRetries = options.maxJobRetries;
     this.retryBackoffMs = options.retryBackoffMs;
+    this.reviewRuntimeFactory =
+      options.reviewRuntimeFactory ??
+      ((input) =>
+        input.platform.createReviewRuntime({
+          storage: input.storage,
+          logger: input.logger,
+          tenant: input.tenant,
+          interactionJobId: input.interactionJobId,
+          workspaceRoot: input.workspaceRoot,
+          memoryEnabled: input.memoryEnabled,
+          interactionRunId: input.interactionRunId,
+          runArtifacts: input.runArtifacts,
+        }));
   }
 
   public async createInteractionJobFromWebhook(
-    payload: GitLabNoteHookPayload,
+    payload: unknown,
     tenant: TenantRecord,
     trigger: WebhookReviewTrigger,
   ): Promise<{
     job: InteractionJobRecord;
     created: boolean;
   }> {
-    const headSha = extractWebhookHeadSha(payload);
+    const platform = this.resolvePlatform(tenant.platform);
+    const interactionJob = await platform.createInteractionJob({
+      tenant,
+      payload,
+    });
     const createdJob = await this.storage.createOrGetInteractionJob({
       tenantId: tenant.id,
-      dedupeKey: createInteractionJobDedupeKey({
-        baseUrl: tenant.baseUrl,
-        projectId: tenant.projectId,
-        mergeRequestIid: payload.merge_request.iid,
-        noteId: payload.object_attributes.id,
-        noteAction: payload.object_attributes.action,
-        noteUpdatedAt: payload.object_attributes.updated_at,
-        noteBody: payload.object_attributes.note,
-      }),
-      projectId: tenant.projectId,
-      mergeRequestIid: payload.merge_request.iid,
-      noteId: payload.object_attributes.id,
-      headSha,
-      payloadJson: JSON.stringify(payload),
+      dedupeKey: interactionJob.dedupeKey,
+      codeReviewId: interactionJob.codeReviewId,
+      noteId: interactionJob.noteId,
+      headSha: interactionJob.headSha,
+      payloadJson: interactionJob.payloadJson,
     });
 
     if (createdJob.created) {
-      const client = this.createGitLabClient(tenant, createdJob.job.id);
-      await this.ensureTriggerNoteReaction(
-        client,
+      const runtime = this.reviewRuntimeFactory({
+        platform,
+        storage: this.storage,
+        logger: this.logger,
         tenant,
-        createdJob.job.mergeRequestIid,
-        trigger.note,
-        REVIEW_STARTED_REACTION,
-        createdJob.job.id,
-      );
+        interactionJobId: createdJob.job.id,
+        workspaceRoot: this.workspaceRoot,
+        memoryEnabled: this.memoryEnabled,
+      });
+      await runtime.ensureTriggerNoteReaction({
+        codeReviewId: createdJob.job.codeReviewId,
+        note: trigger.note,
+        reactionName: REVIEW_STARTED_REACTION,
+        interactionJobId: createdJob.job.id,
+      });
     }
 
     return createdJob;
   }
 
   public async classifyWebhookTrigger(
-    payload: GitLabNoteHookPayload,
+    payload: unknown,
     tenant: TenantRecord,
   ): Promise<WebhookReviewTrigger | null> {
-    const client = this.createGitLabClient(
-      tenant,
-      `webhook-note-${payload.object_attributes.id}`,
-    );
-    return classifyWebhookTrigger({
-      payload,
-      tenant,
-      client,
-    });
+    const platform = this.resolvePlatform(tenant.platform);
+    return platform.classifyWebhookTrigger(tenant, payload);
   }
 
   public async processJob(
@@ -184,7 +185,7 @@ export class ReviewWorker {
 
     let interactionRunId: string | null = null;
     let runArtifacts: InteractionRunArtifacts | null = null;
-    const workspacesToCleanup: MaterializedWorkspace[] = [];
+    const workspacesToCleanup: PlatformMaterializedWorkspace[] = [];
     let metricsContext: {
       sessionLogPath: string;
       triggerKind: string | null;
@@ -193,27 +194,47 @@ export class ReviewWorker {
       promptContextPriorThreads: number;
       promptContextNotes: number;
     } | null = null;
-    let client: GitLabClient | null = null;
     let triggerNote: TriggerNoteReference | null = null;
+    let cleanupWorkspace:
+      | ((workspace: PlatformMaterializedWorkspace) => Promise<void>)
+      | null = null;
+    let syncTriggerReaction:
+      | ((input: {
+          codeReviewId: number;
+          note: TriggerNoteReference;
+          reactionName: string;
+          interactionJobId: string;
+        }) => Promise<void>)
+      | null = null;
 
     try {
-      client = this.createGitLabClient(tenant, job.id);
-      const parsedPayload = parseGitLabNoteHook(JSON.parse(job.payloadJson));
-      let routingContext = await this.hydrator.loadRoutingContext({
+      const platform = this.resolvePlatform(tenant.platform);
+      const runtime = this.reviewRuntimeFactory({
+        platform,
+        storage: this.storage,
+        logger: this.logger,
         tenant,
+        interactionJobId: job.id,
+        workspaceRoot: this.workspaceRoot,
+        memoryEnabled: this.memoryEnabled,
+      });
+      cleanupWorkspace = (workspace) => runtime.cleanupWorkspace(workspace);
+      syncTriggerReaction = (input) => runtime.ensureTriggerNoteReaction(input);
+      const parsedPayload = JSON.parse(job.payloadJson) as unknown;
+      let routingContext = await this.loadRoutingContext({
+        runtime,
         job,
-        client,
       });
       workspacesToCleanup.push(routingContext.workspace);
-      triggerNote = locateTriggerNoteReference(
-        routingContext.discussions,
-        job.noteId,
-      );
+      triggerNote = runtime.locateTriggerNoteReference({
+        context: routingContext,
+        noteId: job.noteId,
+      });
 
       const resolvedProviderConfig = await resolveReviewProviderConfig({
         storage: this.storage,
         tenant,
-        mergeRequest: routingContext.mergeRequest,
+        codeReview: routingContext.summaryContext.codeReview,
       });
       const reviewProvider = this.reviewProviderFactory.createProvider(
         resolvedProviderConfig,
@@ -237,23 +258,31 @@ export class ReviewWorker {
         interactionRun.id,
       );
       await runArtifacts.initialize();
-      client = this.createGitLabClient(
+      const runRuntime = this.reviewRuntimeFactory({
+        platform,
+        storage: this.storage,
+        logger: this.logger,
         tenant,
-        job.id,
-        interactionRun.id,
+        interactionJobId: job.id,
+        interactionRunId: interactionRun.id,
         runArtifacts,
-      );
-      triggerNote = await this.requireFreshTriggerNoteReference({
-        client,
-        tenant,
-        mergeRequestIid: job.mergeRequestIid,
-        noteId: job.noteId,
+        workspaceRoot: this.workspaceRoot,
+        memoryEnabled: this.memoryEnabled,
       });
+      syncTriggerReaction = (input) => runRuntime.ensureTriggerNoteReaction(input);
+      triggerNote = await runRuntime
+        .resolveTriggerNoteReference({
+          codeReviewId: job.codeReviewId,
+          noteId: job.noteId,
+        })
+        .catch((error: unknown) => {
+          throw new AbandonedReviewError(getErrorMessage(error));
+        });
 
       await this.logRunEvent(runArtifacts, "info", "interaction run started", {
         interactionJobId: job.id,
         tenantId: tenant.id,
-        mergeRequestIid: job.mergeRequestIid,
+        codeReviewId: job.codeReviewId,
         modelProfileName: resolvedProviderConfig.modelProfileName,
         selectionSource: resolvedProviderConfig.selectionSource,
         reviewModel: resolvedProviderConfig.reviewModel,
@@ -268,10 +297,10 @@ export class ReviewWorker {
         "lightweight routing context loaded",
         {
           interactionJobId: job.id,
-          mergeRequestIid: job.mergeRequestIid,
-          changedFiles: routingContext.changes.length,
-          noteCount: routingContext.notes.length,
-          discussionCount: routingContext.discussions.length,
+          codeReviewId: job.codeReviewId,
+          changedFiles: routingContext.changedFileCount,
+          noteCount: routingContext.noteCount,
+          discussionCount: routingContext.discussionCount,
           workspaceStrategy: routingContext.workspace.strategy,
         },
       );
@@ -279,45 +308,41 @@ export class ReviewWorker {
       let mappings = await listAll(this.storage.stores.discussionMappings, {
         filters: {
           tenantId: { eq: tenant.id },
-          mergeRequestIid: { eq: routingContext.mergeRequest.iid },
+          codeReviewId: { eq: routingContext.codeReviewId },
         },
         order: [{ field: "updatedAt", direction: "desc" }],
       });
-      mappings = await this.syncDiscussionFindingStatuses({
-        tenant,
-        mergeRequestIid: routingContext.mergeRequest.iid,
-        discussions: routingContext.discussions,
-        mappings,
+        mappings = await runtime.syncDiscussionFindingStatuses({
+          tenant,
+          codeReviewId: routingContext.codeReviewId,
+          context: routingContext,
+          mappings,
+        });
+        const priorThreads = runtime.buildProviderThreads({
+          context: routingContext,
+          mappings,
+        });
+      await runRuntime.ensureTriggerNoteReaction({
+        codeReviewId: job.codeReviewId,
+        note: triggerNote,
+        reactionName: REVIEW_STARTED_REACTION,
+        interactionJobId: job.id,
       });
-      const priorThreads = buildProviderThreads({
-        tenant,
-        discussions: routingContext.discussions,
-        mappings,
-      });
-      await this.ensureTriggerNoteReaction(
-        client,
-        tenant,
-        job.mergeRequestIid,
-        triggerNote,
-        REVIEW_STARTED_REACTION,
-        job.id,
-      );
 
-      const trigger = buildReviewTriggerContext({
+      const trigger = runtime.buildReviewTriggerContext({
         payload: parsedPayload,
-        tenant,
-        discussions: routingContext.discussions,
+        context: routingContext,
         priorThreads,
       });
       const previousInteraction =
-        await this.storage.getLatestCompletedInteractionForMergeRequest(
+        await this.storage.getLatestCompletedInteractionForCodeReview(
           tenant.id,
-          routingContext.mergeRequest.iid,
+          routingContext.codeReviewId,
           job.id,
         );
       let priorFindings = await this.storage.listPriorReviewFindings(
         tenant.id,
-        routingContext.mergeRequest.iid,
+        routingContext.codeReviewId,
         job.id,
       );
       const interactionPlan = buildInteractionPlan({
@@ -340,21 +365,12 @@ export class ReviewWorker {
         rerunReason: interactionPlan.rerunReason,
       });
 
-      const harnessTenantContext = {
-        id: tenant.id,
-        baseUrl: tenant.baseUrl,
-        projectId: tenant.projectId,
-        apiToken: tenant.apiToken,
-        memoryEnabled: routingContext.projectMemory.enabled,
-      };
-      const imageAttachments = await this.materializeImageAttachments({
-        client,
-        gitLabBaseUrl: tenant.baseUrl,
-        mergeRequest: routingContext.mergeRequest,
+      const imageAttachments = await runRuntime.materializeAttachments({
+        context: routingContext,
         runArtifacts,
         trigger,
       });
-      let chatterContext = this.buildPromptContext({
+      let chatterContext = runtime.buildPromptContext({
         attachments: imageAttachments.breadcrumbs,
         attachmentIssues: imageAttachments.issues,
         interactionRunId: interactionRun.id,
@@ -386,7 +402,14 @@ export class ReviewWorker {
             },
           },
           {
-            tenant: harnessTenantContext,
+            tenant: this.buildHarnessTenantContext({
+              platform,
+              tenant,
+              interactionRunId: interactionRun.id,
+              interactionJobId: job.id,
+              runDirectory: runArtifacts.runDirectory,
+              memoryEnabled: routingContext.projectMemory.enabled,
+            }),
           },
         );
         await runArtifacts.writeJsonArtifact(
@@ -404,13 +427,12 @@ export class ReviewWorker {
           promptContextNotes: chatterContext.notes.length,
         };
 
-        routingContext = await this.hydrator.loadRoutingContext({
-          tenant,
+        routingContext = await this.loadRoutingContext({
+          runtime: runRuntime,
           job,
-          client,
         });
         workspacesToCleanup.push(routingContext.workspace);
-        chatterContext = this.buildPromptContext({
+        chatterContext = runtime.buildPromptContext({
           attachments: imageAttachments.breadcrumbs,
           attachmentIssues: imageAttachments.issues,
           interactionRunId: interactionRun.id,
@@ -430,25 +452,24 @@ export class ReviewWorker {
       let reconcileSummary: ReconcileSummary | null = null;
 
       if (interactionPlan.reviewNeeded) {
-        const hydratedContext = await this.hydrator.hydrate({
-          tenant,
+        const hydratedContext = await this.hydrateContext({
+          runtime: runRuntime,
           job,
-          client,
           context: routingContext,
         });
         workspacesToCleanup.push(hydratedContext.workspace);
-        mappings = await this.syncDiscussionFindingStatuses({
+        mappings = await runRuntime.syncDiscussionFindingStatuses({
           tenant,
-          mergeRequestIid: hydratedContext.mergeRequest.iid,
-          discussions: hydratedContext.discussions,
+          codeReviewId: hydratedContext.codeReviewId,
+          context: hydratedContext,
           mappings,
         });
         priorFindings = await this.storage.listPriorReviewFindings(
           tenant.id,
-          hydratedContext.mergeRequest.iid,
+          hydratedContext.codeReviewId,
           job.id,
         );
-        reviewContext = this.buildPromptContext({
+        reviewContext = runRuntime.buildPromptContext({
           attachments: imageAttachments.breadcrumbs,
           attachmentIssues: imageAttachments.issues,
           interactionRunId: interactionRun.id,
@@ -469,7 +490,7 @@ export class ReviewWorker {
           {
             interactionRunId: interactionRun.id,
             workspacePath: hydratedContext.workspace.rootPath,
-            changedFiles: hydratedContext.changes.length,
+            changedFiles: hydratedContext.changedFileCount,
             promptMode: reviewContext.scope.mode,
             triggerKind: reviewContext.trigger.kind,
             promptContextChangedFiles: reviewContext.changes.length,
@@ -478,10 +499,14 @@ export class ReviewWorker {
 
         reviewResult = await reviewProvider.review(reviewContext, {
           attachments: imageAttachments.attachments,
-          tenant: {
-            ...harnessTenantContext,
+          tenant: this.buildHarnessTenantContext({
+            platform,
+            tenant,
+            interactionRunId: interactionRun.id,
+            interactionJobId: job.id,
+            runDirectory: runArtifacts.runDirectory,
             memoryEnabled: hydratedContext.projectMemory.enabled,
-          },
+          }),
         });
         await runArtifacts.writeJsonArtifact(
           join("orchestration", "review-result.json"),
@@ -518,12 +543,16 @@ export class ReviewWorker {
         );
 
         reconcileSummary = await this.reconciler.reconcile({
+          platform,
           tenant,
-          context: hydratedContext,
+          context: hydratedContext.summaryContext,
           mappings,
           interactionRunId: interactionRun.id,
           reviewResult,
-          client,
+          discussionAdapter: runRuntime.createReviewDiscussionAdapter({
+            context: hydratedContext,
+            interactionRunId: interactionRun.id,
+          }),
         });
 
         metricsContext = {
@@ -541,7 +570,7 @@ export class ReviewWorker {
         await this.logRunEvent(
           runArtifacts,
           "info",
-          "reconciled review result into GitLab",
+          "reconciled review result into platform discussions",
           {
             interactionRunId: interactionRun.id,
             summary: reconcileSummary,
@@ -570,12 +599,16 @@ export class ReviewWorker {
             },
           },
           {
-            tenant: {
-              ...harnessTenantContext,
+            tenant: this.buildHarnessTenantContext({
+              platform,
+              tenant,
+              interactionRunId: interactionRun.id,
+              interactionJobId: job.id,
+              runDirectory: runArtifacts.runDirectory,
               memoryEnabled:
                 reviewContext?.projectMemory.enabled ??
                 routingContext.projectMemory.enabled,
-            },
+            }),
           },
         );
         await runArtifacts.writeJsonArtifact(
@@ -583,10 +616,8 @@ export class ReviewWorker {
           replyResult,
         );
 
-        const publishOutcomes = await this.publishChatterReplies({
-          tenant,
-          mergeRequestIid: routingContext.mergeRequest.iid,
-          client,
+        const publishOutcomes = await runRuntime.publishChatterReplies({
+          codeReviewId: routingContext.codeReviewId,
           result: replyResult,
           plannedTargets: interactionPlan.responseTargets,
         });
@@ -633,14 +664,14 @@ export class ReviewWorker {
         reviewResult ? JSON.stringify(reviewResult) : null,
       );
       await this.storage.markJobCompleted(job.id);
-      await this.ensureTriggerNoteReaction(
-        client,
-        tenant,
-        job.mergeRequestIid,
-        triggerNote,
-        REVIEW_COMPLETED_REACTION,
-        job.id,
-      );
+      if (syncTriggerReaction && triggerNote) {
+        await syncTriggerReaction({
+          codeReviewId: job.codeReviewId,
+          note: triggerNote,
+          reactionName: REVIEW_COMPLETED_REACTION,
+          interactionJobId: job.id,
+        });
+      }
       this.logger.info(
         {
           interactionJobId: job.id,
@@ -704,15 +735,13 @@ export class ReviewWorker {
       }
 
       await this.storage.markJobFailed(job.id, nextRetryCount, errorMessage);
-      if (client && triggerNote) {
-        await this.ensureTriggerNoteReaction(
-          client,
-          tenant,
-          job.mergeRequestIid,
-          triggerNote,
-          REVIEW_FAILED_REACTION,
-          job.id,
-        );
+      if (syncTriggerReaction && triggerNote) {
+        await syncTriggerReaction({
+          codeReviewId: job.codeReviewId,
+          note: triggerNote,
+          reactionName: REVIEW_FAILED_REACTION,
+          interactionJobId: job.id,
+        });
       }
       throw error;
     } finally {
@@ -729,7 +758,10 @@ export class ReviewWorker {
         ).values(),
       ).reverse()) {
         try {
-          await this.workspaceMaterializer.cleanup(workspace);
+          if (!cleanupWorkspace) {
+            continue;
+          }
+          await cleanupWorkspace(workspace);
         } catch (error) {
           if (runArtifacts) {
             await this.logRunEvent(
@@ -756,109 +788,6 @@ export class ReviewWorker {
     }
   }
 
-  private createGitLabClient(
-    tenant: TenantRecord,
-    interactionJobId: string,
-    interactionRunId?: string,
-    runArtifacts?: InteractionRunArtifacts,
-  ): GitLabClient {
-    return new GitLabClient({
-      baseUrl: tenant.baseUrl,
-      apiToken: tenant.apiToken,
-      logger: this.logger.child({
-        tenantId: tenant.id,
-        interactionJobId,
-        ...(interactionRunId ? { interactionRunId } : {}),
-      }),
-      ...(runArtifacts
-        ? {
-            requestLogger: {
-              log: (entry) => runArtifacts.appendGitLabHttpLog(entry),
-            },
-          }
-        : {}),
-    });
-  }
-
-  private async ensureTriggerNoteReaction(
-    client: GitLabClient,
-    tenant: TenantRecord,
-    mergeRequestIid: number,
-    note: TriggerNoteReference,
-    reactionName: string,
-    interactionJobId: string,
-  ): Promise<void> {
-    if (note.kind === "discussion-note") {
-      return;
-    }
-
-    try {
-      const existing = await client.listTriggerNoteAwardEmojis(
-        tenant.projectId,
-        mergeRequestIid,
-        note,
-      );
-      const hasReaction = existing.some(
-        (award) => award.name === reactionName && isBotUser(award.user, tenant),
-      );
-      if (hasReaction) {
-        return;
-      }
-
-      await client.createTriggerNoteAwardEmoji(
-        tenant.projectId,
-        mergeRequestIid,
-        note,
-        reactionName,
-      );
-    } catch (error) {
-      this.logger.warn(
-        {
-          err: error,
-          tenantId: tenant.id,
-          interactionJobId,
-          mergeRequestIid,
-          note,
-          reactionName,
-        },
-        "failed to synchronize trigger-note reaction",
-      );
-    }
-  }
-
-  private async requireFreshTriggerNoteReference(input: {
-    client: GitLabClient;
-    tenant: TenantRecord;
-    mergeRequestIid: number;
-    noteId: number;
-  }): Promise<TriggerNoteReference> {
-    const [notes, discussions] = await Promise.all([
-      input.client.listMergeRequestNotes(
-        input.tenant.projectId,
-        input.mergeRequestIid,
-        { noCache: true },
-      ),
-      input.client.listMergeRequestDiscussions(
-        input.tenant.projectId,
-        input.mergeRequestIid,
-        { noCache: true },
-      ),
-    ]);
-
-    const noteExists =
-      notes.some((note) => note.id === input.noteId) ||
-      discussions.some((discussion) =>
-        discussion.notes.some((note) => note.id === input.noteId),
-      );
-    if (!noteExists) {
-      throw new AbandonedReviewError(
-        `Trigger note ${input.noteId} no longer exists on merge request ${input.mergeRequestIid}`,
-      );
-    }
-
-    return locateTriggerNoteReference(discussions, input.noteId);
-  }
-
   private async logRunEvent(
     runArtifacts: InteractionRunArtifacts,
     level: "debug" | "info" | "warn" | "error",
@@ -879,301 +808,6 @@ export class ReviewWorker {
         "failed to persist run app log",
       );
     }
-  }
-
-  private async syncDiscussionFindingStatuses(input: {
-    tenant: TenantRecord;
-    mergeRequestIid: number;
-    discussions: GitLabDiscussion[];
-    mappings: DiscussionMappingRecord[];
-  }): Promise<DiscussionMappingRecord[]> {
-    const discussionById = new Map(
-      input.discussions.map(
-        (discussion) => [discussion.id, discussion] as const,
-      ),
-    );
-    const syncedMappings = [...input.mappings];
-    let synchronizedCount = 0;
-
-    for (const [index, mapping] of input.mappings.entries()) {
-      const discussion = discussionById.get(mapping.gitlabDiscussionId);
-      if (!discussion) {
-        continue;
-      }
-
-      const liveStatus = discussion.notes.some((note) => note.resolved === true)
-        ? "resolved"
-        : "open";
-      if (mapping.status === liveStatus) {
-        continue;
-      }
-      syncedMappings[index] = await this.storage.upsertDiscussionMapping({
-        id: mapping.id,
-        tenantId: mapping.tenantId,
-        projectId: mapping.projectId,
-        mergeRequestIid: mapping.mergeRequestIid,
-        identityKey: mapping.identityKey,
-        findingFingerprint: mapping.findingFingerprint,
-        title: mapping.title,
-        severity: mapping.severity,
-        category: mapping.category,
-        body: mapping.body,
-        gitlabDiscussionId: mapping.gitlabDiscussionId,
-        gitlabNoteId: mapping.gitlabNoteId,
-        anchorJson: mapping.anchorJson,
-        positionJson: mapping.positionJson,
-        botDiscussion: mapping.botDiscussion,
-        botNote: mapping.botNote,
-        noteAuthorId: mapping.noteAuthorId,
-        noteAuthorUsername: mapping.noteAuthorUsername,
-        status: liveStatus,
-        lastInteractionRunId: mapping.lastInteractionRunId,
-      });
-
-      const findingStatusUpdated = await this.storage.updateReviewFindingStatus(
-        input.tenant.id,
-        input.mergeRequestIid,
-        mapping.identityKey,
-        liveStatus,
-        {
-          currentStatuses: ["open", "resolved"],
-        },
-      );
-      if (!findingStatusUpdated) {
-        this.logger.warn(
-          {
-            tenantId: input.tenant.id,
-            mergeRequestIid: input.mergeRequestIid,
-            discussionId: mapping.gitlabDiscussionId,
-            identityKey: mapping.identityKey,
-            findingStatus: liveStatus,
-          },
-          "failed to synchronize persisted review finding status from live discussion",
-        );
-      }
-
-      synchronizedCount += 1;
-    }
-
-    if (synchronizedCount > 0) {
-      this.logger.info(
-        {
-          tenantId: input.tenant.id,
-          mergeRequestIid: input.mergeRequestIid,
-          synchronizedCount,
-        },
-        "synchronized persisted discussion findings from live discussions",
-      );
-    }
-
-    return syncedMappings;
-  }
-
-  private buildPromptContext(input: {
-    attachments: ReviewContext["attachments"];
-    attachmentIssues: ReviewContext["attachmentIssues"];
-    interactionRunId: string;
-    tenant: TenantRecord;
-    job: InteractionJobRecord;
-    runArtifacts: InteractionRunArtifacts;
-    trigger: ReviewContext["trigger"];
-    context: Pick<
-      Awaited<ReturnType<MergeRequestContextHydrator["hydrate"]>>,
-      | "workspace"
-      | "mergeRequest"
-      | "changes"
-      | "notes"
-      | "discussions"
-      | "projectMemory"
-    >;
-    mappings: DiscussionMappingRecord[];
-    priorFindings: Awaited<
-      ReturnType<StorageHelpers["listPriorReviewFindings"]>
-    >;
-    previousInteraction: PreviousCompletedInteractionRecord | null;
-  }): ReviewContext {
-    return buildScopedReviewContext({
-      attachments: input.attachments,
-      attachmentIssues: input.attachmentIssues,
-      workspacePath: input.context.workspace.rootPath,
-      mergeRequest: input.context.mergeRequest,
-      changes: input.context.changes,
-      notes: input.context.notes,
-      discussions: input.context.discussions,
-      instructionFiles: input.context.workspace.instructionFiles,
-      projectMemory: input.context.projectMemory,
-      trigger: input.trigger,
-      priorThreads: buildProviderThreads({
-        tenant: input.tenant,
-        discussions: input.context.discussions,
-        mappings: input.mappings,
-      }),
-      priorFindings: input.priorFindings.map((finding) => ({
-        findingId: finding.findingId,
-        identityKey: finding.identityKey,
-        status: finding.status,
-        title: finding.title,
-        body: finding.body,
-        severity:
-          finding.severity as ReviewContext["scope"]["priorFindings"][number]["severity"],
-        category:
-          finding.category as ReviewContext["scope"]["priorFindings"][number]["category"],
-        anchor: finding.anchor,
-        suggestion: finding.suggestion,
-        reviewRunId: finding.interactionRunId,
-        reviewedAt: finding.reviewedAt,
-        headSha: finding.headSha,
-      })),
-      previousReview: input.previousInteraction
-        ? {
-            reviewRunId: input.previousInteraction.interactionRunId,
-            finishedAt: input.previousInteraction.finishedAt,
-            headSha: input.previousInteraction.headSha,
-            resultJson: input.previousInteraction.resultJson,
-            changesJson: input.previousInteraction.snapshot.changesJson,
-          }
-        : null,
-      logging: {
-        interactionRunId: input.interactionRunId,
-        interactionJobId: input.job.id,
-        tenantId: input.tenant.id,
-        runDirectory: input.runArtifacts.runDirectory,
-      },
-    });
-  }
-
-  private async materializeImageAttachments(input: {
-    client: GitLabClient;
-    gitLabBaseUrl: string;
-    mergeRequest: ReviewContext["mergeRequest"];
-    runArtifacts: InteractionRunArtifacts;
-    trigger: ReviewContext["trigger"];
-  }): Promise<{
-    attachments: HarnessRunAttachments;
-    breadcrumbs: ReviewContext["attachments"];
-    issues: ReviewContext["attachmentIssues"];
-  }> {
-    const references = discoverGitLabImageAttachmentReferences({
-      gitLabBaseUrl: input.gitLabBaseUrl,
-      mergeRequest: input.mergeRequest,
-      triggerNote: {
-        body: input.trigger.body,
-        noteId: input.trigger.noteId,
-      },
-    });
-    if (references.length === 0) {
-      return {
-        attachments: [],
-        breadcrumbs: [],
-        issues: [],
-      };
-    }
-
-    const materialized = await materializeGitLabImageAttachments({
-      client: input.client,
-      references,
-    });
-    await input.runArtifacts.writeJsonArtifact(
-      join("orchestration", "image-attachments.json"),
-      {
-        attachmentCount: materialized.attachments.length,
-        attachments: materialized.breadcrumbs,
-        issues: materialized.issues,
-        skipped: materialized.skipped,
-      },
-    );
-    if (materialized.issues.length > 0) {
-      await this.logRunEvent(
-        input.runArtifacts,
-        "warn",
-        "gitlab image attachment downloads failed for some referenced images; continuing with partial image context",
-        {
-          issueCount: materialized.issues.length,
-          attachmentCount: materialized.attachments.length,
-          triggerNoteId: input.trigger.noteId,
-          issues: materialized.issues,
-        },
-      );
-    }
-
-    return {
-      attachments: materialized.attachments,
-      breadcrumbs: materialized.breadcrumbs,
-      issues: materialized.issues,
-    };
-  }
-
-  private async publishChatterReplies(input: {
-    tenant: TenantRecord;
-    mergeRequestIid: number;
-    client: GitLabClient;
-    result: ChatterBatchResult;
-    plannedTargets: ResponseTarget[];
-  }): Promise<
-    Array<{
-      target: ResponseTarget;
-      status: "published" | "failed";
-      noteId?: number | undefined;
-      error?: string | undefined;
-    }>
-  > {
-    const plannedTargetKeySet = new Set(
-      input.plannedTargets.map((target) => this.responseTargetKey(target)),
-    );
-    const outcomes: Array<{
-      target: ResponseTarget;
-      status: "published" | "failed";
-      noteId?: number | undefined;
-      error?: string | undefined;
-    }> = [];
-    for (const reply of input.result.replies) {
-      const matchingTarget =
-        input.plannedTargets.find(
-          (target) =>
-            this.responseTargetKey(target) ===
-            this.responseTargetKey(reply.target),
-        ) ?? null;
-      if (
-        !matchingTarget ||
-        !plannedTargetKeySet.has(this.responseTargetKey(matchingTarget))
-      ) {
-        continue;
-      }
-
-      try {
-        const published = matchingTarget.discussionId
-          ? await input.client.replyToDiscussion(
-              input.tenant.projectId,
-              input.mergeRequestIid,
-              matchingTarget.discussionId,
-              reply.replyBody,
-            )
-          : await input.client.createMergeRequestNote(
-              input.tenant.projectId,
-              input.mergeRequestIid,
-              reply.replyBody,
-            );
-        outcomes.push({
-          target: matchingTarget,
-          status: "published",
-          noteId: published.id,
-        });
-      } catch (error) {
-        outcomes.push({
-          target: matchingTarget,
-          status: "failed",
-          error: getErrorMessage(error),
-        });
-      }
-    }
-
-    return outcomes;
-  }
-
-  private responseTargetKey(
-    target: Pick<ResponseTarget, "kind" | "noteId" | "discussionId">,
-  ): string {
-    return `${target.kind}::${target.noteId}::${target.discussionId ?? ""}`;
   }
 
   private async persistInteractionRunMetrics(input: {
@@ -1220,6 +854,54 @@ export class ReviewWorker {
         "failed to persist interaction run metrics",
       );
     }
+  }
+
+  private async loadRoutingContext(input: {
+    runtime: PlatformReviewRuntime;
+    job: InteractionJobRecord;
+  }): Promise<PlatformReviewRoutingContext> {
+    return input.runtime.loadRoutingContext(input.job);
+  }
+
+  private async hydrateContext(input: {
+    runtime: PlatformReviewRuntime;
+    job: InteractionJobRecord;
+    context: PlatformReviewRoutingContext;
+  }): Promise<PlatformReviewRoutingContext> {
+    return input.runtime.hydrate({
+      job: input.job,
+      context: input.context,
+    });
+  }
+
+  private resolvePlatform(platformSlug: string): IPlatform {
+    return (
+      getPlatformBySlug(platformSlug) ??
+      (() => {
+        throw new Error(`Unknown platform ${platformSlug}`);
+      })()
+    );
+  }
+
+  private buildHarnessTenantContext(input: {
+    platform: IPlatform;
+    tenant: TenantRecord;
+    interactionRunId: string;
+    interactionJobId: string;
+    runDirectory: string;
+    memoryEnabled: boolean;
+  }) {
+    return input.platform.buildHarnessTenantContext({
+      tenant: input.tenant,
+      logger: this.logger,
+      memoryEnabled: input.memoryEnabled,
+      logging: {
+        interactionRunId: input.interactionRunId,
+        interactionJobId: input.interactionJobId,
+        tenantId: input.tenant.id,
+        runDirectory: input.runDirectory,
+      },
+    });
   }
 }
 

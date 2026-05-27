@@ -1,14 +1,33 @@
 import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
+import type { Logger } from "pino";
 
 import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
-import type { GitLabNoteHookPayload } from "../src/gitlab/types.js";
+import type {
+  IPlatform,
+  PlatformReviewRuntime,
+} from "../src/platforms/IPlatform.js";
+import type { GitLabNoteHookPayload } from "../src/platforms/gitlab/types.js";
+import type { InteractionRunArtifacts } from "../src/review/run-artifacts.js";
+import type { TenantRecord } from "../src/storage/contract/index.js";
+import type { StorageHelpers } from "../src/storage/storage-helpers.js";
+import { wrapGitLabPlatformContext } from "./helpers/platform-context.js";
+import { overridePlatformRuntime } from "./helpers/platform-runtime.js";
 
 const tenant = {
   id: "tenant_1",
   key: "https://gitlab.example.com::123",
+  platform: "gitlab",
+  platformConfigJson: JSON.stringify({
+    baseUrl: "https://gitlab.example.com",
+    projectId: 123,
+    apiToken: "token",
+    webhookSecret: "secret",
+    botUserId: 999,
+    botUsername: "review-bot",
+  }),
   baseUrl: "https://gitlab.example.com",
   projectId: 123,
   apiToken: "token",
@@ -66,7 +85,7 @@ function getRequestUrl(input: URL | RequestInfo): string {
 function createFreshTriggerNoteResponse(input: {
   requestUrl: string;
   noteId: number;
-  kind?: "merge-request-note" | "discussion-note";
+  kind?: "code-review-note" | "discussion-note";
   discussionId?: string;
 }): Response {
   if (
@@ -137,6 +156,27 @@ function createFreshTriggerNoteResponse(input: {
   });
 }
 
+function createReviewRuntimeFactory(overrides: Partial<PlatformReviewRuntime>) {
+  return ({
+    platform,
+    ...runtimeInput
+  }: {
+    platform: IPlatform;
+    storage: StorageHelpers;
+    logger: Logger;
+    tenant: TenantRecord;
+    interactionJobId: string;
+    workspaceRoot: string;
+    memoryEnabled: boolean;
+    interactionRunId?: string | undefined;
+    runArtifacts?: InteractionRunArtifacts | undefined;
+  }) =>
+    overridePlatformRuntime(
+      platform.createReviewRuntime(runtimeInput),
+      overrides,
+    );
+}
+
 describe("ReviewWorker orchestration", () => {
   it("abandons the run without retry when the trigger note no longer exists", async () => {
     const originalFetch = globalThis.fetch;
@@ -160,7 +200,7 @@ describe("ReviewWorker orchestration", () => {
       tenantId: tenant.id,
       dedupeKey: "dedupe",
       projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 55,
       headSha: "abc123",
       status: "queued" as const,
@@ -218,7 +258,7 @@ describe("ReviewWorker orchestration", () => {
         createInteractionRun,
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
-        getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+        getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
         listPriorReviewFindings: vi.fn(async () => []),
         completeInteractionRun: vi.fn(async () => {}),
         replaceReviewFindings: vi.fn(async () => {}),
@@ -232,59 +272,59 @@ describe("ReviewWorker orchestration", () => {
       tenantRegistry: {
         getTenantById: vi.fn(async () => tenant),
       } as never,
-      hydrator: {
-        loadRoutingContext: vi.fn(async () => ({
-          tenant,
-          job,
-          mergeRequest: {
-            id: 1,
-            iid: 7,
-            project_id: tenant.projectId,
-            title: "Add worker",
-            description: "Adds the worker",
-            web_url:
-              "https://gitlab.example.com/group/project/-/merge_requests/7",
-            source_branch: "feature",
-            target_branch: "main",
-            author: {
-              id: 42,
-              username: "developer",
-              name: "Dev User",
-            },
-          },
-          changes: [],
-          notes: [
-            {
-              id: 55,
-              body: "@review-bot what changed here?",
+      reviewRuntimeFactory: createReviewRuntimeFactory({
+        loadRoutingContext: vi.fn(async () =>
+          wrapGitLabPlatformContext({
+            tenant,
+            job,
+            mergeRequest: {
+              id: 1,
+              iid: 7,
+              project_id: tenant.projectId,
+              title: "Add worker",
+              description: "Adds the worker",
+              web_url:
+                "https://gitlab.example.com/group/project/-/merge_requests/7",
+              source_branch: "feature",
+              target_branch: "main",
               author: {
                 id: 42,
                 username: "developer",
                 name: "Dev User",
               },
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              system: false,
             },
-          ],
-          discussions: [],
-          workspace: {
-            rootPath: join("tmp", "workspace-routing"),
-            cleanupRoot: join("tmp", "cleanup-routing"),
-            strategy: "git",
-            instructionFiles: [],
-          },
-          projectMemory: {
-            enabled: true,
-            page: null,
-            entries: [],
-          },
-        })),
+            changes: [],
+            notes: [
+              {
+                id: 55,
+                body: "@review-bot what changed here?",
+                author: {
+                  id: 42,
+                  username: "developer",
+                  name: "Dev User",
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                system: false,
+              },
+            ],
+            discussions: [],
+            workspace: {
+              rootPath: join("tmp", "workspace-routing"),
+              cleanupRoot: join("tmp", "cleanup-routing"),
+              strategy: "git",
+              instructionFiles: [],
+            },
+            projectMemory: {
+              enabled: true,
+              page: null,
+              entries: [],
+            },
+          }),
+        ),
         hydrate,
-      } as never,
-      workspaceMaterializer: {
-        cleanup: vi.fn(async () => {}),
-      } as never,
+        cleanupWorkspace: vi.fn(async () => {}),
+      }),
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
@@ -385,7 +425,7 @@ describe("ReviewWorker orchestration", () => {
       tenantId: tenant.id,
       dedupeKey: "dedupe",
       projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 55,
       headSha: "abc123",
       status: "queued" as const,
@@ -408,7 +448,7 @@ describe("ReviewWorker orchestration", () => {
       replies: [
         {
           target: {
-            kind: "merge-request-note" as const,
+            kind: "code-review-note" as const,
             noteId: 55,
           },
           replyBody: "Here is what changed.",
@@ -451,7 +491,7 @@ describe("ReviewWorker orchestration", () => {
         })),
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
-        getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+        getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
         listPriorReviewFindings: vi.fn(async () => []),
         completeInteractionRun,
         replaceReviewFindings: vi.fn(async () => {}),
@@ -463,46 +503,46 @@ describe("ReviewWorker orchestration", () => {
       tenantRegistry: {
         getTenantById: vi.fn(async () => tenant),
       } as never,
-      hydrator: {
-        loadRoutingContext: vi.fn(async () => ({
-          tenant,
-          job,
-          mergeRequest: {
-            id: 1,
-            iid: 7,
-            project_id: tenant.projectId,
-            title: "Add worker",
-            description: "Adds the worker",
-            web_url:
-              "https://gitlab.example.com/group/project/-/merge_requests/7",
-            source_branch: "feature",
-            target_branch: "main",
-            author: {
-              id: 42,
-              username: "developer",
-              name: "Dev User",
+      reviewRuntimeFactory: createReviewRuntimeFactory({
+        loadRoutingContext: vi.fn(async () =>
+          wrapGitLabPlatformContext({
+            tenant,
+            job,
+            mergeRequest: {
+              id: 1,
+              iid: 7,
+              project_id: tenant.projectId,
+              title: "Add worker",
+              description: "Adds the worker",
+              web_url:
+                "https://gitlab.example.com/group/project/-/merge_requests/7",
+              source_branch: "feature",
+              target_branch: "main",
+              author: {
+                id: 42,
+                username: "developer",
+                name: "Dev User",
+              },
             },
-          },
-          changes: [],
-          notes: [],
-          discussions: [],
-          workspace: {
-            rootPath: join("tmp", "workspace-routing"),
-            cleanupRoot: join("tmp", "cleanup-routing"),
-            strategy: "git",
-            instructionFiles: [],
-          },
-          projectMemory: {
-            enabled: true,
-            page: null,
-            entries: [],
-          },
-        })),
+            changes: [],
+            notes: [],
+            discussions: [],
+            workspace: {
+              rootPath: join("tmp", "workspace-routing"),
+              cleanupRoot: join("tmp", "cleanup-routing"),
+              strategy: "git",
+              instructionFiles: [],
+            },
+            projectMemory: {
+              enabled: true,
+              page: null,
+              entries: [],
+            },
+          }),
+        ),
         hydrate,
-      } as never,
-      workspaceMaterializer: {
-        cleanup: vi.fn(async () => {}),
-      } as never,
+        cleanupWorkspace: vi.fn(async () => {}),
+      }),
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
@@ -535,13 +575,13 @@ describe("ReviewWorker orchestration", () => {
         phase: "reply",
         reviewContext: expect.objectContaining({
           workspacePath: join("tmp", "workspace-routing"),
-          mergeRequest: expect.objectContaining({
-            iid: 7,
+          codeReview: expect.objectContaining({
+            id: 7,
           }),
         }),
         responseTargets: [
           expect.objectContaining({
-            kind: "merge-request-note",
+            kind: "code-review-note",
             noteId: 55,
           }),
         ],
@@ -636,7 +676,7 @@ describe("ReviewWorker orchestration", () => {
       tenantId: tenant.id,
       dedupeKey: "dedupe-images",
       projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 55,
       headSha: "abc123",
       status: "queued" as const,
@@ -658,7 +698,7 @@ describe("ReviewWorker orchestration", () => {
       replies: [
         {
           target: {
-            kind: "merge-request-note" as const,
+            kind: "code-review-note" as const,
             noteId: 55,
           },
           replyBody: "Here is what changed.",
@@ -701,7 +741,7 @@ describe("ReviewWorker orchestration", () => {
         })),
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
-        getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+        getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
         listPriorReviewFindings: vi.fn(async () => []),
         completeInteractionRun: vi.fn(async () => {}),
         replaceReviewFindings: vi.fn(async () => {}),
@@ -713,47 +753,47 @@ describe("ReviewWorker orchestration", () => {
       tenantRegistry: {
         getTenantById: vi.fn(async () => tenant),
       } as never,
-      hydrator: {
-        loadRoutingContext: vi.fn(async () => ({
-          tenant,
-          job,
-          mergeRequest: {
-            id: 1,
-            iid: 7,
-            project_id: tenant.projectId,
-            title: "Add worker",
-            description:
-              "Adds the worker ![Diagram](../uploads/xyz789/diagram.png)",
-            web_url:
-              "https://gitlab.example.com/group/project/-/merge_requests/7",
-            source_branch: "feature",
-            target_branch: "main",
-            author: {
-              id: 42,
-              username: "developer",
-              name: "Dev User",
+      reviewRuntimeFactory: createReviewRuntimeFactory({
+        loadRoutingContext: vi.fn(async () =>
+          wrapGitLabPlatformContext({
+            tenant,
+            job,
+            mergeRequest: {
+              id: 1,
+              iid: 7,
+              project_id: tenant.projectId,
+              title: "Add worker",
+              description:
+                "Adds the worker ![Diagram](../uploads/xyz789/diagram.png)",
+              web_url:
+                "https://gitlab.example.com/group/project/-/merge_requests/7",
+              source_branch: "feature",
+              target_branch: "main",
+              author: {
+                id: 42,
+                username: "developer",
+                name: "Dev User",
+              },
             },
-          },
-          changes: [],
-          notes: [],
-          discussions: [],
-          workspace: {
-            rootPath: join("tmp", "workspace-routing"),
-            cleanupRoot: join("tmp", "cleanup-routing"),
-            strategy: "git",
-            instructionFiles: [],
-          },
-          projectMemory: {
-            enabled: true,
-            page: null,
-            entries: [],
-          },
-        })),
+            changes: [],
+            notes: [],
+            discussions: [],
+            workspace: {
+              rootPath: join("tmp", "workspace-routing"),
+              cleanupRoot: join("tmp", "cleanup-routing"),
+              strategy: "git",
+              instructionFiles: [],
+            },
+            projectMemory: {
+              enabled: true,
+              page: null,
+              entries: [],
+            },
+          }),
+        ),
         hydrate,
-      } as never,
-      workspaceMaterializer: {
-        cleanup: vi.fn(async () => {}),
-      } as never,
+        cleanupWorkspace: vi.fn(async () => {}),
+      }),
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
@@ -794,7 +834,7 @@ describe("ReviewWorker orchestration", () => {
             type: "blob",
             data: "AQID",
             mimeType: "image/png",
-            displayName: "merge-request-description-diagram.png",
+            displayName: "code-review-description-diagram.png",
           },
         ],
         reviewContext: expect.objectContaining({
@@ -806,9 +846,9 @@ describe("ReviewWorker orchestration", () => {
               contentType: "image/png",
             },
             {
-              sourceKind: "merge-request-description",
+              sourceKind: "code-review-description",
               noteId: null,
-              displayName: "merge-request-description-diagram.png",
+              displayName: "code-review-description-diagram.png",
               contentType: "image/png",
             },
           ],
@@ -864,7 +904,7 @@ describe("ReviewWorker orchestration", () => {
       tenantId: tenant.id,
       dedupeKey: "dedupe-2",
       projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 56,
       headSha: "abc123",
       status: "queued" as const,
@@ -920,7 +960,7 @@ describe("ReviewWorker orchestration", () => {
         })),
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
-        getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+        getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
         listPriorReviewFindings: vi.fn(async () => []),
         completeInteractionRun,
         replaceReviewFindings: vi.fn(async () => {}),
@@ -932,48 +972,48 @@ describe("ReviewWorker orchestration", () => {
       tenantRegistry: {
         getTenantById: vi.fn(async () => tenant),
       } as never,
-      hydrator: {
-        loadRoutingContext: vi.fn(async () => ({
-          tenant,
-          job,
-          mergeRequest: {
-            id: 1,
-            iid: 7,
-            project_id: tenant.projectId,
-            title: "Add worker",
-            description: "Adds the worker",
-            web_url:
-              "https://gitlab.example.com/group/project/-/merge_requests/7",
-            source_branch: "feature",
-            target_branch: "main",
-            author: {
-              id: 42,
-              username: "developer",
-              name: "Dev User",
+      reviewRuntimeFactory: createReviewRuntimeFactory({
+        loadRoutingContext: vi.fn(async () =>
+          wrapGitLabPlatformContext({
+            tenant,
+            job,
+            mergeRequest: {
+              id: 1,
+              iid: 7,
+              project_id: tenant.projectId,
+              title: "Add worker",
+              description: "Adds the worker",
+              web_url:
+                "https://gitlab.example.com/group/project/-/merge_requests/7",
+              source_branch: "feature",
+              target_branch: "main",
+              author: {
+                id: 42,
+                username: "developer",
+                name: "Dev User",
+              },
             },
-          },
-          changes: [],
-          notes: [],
-          discussions: [],
-          workspace: {
-            rootPath: join("tmp", "workspace-routing"),
-            cleanupRoot: join("tmp", "cleanup-routing"),
-            strategy: "git",
-            instructionFiles: [],
-          },
-          projectMemory: {
-            enabled: true,
-            page: null,
-            entries: [],
-          },
-        })),
+            changes: [],
+            notes: [],
+            discussions: [],
+            workspace: {
+              rootPath: join("tmp", "workspace-routing"),
+              cleanupRoot: join("tmp", "cleanup-routing"),
+              strategy: "git",
+              instructionFiles: [],
+            },
+            projectMemory: {
+              enabled: true,
+              page: null,
+              entries: [],
+            },
+          }),
+        ),
         hydrate: vi.fn(async () => {
           throw new Error("full hydration should be skipped");
         }),
-      } as never,
-      workspaceMaterializer: {
-        cleanup: vi.fn(async () => {}),
-      } as never,
+        cleanupWorkspace: vi.fn(async () => {}),
+      }),
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
@@ -990,7 +1030,7 @@ describe("ReviewWorker orchestration", () => {
             replies: [
               {
                 target: {
-                  kind: "merge-request-note" as const,
+                  kind: "code-review-note" as const,
                   noteId: 56,
                 },
                 replyBody: "Here is what changed.",
@@ -1092,7 +1132,7 @@ describe("ReviewWorker orchestration", () => {
       tenantId: tenant.id,
       dedupeKey: "dedupe-3",
       projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 77,
       headSha: "abc123",
       status: "queued" as const,
@@ -1139,7 +1179,7 @@ describe("ReviewWorker orchestration", () => {
         })),
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
-        getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+        getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
         listPriorReviewFindings: vi.fn(async () => []),
         completeInteractionRun: vi.fn(async () => {}),
         replaceReviewFindings: vi.fn(async () => {}),
@@ -1151,67 +1191,67 @@ describe("ReviewWorker orchestration", () => {
       tenantRegistry: {
         getTenantById: vi.fn(async () => tenant),
       } as never,
-      hydrator: {
-        loadRoutingContext: vi.fn(async () => ({
-          tenant,
-          job,
-          mergeRequest: {
-            id: 1,
-            iid: 7,
-            project_id: tenant.projectId,
-            title: "Add worker",
-            description: "Adds the worker",
-            web_url:
-              "https://gitlab.example.com/group/project/-/merge_requests/7",
-            source_branch: "feature",
-            target_branch: "main",
-            author: {
-              id: 42,
-              username: "developer",
-              name: "Dev User",
+      reviewRuntimeFactory: createReviewRuntimeFactory({
+        loadRoutingContext: vi.fn(async () =>
+          wrapGitLabPlatformContext({
+            tenant,
+            job,
+            mergeRequest: {
+              id: 1,
+              iid: 7,
+              project_id: tenant.projectId,
+              title: "Add worker",
+              description: "Adds the worker",
+              web_url:
+                "https://gitlab.example.com/group/project/-/merge_requests/7",
+              source_branch: "feature",
+              target_branch: "main",
+              author: {
+                id: 42,
+                username: "developer",
+                name: "Dev User",
+              },
             },
-          },
-          changes: [],
-          notes: [],
-          discussions: [
-            {
-              id: "disc_individual",
-              individual_note: true,
-              notes: [
-                {
-                  id: 77,
-                  body: "@review-bot can you explain this change?",
-                  author: {
-                    id: 42,
-                    username: "developer",
-                    name: "Dev User",
+            changes: [],
+            notes: [],
+            discussions: [
+              {
+                id: "disc_individual",
+                individual_note: true,
+                notes: [
+                  {
+                    id: 77,
+                    body: "@review-bot can you explain this change?",
+                    author: {
+                      id: 42,
+                      username: "developer",
+                      name: "Dev User",
+                    },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    system: false,
                   },
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                  system: false,
-                },
-              ],
+                ],
+              },
+            ],
+            workspace: {
+              rootPath: join("tmp", "workspace-routing"),
+              cleanupRoot: join("tmp", "cleanup-routing"),
+              strategy: "git",
+              instructionFiles: [],
             },
-          ],
-          workspace: {
-            rootPath: join("tmp", "workspace-routing"),
-            cleanupRoot: join("tmp", "cleanup-routing"),
-            strategy: "git",
-            instructionFiles: [],
-          },
-          projectMemory: {
-            enabled: true,
-            page: null,
-            entries: [],
-          },
-        })),
+            projectMemory: {
+              enabled: true,
+              page: null,
+              entries: [],
+            },
+          }),
+        ),
         hydrate: vi.fn(async () => {
           throw new Error("full hydration should be skipped");
         }),
-      } as never,
-      workspaceMaterializer: {
-        cleanup: vi.fn(async () => {}),
-      } as never,
+        cleanupWorkspace: vi.fn(async () => {}),
+      }),
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
@@ -1319,7 +1359,7 @@ describe("ReviewWorker orchestration", () => {
       tenantId: tenant.id,
       dedupeKey: "dedupe-4",
       projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 58,
       headSha: "abc123",
       status: "queued" as const,
@@ -1342,15 +1382,15 @@ describe("ReviewWorker orchestration", () => {
         id: "map_1",
         tenantId: tenant.id,
         projectId: tenant.projectId,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         identityKey: "identity_old",
         findingFingerprint: "fingerprint_old",
         title: "Old finding",
         severity: "medium",
         category: "bug",
         body: "**Old finding**\n\nOld body",
-        gitlabDiscussionId: "disc_1",
-        gitlabNoteId: 10,
+        platformThreadId: "disc_1",
+        platformCommentId: 10,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
@@ -1395,7 +1435,7 @@ describe("ReviewWorker orchestration", () => {
     const updateReviewFindingStatus = vi.fn(
       async (
         _tenantId: string,
-        _mergeRequestIid: number,
+        _codeReviewId: number,
         identityKey: string,
         status: "open" | "resolved",
       ) => {
@@ -1429,7 +1469,7 @@ describe("ReviewWorker orchestration", () => {
       }),
     );
 
-    const routingContext = {
+    const routingContext = wrapGitLabPlatformContext({
       tenant,
       job,
       mergeRequest: {
@@ -1494,7 +1534,7 @@ describe("ReviewWorker orchestration", () => {
         page: null,
         entries: [],
       },
-    };
+    });
 
     const worker = new ReviewWorker({
       storage: {
@@ -1530,7 +1570,7 @@ describe("ReviewWorker orchestration", () => {
         })),
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
-        getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+        getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
         listPriorReviewFindings: vi.fn(async () => [...priorFindings]),
         completeInteractionRun: vi.fn(async () => {}),
         replaceReviewFindings: vi.fn(async () => {}),
@@ -1544,13 +1584,11 @@ describe("ReviewWorker orchestration", () => {
       tenantRegistry: {
         getTenantById: vi.fn(async () => tenant),
       } as never,
-      hydrator: {
+      reviewRuntimeFactory: createReviewRuntimeFactory({
         loadRoutingContext: vi.fn(async () => routingContext),
         hydrate: vi.fn(async () => routingContext),
-      } as never,
-      workspaceMaterializer: {
-        cleanup: vi.fn(async () => {}),
-      } as never,
+        cleanupWorkspace: vi.fn(async () => {}),
+      }),
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
@@ -1593,7 +1631,7 @@ describe("ReviewWorker orchestration", () => {
     expect(upsertDiscussionMapping).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "map_1",
-        gitlabDiscussionId: "disc_1",
+        platformThreadId: "disc_1",
         status: "resolved",
       }),
     );
@@ -1665,7 +1703,7 @@ describe("ReviewWorker orchestration", () => {
       tenantId: tenant.id,
       dedupeKey: "dedupe-5",
       projectId: tenant.projectId,
-      mergeRequestIid: 7,
+      codeReviewId: 7,
       noteId: 59,
       headSha: "abc123",
       status: "queued" as const,
@@ -1688,15 +1726,15 @@ describe("ReviewWorker orchestration", () => {
         id: "map_2",
         tenantId: tenant.id,
         projectId: tenant.projectId,
-        mergeRequestIid: 7,
+        codeReviewId: 7,
         identityKey: "identity_dismissed",
         findingFingerprint: "fingerprint_dismissed",
         title: "Accepted risk finding",
         severity: "medium",
         category: "bug",
         body: "**Accepted risk finding**\n\nOld body",
-        gitlabDiscussionId: "disc_2",
-        gitlabNoteId: 11,
+        platformThreadId: "disc_2",
+        platformCommentId: 11,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
@@ -1741,7 +1779,7 @@ describe("ReviewWorker orchestration", () => {
     const updateReviewFindingStatus = vi.fn(
       async (
         _tenantId: string,
-        _mergeRequestIid: number,
+        _codeReviewId: number,
         identityKey: string,
         status: "open" | "resolved",
         options?: {
@@ -1785,7 +1823,7 @@ describe("ReviewWorker orchestration", () => {
       }),
     );
 
-    const routingContext = {
+    const routingContext = wrapGitLabPlatformContext({
       tenant,
       job,
       mergeRequest: {
@@ -1850,7 +1888,7 @@ describe("ReviewWorker orchestration", () => {
         page: null,
         entries: [],
       },
-    };
+    });
 
     const worker = new ReviewWorker({
       storage: {
@@ -1886,7 +1924,7 @@ describe("ReviewWorker orchestration", () => {
         })),
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
-        getLatestCompletedInteractionForMergeRequest: vi.fn(async () => null),
+        getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
         listPriorReviewFindings: vi.fn(async () => [...priorFindings]),
         completeInteractionRun: vi.fn(async () => {}),
         replaceReviewFindings: vi.fn(async () => {}),
@@ -1900,13 +1938,11 @@ describe("ReviewWorker orchestration", () => {
       tenantRegistry: {
         getTenantById: vi.fn(async () => tenant),
       } as never,
-      hydrator: {
+      reviewRuntimeFactory: createReviewRuntimeFactory({
         loadRoutingContext: vi.fn(async () => routingContext),
         hydrate: vi.fn(async () => routingContext),
-      } as never,
-      workspaceMaterializer: {
-        cleanup: vi.fn(async () => {}),
-      } as never,
+        cleanupWorkspace: vi.fn(async () => {}),
+      }),
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",

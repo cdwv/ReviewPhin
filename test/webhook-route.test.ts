@@ -7,6 +7,15 @@ import type { WebhookReviewTrigger } from "../src/review/types.js";
 const tenant = {
   id: "tenant_1",
   key: "https://gitlab.example.com::123",
+  platform: "gitlab",
+  platformConfigJson: JSON.stringify({
+    baseUrl: "https://gitlab.example.com",
+    projectId: 123,
+    apiToken: "token",
+    webhookSecret: "secret",
+    botUserId: 999,
+    botUsername: "review-bot",
+  }),
   baseUrl: "https://gitlab.example.com",
   projectId: 123,
   apiToken: "token",
@@ -24,6 +33,7 @@ function createPayload(note: string) {
     project: {
       id: 123,
       web_url: "https://gitlab.example.com/group/project",
+      path_with_namespace: "group/project",
     },
     repository: {
       homepage: "https://gitlab.example.com/group/project",
@@ -58,7 +68,7 @@ describe("GitLab webhook route", () => {
   const trigger = {
     kind: "direct-mention" as const,
     note: {
-      kind: "merge-request-note" as const,
+      kind: "code-review-note" as const,
       noteId: 55,
     },
   };

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
-import type { GitLabHttpLogEntry } from "../review/run-artifacts.js";
+import type { PlatformHttpLogEntry } from "../../review/run-artifacts.js";
+import type { TriggerNoteReference } from "../../review/types.js";
 import type {
   GitLabAwardEmoji,
   GitLabDiscussion,
@@ -14,7 +15,6 @@ import type {
   GitLabNote,
   GitLabRepositoryTreeItem,
   GitLabWikiPage,
-  TriggerNoteReference,
 } from "./types.js";
 import {
   buildGitLabApiUrl,
@@ -28,7 +28,7 @@ interface GitLabClientOptions {
   logger: Logger;
   requestLogger?:
     | {
-        log(entry: GitLabHttpLogEntry): Promise<void>;
+        log(entry: PlatformHttpLogEntry): Promise<void>;
       }
     | undefined;
 }
@@ -112,14 +112,21 @@ export class GitLabClient {
     this.requestLogger = options.requestLogger;
   }
 
-  public async getMergeRequest(
+  public async getCodeReview(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
   ): Promise<GitLabMergeRequest> {
     return this.requestJson<GitLabMergeRequest>(
       "GET",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}`,
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}`,
     );
+  }
+
+  public async getMergeRequest(
+    projectId: number,
+    codeReviewId: number,
+  ): Promise<GitLabMergeRequest> {
+    return this.getCodeReview(projectId, codeReviewId);
   }
 
   public async getProject(projectId: number): Promise<GitLabProject> {
@@ -188,13 +195,20 @@ export class GitLabClient {
     );
   }
 
-  public async listMergeRequestVersions(
+  public async listCodeReviewVersions(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
   ): Promise<GitLabMergeRequestVersion[]> {
     return this.requestPaginated<GitLabMergeRequestVersion>(
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/versions`,
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/versions`,
     );
+  }
+
+  public async listMergeRequestVersions(
+    projectId: number,
+    codeReviewId: number,
+  ): Promise<GitLabMergeRequestVersion[]> {
+    return this.listCodeReviewVersions(projectId, codeReviewId);
   }
 
   public async getCurrentUser() {
@@ -205,16 +219,16 @@ export class GitLabClient {
     }>("GET", `/user`);
   }
 
-  public async getMergeRequestChanges(
+  public async getCodeReviewChanges(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
   ): Promise<GitLabMergeRequestChange[]> {
     try {
       const response = await this.requestJson<{
         changes: GitLabMergeRequestChange[];
       }>(
         "GET",
-        `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/changes`,
+        `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/changes`,
       );
       return response.changes;
     } catch (error) {
@@ -223,18 +237,45 @@ export class GitLabClient {
       }
 
       return this.requestPaginated<GitLabMergeRequestChange>(
-        `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/diffs`,
+        `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/diffs`,
       );
     }
   }
 
-  public async listMergeRequestNotes(
+  public async getMergeRequestChanges(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
+  ): Promise<GitLabMergeRequestChange[]> {
+    return this.getCodeReviewChanges(projectId, codeReviewId);
+  }
+
+  public async listCodeReviewNotes(
+    projectId: number,
+    codeReviewId: number,
     options: { noCache?: boolean } = {},
   ): Promise<GitLabNote[]> {
     return this.requestPaginated<GitLabNote>(
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes`,
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/notes`,
+      {},
+      options,
+    );
+  }
+
+  public async listMergeRequestNotes(
+    projectId: number,
+    codeReviewId: number,
+    options: { noCache?: boolean } = {},
+  ): Promise<GitLabNote[]> {
+    return this.listCodeReviewNotes(projectId, codeReviewId, options);
+  }
+
+  public async listCodeReviewDiscussions(
+    projectId: number,
+    codeReviewId: number,
+    options: { noCache?: boolean } = {},
+  ): Promise<GitLabDiscussion[]> {
+    return this.requestPaginated<GitLabDiscussion>(
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/discussions`,
       {},
       options,
     );
@@ -242,19 +283,15 @@ export class GitLabClient {
 
   public async listMergeRequestDiscussions(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     options: { noCache?: boolean } = {},
   ): Promise<GitLabDiscussion[]> {
-    return this.requestPaginated<GitLabDiscussion>(
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions`,
-      {},
-      options,
-    );
+    return this.listCodeReviewDiscussions(projectId, codeReviewId, options);
   }
 
-  public async createMergeRequestDraftNote(
+  public async createCodeReviewDraftNote(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     input: { note: string; position?: GitLabDiffPosition | null | undefined },
   ): Promise<GitLabDraftNote> {
     const payload: Record<string, unknown> = { note: input.note };
@@ -264,124 +301,203 @@ export class GitLabClient {
 
     return this.requestForm<GitLabDraftNote>(
       "POST",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/draft_notes`,
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/draft_notes`,
       payload,
+    );
+  }
+
+  public async createMergeRequestDraftNote(
+    projectId: number,
+    codeReviewId: number,
+    input: { note: string; position?: GitLabDiffPosition | null | undefined },
+  ): Promise<GitLabDraftNote> {
+    return this.createCodeReviewDraftNote(projectId, codeReviewId, input);
+  }
+
+  public async deleteCodeReviewDraftNote(
+    projectId: number,
+    codeReviewId: number,
+    draftNoteId: number,
+  ): Promise<void> {
+    return this.requestFormVoid(
+      "DELETE",
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/draft_notes/${draftNoteId}`,
     );
   }
 
   public async deleteMergeRequestDraftNote(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     draftNoteId: number,
   ): Promise<void> {
+    return this.deleteCodeReviewDraftNote(
+      projectId,
+      codeReviewId,
+      draftNoteId,
+    );
+  }
+
+  public async bulkPublishCodeReviewDraftNotes(
+    projectId: number,
+    codeReviewId: number,
+  ): Promise<void> {
     return this.requestFormVoid(
-      "DELETE",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/draft_notes/${draftNoteId}`,
+      "POST",
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/draft_notes/bulk_publish`,
     );
   }
 
   public async bulkPublishMergeRequestDraftNotes(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
   ): Promise<void> {
-    return this.requestFormVoid(
-      "POST",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/draft_notes/bulk_publish`,
+    return this.bulkPublishCodeReviewDraftNotes(projectId, codeReviewId);
+  }
+
+  public async listCodeReviewNoteAwardEmojis(
+    projectId: number,
+    codeReviewId: number,
+    noteId: number,
+  ): Promise<GitLabAwardEmoji[]> {
+    return this.requestPaginated<GitLabAwardEmoji>(
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/notes/${noteId}/award_emoji`,
     );
   }
 
   public async listMergeRequestNoteAwardEmojis(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
+    noteId: number,
+  ): Promise<GitLabAwardEmoji[]> {
+    return this.listCodeReviewNoteAwardEmojis(projectId, codeReviewId, noteId);
+  }
+
+  public async listCodeReviewDiscussionNoteAwardEmojis(
+    projectId: number,
+    codeReviewId: number,
+    discussionId: string,
     noteId: number,
   ): Promise<GitLabAwardEmoji[]> {
     return this.requestPaginated<GitLabAwardEmoji>(
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes/${noteId}/award_emoji`,
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/discussions/${encodeURIComponent(discussionId)}/notes/${noteId}/award_emoji`,
     );
   }
 
   public async listMergeRequestDiscussionNoteAwardEmojis(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     discussionId: string,
     noteId: number,
   ): Promise<GitLabAwardEmoji[]> {
-    return this.requestPaginated<GitLabAwardEmoji>(
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${encodeURIComponent(discussionId)}/notes/${noteId}/award_emoji`,
+    return this.listCodeReviewDiscussionNoteAwardEmojis(
+      projectId,
+      codeReviewId,
+      discussionId,
+      noteId,
     );
   }
 
-  public async createMergeRequestNoteAwardEmoji(
+  public async createCodeReviewNoteAwardEmoji(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     noteId: number,
     name: string,
   ): Promise<GitLabAwardEmoji> {
     return this.requestForm<GitLabAwardEmoji>(
       "POST",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes/${noteId}/award_emoji`,
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/notes/${noteId}/award_emoji`,
+      { name },
+    );
+  }
+
+  public async createMergeRequestNoteAwardEmoji(
+    projectId: number,
+    codeReviewId: number,
+    noteId: number,
+    name: string,
+  ): Promise<GitLabAwardEmoji> {
+    return this.createCodeReviewNoteAwardEmoji(
+      projectId,
+      codeReviewId,
+      noteId,
+      name,
+    );
+  }
+
+  public async createCodeReviewDiscussionNoteAwardEmoji(
+    projectId: number,
+    codeReviewId: number,
+    discussionId: string,
+    noteId: number,
+    name: string,
+  ): Promise<GitLabAwardEmoji> {
+    return this.requestForm<GitLabAwardEmoji>(
+      "POST",
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/discussions/${encodeURIComponent(discussionId)}/notes/${noteId}/award_emoji`,
       { name },
     );
   }
 
   public async createMergeRequestDiscussionNoteAwardEmoji(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     discussionId: string,
     noteId: number,
     name: string,
   ): Promise<GitLabAwardEmoji> {
-    return this.requestForm<GitLabAwardEmoji>(
-      "POST",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${encodeURIComponent(discussionId)}/notes/${noteId}/award_emoji`,
-      { name },
+    return this.createCodeReviewDiscussionNoteAwardEmoji(
+      projectId,
+      codeReviewId,
+      discussionId,
+      noteId,
+      name,
     );
   }
 
   public async listTriggerNoteAwardEmojis(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     note: TriggerNoteReference,
   ): Promise<GitLabAwardEmoji[]> {
     return note.kind === "discussion-note"
-      ? this.listMergeRequestDiscussionNoteAwardEmojis(
+      ? this.listCodeReviewDiscussionNoteAwardEmojis(
           projectId,
-          mergeRequestIid,
+          codeReviewId,
           note.discussionId,
           note.noteId,
         )
-      : this.listMergeRequestNoteAwardEmojis(
+      : this.listCodeReviewNoteAwardEmojis(
           projectId,
-          mergeRequestIid,
+          codeReviewId,
           note.noteId,
         );
   }
 
   public async createTriggerNoteAwardEmoji(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     note: TriggerNoteReference,
     name: string,
   ): Promise<GitLabAwardEmoji> {
     return note.kind === "discussion-note"
-      ? this.createMergeRequestDiscussionNoteAwardEmoji(
+      ? this.createCodeReviewDiscussionNoteAwardEmoji(
           projectId,
-          mergeRequestIid,
+          codeReviewId,
           note.discussionId,
           note.noteId,
           name,
         )
-      : this.createMergeRequestNoteAwardEmoji(
+      : this.createCodeReviewNoteAwardEmoji(
           projectId,
-          mergeRequestIid,
+          codeReviewId,
           note.noteId,
           name,
         );
   }
 
-  public async createMergeRequestDiscussion(
+  public async createCodeReviewDiscussion(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     input: { body: string; position?: GitLabDiffPosition | null },
   ): Promise<GitLabDiscussion> {
     const payload: Record<string, unknown> = { body: input.body };
@@ -391,72 +507,97 @@ export class GitLabClient {
 
     return this.requestForm<GitLabDiscussion>(
       "POST",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions`,
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/discussions`,
       payload,
+    );
+  }
+
+  public async createMergeRequestDiscussion(
+    projectId: number,
+    codeReviewId: number,
+    input: { body: string; position?: GitLabDiffPosition | null },
+  ): Promise<GitLabDiscussion> {
+    return this.createCodeReviewDiscussion(projectId, codeReviewId, input);
+  }
+
+  public async createCodeReviewNote(
+    projectId: number,
+    codeReviewId: number,
+    body: string,
+  ): Promise<GitLabNote> {
+    return this.requestForm<GitLabNote>(
+      "POST",
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/notes`,
+      { body },
     );
   }
 
   public async createMergeRequestNote(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
+    body: string,
+  ): Promise<GitLabNote> {
+    return this.createCodeReviewNote(projectId, codeReviewId, body);
+  }
+
+  public async updateCodeReviewNote(
+    projectId: number,
+    codeReviewId: number,
+    noteId: number,
     body: string,
   ): Promise<GitLabNote> {
     return this.requestForm<GitLabNote>(
-      "POST",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes`,
+      "PUT",
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/notes/${noteId}`,
       { body },
     );
   }
 
   public async updateMergeRequestNote(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     noteId: number,
     body: string,
   ): Promise<GitLabNote> {
-    return this.requestForm<GitLabNote>(
-      "PUT",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/notes/${noteId}`,
-      { body },
-    );
+    return this.updateCodeReviewNote(projectId, codeReviewId, noteId, body);
   }
 
   public async replyToDiscussion(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     discussionId: string,
     body: string,
   ): Promise<GitLabNote> {
     return this.requestForm<GitLabNote>(
       "POST",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${discussionId}/notes`,
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/discussions/${discussionId}/notes`,
       { body },
     );
   }
 
   public async updateDiscussionNote(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     discussionId: string,
     noteId: number,
     body: string,
   ): Promise<GitLabNote> {
     return this.requestForm<GitLabNote>(
       "PUT",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${discussionId}/notes/${noteId}`,
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/discussions/${discussionId}/notes/${noteId}`,
       { body },
     );
   }
 
   public async resolveDiscussion(
     projectId: number,
-    mergeRequestIid: number,
+    codeReviewId: number,
     discussionId: string,
     resolved: boolean,
   ): Promise<GitLabDiscussion> {
     return this.requestForm<GitLabDiscussion>(
       "PUT",
-      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/discussions/${discussionId}`,
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${codeReviewId}/discussions/${discussionId}`,
       { resolved },
     );
   }
@@ -1148,7 +1289,7 @@ export class GitLabClient {
     });
   }
 
-  private async logGitLabRequest(entry: GitLabHttpLogEntry): Promise<void> {
+  private async logGitLabRequest(entry: PlatformHttpLogEntry): Promise<void> {
     if (!this.requestLogger) {
       return;
     }

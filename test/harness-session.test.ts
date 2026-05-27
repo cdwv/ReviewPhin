@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 const { createSessionMock, listModelsMock, startMock, stopMock } = vi.hoisted(
   () => ({
@@ -56,13 +57,6 @@ describe("HarnessSessionRuntime", () => {
 
     const runtime = new HarnessSessionRuntime({
       logger: createLogger(),
-      projectMemoryBackendFactory: {
-        createForHarnessRun: vi.fn(() => ({
-          load,
-          saveEntries,
-        })),
-        createForGitLabClient: vi.fn(),
-      },
       runLogDir: tmpPath(),
       timeoutMs: 1_000,
       maxPromptMemoryChars: 5_000,
@@ -73,7 +67,12 @@ describe("HarnessSessionRuntime", () => {
       modelConfig: createModelConfig(),
       model: "gpt-5.4",
       workingDirectory: tmpPath("workspace"),
-      tenant: createTenant(),
+      tenant: createTenant({
+        projectMemoryBackend: {
+          load,
+          saveEntries,
+        },
+      }),
       tools: ["glob", "rg", "view", "add_memory_entry"],
       subagents: ["context-analyst", "review-author"],
       agent: "review-author",
@@ -116,10 +115,6 @@ describe("HarnessSessionRuntime", () => {
 
     const runtime = new HarnessSessionRuntime({
       logger: createLogger(),
-      projectMemoryBackendFactory: {
-        createForHarnessRun: vi.fn(),
-        createForGitLabClient: vi.fn(),
-      },
       runLogDir: tmpPath(),
       timeoutMs: 1_000,
       maxPromptMemoryChars: 5_000,
@@ -154,10 +149,6 @@ describe("HarnessSessionRuntime", () => {
 
     const runtime = new HarnessSessionRuntime({
       logger: createLogger(),
-      projectMemoryBackendFactory: {
-        createForHarnessRun: vi.fn(),
-        createForGitLabClient: vi.fn(),
-      },
       runLogDir: tmpPath(),
       timeoutMs: 1_000,
       maxPromptMemoryChars: 5_000,
@@ -177,6 +168,90 @@ describe("HarnessSessionRuntime", () => {
     expect(CopilotClient).toHaveBeenCalledWith({
       gitHubToken: "github-token",
     });
+  });
+
+  it("returns the bottom-most matching parsed payload when a response format is provided", async () => {
+    createSessionMock.mockResolvedValue(
+      createSession({
+        responseContent: [
+          "Here is the first draft.",
+          JSON.stringify({
+            items: ["stale"],
+          }),
+          JSON.stringify({
+            items: ["fresh"],
+          }),
+        ].join("\n\n"),
+      }),
+    );
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    const result = await runtime.run({
+      prompt: "Return a structured list.",
+      modelConfig: createModelConfig(),
+      tools: ["glob", "rg", "view"],
+      subagents: [],
+      responseFormat: {
+        schema: z.object({
+          items: z.array(z.string()),
+        }),
+      },
+    });
+
+    expect(result.parsed).toEqual({
+      items: ["fresh"],
+    });
+    expect(result.parseError).toBeUndefined();
+  });
+
+  it("captures schema parse errors when no JSON object matches the response format", async () => {
+    createSessionMock.mockResolvedValue(
+      createSession({
+        responseContent: JSON.stringify({
+          note: "not the expected payload",
+        }),
+      }),
+    );
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    const result = await runtime.run({
+      prompt: "Return a structured list.",
+      modelConfig: createModelConfig(),
+      tools: ["glob", "rg", "view"],
+      subagents: [],
+      responseFormat: {
+        schema: z.object({
+          items: z.array(z.string()),
+        }),
+        looksLike: (value) => "items" in value,
+      },
+    });
+
+    expect(result.parsed).toBeUndefined();
+    expect(result.parseError).toEqual(
+      expect.objectContaining({
+        reason: "schema-mismatch",
+        message:
+          "Harness response contained JSON objects, but none matched the expected schema",
+      }),
+    );
+    expect(result.parseError?.zodIssues).toBeDefined();
   });
 
   it("passes blob attachments through to the Copilot session", async () => {
@@ -207,10 +282,6 @@ describe("HarnessSessionRuntime", () => {
 
     const runtime = new HarnessSessionRuntime({
       logger: createLogger(),
-      projectMemoryBackendFactory: {
-        createForHarnessRun: vi.fn(),
-        createForGitLabClient: vi.fn(),
-      },
       runLogDir: tmpPath(),
       timeoutMs: 1_000,
       maxPromptMemoryChars: 5_000,
@@ -272,10 +343,6 @@ describe("HarnessSessionRuntime", () => {
     const logger = createLogger();
     const runtime = new HarnessSessionRuntime({
       logger,
-      projectMemoryBackendFactory: {
-        createForHarnessRun: vi.fn(),
-        createForGitLabClient: vi.fn(),
-      },
       runLogDir: tmpPath(),
       timeoutMs: 1_000,
       maxPromptMemoryChars: 5_000,
@@ -350,10 +417,6 @@ describe("HarnessSessionRuntime", () => {
     const logger = createLogger();
     const runtime = new HarnessSessionRuntime({
       logger,
-      projectMemoryBackendFactory: {
-        createForHarnessRun: vi.fn(),
-        createForGitLabClient: vi.fn(),
-      },
       runLogDir: tmpPath(),
       timeoutMs: 1_000,
       maxPromptMemoryChars: 5_000,
@@ -415,10 +478,6 @@ describe("HarnessSessionRuntime", () => {
     const logger = createLogger();
     const runtime = new HarnessSessionRuntime({
       logger,
-      projectMemoryBackendFactory: {
-        createForHarnessRun: vi.fn(),
-        createForGitLabClient: vi.fn(),
-      },
       runLogDir: tmpPath(),
       timeoutMs: 1_000,
       maxPromptMemoryChars: 5_000,
@@ -464,7 +523,10 @@ describe("HarnessSessionRuntime", () => {
   });
 });
 
-function createSession(input?: { currentModelId?: string }) {
+function createSession(input?: {
+  currentModelId?: string;
+  responseContent?: string;
+}) {
   return {
     sessionId: "session_1",
     rpc: {
@@ -477,14 +539,16 @@ function createSession(input?: { currentModelId?: string }) {
     on: vi.fn(() => () => {}),
     sendAndWait: vi.fn(async () => ({
       data: {
-        content: JSON.stringify({
-          overview: {
-            summary: "Looks good",
-            overallSeverity: "low",
-          },
-          findings: [],
-          priorDispositions: [],
-        }),
+        content:
+          input?.responseContent ??
+          JSON.stringify({
+            overview: {
+              summary: "Looks good",
+              overallSeverity: "low",
+            },
+            findings: [],
+            priorDispositions: [],
+          }),
       },
     })),
     disconnect: vi.fn(async () => {}),
@@ -526,12 +590,24 @@ function createFallbackModelConfig(): HarnessModelConfig {
   };
 }
 
-function createTenant(): HarnessTenantContext {
+function createTenant(
+  overrides: Partial<HarnessTenantContext> = {},
+): HarnessTenantContext {
   return {
     id: "tenant_1",
-    baseUrl: "https://gitlab.example.com",
-    projectId: 1085,
-    apiToken: "token",
     memoryEnabled: true,
+    projectMemoryBackend: {
+      load: vi.fn(async () => ({
+        enabled: true,
+        page: null,
+        entries: [],
+      })),
+      saveEntries: vi.fn(async (entries) => ({
+        enabled: true,
+        page: null,
+        entries,
+      })),
+    },
+    ...overrides,
   };
 }
