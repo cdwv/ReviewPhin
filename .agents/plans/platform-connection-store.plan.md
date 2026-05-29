@@ -10,4 +10,4 @@ Currently each tenant require their connection details in tenant record. In some
    1. tenant add requires connection name (it must be for the same platform as platform connection)
    2. there are separate add/update/remove commands for platform-connection
    3. platforms provide separate zodSchema for params used during platform-connection add/update commands via `getRegistrationSchema`
-4. Update docs so that new commands are described and platform connection registration is described as mandatory step when new connection credentials are used.
+4. Update docs & Readme so that new commands are described and platform connection registration is described as mandatory step when new connection credentials are used.
