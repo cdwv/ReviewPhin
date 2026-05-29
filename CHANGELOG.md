@@ -4,6 +4,13 @@ Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-change
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 
+## v0.3.0 - 2026-05-27
+### Changed
+* Review worker can now use generic platform API in order to update data in GitLab
+* Storage interfaces no longer mention GitLab-specific names in most of column/properties
+* allow any platform config to be part of tenant configuration
+* Generalize concept naming throughout the app (codeReview instead of mergeRequest etc)
+
 ## v0.2.0 - 2026-05-22
 ### Changed
 * `--bot-user-id` and `--bot-username` are no longer required and will be fetched from GitLab's user api upon tenant registration
