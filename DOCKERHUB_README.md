@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./favicon.jpg" alt="ReviewPhin" width="120" />
+  <img src="./favicon.png" alt="ReviewPhin" width="120" />
 
   # ReviewPhin
 
@@ -325,8 +325,8 @@ For custom storage adapters see [Storage providers](./docs/storage-providers.md)
 
 ## Routes
 
-| Method | Path                    | Description                                                       |
-| ------ | ----------------------- | ----------------------------------------------------------------- |
-| `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}`                         |
+| Method | Path                    | Description                                                         |
+| ------ | ----------------------- | ------------------------------------------------------------------- |
+| `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}`                           |
 | `POST` | `/webhooks/<platform>`  | Platform webhook receiver. GitLab currently uses `/webhooks/gitlab` |
-| `POST` | `/webhooks/gitlab/note` | Deprecated GitLab compatibility alias                             |
+| `POST` | `/webhooks/gitlab/note` | Deprecated GitLab compatibility alias                               |
