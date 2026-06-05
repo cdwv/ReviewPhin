@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildScopedReviewContext } from "../src/review/review-scope.js";
-import type { ProviderThreadContext } from "../src/review/types.js";
+import type { ProviderDiscussionContext } from "../src/review/types.js";
 import { repoPath } from "./test-paths.js";
 
 const codeReview = {
@@ -23,18 +23,18 @@ describe("buildScopedReviewContext", () => {
         createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+old"),
         createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new"),
       ],
-      notes: [createNote(1, "Looks good")],
+      comments: [createNote(1, "Looks good")],
       discussions: [],
       instructionFiles: [],
       trigger: {
         kind: "direct-mention",
-        noteId: 55,
+        commentId: 55,
         authorUsername: "developer",
         body: "@review-bot review",
         instruction: "review",
-        targetThreadId: null,
         targetDiscussionId: null,
-        targetThreadTitle: null,
+        targetPlatformDiscussionId: null,
+        targetDiscussionTitle: null,
         responseTarget: createResponseTarget(
           "direct-mention",
           55,
@@ -42,7 +42,7 @@ describe("buildScopedReviewContext", () => {
           "review",
         ),
       },
-      priorThreads: [
+      priorDiscussions: [
         createThread(
           "map_1",
           "disc_1",
@@ -105,18 +105,18 @@ describe("buildScopedReviewContext", () => {
         createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+old"),
         createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new"),
       ],
-      notes: [],
+      comments: [],
       discussions: [],
       instructionFiles: [],
       trigger: {
         kind: "direct-mention",
-        noteId: 57,
+        commentId: 57,
         authorUsername: "developer",
         body: "@review-bot review again",
         instruction: "review again",
-        targetThreadId: null,
         targetDiscussionId: null,
-        targetThreadTitle: null,
+        targetPlatformDiscussionId: null,
+        targetDiscussionTitle: null,
         responseTarget: createResponseTarget(
           "direct-mention",
           57,
@@ -124,7 +124,7 @@ describe("buildScopedReviewContext", () => {
           "review again",
         ),
       },
-      priorThreads: [],
+      priorDiscussions: [],
       priorFindings: [
         {
           findingId: "finding_1",
@@ -177,19 +177,19 @@ describe("buildScopedReviewContext", () => {
       workspacePath: repoPath(),
       codeReview,
       changes: [createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new")],
-      notes: [],
+      comments: [],
       discussions: [],
       instructionFiles: [],
       trigger: {
         kind: "summary-follow-up",
-        noteId: 90,
+        commentId: 90,
         authorUsername: "developer",
         body: "For future reference, prefer tasteful dolphin jokes in the overall assessment when they fit.",
         instruction:
           "For future reference, prefer tasteful dolphin jokes in the overall assessment when they fit.",
-        targetThreadId: null,
         targetDiscussionId: null,
-        targetThreadTitle: null,
+        targetPlatformDiscussionId: null,
+        targetDiscussionTitle: null,
         responseTarget: createResponseTarget(
           "summary-follow-up",
           90,
@@ -198,7 +198,7 @@ describe("buildScopedReviewContext", () => {
           "disc_summary",
         ),
       },
-      priorThreads: [],
+      priorDiscussions: [],
       previousReview: {
         reviewRunId: "run_prev",
         finishedAt: "2026-04-27T12:00:00.000Z",
@@ -217,7 +217,7 @@ describe("buildScopedReviewContext", () => {
 
     expect(scoped.scope.mode).toBe("incremental-rereview");
     expect(scoped.scope.scopeSummary).toContain(
-      "summary note requested another review pass",
+      "summary comment requested another review pass",
     );
   });
 
@@ -229,18 +229,18 @@ describe("buildScopedReviewContext", () => {
         createChange("src/same-head-a.ts", "@@ -1 +1 @@\n-old-a\n+new-a"),
         createChange("src/same-head-b.ts", "@@ -1 +1 @@\n-old-b\n+new-b"),
       ],
-      notes: [createNote(1, "Looks good")],
+      comments: [createNote(1, "Looks good")],
       discussions: [],
       instructionFiles: [],
       trigger: {
         kind: "direct-mention",
-        noteId: 56,
+        commentId: 56,
         authorUsername: "developer",
         body: "@review-bot review again",
         instruction: "review again",
-        targetThreadId: null,
         targetDiscussionId: null,
-        targetThreadTitle: null,
+        targetPlatformDiscussionId: null,
+        targetDiscussionTitle: null,
         responseTarget: createResponseTarget(
           "direct-mention",
           56,
@@ -248,7 +248,7 @@ describe("buildScopedReviewContext", () => {
           "review again",
         ),
       },
-      priorThreads: [],
+      priorDiscussions: [],
       previousReview: {
         reviewRunId: "run_prev",
         finishedAt: "2026-04-27T12:00:00.000Z",
@@ -277,7 +277,7 @@ describe("buildScopedReviewContext", () => {
   });
 
   it("keeps follow-up reviews focused on the target thread and related file", () => {
-    const targetThread = createThread(
+    const targetDiscussion = createThread(
       "map_target",
       "disc_target",
       "Target finding",
@@ -298,7 +298,7 @@ describe("buildScopedReviewContext", () => {
         createChange("src/target.ts", "@@ -1 +1 @@\n-old\n+new"),
         createChange("src/other.ts", "@@ -1 +1 @@\n-old\n+new"),
       ],
-      notes: [createNote(1, "General MR note")],
+      comments: [createNote(1, "General MR note")],
       discussions: [
         {
           id: "disc_target",
@@ -314,13 +314,13 @@ describe("buildScopedReviewContext", () => {
       instructionFiles: [],
       trigger: {
         kind: "follow-up-comment",
-        noteId: 77,
+        commentId: 77,
         authorUsername: "developer",
         body: "Please reword this.",
         instruction: "Please reword this.",
-        targetThreadId: "map_target",
-        targetDiscussionId: "disc_target",
-        targetThreadTitle: "Target finding",
+        targetDiscussionId: "map_target",
+        targetPlatformDiscussionId: "disc_target",
+        targetDiscussionTitle: "Target finding",
         responseTarget: createResponseTarget(
           "follow-up-comment",
           77,
@@ -329,19 +329,19 @@ describe("buildScopedReviewContext", () => {
           "disc_target",
         ),
       },
-      priorThreads: [targetThread, otherThread],
+      priorDiscussions: [targetDiscussion, otherThread],
       previousReview: null,
     });
 
-    expect(scoped.scope.mode).toBe("follow-up-thread");
-    expect(scoped.priorThreads).toEqual([targetThread]);
+    expect(scoped.scope.mode).toBe("follow-up-discussion");
+    expect(scoped.priorDiscussions).toEqual([targetDiscussion]);
     expect(scoped.changes).toHaveLength(1);
     expect(scoped.changes[0]?.newPath).toBe("src/target.ts");
-    expect(scoped.notes).toEqual([]);
+    expect(scoped.comments).toEqual([]);
   });
 
   it("keeps follow-up reviews pinned to focused files even when the target file is no longer in MR changes", () => {
-    const targetThread = createThread(
+    const targetDiscussion = createThread(
       "map_target",
       "disc_target",
       "Target finding",
@@ -352,7 +352,7 @@ describe("buildScopedReviewContext", () => {
       workspacePath: repoPath(),
       codeReview,
       changes: [createChange("src/other.ts", "@@ -1 +1 @@\n-old\n+new")],
-      notes: [createNote(1, "General MR note")],
+      comments: [createNote(1, "General MR note")],
       discussions: [
         {
           id: "disc_target",
@@ -363,13 +363,13 @@ describe("buildScopedReviewContext", () => {
       instructionFiles: [],
       trigger: {
         kind: "follow-up-comment",
-        noteId: 78,
+        commentId: 78,
         authorUsername: "developer",
         body: "Please re-check the prior thread.",
         instruction: "Please re-check the prior thread.",
-        targetThreadId: "map_target",
-        targetDiscussionId: "disc_target",
-        targetThreadTitle: "Target finding",
+        targetDiscussionId: "map_target",
+        targetPlatformDiscussionId: "disc_target",
+        targetDiscussionTitle: "Target finding",
         responseTarget: createResponseTarget(
           "follow-up-comment",
           78,
@@ -378,12 +378,12 @@ describe("buildScopedReviewContext", () => {
           "disc_target",
         ),
       },
-      priorThreads: [targetThread],
+      priorDiscussions: [targetDiscussion],
       previousReview: null,
     });
 
-    expect(scoped.scope.mode).toBe("follow-up-thread");
-    expect(scoped.priorThreads).toEqual([targetThread]);
+    expect(scoped.scope.mode).toBe("follow-up-discussion");
+    expect(scoped.priorDiscussions).toEqual([targetDiscussion]);
     expect(scoped.changes).toEqual([]);
     expect(scoped.scope.omittedChangedFiles).toHaveLength(1);
     expect(scoped.scope.omittedChangedFiles[0]?.path).toBe("src/other.ts");
@@ -399,18 +399,18 @@ describe("buildScopedReviewContext", () => {
           `@@ -1 +1 @@\n-old-${index}\n+new-${index}`,
         ),
       ),
-      notes: [],
+      comments: [],
       discussions: [],
       instructionFiles: [],
       trigger: {
         kind: "direct-mention",
-        noteId: 88,
+        commentId: 88,
         authorUsername: "developer",
         body: "@review-bot review",
         instruction: "review",
-        targetThreadId: null,
         targetDiscussionId: null,
-        targetThreadTitle: null,
+        targetPlatformDiscussionId: null,
+        targetDiscussionTitle: null,
         responseTarget: createResponseTarget(
           "direct-mention",
           88,
@@ -418,7 +418,7 @@ describe("buildScopedReviewContext", () => {
           "review",
         ),
       },
-      priorThreads: [],
+      priorDiscussions: [],
       previousReview: null,
     });
 
@@ -432,18 +432,18 @@ describe("buildScopedReviewContext", () => {
       workspacePath: repoPath(),
       codeReview,
       changes: [createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new")],
-      notes: [],
+      comments: [],
       discussions: [],
       instructionFiles: [],
       trigger: {
         kind: "direct-mention",
-        noteId: 89,
+        commentId: 89,
         authorUsername: "developer",
         body: "@review-bot full rescan please",
         instruction: "full rescan please",
-        targetThreadId: null,
         targetDiscussionId: null,
-        targetThreadTitle: null,
+        targetPlatformDiscussionId: null,
+        targetDiscussionTitle: null,
         responseTarget: createResponseTarget(
           "direct-mention",
           89,
@@ -451,7 +451,7 @@ describe("buildScopedReviewContext", () => {
           "full rescan please",
         ),
       },
-      priorThreads: [],
+      priorDiscussions: [],
       previousReview: {
         reviewRunId: "run_prev",
         finishedAt: "2026-04-27T12:00:00.000Z",
@@ -485,7 +485,7 @@ function createChange(path: string, diff: string) {
 
 function createResponseTarget(
   kind: "direct-mention" | "summary-follow-up" | "follow-up-comment",
-  noteId: number,
+  commentId: number,
   body: string,
   instruction: string,
   discussionId?: string,
@@ -495,20 +495,20 @@ function createResponseTarget(
       kind === "summary-follow-up"
         ? "summary-discussion-reply"
         : kind === "follow-up-comment"
-          ? "finding-thread-reply"
+          ? "finding-discussion-reply"
           : discussionId
             ? "discussion-reply"
-            : "code-review-note",
+            : "code-review-comment",
     locationType:
       kind === "summary-follow-up"
         ? "summary-discussion"
         : kind === "follow-up-comment"
-          ? "finding-thread"
+          ? "finding-discussion"
           : discussionId
-            ? "discussion-note"
-            : "code-review-note",
+            ? "discussion-comment"
+            : "code-review-comment",
     triggerKind: kind,
-    noteId,
+    commentId,
     discussionId,
     authorUsername: "developer",
     body,
@@ -538,16 +538,17 @@ function createDiscussionNote(id: number, body: string) {
 }
 
 function createThread(
-  threadId: string,
   discussionId: string,
+  platformDiscussionId: string,
   title: string,
   path: string,
   resolved: boolean,
-): ProviderThreadContext {
+): ProviderDiscussionContext {
   return {
-    threadId,
     discussionId,
-    noteId: Number.parseInt(threadId.replace(/\D/g, ""), 10) || 1,
+    platformDiscussionId,
+    platformCommentId:
+      Number.parseInt(discussionId.replace(/\D/g, ""), 10) || 1,
     title,
     body: `**${title}**\n\nBody`,
     anchor: {

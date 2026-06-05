@@ -1,13 +1,14 @@
 <div align="center">
   <img src="./favicon.png" alt="ReviewPhin" width="120" />
 
-  # ReviewPhin
+# ReviewPhin
 
-  **Self-hosted AI code review for GitLab.**
-  Run on your own infrastructure. Bring your own model. Use your own agent subscription to pay per review, not per developer.
+**Self-hosted AI code review for GitLab.**
+Run on your own infrastructure. Bring your own model. Use your own agent subscription to pay per review, not per developer.
 
-  [![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)
-  [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](./LICENSE)
+[![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](./LICENSE)
+
 </div>
 
 ---
@@ -18,8 +19,7 @@ All model calls go through a configured harness (currently Copilot CLI, but more
 
 Internally, code-review operations now flow through a platform adapter layer. GitLab is still the only built-in platform today, but tenant records and webhook routing already carry platform metadata.
 
-*Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWave](https://codewave.eu)*
-
+_Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWave](https://codewave.eu)_
 
 ## Table of Contents
 
@@ -157,7 +157,7 @@ docker compose run --rm worker reviewphin tenant add \
   --base-url https://gitlab.example.com \
   --project-id 123 \
   --api-token <your-gitlab-token> \
-  --webhook-secret <your-webhook-secret> 
+  --webhook-secret <your-webhook-secret>
 ```
 
 #### From a local checkout
@@ -185,7 +185,7 @@ In the project's **Settings → Webhooks**:
 
 `/webhooks/gitlab/note` is still accepted as a backward-compatible legacy alias, but `/webhooks/gitlab` is the canonical route for new setups.
 
-Save, then use the **Test** button (select *Note events*) to verify ReviewPhin receives the delivery and returns `202 Accepted`.
+Save, then use the **Test** button (select _Note events_) to verify ReviewPhin receives the delivery and returns `202 Accepted`.
 
 ### 5. Verify the tenant is registered
 
@@ -211,16 +211,16 @@ Post a merge request comment that mentions the bot:
 @reviewphin review this
 ```
 
-ReviewPhin queues a job, hydrates the code review, and creates or updates bot-owned discussion threads for each finding plus a summary note at the top of the discussion list.
+ReviewPhin queues a job, hydrates the code review, and creates or updates bot-owned discussions for each finding plus a summary comment at the top of the discussion list.
 
 On first run this is a **full review** covering all changed files. On subsequent runs for the same code review it is an **incremental re-review** focused on files changed since the last run.
 
 ### Follow-up conversations
 
-Replies inside a bot-owned review discussion automatically queue a new pass scoped to that thread. You do not need to mention the bot again:
+Replies inside a bot-owned review discussion automatically queue a new pass scoped to that discussion. You do not need to mention the bot again:
 
 ```
-# Inside a bot discussion thread:
+# Inside a bot discussion:
 Can you suggest a more readable variable name here?
 ```
 
@@ -275,9 +275,10 @@ The main agent runs as two sequential subagents inside a single model session:
 2. **review-author** - produces structured findings: severity, category, body text, optional diff anchor, and optional inline code suggestion.
 
 The reviewer selects one of three modes based on trigger context:
+
 - **first-pass-full** - first review of the MR, or an explicit full rescan
 - **incremental-rereview** - focused on files changed since the last review
-- **follow-up-thread** - scoped to one existing discussion thread
+- **follow-up-discussion** - scoped to one existing discussion
 
 ---
 
@@ -300,26 +301,28 @@ The reviewer selects one of three modes based on trigger context:
 
 ## Environment variables
 
-| Variable                                             | Default                          | Description                                                                     |
-| ---------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------- |
-| `PORT`                                               | `3000`                           | HTTP port                                                                       |
-| `HOST`                                               | `0.0.0.0`                        | Bind address                                                                    |
-| `LOG_LEVEL`                                          | `info`                           | `fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` \| `silent`        |
-| `STORAGE_PROVIDER_MODULE`                            | built-in SQLite                  | Module path or package name for a custom storage adapter                        |
-| `SQLITE_DATABASE_PATH`                               | `./data/review-worker.sqlite`    | SQLite file path (ignored when a custom storage module is set)                  |
-| `RUN_LOG_DIR`                                        | `./data/run-logs`                | Root directory for per-review run artifacts                                     |
-| `WORKSPACE_ROOT`                                     | `./tmp/review-workspaces`        | Scratch directory for hydrated repositories                                     |
-| `MAX_JOB_RETRIES`                                    | `3`                              | Retry attempts for failed review jobs                                           |
-| `RETRY_BACKOFF_MS`                                   | `5000`                           | Delay (ms) between retries                                                      |
-| `COPILOT_TIMEOUT_MS`                                 | `180000`                         | Model session timeout in milliseconds                                           |
-| `COPILOT_SDK_LOG_LEVEL`                              | _(none)_                         | SDK log verbosity: `none` \| `error` \| `warning` \| `info` \| `debug` \| `all` |
-| `COPILOT_CLI_PATH`                                   | `/usr/local/bin/copilot` (image) | Path to the Copilot CLI binary                                                  |
-| `REVIEWPHIN_MEMORY_ENABLED`                          | `true`                           | Enable per-project wiki memory                                                  |
-| `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS`                 | `5000`                           | Character budget for injected project memory                                    |
-| `GH_TOKEN` / `GITHUB_TOKEN` / `COPILOT_GITHUB_TOKEN` | _(required for Copilot mode)_    | GitHub PAT with **Copilot Requests** permission                                 |
+| Variable                                             | Default                          | Description                                                                                 |
+| ---------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------- |
+| `PORT`                                               | `3000`                           | HTTP port                                                                                   |
+| `HOST`                                               | `0.0.0.0`                        | Bind address                                                                                |
+| `LOG_LEVEL`                                          | `info`                           | `fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` \| `silent`                    |
+| `STORAGE_PROVIDER_MODULE`                            | built-in SQLite                  | Module path or package name for a custom storage adapter                                    |
+| `PLATFORM_MODULES`                                   | `gitlab`                         | Comma-separated platform provider modules. Supports `gitlab`, paths, and package specifiers |
+| `SQLITE_DATABASE_PATH`                               | `./data/review-worker.sqlite`    | SQLite file path (ignored when a custom storage module is set)                              |
+| `RUN_LOG_DIR`                                        | `./data/run-logs`                | Root directory for per-review run artifacts                                                 |
+| `WORKSPACE_ROOT`                                     | `./tmp/review-workspaces`        | Scratch directory for hydrated repositories                                                 |
+| `MAX_JOB_RETRIES`                                    | `3`                              | Retry attempts for failed review jobs                                                       |
+| `RETRY_BACKOFF_MS`                                   | `5000`                           | Delay (ms) between retries                                                                  |
+| `COPILOT_TIMEOUT_MS`                                 | `180000`                         | Model session timeout in milliseconds                                                       |
+| `COPILOT_SDK_LOG_LEVEL`                              | _(none)_                         | SDK log verbosity: `none` \| `error` \| `warning` \| `info` \| `debug` \| `all`             |
+| `COPILOT_CLI_PATH`                                   | `/usr/local/bin/copilot` (image) | Path to the Copilot CLI binary                                                              |
+| `REVIEWPHIN_MEMORY_ENABLED`                          | `true`                           | Enable per-project wiki memory                                                              |
+| `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS`                 | `5000`                           | Character budget for injected project memory                                                |
+| `GH_TOKEN` / `GITHUB_TOKEN` / `COPILOT_GITHUB_TOKEN` | _(required for Copilot mode)_    | GitHub PAT with **Copilot Requests** permission                                             |
 
 For model profile setup (BYOK providers, Azure OpenAI, etc.) see [Model providers](./docs/model-providers.md).
 For custom storage adapters see [Storage providers](./docs/storage-providers.md).
+For custom code review platform providers see [Code review platform providers](docs/code-review-platform-providers.md).
 
 ---
 
@@ -329,4 +332,5 @@ For custom storage adapters see [Storage providers](./docs/storage-providers.md)
 | ------ | ----------------------- | ------------------------------------------------------------------- |
 | `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}`                           |
 | `POST` | `/webhooks/<platform>`  | Platform webhook receiver. GitLab currently uses `/webhooks/gitlab` |
+| `*`    | `/setup/<platform>`     | Optional platform setup handler when the provider exposes one       |
 | `POST` | `/webhooks/gitlab/note` | Deprecated GitLab compatibility alias                               |

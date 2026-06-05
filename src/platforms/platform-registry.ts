@@ -1,17 +1,39 @@
-import { createLogger } from "../logger.js";
+import type { Logger } from "pino";
+
 import GitLabPlatform from "./gitlab/platform.js";
 import type { IPlatform } from "./IPlatform.js";
+import { createLogger } from "../logger.js";
+import { initializePlatformRuntime } from "./runtime.js";
 
-let platforms: IPlatform[] | null = null;
+let platforms: readonly IPlatform[] | null = null;
 
-export function getPlatforms(): IPlatform[] {
+export async function initializePlatformRegistry(
+  input: {
+    platformModules?: readonly string[] | undefined;
+    env?: NodeJS.ProcessEnv | undefined;
+    logger?: Logger | undefined;
+  } = {},
+): Promise<readonly IPlatform[]> {
+  const logger =
+    input.logger ??
+    createLogger("info").child({ component: "platform-registry" });
+  const runtime = await initializePlatformRuntime({
+    platformModules: input.platformModules,
+    env: input.env,
+    logger,
+  });
+  platforms = runtime.platforms;
+  return platforms;
+}
+
+export function getPlatforms(): readonly IPlatform[] {
   if (!platforms) {
     const logger = createLogger("info");
     platforms = [
       new GitLabPlatform(logger.child({ component: "GitLabPlatform" })),
     ];
   }
-  return platforms ?? [];
+  return platforms;
 }
 
 export function getPlatformBySlug(slug: string): IPlatform | null {
@@ -19,4 +41,8 @@ export function getPlatformBySlug(slug: string): IPlatform | null {
     (p) => p.getPlatformInfo().slug === slug,
   );
   return platform || null;
+}
+
+export function resetPlatformRegistryForTests(): void {
+  platforms = null;
 }

@@ -22,7 +22,7 @@ describe("buildReviewPrompt", () => {
       "For future reference, we generally avoid snapshot tests",
     );
     expect(prompt).toContain('"attachments": [');
-    expect(prompt).toContain('"displayName": "trigger-note-55-diagram.png"');
+    expect(prompt).toContain('"displayName": "trigger-comment-55-diagram.png"');
     expect(prompt).toContain('"contentType": "image/png"');
   });
 
@@ -31,7 +31,7 @@ describe("buildReviewPrompt", () => {
       createContext(undefined, "direct-mention", "first-pass-full", [
         {
           sourceKind: "code-review-description",
-          noteId: null,
+          commentId: null,
           displayName: "code-review-description-architecture.png",
           status: 503,
           message:
@@ -46,9 +46,7 @@ describe("buildReviewPrompt", () => {
       "The platform failed to download 1 referenced image attachment(s) before this run.",
     );
     expect(prompt).toContain("code-review-description-architecture.png");
-    expect(prompt).toContain(
-      '"attachmentIssues": [',
-    );
+    expect(prompt).toContain('"attachmentIssues": [');
     expect(prompt).toContain('"status": 503');
   });
 
@@ -76,7 +74,7 @@ describe("buildReviewPrompt", () => {
     const prompt = buildReviewPrompt(createContext(null, "summary-follow-up"));
 
     expect(prompt).toContain(
-      "The latest user instruction came from a reply to the bot's code review summary note.",
+      "The latest user instruction came from a reply to the bot's code review summary comment.",
     );
     expect(prompt).toContain('"kind": "summary-follow-up"');
   });
@@ -92,7 +90,7 @@ describe("buildReviewPrompt", () => {
       "code-review-level user comments, then the current `reviewTrigger`",
     );
     expect(prompt).toContain(
-      "prefer updating that existing thread/finding instead of creating a duplicate",
+      "prefer updating that existing discussion/finding instead of creating a duplicate",
     );
     expect(renderPrompt("subagent.context-analyst", {})).toContain(
       "unused locals, helper functions, imports, parameters, or assigned values",
@@ -112,7 +110,7 @@ describe("buildReviewPrompt", () => {
       "This code review has already been reviewed before.",
     );
     expect(prompt).toContain(
-      "The latest user instruction came from a reply to the bot's code review summary note.",
+      "The latest user instruction came from a reply to the bot's code review summary comment.",
     );
   });
 
@@ -130,16 +128,16 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain('"resolution": "optional resolved | dismissed"');
   });
 
-  it("uses the follow-up-thread registered combination without the summary overlay", () => {
+  it("uses the follow-up-discussion registered combination without the summary overlay", () => {
     const prompt = buildReviewPrompt(
-      createContext(null, "follow-up-comment", "follow-up-thread"),
+      createContext(null, "follow-up-comment", "follow-up-discussion"),
     );
 
     expect(prompt).toContain(
-      "This is a focused follow-up on an existing bot-owned discussion thread.",
+      "This is a focused follow-up on an existing bot-owned discussion.",
     );
     expect(prompt).not.toContain(
-      "The latest user instruction came from a reply to the bot's code review summary note.",
+      "The latest user instruction came from a reply to the bot's code review summary comment.",
     );
   });
 
@@ -189,7 +187,7 @@ describe("buildReviewPrompt", () => {
           targets: [
             {
               kind: "summary-discussion-reply",
-              noteId: 55,
+              commentId: 55,
               discussionId: "disc_summary",
               guidance: "Explain that schema validation is still absent.",
             },
@@ -222,21 +220,26 @@ describe("buildReviewPrompt", () => {
       trigger: createContext().trigger,
       responseTargets: [createContext().trigger.responseTarget],
       projectMemory: createContext().projectMemory,
-      reviewContext: createContext(undefined, "direct-mention", "first-pass-full", [
-        {
-          sourceKind: "trigger-note",
-          noteId: 55,
-          displayName: "trigger-note-55-screenshot.png",
-          status: 403,
-          message:
-            "GitLab image request failed for https://gitlab.example.com/-/project/1085/uploads/denied/screenshot.png with 403",
-          url: "https://gitlab.example.com/-/project/1085/uploads/denied/screenshot.png",
-        },
-      ]),
+      reviewContext: createContext(
+        undefined,
+        "direct-mention",
+        "first-pass-full",
+        [
+          {
+            sourceKind: "trigger-comment",
+            commentId: 55,
+            displayName: "trigger-comment-55-screenshot.png",
+            status: 403,
+            message:
+              "GitLab image request failed for https://gitlab.example.com/-/project/1085/uploads/denied/screenshot.png with 403",
+            url: "https://gitlab.example.com/-/project/1085/uploads/denied/screenshot.png",
+          },
+        ],
+      ),
     });
 
     expect(prompt).toContain("Runtime note:");
-    expect(prompt).toContain("trigger-note-55-screenshot.png");
+    expect(prompt).toContain("trigger-comment-55-screenshot.png");
     expect(prompt).toContain('"attachmentIssues": [');
     expect(prompt).toContain('"status": 403');
   });
@@ -261,9 +264,9 @@ function createContext(
   return {
     attachments: [
       {
-        sourceKind: "trigger-note",
-        noteId: 55,
-        displayName: "trigger-note-55-diagram.png",
+        sourceKind: "trigger-comment",
+        commentId: 55,
+        displayName: "trigger-comment-55-diagram.png",
         contentType: "image/png",
       },
     ],
@@ -288,7 +291,7 @@ function createContext(
         deletedFile: false,
       },
     ],
-    notes: [
+    comments: [
       {
         id: 60,
         body: "Can we summarize the worker changes clearly?",
@@ -323,7 +326,7 @@ function createContext(
     },
     trigger: {
       kind: triggerKind,
-      noteId: 55,
+      commentId: 55,
       authorUsername: "developer",
       body:
         triggerKind === "summary-follow-up"
@@ -333,20 +336,20 @@ function createContext(
         triggerKind === "summary-follow-up"
           ? "In the future, please remember to throw in some dolphin related joke when it fits into the overall assessment."
           : "review",
-      targetThreadId: null,
       targetDiscussionId: null,
-      targetThreadTitle: null,
+      targetPlatformDiscussionId: null,
+      targetDiscussionTitle: null,
       responseTarget: {
         kind:
           triggerKind === "summary-follow-up"
             ? "summary-discussion-reply"
-            : "code-review-note",
+            : "code-review-comment",
         locationType:
           triggerKind === "summary-follow-up"
             ? "summary-discussion"
-            : "code-review-note",
+            : "code-review-comment",
         triggerKind,
-        noteId: 55,
+        commentId: 55,
         ...(triggerKind === "summary-follow-up"
           ? { discussionId: "disc_summary" }
           : {}),
@@ -361,14 +364,14 @@ function createContext(
             : "review",
       },
     },
-    priorThreads: [],
+    priorDiscussions: [],
     scope: {
       mode,
       scopeSummary: "Full review",
       widenScopeHints: [],
       allChangedFiles: [],
       omittedChangedFiles: [],
-      targetThread: null,
+      targetDiscussion: null,
       previousReview: null,
       priorFindings:
         mode === "incremental-rereview"

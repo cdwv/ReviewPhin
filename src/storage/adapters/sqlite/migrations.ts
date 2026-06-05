@@ -56,7 +56,7 @@ const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
           dedupe_key TEXT NOT NULL UNIQUE,
           project_id INTEGER NOT NULL,
           merge_request_iid INTEGER NOT NULL,
-          note_id INTEGER NOT NULL,
+          comment_id INTEGER NOT NULL,
           head_sha TEXT NOT NULL,
           status TEXT NOT NULL,
           payload_json TEXT NOT NULL,
@@ -77,7 +77,7 @@ const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
           code_review_json TEXT NOT NULL,
           versions_json TEXT NOT NULL,
           changes_json TEXT NOT NULL,
-          notes_json TEXT NOT NULL,
+          comments_json TEXT NOT NULL,
           discussions_json TEXT NOT NULL,
           instructions_json TEXT NOT NULL,
           project_memory_json TEXT,
@@ -128,8 +128,8 @@ const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
           prompt_mode TEXT,
           prompt_chars INTEGER NOT NULL,
           prompt_context_changed_files INTEGER NOT NULL,
-          prompt_context_prior_threads INTEGER NOT NULL,
-          prompt_context_notes INTEGER NOT NULL,
+          prompt_context_prior_discussions INTEGER NOT NULL,
+          prompt_context_comments INTEGER NOT NULL,
           assistant_turns INTEGER NOT NULL,
           assistant_calls INTEGER NOT NULL,
           tool_executions INTEGER NOT NULL,
@@ -161,7 +161,7 @@ const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
           category TEXT NOT NULL,
           body TEXT NOT NULL,
           gitlab_discussion_id TEXT NOT NULL,
-          gitlab_note_id INTEGER NOT NULL,
+          gitlab_comment_id INTEGER NOT NULL,
           anchor_json TEXT,
           position_json TEXT,
           bot_discussion INTEGER NOT NULL,
@@ -241,9 +241,9 @@ const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
           "ALTER TABLE discussion_mappings RENAME COLUMN gitlab_discussion_id TO platform_thread_id",
         );
       }
-      if (discussionMappingColumns.has("gitlab_note_id")) {
+      if (discussionMappingColumns.has("gitlab_comment_id")) {
         database.exec(
-          "ALTER TABLE discussion_mappings RENAME COLUMN gitlab_note_id TO platform_comment_id",
+          "ALTER TABLE discussion_mappings RENAME COLUMN gitlab_comment_id TO platform_comment_id",
         );
       }
     },
@@ -309,6 +309,59 @@ const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
 
       ensureTenantPlatformColumns(database, tenantColumns);
       rebuildTenantTableWithoutLegacyColumns(database);
+    },
+  },
+  {
+    id: "sqlite:0007_v1_generic_storage_column_names",
+    apply(database) {
+      renameColumnIfNeeded(
+        database,
+        "interaction_jobs",
+        "note_id",
+        "comment_id",
+      );
+      renameColumnIfNeeded(
+        database,
+        "code_review_snapshots",
+        "notes_json",
+        "comments_json",
+      );
+      renameColumnIfNeeded(
+        database,
+        "interaction_run_metrics",
+        "prompt_context_prior_threads",
+        "prompt_context_prior_discussions",
+      );
+      renameColumnIfNeeded(
+        database,
+        "interaction_run_metrics",
+        "prompt_context_notes",
+        "prompt_context_comments",
+      );
+      renameColumnIfNeeded(
+        database,
+        "discussion_mappings",
+        "platform_thread_id",
+        "platform_discussion_id",
+      );
+      renameColumnIfNeeded(
+        database,
+        "discussion_mappings",
+        "bot_note",
+        "bot_comment",
+      );
+      renameColumnIfNeeded(
+        database,
+        "discussion_mappings",
+        "note_author_id",
+        "comment_author_id",
+      );
+      renameColumnIfNeeded(
+        database,
+        "discussion_mappings",
+        "note_author_username",
+        "comment_author_username",
+      );
     },
   },
 ];
@@ -417,6 +470,22 @@ function hasAnyColumns(
   expectedColumnNames: readonly string[],
 ): boolean {
   return expectedColumnNames.some((columnName) => columnNames.has(columnName));
+}
+
+function renameColumnIfNeeded(
+  database: DatabaseSync,
+  tableName: string,
+  oldColumnName: string,
+  newColumnName: string,
+): void {
+  const columnNames = getTableColumnNames(database, tableName);
+  if (!columnNames.has(oldColumnName) || columnNames.has(newColumnName)) {
+    return;
+  }
+
+  database.exec(
+    `ALTER TABLE ${tableName} RENAME COLUMN ${oldColumnName} TO ${newColumnName}`,
+  );
 }
 
 function ensureTenantPlatformColumns(

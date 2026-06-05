@@ -44,6 +44,7 @@ const payload: GitLabNoteHookPayload = {
   project: {
     id: 123,
     web_url: "https://gitlab.example.com/group/project",
+    path_with_namespace: "group/project",
   },
   repository: {
     homepage: "https://gitlab.example.com/group/project",
@@ -84,8 +85,8 @@ function getRequestUrl(input: URL | RequestInfo): string {
 
 function createFreshTriggerNoteResponse(input: {
   requestUrl: string;
-  noteId: number;
-  kind?: "code-review-note" | "discussion-note";
+  commentId: number;
+  kind?: "code-review-comment" | "discussion-comment";
   discussionId?: string;
 }): Response {
   if (
@@ -95,11 +96,11 @@ function createFreshTriggerNoteResponse(input: {
   ) {
     return new Response(
       JSON.stringify(
-        input.kind === "discussion-note"
+        input.kind === "discussion-comment"
           ? []
           : [
               {
-                id: input.noteId,
+                id: input.commentId,
                 body: payload.object_attributes.note,
                 author: payload.user,
                 created_at: new Date().toISOString(),
@@ -120,14 +121,14 @@ function createFreshTriggerNoteResponse(input: {
   if (input.requestUrl.includes("/merge_requests/7/discussions")) {
     return new Response(
       JSON.stringify(
-        input.kind === "discussion-note"
+        input.kind === "discussion-comment"
           ? [
               {
                 id: input.discussionId ?? "disc_trigger",
                 individual_note: false,
                 notes: [
                   {
-                    id: input.noteId,
+                    id: input.commentId,
                     body: payload.object_attributes.note,
                     author: payload.user,
                     created_at: new Date().toISOString(),
@@ -178,7 +179,7 @@ function createReviewRuntimeFactory(overrides: Partial<PlatformReviewRuntime>) {
 }
 
 describe("ReviewWorker orchestration", () => {
-  it("abandons the run without retry when the trigger note no longer exists", async () => {
+  it("abandons the run without retry when the trigger comment no longer exists", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(
       async (_input: URL | RequestInfo, init?: RequestInit) => {
@@ -201,7 +202,7 @@ describe("ReviewWorker orchestration", () => {
       dedupeKey: "dedupe",
       projectId: tenant.projectId,
       codeReviewId: 7,
-      noteId: 55,
+      commentId: 55,
       headSha: "abc123",
       status: "queued" as const,
       payloadJson: JSON.stringify(payload),
@@ -234,7 +235,7 @@ describe("ReviewWorker orchestration", () => {
     const markJobQueued = vi.fn(async () => {});
     const hydrate = vi.fn(async () => {
       throw new Error(
-        "full hydration should not run when the trigger note is gone",
+        "full hydration should not run when the trigger comment is gone",
       );
     });
 
@@ -346,21 +347,21 @@ describe("ReviewWorker orchestration", () => {
     });
 
     await expect(worker.processJob(job.id)).rejects.toThrow(
-      "Trigger note 55 no longer exists on merge request 7",
+      "Trigger comment 55 no longer exists on merge request 7",
     );
 
     expect(createInteractionRun).toHaveBeenCalledTimes(1);
     expect(hydrate).not.toHaveBeenCalled();
     expect(cancelInteractionRun).toHaveBeenCalledWith(
       "run_1",
-      "Trigger note 55 no longer exists on merge request 7",
+      "Trigger comment 55 no longer exists on merge request 7",
     );
     expect(failInteractionRun).not.toHaveBeenCalled();
     expect(markJobQueued).not.toHaveBeenCalled();
     expect(markJobCancelled).toHaveBeenCalledWith(
       job.id,
       1,
-      "Trigger note 55 no longer exists on merge request 7",
+      "Trigger comment 55 no longer exists on merge request 7",
     );
     expect(markJobFailed).not.toHaveBeenCalled();
 
@@ -373,7 +374,7 @@ describe("ReviewWorker orchestration", () => {
       async (input: URL | RequestInfo, init?: RequestInit) => {
         const requestUrl = getRequestUrl(input);
         if (init?.method === "GET") {
-          return createFreshTriggerNoteResponse({ requestUrl, noteId: 55 });
+          return createFreshTriggerNoteResponse({ requestUrl, commentId: 55 });
         }
 
         if (requestUrl.includes("/award_emoji")) {
@@ -426,7 +427,7 @@ describe("ReviewWorker orchestration", () => {
       dedupeKey: "dedupe",
       projectId: tenant.projectId,
       codeReviewId: 7,
-      noteId: 55,
+      commentId: 55,
       headSha: "abc123",
       status: "queued" as const,
       payloadJson: JSON.stringify(payload),
@@ -448,8 +449,8 @@ describe("ReviewWorker orchestration", () => {
       replies: [
         {
           target: {
-            kind: "code-review-note" as const,
-            noteId: 55,
+            kind: "code-review-comment" as const,
+            commentId: 55,
           },
           replyBody: "Here is what changed.",
         },
@@ -581,8 +582,8 @@ describe("ReviewWorker orchestration", () => {
         }),
         responseTargets: [
           expect.objectContaining({
-            kind: "code-review-note",
-            noteId: 55,
+            kind: "code-review-comment",
+            commentId: 55,
           }),
         ],
       }),
@@ -612,7 +613,7 @@ describe("ReviewWorker orchestration", () => {
         }
 
         if (init?.method === "GET") {
-          return createFreshTriggerNoteResponse({ requestUrl, noteId: 55 });
+          return createFreshTriggerNoteResponse({ requestUrl, commentId: 55 });
         }
 
         if (requestUrl.includes("/award_emoji")) {
@@ -677,7 +678,7 @@ describe("ReviewWorker orchestration", () => {
       dedupeKey: "dedupe-images",
       projectId: tenant.projectId,
       codeReviewId: 7,
-      noteId: 55,
+      commentId: 55,
       headSha: "abc123",
       status: "queued" as const,
       payloadJson: JSON.stringify(imagePayload),
@@ -698,8 +699,8 @@ describe("ReviewWorker orchestration", () => {
       replies: [
         {
           target: {
-            kind: "code-review-note" as const,
-            noteId: 55,
+            kind: "code-review-comment" as const,
+            commentId: 55,
           },
           replyBody: "Here is what changed.",
         },
@@ -828,7 +829,7 @@ describe("ReviewWorker orchestration", () => {
             type: "blob",
             data: "AQID",
             mimeType: "image/png",
-            displayName: "trigger-note-55-note-image.png",
+            displayName: "trigger-comment-55-note-image.png",
           },
           {
             type: "blob",
@@ -840,14 +841,14 @@ describe("ReviewWorker orchestration", () => {
         reviewContext: expect.objectContaining({
           attachments: [
             {
-              sourceKind: "trigger-note",
-              noteId: 55,
-              displayName: "trigger-note-55-note-image.png",
+              sourceKind: "trigger-comment",
+              commentId: 55,
+              displayName: "trigger-comment-55-note-image.png",
               contentType: "image/png",
             },
             {
               sourceKind: "code-review-description",
-              noteId: null,
+              commentId: null,
               displayName: "code-review-description-diagram.png",
               contentType: "image/png",
             },
@@ -866,7 +867,7 @@ describe("ReviewWorker orchestration", () => {
       async (input: URL | RequestInfo, init?: RequestInit) => {
         const requestUrl = getRequestUrl(input);
         if (init?.method === "GET") {
-          return createFreshTriggerNoteResponse({ requestUrl, noteId: 56 });
+          return createFreshTriggerNoteResponse({ requestUrl, commentId: 56 });
         }
 
         if (requestUrl.includes("/award_emoji")) {
@@ -905,7 +906,7 @@ describe("ReviewWorker orchestration", () => {
       dedupeKey: "dedupe-2",
       projectId: tenant.projectId,
       codeReviewId: 7,
-      noteId: 56,
+      commentId: 56,
       headSha: "abc123",
       status: "queued" as const,
       payloadJson: JSON.stringify({
@@ -1030,8 +1031,8 @@ describe("ReviewWorker orchestration", () => {
             replies: [
               {
                 target: {
-                  kind: "code-review-note" as const,
-                  noteId: 56,
+                  kind: "code-review-comment" as const,
+                  commentId: 56,
                 },
                 replyBody: "Here is what changed.",
               },
@@ -1060,7 +1061,7 @@ describe("ReviewWorker orchestration", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("publishes chatter replies into the existing discussion when the trigger note is threaded", async () => {
+  it("publishes chatter replies into the existing discussion when the trigger comment is threaded", async () => {
     const originalFetch = globalThis.fetch;
     const fetchMock = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
@@ -1068,8 +1069,8 @@ describe("ReviewWorker orchestration", () => {
         if (init?.method === "GET") {
           return createFreshTriggerNoteResponse({
             requestUrl,
-            noteId: 77,
-            kind: "discussion-note",
+            commentId: 77,
+            kind: "discussion-comment",
             discussionId: "disc_77",
           });
         }
@@ -1133,7 +1134,7 @@ describe("ReviewWorker orchestration", () => {
       dedupeKey: "dedupe-3",
       projectId: tenant.projectId,
       codeReviewId: 7,
-      noteId: 77,
+      commentId: 77,
       headSha: "abc123",
       status: "queued" as const,
       payloadJson: JSON.stringify(threadedPayload),
@@ -1269,7 +1270,7 @@ describe("ReviewWorker orchestration", () => {
               {
                 target: {
                   kind: "discussion-reply" as const,
-                  noteId: 77,
+                  commentId: 77,
                   discussionId: "disc_individual",
                 },
                 replyBody: "Here is the explanation.",
@@ -1321,7 +1322,7 @@ describe("ReviewWorker orchestration", () => {
       async (input: URL | RequestInfo, init?: RequestInit) => {
         const requestUrl = getRequestUrl(input);
         if (init?.method === "GET") {
-          return createFreshTriggerNoteResponse({ requestUrl, noteId: 58 });
+          return createFreshTriggerNoteResponse({ requestUrl, commentId: 58 });
         }
 
         if (requestUrl.includes("/award_emoji")) {
@@ -1360,7 +1361,7 @@ describe("ReviewWorker orchestration", () => {
       dedupeKey: "dedupe-4",
       projectId: tenant.projectId,
       codeReviewId: 7,
-      noteId: 58,
+      commentId: 58,
       headSha: "abc123",
       status: "queued" as const,
       payloadJson: JSON.stringify({
@@ -1389,14 +1390,14 @@ describe("ReviewWorker orchestration", () => {
         severity: "medium",
         category: "bug",
         body: "**Old finding**\n\nOld body",
-        platformThreadId: "disc_1",
+        platformDiscussionId: "disc_1",
         platformCommentId: 10,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
-        botNote: true,
-        noteAuthorId: 999,
-        noteAuthorUsername: "review-bot",
+        botComment: true,
+        commentAuthorId: 999,
+        commentAuthorUsername: "review-bot",
         status: "open" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
@@ -1617,7 +1618,7 @@ describe("ReviewWorker orchestration", () => {
           replied: 0,
           resolved: 0,
           kept: 0,
-          summaryNoteAction: null,
+          summaryCommentAction: null,
         })),
       } as never,
       logger: createLogger("silent"),
@@ -1631,7 +1632,7 @@ describe("ReviewWorker orchestration", () => {
     expect(upsertDiscussionMapping).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "map_1",
-        platformThreadId: "disc_1",
+        platformDiscussionId: "disc_1",
         status: "resolved",
       }),
     );
@@ -1665,7 +1666,7 @@ describe("ReviewWorker orchestration", () => {
       async (input: URL | RequestInfo, init?: RequestInit) => {
         const requestUrl = getRequestUrl(input);
         if (init?.method === "GET") {
-          return createFreshTriggerNoteResponse({ requestUrl, noteId: 59 });
+          return createFreshTriggerNoteResponse({ requestUrl, commentId: 59 });
         }
 
         if (requestUrl.includes("/award_emoji")) {
@@ -1704,7 +1705,7 @@ describe("ReviewWorker orchestration", () => {
       dedupeKey: "dedupe-5",
       projectId: tenant.projectId,
       codeReviewId: 7,
-      noteId: 59,
+      commentId: 59,
       headSha: "abc123",
       status: "queued" as const,
       payloadJson: JSON.stringify({
@@ -1733,14 +1734,14 @@ describe("ReviewWorker orchestration", () => {
         severity: "medium",
         category: "bug",
         body: "**Accepted risk finding**\n\nOld body",
-        platformThreadId: "disc_2",
+        platformDiscussionId: "disc_2",
         platformCommentId: 11,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
-        botNote: true,
-        noteAuthorId: 999,
-        noteAuthorUsername: "review-bot",
+        botComment: true,
+        commentAuthorId: 999,
+        commentAuthorUsername: "review-bot",
         status: "resolved" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
@@ -1971,7 +1972,7 @@ describe("ReviewWorker orchestration", () => {
           replied: 0,
           resolved: 0,
           kept: 0,
-          summaryNoteAction: null,
+          summaryCommentAction: null,
         })),
       } as never,
       logger: createLogger("silent"),

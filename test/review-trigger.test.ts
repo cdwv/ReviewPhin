@@ -39,6 +39,7 @@ describe("review trigger helpers", () => {
         project: {
           id: 123,
           web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
         },
         repository: {
           homepage: "https://gitlab.example.com/group/project",
@@ -93,10 +94,10 @@ describe("review trigger helpers", () => {
 
     expect(trigger).toEqual({
       kind: "follow-up-comment",
-      note: {
-        kind: "discussion-note",
+      comment: {
+        kind: "discussion-comment",
         discussionId: "disc_1",
-        noteId: 55,
+        commentId: 55,
       },
     });
   });
@@ -109,6 +110,7 @@ describe("review trigger helpers", () => {
         project: {
           id: 123,
           web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
         },
         repository: {
           homepage: "https://gitlab.example.com/group/project",
@@ -138,14 +140,14 @@ describe("review trigger helpers", () => {
 
     expect(trigger).toEqual({
       kind: "direct-mention",
-      note: {
-        kind: "code-review-note",
-        noteId: 56,
+      comment: {
+        kind: "code-review-comment",
+        commentId: 56,
       },
     });
   });
 
-  it("treats replies on the review summary note as explicit summary follow-up triggers", async () => {
+  it("treats replies on the review summary comment as explicit summary follow-up triggers", async () => {
     const trigger = await classifyWebhookTrigger({
       tenant,
       payload: {
@@ -153,6 +155,7 @@ describe("review trigger helpers", () => {
         project: {
           id: 123,
           web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
         },
         repository: {
           homepage: "https://gitlab.example.com/group/project",
@@ -207,10 +210,10 @@ describe("review trigger helpers", () => {
 
     expect(trigger).toEqual({
       kind: "summary-follow-up",
-      note: {
-        kind: "discussion-note",
+      comment: {
+        kind: "discussion-comment",
         discussionId: "disc_summary",
-        noteId: 58,
+        commentId: 58,
       },
     });
   });
@@ -223,6 +226,7 @@ describe("review trigger helpers", () => {
         project: {
           id: 123,
           web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
         },
         repository: {
           homepage: "https://gitlab.example.com/group/project",
@@ -264,6 +268,7 @@ describe("review trigger helpers", () => {
         project: {
           id: 123,
           web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
         },
         repository: {
           homepage: "https://gitlab.example.com/group/project",
@@ -295,11 +300,11 @@ describe("review trigger helpers", () => {
   });
 
   it("extracts explicit trigger context for follow-up comments and direct mentions", async () => {
-    const priorThreads = [
+    const priorDiscussions = [
       {
-        threadId: "map_1",
-        discussionId: "disc_1",
-        noteId: 10,
+        discussionId: "map_1",
+        platformDiscussionId: "disc_1",
+        platformCommentId: 10,
         title: "Old finding",
         body: "**Old finding**\n\nOriginal wording",
         anchor: null,
@@ -307,7 +312,7 @@ describe("review trigger helpers", () => {
         resolved: false,
         humanReplies: [
           {
-            noteId: 55,
+            platformCommentId: 55,
             authorUsername: "developer",
             body: "Please make this more human.",
           },
@@ -321,6 +326,7 @@ describe("review trigger helpers", () => {
         project: {
           id: 123,
           web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
         },
         repository: {
           homepage: "https://gitlab.example.com/group/project",
@@ -370,19 +376,19 @@ describe("review trigger helpers", () => {
           ],
         },
       ],
-      priorThreads,
+      priorDiscussions,
     });
 
     expect(followUpTrigger).toMatchObject({
       kind: "follow-up-comment",
       instruction: "Please make this more human.",
-      targetThreadId: "map_1",
-      targetDiscussionId: "disc_1",
-      targetThreadTitle: "Old finding",
+      targetDiscussionId: "map_1",
+      targetPlatformDiscussionId: "disc_1",
+      targetDiscussionTitle: "Old finding",
       responseTarget: {
-        kind: "finding-thread-reply",
+        kind: "finding-discussion-reply",
         discussionId: "disc_1",
-        noteId: 55,
+        commentId: 55,
       },
     });
 
@@ -392,6 +398,7 @@ describe("review trigger helpers", () => {
         project: {
           id: 123,
           web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
         },
         repository: {
           homepage: "https://gitlab.example.com/group/project",
@@ -416,16 +423,16 @@ describe("review trigger helpers", () => {
       },
       tenant,
       discussions: [],
-      priorThreads,
+      priorDiscussions,
     });
 
     expect(reviewCommandTrigger).toMatchObject({
       kind: "direct-mention",
       instruction: "please make the descriptions more human",
-      targetThreadId: null,
+      targetDiscussionId: null,
       responseTarget: {
-        kind: "code-review-note",
-        noteId: 56,
+        kind: "code-review-comment",
+        commentId: 56,
       },
     });
 
@@ -435,6 +442,7 @@ describe("review trigger helpers", () => {
         project: {
           id: 123,
           web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
         },
         repository: {
           homepage: "https://gitlab.example.com/group/project",
@@ -484,18 +492,18 @@ describe("review trigger helpers", () => {
           ],
         },
       ],
-      priorThreads,
+      priorDiscussions,
     });
 
     expect(summaryTrigger).toMatchObject({
       kind: "summary-follow-up",
       instruction:
         "In the future, please remember to throw in some dolphin related joke when it fits into the overall assessment.",
-      targetThreadId: null,
+      targetDiscussionId: null,
       responseTarget: {
         kind: "summary-discussion-reply",
         discussionId: "disc_summary",
-        noteId: 58,
+        commentId: 58,
       },
     });
   });
@@ -507,6 +515,7 @@ describe("review trigger helpers", () => {
         project: {
           id: 123,
           web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
         },
         repository: {
           homepage: "https://gitlab.example.com/group/project",
@@ -547,7 +556,7 @@ describe("review trigger helpers", () => {
           ],
         },
       ],
-      priorThreads: [],
+      priorDiscussions: [],
     });
 
     expect(trigger).toMatchObject({
@@ -555,7 +564,7 @@ describe("review trigger helpers", () => {
       responseTarget: {
         kind: "discussion-reply",
         discussionId: "disc_individual",
-        noteId: 77,
+        commentId: 77,
       },
     });
   });
@@ -565,27 +574,27 @@ describe("review trigger helpers", () => {
       baseUrl: tenant.baseUrl,
       projectId: tenant.projectId,
       codeReviewId: 7,
-      noteId: 55,
+      commentId: 55,
     });
 
     const firstUpdateKey = createInteractionJobDedupeKey({
       baseUrl: tenant.baseUrl,
       projectId: tenant.projectId,
       codeReviewId: 7,
-      noteId: 55,
-      noteAction: "update",
-      noteUpdatedAt: "2026-04-27T11:00:00.000Z",
-      noteBody: "@review-bot please review this again",
+      commentId: 55,
+      commentAction: "update",
+      commentUpdatedAt: "2026-04-27T11:00:00.000Z",
+      commentBody: "@review-bot please review this again",
     });
 
     const secondUpdateKey = createInteractionJobDedupeKey({
       baseUrl: tenant.baseUrl,
       projectId: tenant.projectId,
       codeReviewId: 7,
-      noteId: 55,
-      noteAction: "update",
-      noteUpdatedAt: "2026-04-27T11:05:00.000Z",
-      noteBody: "@review-bot please review this again",
+      commentId: 55,
+      commentAction: "update",
+      commentUpdatedAt: "2026-04-27T11:05:00.000Z",
+      commentBody: "@review-bot please review this again",
     });
 
     expect(createKey).not.toBe(firstUpdateKey);
@@ -595,10 +604,10 @@ describe("review trigger helpers", () => {
         baseUrl: tenant.baseUrl,
         projectId: tenant.projectId,
         codeReviewId: 7,
-        noteId: 55,
-        noteAction: "update",
-        noteUpdatedAt: "2026-04-27T11:00:00.000Z",
-        noteBody: "@review-bot please review this again",
+        commentId: 55,
+        commentAction: "update",
+        commentUpdatedAt: "2026-04-27T11:00:00.000Z",
+        commentBody: "@review-bot please review this again",
       }),
     );
   });
@@ -609,18 +618,18 @@ describe("review trigger helpers", () => {
         baseUrl: tenant.baseUrl,
         projectId: tenant.projectId,
         codeReviewId: 7,
-        noteId: 55,
-        noteAction: "update",
-        noteBody: "@review-bot first edit",
+        commentId: 55,
+        commentAction: "update",
+        commentBody: "@review-bot first edit",
       }),
     ).not.toBe(
       createInteractionJobDedupeKey({
         baseUrl: tenant.baseUrl,
         projectId: tenant.projectId,
         codeReviewId: 7,
-        noteId: 55,
-        noteAction: "update",
-        noteBody: "@review-bot second edit",
+        commentId: 55,
+        commentAction: "update",
+        commentBody: "@review-bot second edit",
       }),
     );
   });

@@ -35,18 +35,20 @@ reviewphin tenant add \
   --webhook-secret replace-me
 ```
 
-| Flag                        | Required | Description                                                                                                                            |
-| --------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `--platform`                | No       | Code review platform slug. Currently only `gitlab` is supported. Defaults to `gitlab`.                                                |
-| `--base-url`                | Yes      | GitLab instance root URL. May include a path prefix for proxied installs. Do not include `/api/v4`.                                    |
-| `--project-id`              | Yes      | Numeric GitLab project ID.                                                                                                             |
-| `--api-token`               | Yes      | Project, group, or personal access token with `api` scope.                                                                             |
-| `--webhook-secret`          | Yes      | Value expected in the `X-Gitlab-Token` header for this project's webhooks.                                                             |
-| `--bot-user-id`             | No       | Numeric GitLab user ID of the bot. If not provided, it will be requested from gitlab api with provided token.                          |
-| `--bot-username`            | No       | GitLab username of the bot. Used to match direct mentions.  If not provided, it will be requested from gitlab api with provided token. |  |
-| `--model-profile`           | No       | Assign a named model profile to this tenant at registration time.                                                                      |
-| `--sqlite-database-path`    | No       | Override the SQLite file path instead of reading `SQLITE_DATABASE_PATH` from `.env`.                                                   |
-| `--storage-provider-module` | No       | Override the storage adapter module instead of reading `STORAGE_PROVIDER_MODULE` from `.env`.                                          |
+| Flag                        | Required | Description                                                                                                                           |
+| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| `--platform`                | No       | Code review platform slug. Defaults to `gitlab`; custom slugs require loading their provider with `PLATFORM_MODULES`.                 |
+| `--base-url`                | Yes      | GitLab instance root URL. May include a path prefix for proxied installs. Do not include `/api/v4`.                                   |
+| `--project-id`              | Yes      | Numeric GitLab project ID.                                                                                                            |
+| `--api-token`               | Yes      | Project, group, or personal access token with `api` scope.                                                                            |
+| `--webhook-secret`          | Yes      | Value expected in the `X-Gitlab-Token` header for this project's webhooks.                                                            |
+| `--bot-user-id`             | No       | Numeric GitLab user ID of the bot. If not provided, it will be requested from gitlab api with provided token.                         |
+| `--bot-username`            | No       | GitLab username of the bot. Used to match direct mentions. If not provided, it will be requested from gitlab api with provided token. |     |
+| `--model-profile`           | No       | Assign a named model profile to this tenant at registration time.                                                                     |
+| `--sqlite-database-path`    | No       | Override the SQLite file path instead of reading `SQLITE_DATABASE_PATH` from `.env`.                                                  |
+| `--storage-provider-module` | No       | Override the storage adapter module instead of reading `STORAGE_PROVIDER_MODULE` from `.env`.                                         |
+
+For non-built-in platforms, set `PLATFORM_MODULES` in the environment before running `tenant add`; CLI platform registration uses the same comma-separated module list as the server. See [Code review platform providers](code-review-platform-providers.md#loading-platform-modules).
 
 ---
 
@@ -77,13 +79,13 @@ reviewphin tenant set-profile \
   --model-profile byok-gpt4
 ```
 
-| Flag                        | Required | Description                                     |
-| --------------------------- | -------- | ----------------------------------------------- |
-| `--tenant-id`               | Yes*     | Internal tenant ID (ULID).                      |
-| `--key`                     | Yes*     | Stable tenant key printed by `tenant list`.     |
-| `--model-profile`           | Yes      | Name of the profile to assign.                  |
-| `--sqlite-database-path`    | No       | Override the SQLite path.                       |
-| `--storage-provider-module` | No       | Override the storage module.                    |
+| Flag                        | Required | Description                                 |
+| --------------------------- | -------- | ------------------------------------------- |
+| `--tenant-id`               | Yes\*    | Internal tenant ID (ULID).                  |
+| `--key`                     | Yes\*    | Stable tenant key printed by `tenant list`. |
+| `--model-profile`           | Yes      | Name of the profile to assign.              |
+| `--sqlite-database-path`    | No       | Override the SQLite path.                   |
+| `--storage-provider-module` | No       | Override the storage module.                |
 
 \* Provide either `--tenant-id` or `--key`.
 
@@ -100,8 +102,8 @@ reviewphin tenant clear-profile \
 
 | Flag                        | Required | Description                                 |
 | --------------------------- | -------- | ------------------------------------------- |
-| `--tenant-id`               | Yes*     | Internal tenant ID (ULID).                  |
-| `--key`                     | Yes*     | Stable tenant key printed by `tenant list`. |
+| `--tenant-id`               | Yes\*    | Internal tenant ID (ULID).                  |
+| `--key`                     | Yes\*    | Stable tenant key printed by `tenant list`. |
 | `--sqlite-database-path`    | No       | Override the SQLite path.                   |
 | `--storage-provider-module` | No       | Override the storage module.                |
 
@@ -121,8 +123,8 @@ reviewphin tenant remove \
 
 | Flag                        | Required | Description                                                                  |
 | --------------------------- | -------- | ---------------------------------------------------------------------------- |
-| `--tenant-id`               | Yes*     | Internal tenant ID (ULID).                                                   |
-| `--key`                     | Yes*     | Stable tenant key printed by `tenant list`.                                  |
+| `--tenant-id`               | Yes\*    | Internal tenant ID (ULID).                                                   |
+| `--key`                     | Yes\*    | Stable tenant key printed by `tenant list`.                                  |
 | `--sqlite-database-path`    | No       | Override the SQLite path.                                                    |
 | `--storage-provider-module` | No       | Override the storage module.                                                 |
 | `--workspace-root`          | No       | Override the workspace scratch root (default: `WORKSPACE_ROOT` from `.env`). |
@@ -293,20 +295,20 @@ reviewphin mr describe \
   --json
 ```
 
-| Flag                           | Required | Description                                                                         |
-| ------------------------------ | -------- | ----------------------------------------------------------------------------------- |
-| `--tenant-id`                  | Yes*     | Internal tenant ID (ULID).                                                          |
-| `--key`                        | Yes*     | Stable tenant key printed by `tenant list`.                                         |
-| `--code-review-id`             | Yes      | Code review ID. For GitLab this is the merge request IID (the `!N` number).         |
-| `--merge-request-iid`          | No       | GitLab-compatible alias for `--code-review-id`.                                     |
-| `--current-interaction-job-id` | No       | Attach a specific interaction job ID to the context.                                |
-| `--trigger-note-id`            | No       | Simulate a specific trigger note.                                                   |
-| `--trigger-note-action`        | No       | `create` or `update`.                                                               |
-| `--trigger-note-updated-at`    | No       | ISO timestamp for the simulated trigger.                                            |
-| `--trigger-note-body`          | No       | Body text for the simulated trigger note.                                           |
-| `--json`                       | No       | Output raw JSON instead of formatted text.                                          |
-| `--sqlite-database-path`       | No       | Override the SQLite path.                                                           |
-| `--storage-provider-module`    | No       | Override the storage module.                                                        |
+| Flag                           | Required | Description                                                                 |
+| ------------------------------ | -------- | --------------------------------------------------------------------------- |
+| `--tenant-id`                  | Yes\*    | Internal tenant ID (ULID).                                                  |
+| `--key`                        | Yes\*    | Stable tenant key printed by `tenant list`.                                 |
+| `--code-review-id`             | Yes      | Code review ID. For GitLab this is the merge request IID (the `!N` number). |
+| `--merge-request-iid`          | No       | GitLab-compatible alias for `--code-review-id`.                             |
+| `--current-interaction-job-id` | No       | Attach a specific interaction job ID to the context.                        |
+| `--trigger-comment-id`         | No       | Simulate a specific trigger comment.                                        |
+| `--trigger-comment-action`     | No       | `create` or `update`.                                                       |
+| `--trigger-comment-updated-at` | No       | ISO timestamp for the simulated trigger.                                    |
+| `--trigger-comment-body`       | No       | Body text for the simulated trigger comment.                                |
+| `--json`                       | No       | Output raw JSON instead of formatted text.                                  |
+| `--sqlite-database-path`       | No       | Override the SQLite path.                                                   |
+| `--storage-provider-module`    | No       | Override the storage module.                                                |
 
 \* Provide either `--tenant-id` or `--key`.
 

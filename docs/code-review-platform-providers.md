@@ -1,6 +1,6 @@
 # Code review platform providers
 
-ReviewPhin connects to a code review platform to receive webhooks, read code review data, and write back bot-owned discussions. The app now routes those responsibilities through an internal platform adapter layer, but GitLab is still the only built-in platform exposed to users today.
+ReviewPhin connects to a code review platform to receive webhooks, read code review data, and write back bot-owned discussions. The app routes those responsibilities through platform adapter modules. GitLab is the default built-in platform, and additional provider modules can be loaded at runtime.
 
 ---
 
@@ -21,9 +21,55 @@ See the [Adding tenants](../README.md#adding-tenants) section of the README for 
 
 ---
 
-## Future providers
+## Loading Platform Modules
 
-The following platforms are not yet supported as built-in providers. The internal adapter boundary is in place, but additional built-in adapters and any external module-loading story are still future work.
+Set `PLATFORM_MODULES` to a comma-separated list of provider module specifiers. If it is unset or empty, ReviewPhin loads the built-in `gitlab` provider.
+
+```env
+PLATFORM_MODULES=gitlab,@acme/reviewphin-github-platform,./providers/internal-platform.js
+```
+
+Each entry can be one of:
+
+- `gitlab` - built-in GitLab provider shorthand.
+- A relative path, such as `./providers/github-platform.js`.
+- An absolute path to a JavaScript module.
+- A package or bare module specifier resolvable by Node.js, such as `@acme/reviewphin-platform`.
+
+Relative paths are resolved from the process working directory and then loaded as file URLs. Package and bare specifiers are passed directly to dynamic `import()`.
+
+Every provider module must export a factory as either `createPlatform(context)` or a default function. The factory receives:
+
+- `context.env` - the process environment, including provider-specific variables.
+- `context.logger` - a child logger when one is available.
+
+The factory must return an `IPlatform` implementation. Platform slugs must be unique across all loaded modules; startup fails if two providers return the same slug.
+
+CLI commands that need platform registration, such as `tenant add --platform <slug>`, use the same `PLATFORM_MODULES` setting from the environment. Load a custom provider module before registering tenants for that provider.
+
+---
+
+## Setup Routes
+
+Providers can expose optional setup or onboarding flows by implementing `getSetupHandler()`. When present, ReviewPhin mounts one setup handler per platform under both:
+
+- `/setup/<platform>`
+- `/setup/<platform>/*`
+
+For example, a provider with slug `github` receives requests for `/setup/github` and `/setup/github/install/callback`.
+
+The handler receives a setup context containing:
+
+- `pathSuffix` - the route suffix after `/setup/<platform>/`; it is `""` for the base route.
+- `rawBody` - the raw request body bytes captured before parsing.
+
+Providers that need multiple setup pages or callbacks should route internally based on `pathSuffix`. ReviewPhin does not register individual setup sub-routes for providers.
+
+---
+
+## Future Built-In Providers
+
+The following platforms are not yet supported as built-in providers. They can be added as built-in adapters or supplied as external platform modules.
 
 | Platform      | Notes                                                                                                                                                                                                                                                        |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

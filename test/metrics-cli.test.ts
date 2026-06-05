@@ -10,6 +10,7 @@ import { repoPath } from "./test-paths.js";
 describe("metrics CLI", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("prints per-run metrics and summary percentiles for existing session logs", async () => {
@@ -148,6 +149,28 @@ describe("metrics CLI", () => {
     expect(lines).toContain("run_001 5 500 50 7 5000");
     expect(lines.some((line) => line.startsWith("run_002 "))).toBe(false);
     expect(lines.some((line) => line.startsWith("run_003 "))).toBe(false);
+  });
+
+  it("does not load platform modules for metrics-only commands", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "gitlab-agentic-webhooks-metrics-platform-"),
+    );
+    const runLogDir = join(workspace, "run-logs");
+    await writeSessionLog(runLogDir, "run_001", {
+      model: "gpt-5.4",
+      premiumRequests: 1,
+      inputTokens: 100,
+      outputTokens: 10,
+      toolCalls: 1,
+      durationMs: 1000,
+    });
+    vi.stubEnv("PLATFORM_MODULES", "./missing-platform-module.js");
+
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    await expect(
+      runCli(["metrics", "sessions", "--run-log-dir", runLogDir]),
+    ).resolves.toBe(0);
   });
 });
 

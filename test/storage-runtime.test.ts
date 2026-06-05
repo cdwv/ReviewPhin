@@ -32,6 +32,7 @@ describe("storage runtime", () => {
         "sqlite:0004_v1_tenant_scoped_reviews",
         "sqlite:0005_v1_code_review_snapshots",
         "sqlite:0006_v1_drop_legacy_tenant_columns",
+        "sqlite:0007_v1_generic_storage_column_names",
       ]);
     } finally {
       await runtime.provider.close();

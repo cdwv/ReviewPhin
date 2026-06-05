@@ -25,7 +25,7 @@ Other harnesses that may be added in the future:
 
 When no model profile is active, ReviewPhin drives review sessions through the bundled GitHub Copilot CLI. No `--base-url` or `--provider-type` is needed.
 
-The subsections below all describe the *same harness* - the Copilot CLI - configured to talk to different backends. Selecting OpenAI / Azure / Anthropic does not switch harnesses; it just tells the Copilot CLI where to send requests.
+The subsections below all describe the _same harness_ - the Copilot CLI - configured to talk to different backends. Selecting OpenAI / Azure / Anthropic does not switch harnesses; it just tells the Copilot CLI where to send requests.
 
 #### Requirements
 

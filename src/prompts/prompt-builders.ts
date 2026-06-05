@@ -63,8 +63,8 @@ export function buildChatterPrompt(context: ChatterRunContext): string {
 function getPromptTemplateId(
   context: ReviewContext,
 ): Extract<PromptTemplateId, `review.${string}`> {
-  if (context.scope.mode === "follow-up-thread") {
-    return "review.follow-up-thread";
+  if (context.scope.mode === "follow-up-discussion") {
+    return "review.follow-up-discussion";
   }
 
   if (context.scope.mode === "incremental-rereview") {
@@ -103,13 +103,13 @@ export function buildCompactReviewContext(
   return {
     attachments: context.attachments.map((attachment) => ({
       sourceKind: attachment.sourceKind,
-      noteId: attachment.noteId,
+      commentId: attachment.commentId,
       displayName: attachment.displayName,
       contentType: attachment.contentType,
     })),
     attachmentIssues: context.attachmentIssues.map((issue) => ({
       sourceKind: issue.sourceKind,
-      noteId: issue.noteId,
+      commentId: issue.commentId,
       displayName: issue.displayName,
       status: issue.status,
       message: issue.message,
@@ -122,13 +122,15 @@ export function buildCompactReviewContext(
       includedChangedFiles: context.changes.length,
       omittedChangedFiles: context.scope.omittedChangedFiles.slice(0, 25),
       widenScopeHints: context.scope.widenScopeHints,
-      targetThread: context.scope.targetThread
+      targetDiscussion: context.scope.targetDiscussion
         ? {
-            threadId: context.scope.targetThread.threadId,
-            discussionId: context.scope.targetThread.discussionId,
-            title: context.scope.targetThread.title,
-            anchor: context.scope.targetThread.anchor,
-            resolved: context.scope.targetThread.resolved,
+            discussionId: context.scope.targetDiscussion.discussionId,
+            platformDiscussionId:
+              context.scope.targetDiscussion.platformDiscussionId,
+            platformCommentId: context.scope.targetDiscussion.platformCommentId,
+            title: context.scope.targetDiscussion.title,
+            anchor: context.scope.targetDiscussion.anchor,
+            resolved: context.scope.targetDiscussion.resolved,
           }
         : null,
       previousReview: context.scope.previousReview
@@ -160,15 +162,15 @@ export function buildCompactReviewContext(
     },
     reviewTrigger: {
       kind: context.trigger.kind,
-      noteId: context.trigger.noteId,
+      commentId: context.trigger.commentId,
       authorUsername: context.trigger.authorUsername,
       body: truncate(context.trigger.body, 1_500),
       instruction: context.trigger.instruction
         ? truncate(context.trigger.instruction, 1_000)
         : null,
-      targetThreadId: context.trigger.targetThreadId,
       targetDiscussionId: context.trigger.targetDiscussionId,
-      targetThreadTitle: context.trigger.targetThreadTitle,
+      targetPlatformDiscussionId: context.trigger.targetPlatformDiscussionId,
+      targetDiscussionTitle: context.trigger.targetDiscussionTitle,
     },
     codeReview: {
       id: context.codeReview.id,
@@ -193,7 +195,7 @@ export function buildCompactReviewContext(
       diff: truncate(change.diff ?? "", 6_000),
     })),
     additionalChangedFiles: context.scope.omittedChangedFiles.slice(0, 40),
-    codeReviewNotes: context.notes
+    codeReviewComments: context.comments
       .filter((note) => !isReviewSummaryNoteBody(note.body))
       .slice(0, 50)
       .map((note) => ({
@@ -203,17 +205,17 @@ export function buildCompactReviewContext(
         resolvable: note.resolvable,
         resolved: note.resolved,
       })),
-    priorThreads: context.priorThreads.map((thread) => ({
-      threadId: thread.threadId,
-      discussionId: thread.discussionId,
-      noteId: thread.noteId,
-      title: thread.title,
-      body: truncate(thread.body, 2_000),
-      anchor: thread.anchor,
-      resolvable: thread.resolvable,
-      resolved: thread.resolved,
-      humanReplies: thread.humanReplies.map((reply) => ({
-        noteId: reply.noteId,
+    priorDiscussions: context.priorDiscussions.map((discussion) => ({
+      discussionId: discussion.discussionId,
+      platformDiscussionId: discussion.platformDiscussionId,
+      platformCommentId: discussion.platformCommentId,
+      title: discussion.title,
+      body: truncate(discussion.body, 2_000),
+      anchor: discussion.anchor,
+      resolvable: discussion.resolvable,
+      resolved: discussion.resolved,
+      humanReplies: discussion.humanReplies.map((reply) => ({
+        platformCommentId: reply.platformCommentId,
         authorUsername: reply.authorUsername,
         body: truncate(reply.body, 1_500),
       })),
@@ -291,7 +293,7 @@ const reviewResponseSchema = {
   },
   findings: [
     {
-      priorThreadId: "optional string",
+      priorDiscussionId: "optional string",
       title: "string",
       body: "string",
       severity: "low | medium | high | critical",
@@ -314,7 +316,7 @@ const reviewResponseSchema = {
   ],
   priorDispositions: [
     {
-      threadId: "string",
+      discussionId: "string",
       action: "keep | update | resolve | reply",
       replyBody: "optional string",
       resolution: "optional resolved | dismissed",
@@ -324,10 +326,10 @@ const reviewResponseSchema = {
     summary: "string",
     targets: [
       {
-        kind: "code-review-note | discussion-reply | summary-discussion-reply | finding-thread-reply",
-        noteId: 1,
+        kind: "code-review-comment | discussion-reply | summary-discussion-reply | finding-discussion-reply",
+        commentId: 1,
         discussionId:
-          "required for threaded reply kinds; optional for code-review-note",
+          "required for threaded reply kinds; optional for code-review-comment",
         guidance: "string",
       },
     ],
@@ -342,10 +344,10 @@ const chatterResponseSchema = {
   replies: [
     {
       target: {
-        kind: "code-review-note | discussion-reply | summary-discussion-reply | finding-thread-reply",
-        noteId: 1,
+        kind: "code-review-comment | discussion-reply | summary-discussion-reply | finding-discussion-reply",
+        commentId: 1,
         discussionId:
-          "required for threaded reply kinds; optional for code-review-note",
+          "required for threaded reply kinds; optional for code-review-comment",
       },
       replyBody: "string",
     },
@@ -361,15 +363,15 @@ function buildCompactChatterContext(
     : null;
   const compactTrigger = {
     kind: context.trigger.kind,
-    noteId: context.trigger.noteId,
+    commentId: context.trigger.commentId,
     authorUsername: context.trigger.authorUsername,
     body: truncate(context.trigger.body, 1_500),
     instruction: context.trigger.instruction
       ? truncate(context.trigger.instruction, 1_000)
       : null,
-    targetThreadId: context.trigger.targetThreadId,
     targetDiscussionId: context.trigger.targetDiscussionId,
-    targetThreadTitle: context.trigger.targetThreadTitle,
+    targetPlatformDiscussionId: context.trigger.targetPlatformDiscussionId,
+    targetDiscussionTitle: context.trigger.targetDiscussionTitle,
   };
 
   return {
@@ -398,8 +400,8 @@ function buildCompactChatterContext(
     instructionFiles: sharedReviewContext?.instructionFiles ?? [],
     changedFiles: sharedReviewContext?.changedFiles ?? [],
     additionalChangedFiles: sharedReviewContext?.additionalChangedFiles ?? [],
-    codeReviewNotes: sharedReviewContext?.codeReviewNotes ?? [],
-    priorThreads: sharedReviewContext?.priorThreads ?? [],
+    codeReviewComments: sharedReviewContext?.codeReviewComments ?? [],
+    priorDiscussions: sharedReviewContext?.priorDiscussions ?? [],
     reviewResult: context.reviewResult
       ? {
           overview: context.reviewResult.overview,

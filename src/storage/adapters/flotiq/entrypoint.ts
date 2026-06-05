@@ -1,13 +1,27 @@
 import { Flotiq } from "@flotiq/flotiq-api-sdk";
 import type {
+  CodeReviewSnapshotHydrated,
+  CodeReviewSnapshotHydratedTwice,
   DiscussionMapping,
+  DiscussionMappingHydrated,
+  DiscussionMappingHydratedTwice,
   InteractionJob,
+  InteractionJobHydrated,
+  InteractionJobHydratedTwice,
   InteractionRun,
+  InteractionRunHydrated,
+  InteractionRunHydratedTwice,
   InteractionRunMetrics,
+  InteractionRunMetricsHydrated,
+  InteractionRunMetricsHydratedTwice,
   CodeReviewSnapshot,
   ModelProfile,
   ReviewFinding,
+  ReviewFindingHydrated,
+  ReviewFindingHydratedTwice,
   Tenant,
+  TenantHydrated,
+  TenantHydratedTwice,
 } from "@flotiq/flotiq-api-sdk";
 import { z } from "zod";
 
@@ -173,6 +187,7 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
     >({
       logger: createStoreLogger("modelProfiles"),
       api: flotiqClient.content.model_profile,
+      ctdName: "model_profile",
       toRecord: mapModelProfileRecord,
       toRemote: mapModelProfileEntity,
       emptyStringNullFields: [
@@ -189,10 +204,13 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
       TenantFilters,
       TenantOrderField,
       Tenant,
-      Tenant.FilterableFields
+      Tenant.FilterableFields,
+      TenantHydrated,
+      TenantHydratedTwice
     >({
       logger: createStoreLogger("tenants"),
       api: flotiqClient.content.tenant,
+      ctdName: "tenant",
       toRecord: mapTenantRecord,
       toRemote: mapTenantEntity,
       relationFields: tenantRelationFields,
@@ -202,10 +220,13 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
       InteractionJobFilters,
       InteractionJobOrderField,
       InteractionJob,
-      InteractionJob.FilterableFields
+      InteractionJob.FilterableFields,
+      InteractionJobHydrated,
+      InteractionJobHydratedTwice
     >({
       logger: createStoreLogger("interactionJobs"),
       api: flotiqClient.content.interaction_job,
+      ctdName: "interaction_job",
       toRecord: mapInteractionJobRecord,
       toRemote: mapIdentityEntity,
       emptyStringNullFields: ["lastError", "startedAt", "finishedAt"],
@@ -216,10 +237,13 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
       CodeReviewSnapshotFilters,
       CodeReviewSnapshotOrderField,
       CodeReviewSnapshot,
-      CodeReviewSnapshot.FilterableFields
+      CodeReviewSnapshot.FilterableFields,
+      CodeReviewSnapshotHydrated,
+      CodeReviewSnapshotHydratedTwice
     >({
       logger: createStoreLogger("codeReviewSnapshots"),
       api: flotiqClient.content.code_review_snapshot,
+      ctdName: "code_review_snapshot",
       toRecord: mapCodeReviewSnapshotRecord,
       toRemote: mapIdentityEntity,
       emptyStringNullFields: ["projectMemoryJson"],
@@ -230,10 +254,13 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
       InteractionRunFilters,
       InteractionRunOrderField,
       InteractionRun,
-      InteractionRun.FilterableFields
+      InteractionRun.FilterableFields,
+      InteractionRunHydrated,
+      InteractionRunHydratedTwice
     >({
       logger: createStoreLogger("interactionRuns"),
       api: flotiqClient.content.interaction_run,
+      ctdName: "interaction_run",
       toRecord: mapInteractionRunRecord,
       toRemote: mapIdentityEntity,
       emptyStringNullFields: [
@@ -252,10 +279,13 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
       InteractionRunMetricsFilters,
       InteractionRunMetricsOrderField,
       InteractionRunMetrics,
-      InteractionRunMetrics.FilterableFields
+      InteractionRunMetrics.FilterableFields,
+      InteractionRunMetricsHydrated,
+      InteractionRunMetricsHydratedTwice
     >({
       logger: createStoreLogger("interactionRunMetrics"),
       api: flotiqClient.content.interaction_run_metrics,
+      ctdName: "interaction_run_metrics",
       toRecord: mapInteractionRunMetricsRecord,
       toRemote: mapIdentityEntity,
       emptyStringNullFields: ["triggerKind", "promptMode"],
@@ -266,10 +296,13 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
       ReviewFindingFilters,
       ReviewFindingOrderField,
       ReviewFinding,
-      ReviewFinding.FilterableFields
+      ReviewFinding.FilterableFields,
+      ReviewFindingHydrated,
+      ReviewFindingHydratedTwice
     >({
       logger: createStoreLogger("reviewFindings"),
       api: flotiqClient.content.review_finding,
+      ctdName: "review_finding",
       toRecord: mapReviewFindingRecord,
       toRemote: mapReviewFindingEntity,
       emptyStringNullFields: ["anchorJson", "suggestionJson"],
@@ -280,16 +313,19 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
       DiscussionMappingFilters,
       DiscussionMappingOrderField,
       DiscussionMapping,
-      DiscussionMapping.FilterableFields
+      DiscussionMapping.FilterableFields,
+      DiscussionMappingHydrated,
+      DiscussionMappingHydratedTwice
     >({
       logger: createStoreLogger("discussionMappings"),
       api: flotiqClient.content.discussion_mapping,
+      ctdName: "discussion_mapping",
       toRecord: mapDiscussionMappingRecord,
       toRemote: mapDiscussionMappingEntity,
       emptyStringNullFields: [
         "anchorJson",
         "positionJson",
-        "noteAuthorUsername",
+        "commentAuthorUsername",
       ],
       relationFields: discussionMappingRelationFields,
     }),
@@ -356,7 +392,7 @@ function mapInteractionJobRecord(entity: InteractionJob): InteractionJobRecord {
       "codeReviewId",
       "codeReviewId",
     ),
-    noteId: readRequiredNumber(entity, "noteId"),
+    commentId: readRequiredNumber(entity, "commentId"),
     headSha: readRequiredString(entity, "headSha"),
     status: readRequiredString(
       entity,
@@ -387,7 +423,7 @@ function mapCodeReviewSnapshotRecord(
     codeReviewJson: readRequiredString(entity, "codeReviewJson"),
     versionsJson: readRequiredString(entity, "versionsJson"),
     changesJson: readRequiredString(entity, "changesJson"),
-    notesJson: readRequiredString(entity, "notesJson"),
+    commentsJson: readRequiredString(entity, "commentsJson"),
     discussionsJson: readRequiredString(entity, "discussionsJson"),
     instructionsJson: readRequiredString(entity, "instructionsJson"),
     projectMemoryJson: readNullableString(entity, "projectMemoryJson"),
@@ -431,11 +467,11 @@ function mapInteractionRunMetricsRecord(
       entity,
       "promptContextChangedFiles",
     ),
-    promptContextPriorThreads: readRequiredNumber(
+    promptContextPriorDiscussions: readRequiredNumber(
       entity,
-      "promptContextPriorThreads",
+      "promptContextPriorDiscussions",
     ),
-    promptContextNotes: readRequiredNumber(entity, "promptContextNotes"),
+    promptContextComments: readRequiredNumber(entity, "promptContextComments"),
     assistantTurns: readRequiredNumber(entity, "assistantTurns"),
     assistantCalls: readRequiredNumber(entity, "assistantCalls"),
     toolExecutions: readRequiredNumber(entity, "toolExecutions"),
@@ -498,9 +534,9 @@ function mapDiscussionMappingRecord(
     severity: readRequiredString(entity, "severity"),
     category: readRequiredString(entity, "category"),
     body: readRequiredString(entity, "body"),
-    platformThreadId: readRequiredStringWithFallback(
+    platformDiscussionId: readRequiredStringWithFallback(
       entity,
-      "platformThreadId",
+      "platformDiscussionId",
       "gitlabDiscussionId",
     ),
     platformCommentId: readRequiredNumberWithFallback(
@@ -511,9 +547,9 @@ function mapDiscussionMappingRecord(
     anchorJson: readNullableString(entity, "anchorJson"),
     positionJson: readNullableString(entity, "positionJson"),
     botDiscussion: readBoolean(entity, "botDiscussion") ?? false,
-    botNote: readBoolean(entity, "botNote") ?? false,
-    noteAuthorId: readNullableNumber(entity, "noteAuthorId"),
-    noteAuthorUsername: readNullableString(entity, "noteAuthorUsername"),
+    botComment: readBoolean(entity, "botComment") ?? false,
+    commentAuthorId: readNullableNumber(entity, "commentAuthorId"),
+    commentAuthorUsername: readNullableString(entity, "commentAuthorUsername"),
     status: (readNullableString(entity, "status") ??
       "open") as DiscussionMappingRecord["status"],
     lastInteractionRunId: readNullableRelationId(

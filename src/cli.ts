@@ -22,6 +22,7 @@ import {
 } from "./storage/runtime.js";
 import { listAll, type StorageHelpers } from "./storage/storage-helpers.js";
 import { createInteractionJobDedupeKey } from "./utils/ids.js";
+import { createLogger } from "./logger.js";
 import type {
   DiscussionMappingRecord,
   EntityStore,
@@ -35,7 +36,10 @@ import type {
   TenantDeletionSummary,
   TenantRecord,
 } from "./storage/contract/index.js";
-import { getPlatforms } from "./platforms/platform-registry.js";
+import {
+  getPlatforms,
+  initializePlatformRegistry,
+} from "./platforms/platform-registry.js";
 import { getGitLabTenantConfig } from "./platforms/gitlab/tenant-config.js";
 
 interface ParsedCliArgs {
@@ -175,7 +179,7 @@ const mergeRequestDescribeSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "Provide --trigger-note-id when supplying trigger dedupe inputs.",
+          "Provide --trigger-comment-id when supplying trigger dedupe inputs.",
         path: ["triggerNoteId"],
       });
     }
@@ -188,17 +192,17 @@ const mergeRequestDescribeSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "Provide --trigger-note-updated-at or --trigger-note-body for update trigger dedupe checks.",
+          "Provide --trigger-comment-updated-at or --trigger-comment-body for update trigger dedupe checks.",
         path: ["triggerNoteUpdatedAt"],
       });
     }
   });
 
 interface CodeReviewTriggerDedupeInput {
-  readonly noteId: number;
-  readonly noteAction: "create" | "update";
-  readonly noteUpdatedAt?: string | undefined;
-  readonly noteBody?: string | undefined;
+  readonly commentId: number;
+  readonly commentAction: "create" | "update";
+  readonly commentUpdatedAt?: string | undefined;
+  readonly commentBody?: string | undefined;
 }
 
 interface StorageEndpointOptions {
@@ -366,11 +370,18 @@ export async function runCli(
 ): Promise<number> {
   loadLocalEnvFile();
   const config = loadConfig();
+  const logger = createLogger(config.logLevel);
 
   const { positionals, options } = parseCliArgs(argv);
   const [resource, action] = positionals;
 
   if (resource === "tenant" && action === "add") {
+    await initializePlatformRegistry({
+      platformModules: config.platformModules,
+      env: process.env,
+      logger: logger.child({ component: "platform-registry" }),
+    });
+
     const rawData: Record<string, unknown> = {};
     for (const key in options) {
       const camelKey = key.replace(/-([a-z])/g, (match, p1: string) =>
@@ -996,7 +1007,7 @@ function printHelp(): void {
       "  pnpm cli model-profile set-default --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli storage migrate --from-storage-provider-module <module> [--from-sqlite-database-path <path>] --to-storage-provider-module <module> [--to-sqlite-database-path <path>]",
-      "  pnpm cli mr describe (--tenant-id <id> | --key <key>) --code-review-id <id> [--current-interaction-job-id <id>] [--trigger-note-id <id> --trigger-note-action <create|update> [--trigger-note-updated-at <iso>] [--trigger-note-body <text>]] [--json] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+      "  pnpm cli mr describe (--tenant-id <id> | --key <key>) --code-review-id <id> [--current-interaction-job-id <id>] [--trigger-comment-id <id> --trigger-comment-action <create|update> [--trigger-comment-updated-at <iso>] [--trigger-comment-body <text>]] [--json] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
       "  pnpm cli metrics sessions [--run-log-dir <path>]",
     ].join("\n") + "\n",
   );
@@ -1012,10 +1023,10 @@ async function runCodeReviewDescribeCommand(
     tenantKey: options.key,
     codeReviewId: options["code-review-id"] ?? options["merge-request-iid"],
     currentInteractionJobId: options["current-interaction-job-id"],
-    triggerNoteId: options["trigger-note-id"],
-    triggerNoteAction: options["trigger-note-action"],
-    triggerNoteUpdatedAt: options["trigger-note-updated-at"],
-    triggerNoteBody: options["trigger-note-body"],
+    triggerNoteId: options["trigger-comment-id"],
+    triggerNoteAction: options["trigger-comment-action"],
+    triggerNoteUpdatedAt: options["trigger-comment-updated-at"],
+    triggerNoteBody: options["trigger-comment-body"],
   });
 
   return withStorage(options, config, async (storage) => {
@@ -1357,7 +1368,7 @@ function summarizeInteractionJob(interactionJob: InteractionJobRecord) {
     dedupeKey: interactionJob.dedupeKey,
     tenantId: interactionJob.tenantId,
     codeReviewId: interactionJob.codeReviewId,
-    noteId: interactionJob.noteId,
+    commentId: interactionJob.commentId,
     headSha: interactionJob.headSha,
     status: interactionJob.status,
     retryCount: interactionJob.retryCount,
@@ -1400,7 +1411,7 @@ function summarizeSnapshot(snapshot: CodeReviewSnapshotRecord) {
     codeReviewJsonBytes: snapshot.codeReviewJson.length,
     versionsJsonBytes: snapshot.versionsJson.length,
     changesJsonBytes: snapshot.changesJson.length,
-    notesJsonBytes: snapshot.notesJson.length,
+    commentsJsonBytes: snapshot.commentsJson.length,
     discussionsJsonBytes: snapshot.discussionsJson.length,
     instructionsJsonBytes: snapshot.instructionsJson.length,
     hasProjectMemoryJson: snapshot.projectMemoryJson !== null,
@@ -1450,12 +1461,12 @@ function summarizeDiscussionMapping(
     codeReviewId: discussionMapping.codeReviewId,
     identityKey: discussionMapping.identityKey,
     status: discussionMapping.status,
-    platformThreadId: discussionMapping.platformThreadId,
+    platformDiscussionId: discussionMapping.platformDiscussionId,
     platformCommentId: discussionMapping.platformCommentId,
     botDiscussion: discussionMapping.botDiscussion,
-    botNote: discussionMapping.botNote,
-    noteAuthorId: discussionMapping.noteAuthorId,
-    noteAuthorUsername: discussionMapping.noteAuthorUsername,
+    botComment: discussionMapping.botComment,
+    commentAuthorId: discussionMapping.commentAuthorId,
+    commentAuthorUsername: discussionMapping.commentAuthorUsername,
     lastInteractionRunId: discussionMapping.lastInteractionRunId,
     createdAt: discussionMapping.createdAt,
     updatedAt: discussionMapping.updatedAt,
@@ -1470,10 +1481,10 @@ function resolveCodeReviewTriggerDedupeInput(
   }
 
   return {
-    noteId: input.triggerNoteId,
-    noteAction: input.triggerNoteAction ?? "create",
-    noteUpdatedAt: input.triggerNoteUpdatedAt,
-    noteBody: input.triggerNoteBody,
+    commentId: input.triggerNoteId,
+    commentAction: input.triggerNoteAction ?? "create",
+    commentUpdatedAt: input.triggerNoteUpdatedAt,
+    commentBody: input.triggerNoteBody,
   };
 }
 
@@ -1483,30 +1494,41 @@ function summarizeTriggerDedupeInspection(
   interactionJobs: readonly InteractionJobRecord[],
   triggerInput?: CodeReviewTriggerDedupeInput,
 ) {
-  const tenantConfig = getGitLabTenantConfig(tenant);
   const existingJobs = interactionJobs.map((job) => ({
     jobId: job.id,
-    noteId: job.noteId,
+    commentId: job.commentId,
     dedupeKey: job.dedupeKey,
     status: job.status,
     enqueuedAt: job.enqueuedAt,
   }));
 
-  if (!triggerInput) {
+  if (tenant.platform !== "gitlab") {
     return {
-      triggerProvided: false,
+      triggerProvided: triggerInput !== undefined,
+      supported: false,
+      reason:
+        "Trigger-comment dedupe inspection is currently available for GitLab tenants only.",
       existingJobs,
     };
   }
 
+  if (!triggerInput) {
+    return {
+      triggerProvided: false,
+      supported: true,
+      existingJobs,
+    };
+  }
+
+  const tenantConfig = getGitLabTenantConfig(tenant);
   const candidateDedupeKey = createInteractionJobDedupeKey({
     baseUrl: tenantConfig.baseUrl,
     projectId: tenantConfig.projectId,
     codeReviewId,
-    noteId: triggerInput.noteId,
-    noteAction: triggerInput.noteAction,
-    noteUpdatedAt: triggerInput.noteUpdatedAt,
-    noteBody: triggerInput.noteBody,
+    commentId: triggerInput.commentId,
+    commentAction: triggerInput.commentAction,
+    commentUpdatedAt: triggerInput.commentUpdatedAt,
+    commentBody: triggerInput.commentBody,
   });
   const matchingJob = interactionJobs.find(
     (job) => job.dedupeKey === candidateDedupeKey,
@@ -1514,12 +1536,13 @@ function summarizeTriggerDedupeInspection(
 
   return {
     triggerProvided: true,
+    supported: true,
     existingJobs,
     candidate: {
-      noteId: triggerInput.noteId,
-      noteAction: triggerInput.noteAction,
-      noteUpdatedAt: triggerInput.noteUpdatedAt ?? null,
-      triggerNoteBodyProvided: triggerInput.noteBody !== undefined,
+      commentId: triggerInput.commentId,
+      commentAction: triggerInput.commentAction,
+      commentUpdatedAt: triggerInput.commentUpdatedAt ?? null,
+      triggerCommentBodyProvided: triggerInput.commentBody !== undefined,
       candidateDedupeKey,
       matchingExistingJobId: matchingJob?.id ?? null,
       wouldCreateNewJob: matchingJob === undefined,
@@ -1539,7 +1562,7 @@ function formatCodeReviewDescription(
         "",
         "Latest Review",
         `job: ${description.latestInteractionJob.id} (${description.latestInteractionJob.status})`,
-        `noteId: ${description.latestInteractionJob.noteId}`,
+        `commentId: ${description.latestInteractionJob.commentId}`,
         `headSha: ${shortenValue(description.latestInteractionJob.headSha)}`,
         `enqueuedAt: ${description.latestInteractionJob.enqueuedAt}`,
         `finishedAt: ${description.latestInteractionJob.finishedAt ?? "(none)"}`,
@@ -1615,6 +1638,15 @@ function formatPreviousInteractionSummary(
 function formatDedupeInspection(
   dedupeInspection: CodeReviewDescribeOutput["dedupeInspection"],
 ): string[] {
+  if (!dedupeInspection.supported) {
+    return [
+      `trigger inspection: ${dedupeInspection.triggerProvided ? "provided" : "not provided"}`,
+      `candidate: unsupported for this platform`,
+      `reason: ${dedupeInspection.reason}`,
+      `visible MR jobs for dedupe: ${dedupeInspection.existingJobs.length}`,
+    ];
+  }
+
   if (!dedupeInspection.triggerProvided) {
     return [
       `trigger inspection: not provided`,
@@ -1631,8 +1663,8 @@ function formatDedupeInspection(
     `trigger inspection: provided`,
     `wouldCreateNewJob: ${candidate.wouldCreateNewJob ? "yes" : "no"}`,
     `matchingExistingJobId: ${candidate.matchingExistingJobId ?? "(none)"}`,
-    `triggerNoteId: ${candidate.noteId}`,
-    `triggerNoteAction: ${candidate.noteAction}`,
+    `triggerCommentId: ${candidate.commentId}`,
+    `triggerCommentAction: ${candidate.commentAction}`,
   ];
 }
 

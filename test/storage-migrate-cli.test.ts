@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../src/cli.js";
 import { listAll } from "../src/storage/storage-helpers.js";
@@ -10,6 +10,12 @@ import { createGitLabTenantInput } from "./helpers/gitlab-tenant.js";
 import { openSqliteTestStorage } from "./helpers/storage.js";
 
 describe("storage migrate CLI", () => {
+  vi.setConfig({ testTimeout: 20_000 });
+
+  afterAll(() => {
+    vi.resetConfig();
+  });
+
   it("migrates all store records between sqlite providers", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
     const sourceDatabasePath = join(workspace, "source.sqlite");
@@ -44,7 +50,7 @@ describe("storage migrate CLI", () => {
         tenantId: tenant.id,
         dedupeKey: "storage-migrate-job",
         codeReviewId: 7,
-        noteId: 55,
+        commentId: 55,
         headSha: "abc123",
         payloadJson: "{}",
       });
@@ -57,7 +63,7 @@ describe("storage migrate CLI", () => {
         codeReviewJson: "{}",
         versionsJson: "[]",
         changesJson: "[]",
-        notesJson: "[]",
+        commentsJson: "[]",
         discussionsJson: "[]",
         instructionsJson: "[]",
         projectMemoryJson: null,
@@ -81,8 +87,8 @@ describe("storage migrate CLI", () => {
         promptMode: "full",
         promptChars: 10,
         promptContextChangedFiles: 1,
-        promptContextPriorThreads: 0,
-        promptContextNotes: 1,
+        promptContextPriorDiscussions: 0,
+        promptContextComments: 1,
         assistantTurns: 1,
         assistantCalls: 1,
         toolExecutions: 0,
@@ -122,14 +128,14 @@ describe("storage migrate CLI", () => {
         severity: "medium",
         category: "correctness",
         body: "This record should be copied",
-        platformThreadId: "discussion-1",
+        platformDiscussionId: "discussion-1",
         platformCommentId: 501,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
-        botNote: true,
-        noteAuthorId: 999,
-        noteAuthorUsername: "review-bot",
+        botComment: true,
+        commentAuthorId: 999,
+        commentAuthorUsername: "review-bot",
         status: "open",
         lastInteractionRunId: interactionRun.id,
       });

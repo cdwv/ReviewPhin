@@ -1,0 +1,4 @@
+interface:
+  display_name: "Schema Verification"
+  short_description: "Verify storage schema contract changes."
+  default_prompt: "Use $schema-verification-skill to verify storage schema changes across history, adapters, types, docs, and README."

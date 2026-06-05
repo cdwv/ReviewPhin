@@ -4,7 +4,11 @@ import type { HarnessRunLoggingContext } from "../../harness/types.js";
 import type { TenantRecord } from "../../storage/contract/current.js";
 import type { InteractionRunArtifacts } from "../../review/run-artifacts.js";
 import type { StorageHelpers } from "../../storage/storage-helpers.js";
-import type { IPlatform, PlatformWebhookRequest } from "../IPlatform.js";
+import type {
+  IPlatform,
+  PlatformSetupHandler,
+  PlatformWebhookRequest,
+} from "../IPlatform.js";
 import {
   createInteractionJobDedupeKey,
   createTenantKey,
@@ -38,8 +42,8 @@ export default class GitLabPlatform implements IPlatform {
     // Initialize any necessary properties or configurations here
     this.logger.info("GitLabPlatform initialized");
   }
-  getSetupRoutes() {
-    return [];
+  getSetupHandler(): PlatformSetupHandler | null {
+    return null;
   }
   getPlatformInfo() {
     return {
@@ -132,7 +136,7 @@ export default class GitLabPlatform implements IPlatform {
   }): Promise<{
     dedupeKey: string;
     codeReviewId: number;
-    noteId: number;
+    commentId: number;
     headSha: string;
     payloadJson: string;
   }> {
@@ -143,13 +147,13 @@ export default class GitLabPlatform implements IPlatform {
         baseUrl: tenantConfig.baseUrl,
         projectId: tenantConfig.projectId,
         codeReviewId: parsedPayload.merge_request.iid,
-        noteId: parsedPayload.object_attributes.id,
-        noteAction: parsedPayload.object_attributes.action,
-        noteUpdatedAt: parsedPayload.object_attributes.updated_at,
-        noteBody: parsedPayload.object_attributes.note,
+        commentId: parsedPayload.object_attributes.id,
+        commentAction: parsedPayload.object_attributes.action,
+        commentUpdatedAt: parsedPayload.object_attributes.updated_at,
+        commentBody: parsedPayload.object_attributes.note,
       }),
       codeReviewId: parsedPayload.merge_request.iid,
-      noteId: parsedPayload.object_attributes.id,
+      commentId: parsedPayload.object_attributes.id,
       headSha: extractWebhookHeadSha(parsedPayload),
       payloadJson: JSON.stringify(parsedPayload),
     };
@@ -215,7 +219,9 @@ export default class GitLabPlatform implements IPlatform {
     });
   }
 
-  private tryParseNoteHookPayload(payload: unknown): GitLabNoteHookPayload | null {
+  private tryParseNoteHookPayload(
+    payload: unknown,
+  ): GitLabNoteHookPayload | null {
     try {
       return parseGitLabNoteHook(payload);
     } catch (error) {

@@ -3,9 +3,7 @@ import type { Logger } from "pino";
 import { GitLabApiError } from "./client.js";
 import { GitLabClient } from "./client.js";
 import type { GitLabClient as GitLabClientContract } from "./client.js";
-import type {
-  HarnessRunLoggingContext,
-} from "../../harness/types.js";
+import type { HarnessRunLoggingContext } from "../../harness/types.js";
 import {
   createDisabledProjectMemoryBackend,
   type ProjectMemoryBackend,

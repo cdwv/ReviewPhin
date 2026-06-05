@@ -1,4 +1,7 @@
-import type { IPlatform, PlatformWebhookRequest } from "../platforms/IPlatform.js";
+import type {
+  IPlatform,
+  PlatformWebhookRequest,
+} from "../platforms/IPlatform.js";
 import { listAll, type StorageHelpers } from "../storage/storage-helpers.js";
 import type { TenantRecord } from "../storage/contract/index.js";
 
@@ -36,7 +39,9 @@ export class TenantRegistry {
       : null;
   }
 
-  public async listTenantsForPlatform(platform: string): Promise<TenantRecord[]> {
+  public async listTenantsForPlatform(
+    platform: string,
+  ): Promise<TenantRecord[]> {
     return listAll(this.storage.stores.tenants, {
       filters: { platform: { eq: platform } },
       order: [{ field: "key", direction: "asc" }],

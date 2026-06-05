@@ -17,7 +17,9 @@ export const gitLabTenantConfigSchema = z.object({
 
 export type GitLabTenantConfig = z.infer<typeof gitLabTenantConfigSchema>;
 
-export function getGitLabTenantConfig(tenant: TenantRecord): GitLabTenantConfig {
+export function getGitLabTenantConfig(
+  tenant: TenantRecord,
+): GitLabTenantConfig {
   if (tenant.platform !== "gitlab") {
     throw new Error(
       `Tenant ${tenant.id} uses platform "${tenant.platform}", expected gitlab`,

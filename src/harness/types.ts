@@ -15,7 +15,9 @@ export type HarnessSelectionSource =
 export type HarnessProviderType = "openai" | "azure" | "anthropic" | null;
 export type HarnessToolId = "glob" | "rg" | "view" | "add_memory_entry";
 export type HarnessSubagentId = "context-analyst" | "review-author";
-export type HarnessRunAttachment = NonNullable<MessageOptions["attachments"]>[number];
+export type HarnessRunAttachment = NonNullable<
+  MessageOptions["attachments"]
+>[number];
 export type HarnessRunAttachments = NonNullable<MessageOptions["attachments"]>;
 
 export interface HarnessModelConfig {
@@ -52,9 +54,7 @@ export interface HarnessRunMetadata {
 
 export interface HarnessResponseFormat<TParsed = unknown> {
   schema: ZodType<TParsed>;
-  looksLike?:
-    | ((value: Record<string, unknown>) => boolean)
-    | undefined;
+  looksLike?: ((value: Record<string, unknown>) => boolean) | undefined;
 }
 
 export interface HarnessRunParseError {

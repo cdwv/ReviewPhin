@@ -135,7 +135,7 @@ const subagentRegistry: Record<
   "review-author": {
     displayName: "Review Author",
     description:
-      "Produces platform-ready review findings and thread dispositions",
+      "Produces platform-ready review findings and discussion dispositions",
     toolIds: READ_ONLY_TOOL_IDS,
     promptTemplateId: "subagent.review-author",
   },

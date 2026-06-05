@@ -1,7 +1,4 @@
-import type {
-  HarnessResponseFormat,
-  HarnessRunParseError,
-} from "./types.js";
+import type { HarnessResponseFormat, HarnessRunParseError } from "./types.js";
 
 export function parseHarnessStructuredResponse<TParsed>(
   content: string | undefined,

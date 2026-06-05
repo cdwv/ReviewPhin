@@ -16,18 +16,18 @@ import {
 import type { GitLabMergeRequest } from "./types.js";
 
 export type GitLabImageAttachmentSourceKind =
-  | "trigger-note"
+  | "trigger-comment"
   | "code-review-description";
 
 export interface GitLabImageAttachmentReference {
-  noteId: number | null;
+  commentId: number | null;
   sourceKind: GitLabImageAttachmentSourceKind;
   url: string;
 }
 
 export interface GitLabImageAttachmentSkip {
   message: string;
-  noteId: number | null;
+  commentId: number | null;
   sourceKind: GitLabImageAttachmentSourceKind;
   url: string;
 }
@@ -47,7 +47,7 @@ export function discoverGitLabImageAttachmentReferences(input: {
   >;
   triggerNote: {
     body: string;
-    noteId: number;
+    commentId: number;
   };
 }): GitLabImageAttachmentReference[] {
   const references = [
@@ -56,17 +56,17 @@ export function discoverGitLabImageAttachmentReferences(input: {
         input.gitLabBaseUrl ?? new URL(input.mergeRequest.web_url).origin,
       projectUrl: input.mergeRequest.web_url,
       projectId: input.mergeRequest.project_id,
-      noteId: input.triggerNote.noteId,
-      sourceKind: "trigger-note",
+      commentId: input.triggerNote.commentId,
+      sourceKind: "trigger-comment",
     }),
     ...extractImageReferencesFromText(input.mergeRequest.description ?? "", {
       gitLabBaseUrl:
         input.gitLabBaseUrl ?? new URL(input.mergeRequest.web_url).origin,
       projectUrl: input.mergeRequest.web_url,
       projectId: input.mergeRequest.project_id,
-        noteId: null,
-        sourceKind: "code-review-description",
-      }),
+      commentId: null,
+      sourceKind: "code-review-description",
+    }),
   ];
 
   return dedupeAttachmentReferences(references);
@@ -90,14 +90,14 @@ export async function materializeGitLabImageAttachments(input: {
         contentType: downloaded.mimeType,
         displayName:
           attachment.displayName ?? inferAttachmentLabel(reference, index),
-        noteId: reference.noteId,
+        commentId: reference.commentId,
         sourceKind: reference.sourceKind,
       });
     } catch (error) {
       if (isSkippableAttachmentError(error)) {
         skipped.push({
           message: error.message,
-          noteId: reference.noteId,
+          commentId: reference.commentId,
           sourceKind: reference.sourceKind,
           url: reference.url,
         });
@@ -108,7 +108,7 @@ export async function materializeGitLabImageAttachments(input: {
         issues.push({
           displayName: inferAttachmentLabel(reference, index),
           message: error.message,
-          noteId: reference.noteId,
+          commentId: reference.commentId,
           sourceKind: reference.sourceKind,
           status: error.status,
           url: reference.url,
@@ -134,8 +134,8 @@ function extractImageReferencesFromText(
     gitLabBaseUrl: string;
     projectUrl: string;
     projectId: number;
-    noteId: number | null;
-      sourceKind: ReviewAttachmentSourceKind;
+    commentId: number | null;
+    sourceKind: ReviewAttachmentSourceKind;
   },
 ): GitLabImageAttachmentReference[] {
   const references: GitLabImageAttachmentReference[] = [];
@@ -162,7 +162,7 @@ function extractImageReferencesFromText(
       }
 
       references.push({
-        noteId: context.noteId,
+        commentId: context.commentId,
         sourceKind: context.sourceKind,
         url: resolvedUrl,
       });
@@ -252,7 +252,7 @@ function dedupeAttachmentReferences(
   for (const reference of references) {
     const key = [
       reference.sourceKind,
-      reference.noteId ?? "mr-description",
+      reference.commentId ?? "mr-description",
       reference.url,
     ].join("::");
     if (!uniqueReferences.has(key)) {
@@ -282,8 +282,8 @@ function inferAttachmentLabel(
 ): string {
   const fileName = inferFileName(reference.url);
   const prefix =
-    reference.sourceKind === "trigger-note"
-      ? `trigger-note-${reference.noteId ?? "unknown"}`
+    reference.sourceKind === "trigger-comment"
+      ? `trigger-comment-${reference.commentId ?? "unknown"}`
       : "code-review-description";
   return `${prefix}-${fileName ?? `image-${index + 1}`}`;
 }

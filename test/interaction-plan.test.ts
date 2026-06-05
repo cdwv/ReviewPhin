@@ -4,7 +4,7 @@ import { buildInteractionPlan } from "../src/review/interaction-plan.js";
 import type { ReviewTriggerContext } from "../src/review/types.js";
 
 describe("buildInteractionPlan", () => {
-  it("routes follow-up finding-thread comments to reviewer-only flow", () => {
+  it("routes follow-up finding-discussion comments to reviewer-only flow", () => {
     const plan = buildInteractionPlan({
       trigger: createTrigger(
         "follow-up-comment",
@@ -148,32 +148,33 @@ function createTrigger(
 ): ReviewTriggerContext {
   return {
     kind,
-    noteId: 55,
+    commentId: 55,
     authorUsername: "developer",
     body,
     instruction,
-    targetThreadId: kind === "follow-up-comment" ? "thread_1" : null,
-    targetDiscussionId: discussionId ?? null,
-    targetThreadTitle: kind === "follow-up-comment" ? "Existing finding" : null,
+    targetDiscussionId: kind === "follow-up-comment" ? "thread_1" : null,
+    targetPlatformDiscussionId: discussionId ?? null,
+    targetDiscussionTitle:
+      kind === "follow-up-comment" ? "Existing finding" : null,
     responseTarget: {
       kind:
         kind === "summary-follow-up"
           ? "summary-discussion-reply"
           : kind === "follow-up-comment"
-            ? "finding-thread-reply"
+            ? "finding-discussion-reply"
             : discussionId
               ? "discussion-reply"
-              : "code-review-note",
+              : "code-review-comment",
       locationType:
         kind === "summary-follow-up"
           ? "summary-discussion"
           : kind === "follow-up-comment"
-            ? "finding-thread"
+            ? "finding-discussion"
             : discussionId
-              ? "discussion-note"
-              : "code-review-note",
+              ? "discussion-comment"
+              : "code-review-comment",
       triggerKind: kind,
-      noteId: 55,
+      commentId: 55,
       discussionId,
       authorUsername: "developer",
       body,

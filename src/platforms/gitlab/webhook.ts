@@ -117,8 +117,14 @@ export function extractWebhookGitLabBaseUrl(
     const projectSuffix = `/${projectPath}`;
     const mergeRequestMarker = `${projectSuffix}/-/merge_requests/`;
 
-    if (candidatePath === projectSuffix || candidatePath.endsWith(projectSuffix)) {
-      return buildGitLabBaseUrl(parsed, candidatePath.slice(0, -projectSuffix.length));
+    if (
+      candidatePath === projectSuffix ||
+      candidatePath.endsWith(projectSuffix)
+    ) {
+      return buildGitLabBaseUrl(
+        parsed,
+        candidatePath.slice(0, -projectSuffix.length),
+      );
     }
 
     const mergeRequestIndex = candidatePath.indexOf(mergeRequestMarker);

@@ -80,7 +80,7 @@ export interface InteractionJobRecord {
   tenantId: string;
   dedupeKey: string;
   codeReviewId: number;
-  noteId: number;
+  commentId: number;
   headSha: string;
   status: InteractionJobStatus;
   payloadJson: string;
@@ -111,7 +111,7 @@ export interface CodeReviewSnapshotRecord {
   codeReviewJson: string;
   versionsJson: string;
   changesJson: string;
-  notesJson: string;
+  commentsJson: string;
   discussionsJson: string;
   instructionsJson: string;
   projectMemoryJson: string | null;
@@ -159,8 +159,8 @@ export interface InteractionRunMetricsRecord {
   promptMode: string | null;
   promptChars: number;
   promptContextChangedFiles: number;
-  promptContextPriorThreads: number;
-  promptContextNotes: number;
+  promptContextPriorDiscussions: number;
+  promptContextComments: number;
   assistantTurns: number;
   assistantCalls: number;
   toolExecutions: number;
@@ -241,14 +241,14 @@ export interface DiscussionMappingRecord {
   severity: string;
   category: string;
   body: string;
-  platformThreadId: string;
+  platformDiscussionId: string;
   platformCommentId: number;
   anchorJson: string | null;
   positionJson: string | null;
   botDiscussion: boolean;
-  botNote: boolean;
-  noteAuthorId: number | null;
-  noteAuthorUsername: string | null;
+  botComment: boolean;
+  commentAuthorId: number | null;
+  commentAuthorUsername: string | null;
   status: DiscussionMappingStatus;
   lastInteractionRunId: string | null;
   createdAt: string;
@@ -416,7 +416,7 @@ export type DiscussionMappingQueryField =
   | "id"
   | "tenantId"
   | "codeReviewId"
-  | "platformThreadId"
+  | "platformDiscussionId"
   | "identityKey"
   | "status"
   | "updatedAt"

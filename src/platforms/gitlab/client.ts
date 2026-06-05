@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
 import type { PlatformHttpLogEntry } from "../../review/run-artifacts.js";
-import type { TriggerNoteReference } from "../../review/types.js";
+import type { TriggerCommentReference } from "../../review/types.js";
 import type {
   GitLabAwardEmoji,
   GitLabDiscussion,
@@ -330,11 +330,7 @@ export class GitLabClient {
     codeReviewId: number,
     draftNoteId: number,
   ): Promise<void> {
-    return this.deleteCodeReviewDraftNote(
-      projectId,
-      codeReviewId,
-      draftNoteId,
-    );
+    return this.deleteCodeReviewDraftNote(projectId, codeReviewId, draftNoteId);
   }
 
   public async bulkPublishCodeReviewDraftNotes(
@@ -457,40 +453,40 @@ export class GitLabClient {
   public async listTriggerNoteAwardEmojis(
     projectId: number,
     codeReviewId: number,
-    note: TriggerNoteReference,
+    note: TriggerCommentReference,
   ): Promise<GitLabAwardEmoji[]> {
-    return note.kind === "discussion-note"
+    return note.kind === "discussion-comment"
       ? this.listCodeReviewDiscussionNoteAwardEmojis(
           projectId,
           codeReviewId,
           note.discussionId,
-          note.noteId,
+          note.commentId,
         )
       : this.listCodeReviewNoteAwardEmojis(
           projectId,
           codeReviewId,
-          note.noteId,
+          note.commentId,
         );
   }
 
   public async createTriggerNoteAwardEmoji(
     projectId: number,
     codeReviewId: number,
-    note: TriggerNoteReference,
+    note: TriggerCommentReference,
     name: string,
   ): Promise<GitLabAwardEmoji> {
-    return note.kind === "discussion-note"
+    return note.kind === "discussion-comment"
       ? this.createCodeReviewDiscussionNoteAwardEmoji(
           projectId,
           codeReviewId,
           note.discussionId,
-          note.noteId,
+          note.commentId,
           name,
         )
       : this.createCodeReviewNoteAwardEmoji(
           projectId,
           codeReviewId,
-          note.noteId,
+          note.commentId,
           name,
         );
   }
@@ -540,6 +536,14 @@ export class GitLabClient {
     return this.createCodeReviewNote(projectId, codeReviewId, body);
   }
 
+  public async createCodeReviewComment(
+    projectId: number,
+    codeReviewId: number,
+    body: string,
+  ): Promise<GitLabNote> {
+    return this.createCodeReviewNote(projectId, codeReviewId, body);
+  }
+
   public async updateCodeReviewNote(
     projectId: number,
     codeReviewId: number,
@@ -560,6 +564,15 @@ export class GitLabClient {
     body: string,
   ): Promise<GitLabNote> {
     return this.updateCodeReviewNote(projectId, codeReviewId, noteId, body);
+  }
+
+  public async updateCodeReviewComment(
+    projectId: number,
+    codeReviewId: number,
+    commentId: number,
+    body: string,
+  ): Promise<GitLabNote> {
+    return this.updateCodeReviewNote(projectId, codeReviewId, commentId, body);
   }
 
   public async replyToDiscussion(

@@ -162,9 +162,11 @@ Use the `<details>` format to keep the description readable:
 <details><summary>Changelog: minor</summary>
 
 ### Added
+
 - Incremental re-review mode focused on files changed since the last run
 
 ### Fixed
+
 - Discussion anchor calculation for renamed files
 
 </details>

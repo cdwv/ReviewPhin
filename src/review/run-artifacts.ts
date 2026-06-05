@@ -69,7 +69,9 @@ export class InteractionRunArtifacts {
     await this.appendNdjson(this.appLogPath, entry);
   }
 
-  public async appendPlatformHttpLog(entry: PlatformHttpLogEntry): Promise<void> {
+  public async appendPlatformHttpLog(
+    entry: PlatformHttpLogEntry,
+  ): Promise<void> {
     await this.appendNdjson(this.platformHttpLogPath, entry);
   }
 
