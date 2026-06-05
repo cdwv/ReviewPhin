@@ -2,7 +2,7 @@ import type {
   CodeReviewChange,
   CodeReviewDiscussion,
   CodeReviewItem,
-  CodeReviewNote,
+  CodeReviewComment,
   InstructionFile,
   ReviewAttachment,
   ReviewAttachmentIssue,
@@ -12,7 +12,7 @@ import { reviewResultSchema } from "./types.js";
 import type {
   PriorReviewFindingContext,
   PreviousReviewContext,
-  ProviderThreadContext,
+  ProviderDiscussionContext,
   ReviewChangeSummary,
   ReviewContext,
   ReviewMode,
@@ -35,12 +35,12 @@ interface BuildScopedReviewContextInput {
   workspacePath: string;
   codeReview: CodeReviewItem;
   changes: CodeReviewChange[];
-  notes: CodeReviewNote[];
+  comments: CodeReviewComment[];
   discussions: CodeReviewDiscussion[];
   instructionFiles: InstructionFile[];
   projectMemory?: ProjectMemoryContext | undefined;
   trigger: ReviewTriggerContext;
-  priorThreads: ProviderThreadContext[];
+  priorDiscussions: ProviderDiscussionContext[];
   priorFindings?: PriorReviewFindingContext[] | undefined;
   previousReview: PreviousReviewSource | null;
   logging?: ReviewContext["logging"];
@@ -49,19 +49,19 @@ interface BuildScopedReviewContextInput {
 const CHANGE_LIMIT_BY_MODE: Record<ReviewMode, number> = {
   "first-pass-full": 12,
   "incremental-rereview": 8,
-  "follow-up-thread": 4,
+  "follow-up-discussion": 4,
 };
 
-const NOTE_LIMIT_BY_MODE: Record<ReviewMode, number> = {
+const COMMENT_LIMIT_BY_MODE: Record<ReviewMode, number> = {
   "first-pass-full": 12,
   "incremental-rereview": 8,
-  "follow-up-thread": 0,
+  "follow-up-discussion": 0,
 };
 
 const THREAD_LIMIT_BY_MODE: Record<ReviewMode, number> = {
   "first-pass-full": 12,
   "incremental-rereview": 10,
-  "follow-up-thread": 1,
+  "follow-up-discussion": 1,
 };
 
 export function buildScopedReviewContext(
@@ -82,10 +82,11 @@ export function buildScopedReviewContext(
     explicitFullRescan,
   );
   const priorFindings = input.priorFindings ?? [];
-  const targetThread =
-    input.trigger.targetThreadId !== null
-      ? (input.priorThreads.find(
-          (thread) => thread.threadId === input.trigger.targetThreadId,
+  const targetDiscussion =
+    input.trigger.targetDiscussionId !== null
+      ? (input.priorDiscussions.find(
+          (discussion) =>
+            discussion.discussionId === input.trigger.targetDiscussionId,
         ) ?? null)
       : null;
 
@@ -98,12 +99,12 @@ export function buildScopedReviewContext(
   const deltaPaths = new Set(
     deltaChanges.map((change) => getChangePath(change)),
   );
-  const targetThreadPaths = new Set<string>();
-  if (targetThread?.anchor?.path) {
-    targetThreadPaths.add(targetThread.anchor.path);
+  const targetDiscussionPaths = new Set<string>();
+  if (targetDiscussion?.anchor?.path) {
+    targetDiscussionPaths.add(targetDiscussion.anchor.path);
   }
-  if (targetThread?.anchor?.oldPath) {
-    targetThreadPaths.add(targetThread.anchor.oldPath);
+  if (targetDiscussion?.anchor?.oldPath) {
+    targetDiscussionPaths.add(targetDiscussion.anchor.oldPath);
   }
 
   const widenedInputChanges =
@@ -113,7 +114,7 @@ export function buildScopedReviewContext(
   const widenScopeHints = collectWidenScopeHints(widenedInputChanges);
 
   const focusPaths = new Set<string>();
-  for (const path of targetThreadPaths) {
+  for (const path of targetDiscussionPaths) {
     focusPaths.add(path);
   }
 
@@ -121,12 +122,12 @@ export function buildScopedReviewContext(
     for (const path of deltaPaths) {
       focusPaths.add(path);
     }
-    for (const thread of input.priorThreads) {
-      if (!thread.resolved && thread.anchor?.path) {
-        focusPaths.add(thread.anchor.path);
+    for (const discussion of input.priorDiscussions) {
+      if (!discussion.resolved && discussion.anchor?.path) {
+        focusPaths.add(discussion.anchor.path);
       }
-      if (!thread.resolved && thread.anchor?.oldPath) {
-        focusPaths.add(thread.anchor.oldPath);
+      if (!discussion.resolved && discussion.anchor?.oldPath) {
+        focusPaths.add(discussion.anchor.oldPath);
       }
     }
     for (const finding of priorFindings) {
@@ -153,25 +154,27 @@ export function buildScopedReviewContext(
     selectedChanges.map((change) => getChangePath(change)),
   );
 
-  const selectedThreads = selectPriorThreads({
-    priorThreads: input.priorThreads,
+  const selectedPriorDiscussions = selectPriorDiscussions({
+    priorDiscussions: input.priorDiscussions,
     focusPaths: selectedPathSet,
     mode,
-    targetThread,
+    targetDiscussion,
   });
-  const selectedThreadIds = new Set(
-    selectedThreads.map((thread) => thread.discussionId),
+  const selectedPriorDiscussionIds = new Set(
+    selectedPriorDiscussions.map(
+      (discussion) => discussion.platformDiscussionId,
+    ),
   );
-  const selectedNotes = selectNotes(input.notes, mode);
+  const selectedComments = selectComments(input.comments, mode);
   const selectedDiscussions =
-    mode === "follow-up-thread"
+    mode === "follow-up-discussion"
       ? input.discussions.filter(
           (discussion) =>
-            targetThread !== null &&
-            discussion.id === targetThread.discussionId,
+            targetDiscussion !== null &&
+            discussion.id === targetDiscussion.platformDiscussionId,
         )
       : input.discussions.filter((discussion) =>
-          selectedThreadIds.has(discussion.id),
+          selectedPriorDiscussionIds.has(discussion.id),
         );
 
   const omittedChangedFiles = input.changes
@@ -181,7 +184,7 @@ export function buildScopedReviewContext(
   const scope = buildScope({
     mode,
     trigger: input.trigger,
-    targetThread,
+    targetDiscussion,
     previousReview: input.previousReview,
     previousReviewResult,
     priorFindings,
@@ -198,7 +201,7 @@ export function buildScopedReviewContext(
     workspacePath: input.workspacePath,
     codeReview: input.codeReview,
     changes: selectedChanges,
-    notes: selectedNotes,
+    comments: selectedComments,
     discussions: selectedDiscussions,
     instructionFiles: input.instructionFiles,
     projectMemory: input.projectMemory ?? {
@@ -207,7 +210,7 @@ export function buildScopedReviewContext(
       entries: [],
     },
     trigger: input.trigger,
-    priorThreads: selectedThreads,
+    priorDiscussions: selectedPriorDiscussions,
     scope,
     ...(input.logging ? { logging: input.logging } : {}),
   };
@@ -219,7 +222,7 @@ function determineReviewMode(
   explicitFullRescan: boolean,
 ): ReviewMode {
   if (trigger.kind === "follow-up-comment") {
-    return "follow-up-thread";
+    return "follow-up-discussion";
   }
 
   if (!previousReview || explicitFullRescan) {
@@ -333,7 +336,7 @@ function getChangesCandidatePool(
   },
   focusedChanges: CodeReviewChange[],
 ) {
-  if (input.mode === "follow-up-thread") {
+  if (input.mode === "follow-up-discussion") {
     return focusedChanges;
   }
 
@@ -428,54 +431,58 @@ function collectWidenScopeHints(changes: CodeReviewChange[]): string[] {
   return [...hints];
 }
 
-function selectPriorThreads(input: {
-  priorThreads: ProviderThreadContext[];
+function selectPriorDiscussions(input: {
+  priorDiscussions: ProviderDiscussionContext[];
   focusPaths: Set<string>;
   mode: ReviewMode;
-  targetThread: ProviderThreadContext | null;
-}): ProviderThreadContext[] {
-  if (input.mode === "follow-up-thread") {
-    return input.targetThread ? [input.targetThread] : [];
+  targetDiscussion: ProviderDiscussionContext | null;
+}): ProviderDiscussionContext[] {
+  if (input.mode === "follow-up-discussion") {
+    return input.targetDiscussion ? [input.targetDiscussion] : [];
   }
 
-  const candidateThreads =
+  const candidateDiscussions =
     input.mode === "incremental-rereview"
-      ? input.priorThreads.filter((thread) => !thread.resolved)
-      : input.priorThreads;
+      ? input.priorDiscussions.filter((discussion) => !discussion.resolved)
+      : input.priorDiscussions;
 
-  if (candidateThreads.length <= THREAD_LIMIT_BY_MODE[input.mode]) {
-    return candidateThreads.slice();
+  if (candidateDiscussions.length <= THREAD_LIMIT_BY_MODE[input.mode]) {
+    return candidateDiscussions.slice();
   }
 
-  return candidateThreads
-    .map((thread, index) => ({
-      thread,
+  return candidateDiscussions
+    .map((discussion, index) => ({
+      discussion,
       index,
       score:
-        (thread.resolved ? 0 : 500) +
-        (thread.anchor?.path && input.focusPaths.has(thread.anchor.path)
+        (discussion.resolved ? 0 : 500) +
+        (discussion.anchor?.path && input.focusPaths.has(discussion.anchor.path)
           ? 300
           : 0) +
-        (thread.anchor?.oldPath && input.focusPaths.has(thread.anchor.oldPath)
+        (discussion.anchor?.oldPath &&
+        input.focusPaths.has(discussion.anchor.oldPath)
           ? 300
           : 0) +
-        Math.min(thread.humanReplies.length * 30, 120),
+        Math.min(discussion.humanReplies.length * 30, 120),
     }))
     .sort((left, right) => right.score - left.score || left.index - right.index)
     .slice(0, THREAD_LIMIT_BY_MODE[input.mode])
     .sort((left, right) => left.index - right.index)
-    .map((entry) => entry.thread);
+    .map((entry) => entry.discussion);
 }
 
-function selectNotes(notes: CodeReviewNote[], mode: ReviewMode): CodeReviewNote[] {
-  const limit = NOTE_LIMIT_BY_MODE[mode];
-  return limit > 0 ? notes.slice(-limit) : [];
+function selectComments(
+  comments: CodeReviewComment[],
+  mode: ReviewMode,
+): CodeReviewComment[] {
+  const limit = COMMENT_LIMIT_BY_MODE[mode];
+  return limit > 0 ? comments.slice(-limit) : [];
 }
 
 function buildScope(input: {
   mode: ReviewMode;
   trigger: ReviewTriggerContext;
-  targetThread: ProviderThreadContext | null;
+  targetDiscussion: ProviderDiscussionContext | null;
   previousReview: PreviousReviewSource | null;
   previousReviewResult: ReviewResult | null;
   priorFindings: PriorReviewFindingContext[];
@@ -509,7 +516,7 @@ function buildScope(input: {
     widenScopeHints: input.widenScopeHints,
     allChangedFiles: input.allChangedFiles,
     omittedChangedFiles: input.omittedChangedFiles,
-    targetThread: input.targetThread,
+    targetDiscussion: input.targetDiscussion,
     previousReview,
     priorFindings: input.priorFindings,
     deltaSincePreviousReview,
@@ -520,7 +527,7 @@ function buildScopeSummary(
   input: {
     mode: ReviewMode;
     trigger: ReviewTriggerContext;
-    targetThread: ProviderThreadContext | null;
+    targetDiscussion: ProviderDiscussionContext | null;
     previousReview: PreviousReviewSource | null;
     previousReviewResult: ReviewResult | null;
     priorFindings: PriorReviewFindingContext[];
@@ -532,11 +539,11 @@ function buildScopeSummary(
   },
   selectedChangeCount: number,
 ) {
-  if (input.mode === "follow-up-thread") {
-    const threadTitle = input.targetThread
-      ? ` "${input.targetThread.title}"`
+  if (input.mode === "follow-up-discussion") {
+    const discussionTitle = input.targetDiscussion
+      ? ` "${input.targetDiscussion.title}"`
       : "";
-    return `Focus on the target bot-owned thread${threadTitle} and the ${selectedChangeCount} directly related changed file(s).`;
+    return `Focus on the target bot-owned discussion${discussionTitle} and the ${selectedChangeCount} directly related changed file(s).`;
   }
 
   if (input.mode === "incremental-rereview") {
@@ -544,7 +551,7 @@ function buildScopeSummary(
 
     if (input.trigger.kind === "summary-follow-up") {
       parts.push(
-        "A reply on the bot-owned summary note requested another review pass.",
+        "A reply on the bot-owned summary comment requested another review pass.",
       );
     } else if (input.trigger.instruction) {
       parts.push("Repeated direct mention requested a new review pass.");
@@ -579,7 +586,7 @@ function buildScopeSummary(
 
   return [
     input.previousReview
-        ? "A fresh full rescan was explicitly requested even though a previous review exists."
+      ? "A fresh full rescan was explicitly requested even though a previous review exists."
       : "This is the first full review request for this code review.",
     input.omittedChangedFiles.length > 0
       ? `${input.omittedChangedFiles.length} changed file(s) are summarized without inline diffs to keep the starting context bounded.`

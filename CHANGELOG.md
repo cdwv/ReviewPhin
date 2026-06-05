@@ -3,36 +3,48 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-
 ## v0.3.0 - 2026-05-27
+
 ### Changed
-* Review worker can now use generic platform API in order to update data in GitLab
-* Storage interfaces no longer mention GitLab-specific names in most of column/properties
-* allow any platform config to be part of tenant configuration
-* Generalize concept naming throughout the app (codeReview instead of mergeRequest etc)
+
+- Review worker can now use generic platform API in order to update data in GitLab
+- Storage interfaces no longer mention GitLab-specific names in most of column/properties
+- allow any platform config to be part of tenant configuration
+- Generalize concept naming throughout the app (codeReview instead of mergeRequest etc)
 
 ## v0.2.0 - 2026-05-22
+
 ### Changed
-* `--bot-user-id` and `--bot-username` are no longer required and will be fetched from GitLab's user api upon tenant registration
+
+- `--bot-user-id` and `--bot-username` are no longer required and will be fetched from GitLab's user api upon tenant registration
 
 ## v0.1.2 - 2026-05-19
+
 ### Added
-* Inspiration & Motivation section is now added to the docs. It specifically gives thanks to the tools and teams behind them that inspired ReviewPhin
+
+- Inspiration & Motivation section is now added to the docs. It specifically gives thanks to the tools and teams behind them that inspired ReviewPhin
 
 ### Changed
-* Make sure ReviewPhin is mentioned with consistent letter casing in docs
-* Clarify Code Review Platforms state and possible future expansion in docs
-* Docs now correctly describe OpenAI-compatible model providers as features of GitHub Copilot Harness
+
+- Make sure ReviewPhin is mentioned with consistent letter casing in docs
+- Clarify Code Review Platforms state and possible future expansion in docs
+- Docs now correctly describe OpenAI-compatible model providers as features of GitHub Copilot Harness
 
 ## v0.1.1 - 2026-05-18
+
 ### Fixed
-* make sure .gitlab-ci.yml won't end up in docker image
+
+- make sure .gitlab-ci.yml won't end up in docker image
 
 ## v0.1.0 - 2026-05-18
+
 ### Added
-* Automated dockerhub publishing
+
+- Automated dockerhub publishing
 
 ## v0.0.1 - 2026-05-18
+
 ### Added
-* Initial release version
-* Versioning with Happy Changelog
+
+- Initial release version
+- Versioning with Happy Changelog

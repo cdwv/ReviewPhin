@@ -257,7 +257,9 @@ describe("WorkspaceMaterializer", () => {
     });
 
     expect(workspace.strategy).toBe("git");
-    await expect(readFile(join(workspace.rootPath, "stale.txt"), "utf8")).rejects.toThrow();
+    await expect(
+      readFile(join(workspace.rootPath, "stale.txt"), "utf8"),
+    ).rejects.toThrow();
     expect(await readFile(join(workspace.rootPath, "AGENTS.md"), "utf8")).toBe(
       "# Fresh instructions\n",
     );

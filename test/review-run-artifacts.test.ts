@@ -45,7 +45,9 @@ describe("InteractionRunArtifacts", () => {
       },
     });
     expect(
-      JSON.parse((await readFile(artifacts.platformHttpLogPath, "utf8")).trim()),
+      JSON.parse(
+        (await readFile(artifacts.platformHttpLogPath, "utf8")).trim(),
+      ),
     ).toMatchObject({
       requestId: "req_1",
       status: 400,

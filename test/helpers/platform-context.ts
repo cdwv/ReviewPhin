@@ -58,7 +58,7 @@ export function wrapGitLabPlatformContext<
     workspace: context.workspace,
     projectMemory: context.projectMemory,
     changedFileCount: context.changes.length,
-    noteCount: context.notes.length,
+    commentCount: context.notes.length,
     discussionCount: context.discussions.length,
     platformContext: context,
   };

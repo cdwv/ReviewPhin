@@ -1,7 +1,10 @@
 import { z } from "zod";
 
 import type { ProjectMemoryContext } from "../memory/types.js";
-import type { ReviewFindingStatus, TenantRecord } from "../storage/contract/index.js";
+import type {
+  ReviewFindingStatus,
+  TenantRecord,
+} from "../storage/contract/index.js";
 
 export const reviewAnchorSchema = z
   .object({
@@ -26,7 +29,7 @@ export const reviewSuggestionSchema = z
   });
 
 export const reviewFindingSchema = z.object({
-  priorThreadId: z.string().min(1).optional(),
+  priorDiscussionId: z.string().min(1).optional(),
   title: z.string().min(1),
   body: z.string().min(1),
   severity: z.enum(["low", "medium", "high", "critical"]),
@@ -44,7 +47,7 @@ export const reviewFindingSchema = z.object({
 });
 
 export const priorDispositionSchema = z.object({
-  threadId: z.string().min(1),
+  discussionId: z.string().min(1),
   action: z.enum(["keep", "update", "resolve", "reply"]),
   replyBody: z.string().min(1).optional(),
   resolution: z.enum(["resolved", "dismissed"]).optional(),
@@ -52,23 +55,23 @@ export const priorDispositionSchema = z.object({
 
 export const responseTargetSchema = z.object({
   kind: z.enum([
-    "code-review-note",
+    "code-review-comment",
     "discussion-reply",
     "summary-discussion-reply",
-    "finding-thread-reply",
+    "finding-discussion-reply",
   ]),
   locationType: z.enum([
-    "code-review-note",
-    "discussion-note",
+    "code-review-comment",
+    "discussion-comment",
     "summary-discussion",
-    "finding-thread",
+    "finding-discussion",
   ]),
   triggerKind: z.enum([
     "direct-mention",
     "follow-up-comment",
     "summary-follow-up",
   ]),
-  noteId: z.number().int().positive(),
+  commentId: z.number().int().positive(),
   discussionId: z.string().min(1).optional(),
   authorUsername: z.string().min(1).nullable(),
   body: z.string().min(1),
@@ -78,15 +81,15 @@ export const responseTargetSchema = z.object({
 export const reviewerReplyTargetHandoffSchema = z
   .object({
     kind: responseTargetSchema.shape.kind,
-    noteId: z.number().int().positive(),
+    commentId: z.number().int().positive(),
     discussionId: z.string().min(1).optional(),
     guidance: z.string().min(1),
   })
   .superRefine((target, context) => {
-    if (target.kind !== "code-review-note" && !target.discussionId) {
+    if (target.kind !== "code-review-comment" && !target.discussionId) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "discussionId is required for threaded reply targets",
+        message: "discussionId is required for discussion reply targets",
         path: ["discussionId"],
       });
     }
@@ -118,23 +121,29 @@ export const reviewResultSchema = z.object({
   replyHandoff: reviewerReplyHandoffSchema.optional(),
 });
 
-export const chatterMemoryOutcomeSchema = z.object({
-  status: z.enum(["written", "skipped"]),
-  summary: z.string().min(1),
-});
+export const chatterMemoryOutcomeSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("written"),
+    summary: z.string().min(1),
+  }),
+  z.object({
+    status: z.literal("skipped"),
+    summary: z.string(),
+  }),
+]);
 
 export const chatterReplySchema = z.object({
   target: z
     .object({
       kind: responseTargetSchema.shape.kind,
-      noteId: z.number().int().positive(),
+      commentId: z.number().int().positive(),
       discussionId: z.string().min(1).optional(),
     })
     .superRefine((target, context) => {
-      if (target.kind !== "code-review-note" && !target.discussionId) {
+      if (target.kind !== "code-review-comment" && !target.discussionId) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "discussionId is required for threaded reply targets",
+          message: "discussionId is required for discussion reply targets",
           path: ["discussionId"],
         });
       }
@@ -165,12 +174,12 @@ export type ChatterBatchResult = z.infer<typeof chatterBatchResultSchema>;
 export type ReviewMode =
   | "first-pass-full"
   | "incremental-rereview"
-  | "follow-up-thread";
+  | "follow-up-discussion";
 export type ReplyStyle =
   | "none"
   | "direct-answer"
   | "summary-follow-up"
-  | "thread-follow-up"
+  | "discussion-follow-up"
   | "acknowledgement";
 
 export interface ReviewChangeSummary {
@@ -201,7 +210,7 @@ export interface CodeReviewChange {
   deletedFile: boolean;
 }
 
-export interface CodeReviewNote {
+export interface CodeReviewComment {
   id: number;
   body: string;
   authorUsername: string | null;
@@ -209,7 +218,7 @@ export interface CodeReviewNote {
   resolved: boolean;
 }
 
-export interface CodeReviewDiscussionNote {
+export interface CodeReviewDiscussionComment {
   id: number;
   body: string;
   authorUsername: string | null;
@@ -225,7 +234,7 @@ export interface CodeReviewDiscussionNote {
 export interface CodeReviewDiscussion {
   id: string;
   resolved: boolean;
-  comments: CodeReviewDiscussionNote[];
+  comments: CodeReviewDiscussionComment[];
 }
 
 export interface InstructionFile {
@@ -234,20 +243,20 @@ export interface InstructionFile {
 }
 
 export type ReviewAttachmentSourceKind =
-  | "trigger-note"
+  | "trigger-comment"
   | "code-review-description";
 
 export interface ReviewAttachment {
   contentType: string;
   displayName: string;
-  noteId: number | null;
+  commentId: number | null;
   sourceKind: ReviewAttachmentSourceKind;
 }
 
 export interface ReviewAttachmentIssue {
   displayName: string;
   message: string;
-  noteId: number | null;
+  commentId: number | null;
   sourceKind: ReviewAttachmentSourceKind;
   status: number;
   url: string;
@@ -268,31 +277,31 @@ export interface PriorReviewFindingContext {
   headSha: string;
 }
 
-export interface ProviderThreadContext {
-  threadId: string;
+export interface ProviderDiscussionContext {
   discussionId: string;
-  noteId: number;
+  platformDiscussionId: string;
+  platformCommentId: number;
   title: string;
   body: string;
   anchor: ReviewAnchor | null;
   resolvable: boolean;
   resolved: boolean;
   humanReplies: Array<{
-    noteId: number;
+    platformCommentId: number;
     authorUsername: string;
     body: string;
   }>;
 }
 
-export type TriggerNoteReference =
+export type TriggerCommentReference =
   | {
-      kind: "code-review-note";
-      noteId: number;
+      kind: "code-review-comment";
+      commentId: number;
     }
   | {
-      kind: "discussion-note";
+      kind: "discussion-comment";
       discussionId: string;
-      noteId: number;
+      commentId: number;
     };
 
 export type ReviewTriggerKind =
@@ -302,19 +311,19 @@ export type ReviewTriggerKind =
 
 export interface ReviewTriggerContext {
   kind: ReviewTriggerKind;
-  noteId: number;
+  commentId: number;
   authorUsername: string | null;
   body: string;
   instruction: string | null;
-  targetThreadId: string | null;
   targetDiscussionId: string | null;
-  targetThreadTitle: string | null;
+  targetPlatformDiscussionId: string | null;
+  targetDiscussionTitle: string | null;
   responseTarget: ResponseTarget;
 }
 
 export interface WebhookReviewTrigger {
   kind: ReviewTriggerKind;
-  note: TriggerNoteReference;
+  comment: TriggerCommentReference;
 }
 
 export interface ReviewSummaryContext {
@@ -362,7 +371,7 @@ export interface ReviewScopeContext {
   widenScopeHints: string[];
   allChangedFiles: ReviewChangeSummary[];
   omittedChangedFiles: ReviewChangeSummary[];
-  targetThread: ProviderThreadContext | null;
+  targetDiscussion: ProviderDiscussionContext | null;
   previousReview: PreviousReviewContext | null;
   priorFindings: PriorReviewFindingContext[];
   deltaSincePreviousReview: ReviewDeltaContext | null;
@@ -374,12 +383,12 @@ export interface ReviewContext {
   workspacePath: string;
   codeReview: CodeReviewItem;
   changes: CodeReviewChange[];
-  notes: CodeReviewNote[];
+  comments: CodeReviewComment[];
   discussions: CodeReviewDiscussion[];
   instructionFiles: InstructionFile[];
   projectMemory: ProjectMemoryContext;
   trigger: ReviewTriggerContext;
-  priorThreads: ProviderThreadContext[];
+  priorDiscussions: ProviderDiscussionContext[];
   scope: ReviewScopeContext;
   logging?: {
     interactionRunId: string;

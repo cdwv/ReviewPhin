@@ -14,21 +14,21 @@ export interface PlatformReviewComment {
   positionJson: string | null;
 }
 
-export interface PlatformReviewThread {
+export interface PlatformReviewDiscussion {
   id: string;
   comments: PlatformReviewComment[];
   resolvable: boolean;
   resolved: boolean;
 }
 
-export interface PlatformSummaryNote {
+export interface PlatformSummaryComment {
   id: string;
   body: string;
   isBot: boolean;
   updatedAt: string | null;
 }
 
-export interface PlatformDraftThread {
+export interface PlatformDraftDiscussion {
   id: string;
   draftMarker: string;
   finding: ReviewFinding;
@@ -36,39 +36,43 @@ export interface PlatformDraftThread {
   positionJson: string | null;
 }
 
-export interface PlatformPublishedDraftThreadMatch<TPending extends PlatformDraftThread> {
-  thread: PlatformReviewThread;
+export interface PlatformPublishedDraftDiscussionMatch<
+  TPending extends PlatformDraftDiscussion,
+> {
+  discussion: PlatformReviewDiscussion;
   pending: TPending;
   rootComment: PlatformReviewComment;
 }
 
 export interface PlatformReviewDiscussionAdapter {
-  listThreads(options?: {
+  listDiscussions(options?: {
     noCache?: boolean | undefined;
-  }): Promise<PlatformReviewThread[]>;
-  listSummaryNotes(): Promise<PlatformSummaryNote[]>;
-  replyToThread(
-    threadId: string,
+  }): Promise<PlatformReviewDiscussion[]>;
+  listSummaryComments(): Promise<PlatformSummaryComment[]>;
+  replyToDiscussion(
+    discussionId: string,
     body: string,
   ): Promise<PlatformReviewComment>;
-  setThreadResolved(threadId: string, resolved: boolean): Promise<void>;
+  setDiscussionResolved(discussionId: string, resolved: boolean): Promise<void>;
   updateComment(
-    threadId: string,
+    discussionId: string,
     commentId: string,
     body: string,
   ): Promise<PlatformReviewComment>;
-  createDraftThread(input: {
+  createDraftDiscussion(input: {
     finding: ReviewFinding;
     body: string;
     draftMarker: string;
-  }): Promise<PlatformDraftThread>;
-  publishDraftThreads(): Promise<void>;
-  deleteDraftThread(draftThreadId: string): Promise<void>;
-  matchPublishedDraftThreads<TPending extends PlatformDraftThread>(input: {
-    pendingDraftThreads: ReadonlyArray<TPending>;
-    existingThreadIds: ReadonlySet<string>;
+  }): Promise<PlatformDraftDiscussion>;
+  publishDraftDiscussions(): Promise<void>;
+  deleteDraftDiscussion(draftDiscussionId: string): Promise<void>;
+  matchPublishedDraftDiscussions<
+    TPending extends PlatformDraftDiscussion,
+  >(input: {
+    pendingDraftDiscussions: ReadonlyArray<TPending>;
+    existingDiscussionIds: ReadonlySet<string>;
     maxAttempts?: number | undefined;
-  }): Promise<PlatformPublishedDraftThreadMatch<TPending>[]>;
-  createSummaryNote(body: string): Promise<void>;
-  updateSummaryNote(noteId: string, body: string): Promise<void>;
+  }): Promise<PlatformPublishedDraftDiscussionMatch<TPending>[]>;
+  createSummaryComment(body: string): Promise<void>;
+  updateSummaryComment(commentId: string, body: string): Promise<void>;
 }

@@ -24,7 +24,7 @@ import { InteractionRunArtifacts } from "../review/run-artifacts.js";
 import type {
   ReviewContext,
   ReviewResult,
-  TriggerNoteReference,
+  TriggerCommentReference,
   WebhookReviewTrigger,
 } from "../review/types.js";
 import type {
@@ -130,7 +130,7 @@ export class ReviewWorker {
       tenantId: tenant.id,
       dedupeKey: interactionJob.dedupeKey,
       codeReviewId: interactionJob.codeReviewId,
-      noteId: interactionJob.noteId,
+      commentId: interactionJob.commentId,
       headSha: interactionJob.headSha,
       payloadJson: interactionJob.payloadJson,
     });
@@ -145,9 +145,9 @@ export class ReviewWorker {
         workspaceRoot: this.workspaceRoot,
         memoryEnabled: this.memoryEnabled,
       });
-      await runtime.ensureTriggerNoteReaction({
+      await runtime.ensureTriggerCommentReaction({
         codeReviewId: createdJob.job.codeReviewId,
-        note: trigger.note,
+        comment: trigger.comment,
         reactionName: REVIEW_STARTED_REACTION,
         interactionJobId: createdJob.job.id,
       });
@@ -191,17 +191,17 @@ export class ReviewWorker {
       triggerKind: string | null;
       promptMode: string | null;
       promptContextChangedFiles: number;
-      promptContextPriorThreads: number;
-      promptContextNotes: number;
+      promptContextPriorDiscussions: number;
+      promptContextComments: number;
     } | null = null;
-    let triggerNote: TriggerNoteReference | null = null;
+    let triggerComment: TriggerCommentReference | null = null;
     let cleanupWorkspace:
       | ((workspace: PlatformMaterializedWorkspace) => Promise<void>)
       | null = null;
     let syncTriggerReaction:
       | ((input: {
           codeReviewId: number;
-          note: TriggerNoteReference;
+          comment: TriggerCommentReference;
           reactionName: string;
           interactionJobId: string;
         }) => Promise<void>)
@@ -219,16 +219,17 @@ export class ReviewWorker {
         memoryEnabled: this.memoryEnabled,
       });
       cleanupWorkspace = (workspace) => runtime.cleanupWorkspace(workspace);
-      syncTriggerReaction = (input) => runtime.ensureTriggerNoteReaction(input);
+      syncTriggerReaction = (input) =>
+        runtime.ensureTriggerCommentReaction(input);
       const parsedPayload = JSON.parse(job.payloadJson) as unknown;
       let routingContext = await this.loadRoutingContext({
         runtime,
         job,
       });
       workspacesToCleanup.push(routingContext.workspace);
-      triggerNote = runtime.locateTriggerNoteReference({
+      triggerComment = runtime.locateTriggerCommentReference({
         context: routingContext,
-        noteId: job.noteId,
+        commentId: job.commentId,
       });
 
       const resolvedProviderConfig = await resolveReviewProviderConfig({
@@ -269,11 +270,12 @@ export class ReviewWorker {
         workspaceRoot: this.workspaceRoot,
         memoryEnabled: this.memoryEnabled,
       });
-      syncTriggerReaction = (input) => runRuntime.ensureTriggerNoteReaction(input);
-      triggerNote = await runRuntime
-        .resolveTriggerNoteReference({
+      syncTriggerReaction = (input) =>
+        runRuntime.ensureTriggerCommentReaction(input);
+      triggerComment = await runRuntime
+        .resolveTriggerCommentReference({
           codeReviewId: job.codeReviewId,
-          noteId: job.noteId,
+          commentId: job.commentId,
         })
         .catch((error: unknown) => {
           throw new AbandonedReviewError(getErrorMessage(error));
@@ -299,7 +301,7 @@ export class ReviewWorker {
           interactionJobId: job.id,
           codeReviewId: job.codeReviewId,
           changedFiles: routingContext.changedFileCount,
-          noteCount: routingContext.noteCount,
+          commentCount: routingContext.commentCount,
           discussionCount: routingContext.discussionCount,
           workspaceStrategy: routingContext.workspace.strategy,
         },
@@ -312,19 +314,19 @@ export class ReviewWorker {
         },
         order: [{ field: "updatedAt", direction: "desc" }],
       });
-        mappings = await runtime.syncDiscussionFindingStatuses({
-          tenant,
-          codeReviewId: routingContext.codeReviewId,
-          context: routingContext,
-          mappings,
-        });
-        const priorThreads = runtime.buildProviderThreads({
-          context: routingContext,
-          mappings,
-        });
-      await runRuntime.ensureTriggerNoteReaction({
+      mappings = await runtime.syncDiscussionFindingStatuses({
+        tenant,
+        codeReviewId: routingContext.codeReviewId,
+        context: routingContext,
+        mappings,
+      });
+      const priorDiscussions = runtime.buildProviderDiscussions({
+        context: routingContext,
+        mappings,
+      });
+      await runRuntime.ensureTriggerCommentReaction({
         codeReviewId: job.codeReviewId,
-        note: triggerNote,
+        comment: triggerComment,
         reactionName: REVIEW_STARTED_REACTION,
         interactionJobId: job.id,
       });
@@ -332,7 +334,7 @@ export class ReviewWorker {
       const trigger = runtime.buildReviewTriggerContext({
         payload: parsedPayload,
         context: routingContext,
-        priorThreads,
+        priorDiscussions,
       });
       const previousInteraction =
         await this.storage.getLatestCompletedInteractionForCodeReview(
@@ -423,8 +425,8 @@ export class ReviewWorker {
           triggerKind: trigger.kind,
           promptMode: "memory",
           promptContextChangedFiles: chatterContext.changes.length,
-          promptContextPriorThreads: chatterContext.priorThreads.length,
-          promptContextNotes: chatterContext.notes.length,
+          promptContextPriorDiscussions: chatterContext.priorDiscussions.length,
+          promptContextComments: chatterContext.comments.length,
         };
 
         routingContext = await this.loadRoutingContext({
@@ -563,8 +565,8 @@ export class ReviewWorker {
           triggerKind: reviewContext.trigger.kind,
           promptMode: reviewContext.scope.mode,
           promptContextChangedFiles: reviewContext.changes.length,
-          promptContextPriorThreads: reviewContext.priorThreads.length,
-          promptContextNotes: reviewContext.notes.length,
+          promptContextPriorDiscussions: reviewContext.priorDiscussions.length,
+          promptContextComments: reviewContext.comments.length,
         };
 
         await this.logRunEvent(
@@ -651,11 +653,11 @@ export class ReviewWorker {
           promptMode: "reply",
           promptContextChangedFiles:
             reviewContext?.changes.length ?? chatterContext.changes.length,
-          promptContextPriorThreads:
-            reviewContext?.priorThreads.length ??
-            chatterContext.priorThreads.length,
-          promptContextNotes:
-            reviewContext?.notes.length ?? chatterContext.notes.length,
+          promptContextPriorDiscussions:
+            reviewContext?.priorDiscussions.length ??
+            chatterContext.priorDiscussions.length,
+          promptContextComments:
+            reviewContext?.comments.length ?? chatterContext.comments.length,
         };
       }
 
@@ -664,10 +666,10 @@ export class ReviewWorker {
         reviewResult ? JSON.stringify(reviewResult) : null,
       );
       await this.storage.markJobCompleted(job.id);
-      if (syncTriggerReaction && triggerNote) {
+      if (syncTriggerReaction && triggerComment) {
         await syncTriggerReaction({
           codeReviewId: job.codeReviewId,
-          note: triggerNote,
+          comment: triggerComment,
           reactionName: REVIEW_COMPLETED_REACTION,
           interactionJobId: job.id,
         });
@@ -735,10 +737,10 @@ export class ReviewWorker {
       }
 
       await this.storage.markJobFailed(job.id, nextRetryCount, errorMessage);
-      if (syncTriggerReaction && triggerNote) {
+      if (syncTriggerReaction && triggerComment) {
         await syncTriggerReaction({
           codeReviewId: job.codeReviewId,
-          note: triggerNote,
+          comment: triggerComment,
           reactionName: REVIEW_FAILED_REACTION,
           interactionJobId: job.id,
         });
@@ -816,8 +818,8 @@ export class ReviewWorker {
     triggerKind: string | null;
     promptMode: string | null;
     promptContextChangedFiles: number;
-    promptContextPriorThreads: number;
-    promptContextNotes: number;
+    promptContextPriorDiscussions: number;
+    promptContextComments: number;
   }): Promise<void> {
     try {
       const metrics = await readHarnessRunMetrics(input.sessionLogPath);
@@ -831,8 +833,8 @@ export class ReviewWorker {
         promptMode: input.promptMode,
         promptChars: metrics.promptChars,
         promptContextChangedFiles: input.promptContextChangedFiles,
-        promptContextPriorThreads: input.promptContextPriorThreads,
-        promptContextNotes: input.promptContextNotes,
+        promptContextPriorDiscussions: input.promptContextPriorDiscussions,
+        promptContextComments: input.promptContextComments,
         assistantTurns: metrics.assistantTurns,
         assistantCalls: metrics.assistantCalls,
         toolExecutions: metrics.toolExecutions,

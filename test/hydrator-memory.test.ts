@@ -50,7 +50,7 @@ describe("CodeReviewContextHydrator project memory", () => {
         tenantId: "tenant_1",
         dedupeKey: "dedupe",
         codeReviewId: 7,
-        noteId: 55,
+        commentId: 55,
         headSha: "abc123",
         status: "queued",
         payloadJson: "{}",

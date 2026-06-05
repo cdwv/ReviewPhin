@@ -3,6 +3,7 @@ import { HarnessSessionRuntime } from "./harness/session.js";
 import { JobQueue } from "./jobs/job-queue.js";
 import { ReviewWorker } from "./jobs/review-worker.js";
 import { createLogger } from "./logger.js";
+import { initializePlatformRegistry } from "./platforms/platform-registry.js";
 import { DiscussionReconciler } from "./reconcile/discussion-reconciler.js";
 import { HarnessChatterRunnerFactory } from "./review/harness-chatter.js";
 import { HarnessReviewProviderFactory } from "./review/harness-review-provider.js";
@@ -16,6 +17,12 @@ async function main(): Promise<void> {
   loadLocalEnvFile();
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
+
+  await initializePlatformRegistry({
+    platformModules: config.platformModules,
+    env: process.env,
+    logger: logger.child({ component: "platform-registry" }),
+  });
 
   const storageRuntime = await initializeStorageRuntime({
     providerModule: config.storageProviderModule,

@@ -22,6 +22,13 @@ const envSchema = z.object({
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
   STORAGE_PROVIDER_MODULE: z.string().min(1).optional(),
+  PLATFORM_MODULES: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim().length === 0
+        ? undefined
+        : value,
+    z.string().optional(),
+  ),
   RUN_LOG_DIR: z.string().min(1).optional(),
   COPILOT_LOG_DIR: z.string().min(1).optional(),
   WORKSPACE_ROOT: z.string().min(1).default("./tmp/review-workspaces"),
@@ -47,6 +54,7 @@ export interface AppConfig {
   port: number;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
   storageProviderModule?: string | undefined;
+  platformModules: string[];
   runLogDir: string;
   workspaceRoot: string;
   maxJobRetries: number;
@@ -71,6 +79,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     HOST: env.HOST,
     LOG_LEVEL: env.LOG_LEVEL,
     STORAGE_PROVIDER_MODULE: env.STORAGE_PROVIDER_MODULE,
+    PLATFORM_MODULES: env.PLATFORM_MODULES,
     RUN_LOG_DIR: env.RUN_LOG_DIR,
     COPILOT_LOG_DIR: env.COPILOT_LOG_DIR,
     WORKSPACE_ROOT: env.WORKSPACE_ROOT,
@@ -88,6 +97,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: parsedEnv.PORT,
     logLevel: parsedEnv.LOG_LEVEL,
     storageProviderModule: parsedEnv.STORAGE_PROVIDER_MODULE,
+    platformModules: parseModuleList(parsedEnv.PLATFORM_MODULES),
     runLogDir: resolve(
       parsedEnv.RUN_LOG_DIR ?? parsedEnv.COPILOT_LOG_DIR ?? "./data/run-logs",
     ),
@@ -100,4 +110,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     copilotSdkLogLevel: parsedEnv.COPILOT_SDK_LOG_LEVEL,
     copilotCliPath: parsedEnv.COPILOT_CLI_PATH,
   };
+}
+
+function parseModuleList(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }

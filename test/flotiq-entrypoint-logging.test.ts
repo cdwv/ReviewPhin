@@ -1,11 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Logger } from "pino";
 
-const {
-  ensureV001CtdsExistMock,
-  listMigrationsMock,
-  createMigrationMock,
-} =
+const { ensureV001CtdsExistMock, listMigrationsMock, createMigrationMock } =
   vi.hoisted(() => ({
     ensureV001CtdsExistMock: vi.fn(),
     listMigrationsMock: vi.fn(),

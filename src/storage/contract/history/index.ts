@@ -27,6 +27,24 @@ export const STORAGE_CONTRACT_HISTORY = [
       "Adapters must exactly match the current storage contract revision.",
     ],
   },
+  {
+    id: "storage-v001",
+    summary:
+      "Platform-provider contract with generic code-review, comment, and discussion entities.",
+    changeKind: "breaking",
+    affectedSurfaces: [
+      "tenants",
+      "interaction-jobs",
+      "code-review-snapshots",
+      "interaction-run-metrics",
+      "discussion-mappings",
+    ],
+    providerNotes: [
+      "Tenants store platform and platformConfigJson instead of GitLab-specific columns.",
+      "Generic storage contracts use codeReview/comment/discussion names instead of mergeRequest/note/thread names.",
+      "Built-in adapters must report storage-v001 and preserve provider-local migrations for existing data.",
+    ],
+  },
 ] as const satisfies readonly StorageContractRevisionMetadata[];
 
 export type StorageContractRevisionId =

@@ -58,6 +58,10 @@ describe("SqliteStorage review findings", () => {
       verifiedDb,
       "discussion_mappings",
     );
+    const interactionRunMetricsColumnNames = readTableColumnNames(
+      verifiedDb,
+      "interaction_run_metrics",
+    );
     verifiedDb.close();
 
     expect([...tables]).toEqual(
@@ -98,6 +102,10 @@ describe("SqliteStorage review findings", () => {
         adapter_name: "sqlite",
         migration_id: "sqlite:0006_v1_drop_legacy_tenant_columns",
       },
+      {
+        adapter_name: "sqlite",
+        migration_id: "sqlite:0007_v1_generic_storage_column_names",
+      },
     ]);
     expect(columnNames.has("anchor_json")).toBe(true);
     expect(columnNames.has("interaction_run_id")).toBe(true);
@@ -115,15 +123,31 @@ describe("SqliteStorage review findings", () => {
     expect(interactionJobColumnNames.has("project_id")).toBe(false);
     expect(interactionJobColumnNames.has("merge_request_iid")).toBe(false);
     expect(interactionJobColumnNames.has("repository_id")).toBe(false);
+    expect(interactionJobColumnNames.has("note_id")).toBe(false);
+    expect(interactionJobColumnNames.has("comment_id")).toBe(true);
     expect(snapshotColumnNames.has("merge_request_iid")).toBe(false);
     expect(snapshotColumnNames.has("merge_request_json")).toBe(false);
+    expect(snapshotColumnNames.has("notes_json")).toBe(false);
+    expect(snapshotColumnNames.has("comments_json")).toBe(true);
+    expect(
+      interactionRunMetricsColumnNames.has("prompt_context_prior_threads"),
+    ).toBe(false);
+    expect(
+      interactionRunMetricsColumnNames.has("prompt_context_prior_discussions"),
+    ).toBe(true);
     expect(discussionMappingColumnNames.has("project_id")).toBe(false);
     expect(discussionMappingColumnNames.has("merge_request_iid")).toBe(false);
     expect(discussionMappingColumnNames.has("gitlab_discussion_id")).toBe(
       false,
     );
-    expect(discussionMappingColumnNames.has("gitlab_note_id")).toBe(false);
+    expect(discussionMappingColumnNames.has("gitlab_comment_id")).toBe(false);
     expect(discussionMappingColumnNames.has("repository_id")).toBe(false);
+    expect(discussionMappingColumnNames.has("platform_thread_id")).toBe(false);
+    expect(discussionMappingColumnNames.has("platform_discussion_id")).toBe(
+      true,
+    );
+    expect(discussionMappingColumnNames.has("bot_note")).toBe(false);
+    expect(discussionMappingColumnNames.has("bot_comment")).toBe(true);
     expect(indexes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -161,7 +185,7 @@ describe("SqliteStorage review findings", () => {
         dedupe_key TEXT NOT NULL UNIQUE,
         project_id INTEGER NOT NULL,
         merge_request_iid INTEGER NOT NULL,
-        note_id INTEGER NOT NULL,
+        comment_id INTEGER NOT NULL,
         head_sha TEXT NOT NULL,
         status TEXT NOT NULL,
         payload_json TEXT NOT NULL,
@@ -266,8 +290,334 @@ describe("SqliteStorage review findings", () => {
         "updated_at",
       ]),
     );
-    expect(migrations.count).toBe(6);
+    expect(migrations.count).toBe(7);
     await storage.close();
+  });
+
+  it("renames legacy generic SQLite columns after earlier v1 migrations already ran", async () => {
+    const databasePath = join(
+      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      "storage.sqlite",
+    );
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
+      CREATE TABLE storage_migrations (
+        adapter_name TEXT NOT NULL,
+        migration_id TEXT NOT NULL,
+        applied_at TEXT NOT NULL,
+        PRIMARY KEY (adapter_name, migration_id)
+      );
+      INSERT INTO storage_migrations VALUES
+        ('sqlite', 'sqlite:0001_v0_baseline', '2026-04-01T00:00:00.000Z'),
+        ('sqlite', 'sqlite:0002_v1_platform_tenants', '2026-04-01T00:00:00.000Z'),
+        ('sqlite', 'sqlite:0003_v1_review_entity_ids', '2026-04-01T00:00:00.000Z'),
+        ('sqlite', 'sqlite:0004_v1_tenant_scoped_reviews', '2026-04-01T00:00:00.000Z'),
+        ('sqlite', 'sqlite:0005_v1_code_review_snapshots', '2026-04-01T00:00:00.000Z'),
+        ('sqlite', 'sqlite:0006_v1_drop_legacy_tenant_columns', '2026-04-01T00:00:00.000Z');
+      CREATE TABLE tenants (
+        id TEXT PRIMARY KEY,
+        tenant_key TEXT NOT NULL UNIQUE,
+        platform TEXT NOT NULL,
+        platform_config_json TEXT NOT NULL,
+        model_profile_name TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE interaction_jobs (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL UNIQUE,
+        code_review_id INTEGER NOT NULL,
+        note_id INTEGER NOT NULL,
+        head_sha TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        enqueued_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+      );
+      CREATE TABLE code_review_snapshots (
+        id TEXT PRIMARY KEY,
+        interaction_job_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        code_review_id INTEGER NOT NULL,
+        head_sha TEXT NOT NULL,
+        code_review_json TEXT NOT NULL,
+        versions_json TEXT NOT NULL,
+        changes_json TEXT NOT NULL,
+        notes_json TEXT NOT NULL,
+        discussions_json TEXT NOT NULL,
+        instructions_json TEXT NOT NULL,
+        workspace_strategy TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        project_memory_json TEXT,
+        FOREIGN KEY (interaction_job_id) REFERENCES interaction_jobs(id),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+      );
+      CREATE TABLE interaction_runs (
+        id TEXT PRIMARY KEY,
+        interaction_job_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT,
+        status TEXT NOT NULL,
+        result_json TEXT,
+        error TEXT,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        model_profile_name TEXT,
+        provider_base_url TEXT,
+        provider_type TEXT,
+        text_generation_model TEXT,
+        FOREIGN KEY (interaction_job_id) REFERENCES interaction_jobs(id),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+      );
+      CREATE TABLE interaction_run_metrics (
+        id TEXT PRIMARY KEY,
+        interaction_run_id TEXT NOT NULL UNIQUE,
+        trigger_kind TEXT,
+        prompt_mode TEXT,
+        prompt_chars INTEGER NOT NULL,
+        prompt_context_changed_files INTEGER NOT NULL,
+        prompt_context_prior_threads INTEGER NOT NULL,
+        prompt_context_notes INTEGER NOT NULL,
+        assistant_turns INTEGER NOT NULL,
+        assistant_calls INTEGER NOT NULL,
+        tool_executions INTEGER NOT NULL,
+        view_tool_calls INTEGER NOT NULL,
+        glob_tool_calls INTEGER NOT NULL,
+        input_tokens INTEGER NOT NULL,
+        output_tokens INTEGER NOT NULL,
+        cache_read_tokens INTEGER NOT NULL,
+        cache_write_tokens INTEGER NOT NULL,
+        reasoning_tokens INTEGER NOT NULL,
+        api_duration_ms INTEGER NOT NULL,
+        premium_requests INTEGER NOT NULL,
+        repeated_view_reads INTEGER NOT NULL,
+        repeated_view_paths_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (interaction_run_id) REFERENCES interaction_runs(id)
+      );
+      CREATE TABLE discussion_mappings (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        code_review_id INTEGER NOT NULL,
+        identity_key TEXT NOT NULL,
+        finding_fingerprint TEXT NOT NULL,
+        title TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        category TEXT NOT NULL,
+        body TEXT NOT NULL,
+        platform_thread_id TEXT NOT NULL,
+        platform_comment_id INTEGER NOT NULL,
+        anchor_json TEXT,
+        position_json TEXT,
+        bot_discussion INTEGER NOT NULL,
+        bot_note INTEGER NOT NULL,
+        note_author_id INTEGER,
+        note_author_username TEXT,
+        status TEXT NOT NULL,
+        last_interaction_run_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+        FOREIGN KEY (last_interaction_run_id) REFERENCES interaction_runs(id),
+        UNIQUE(tenant_id, code_review_id, platform_thread_id)
+      );
+      INSERT INTO tenants VALUES (
+        'tenant_1',
+        'https://gitlab.example.com::123',
+        'gitlab',
+        '{"baseUrl":"https://gitlab.example.com","projectId":123,"apiToken":"token","webhookSecret":"secret","botUserId":999,"botUsername":"review-bot"}',
+        NULL,
+        '2026-04-01T00:00:00.000Z',
+        '2026-04-01T00:00:00.000Z'
+      );
+      INSERT INTO interaction_jobs VALUES (
+        'job_1',
+        'tenant_1',
+        'dedupe_1',
+        7,
+        55,
+        'abc123',
+        'queued',
+        '{}',
+        0,
+        NULL,
+        '2026-04-01T00:00:00.000Z',
+        NULL,
+        NULL
+      );
+      INSERT INTO code_review_snapshots VALUES (
+        'snapshot_1',
+        'job_1',
+        'tenant_1',
+        7,
+        'abc123',
+        '{}',
+        '[]',
+        '[]',
+        '[{"id":55}]',
+        '[]',
+        '[]',
+        'hydrated',
+        '2026-04-01T00:00:00.000Z',
+        NULL
+      );
+      INSERT INTO interaction_runs VALUES (
+        'run_1',
+        'job_1',
+        'tenant_1',
+        'copilot-sdk',
+        NULL,
+        'completed',
+        '{}',
+        NULL,
+        '2026-04-01T00:00:00.000Z',
+        '2026-04-01T00:00:00.000Z',
+        NULL,
+        NULL,
+        NULL,
+        NULL
+      );
+      INSERT INTO interaction_run_metrics VALUES (
+        'metrics_1',
+        'run_1',
+        'direct-mention',
+        'first-pass-full',
+        100,
+        2,
+        3,
+        4,
+        1,
+        1,
+        1,
+        1,
+        1,
+        10,
+        5,
+        0,
+        0,
+        0,
+        1000,
+        1,
+        0,
+        '[]',
+        '2026-04-01T00:00:00.000Z',
+        '2026-04-01T00:00:00.000Z'
+      );
+      INSERT INTO discussion_mappings VALUES (
+        'mapping_1',
+        'tenant_1',
+        7,
+        'identity_1',
+        'fingerprint_1',
+        'Title',
+        'medium',
+        'correctness',
+        'Body',
+        'disc_1',
+        55,
+        NULL,
+        NULL,
+        1,
+        1,
+        999,
+        'review-bot',
+        'open',
+        'run_1',
+        '2026-04-01T00:00:00.000Z',
+        '2026-04-01T00:00:00.000Z'
+      );
+    `);
+    database.close();
+
+    const storage = await openSqliteTestStorage(databasePath);
+    await storage.close();
+
+    const verifiedDb = new DatabaseSync(databasePath);
+    expect(readTableColumnNames(verifiedDb, "interaction_jobs")).toEqual(
+      expectColumnSetContaining(["comment_id"], ["note_id"]),
+    );
+    expect(readTableColumnNames(verifiedDb, "code_review_snapshots")).toEqual(
+      expectColumnSetContaining(["comments_json"], ["notes_json"]),
+    );
+    expect(readTableColumnNames(verifiedDb, "interaction_run_metrics")).toEqual(
+      expectColumnSetContaining(
+        ["prompt_context_prior_discussions", "prompt_context_comments"],
+        ["prompt_context_prior_threads", "prompt_context_notes"],
+      ),
+    );
+    expect(readTableColumnNames(verifiedDb, "discussion_mappings")).toEqual(
+      expectColumnSetContaining(
+        [
+          "platform_discussion_id",
+          "bot_comment",
+          "comment_author_id",
+          "comment_author_username",
+        ],
+        [
+          "platform_thread_id",
+          "bot_note",
+          "note_author_id",
+          "note_author_username",
+        ],
+      ),
+    );
+    expect(
+      verifiedDb
+        .prepare(
+          "SELECT comment_id, dedupe_key FROM interaction_jobs WHERE id = ?",
+        )
+        .get("job_1"),
+    ).toEqual({ comment_id: 55, dedupe_key: "dedupe_1" });
+    expect(
+      verifiedDb
+        .prepare("SELECT comments_json FROM code_review_snapshots WHERE id = ?")
+        .get("snapshot_1"),
+    ).toEqual({ comments_json: '[{"id":55}]' });
+    expect(
+      verifiedDb
+        .prepare(
+          "SELECT prompt_context_prior_discussions, prompt_context_comments FROM interaction_run_metrics WHERE id = ?",
+        )
+        .get("metrics_1"),
+    ).toEqual({
+      prompt_context_prior_discussions: 3,
+      prompt_context_comments: 4,
+    });
+    expect(
+      verifiedDb
+        .prepare(
+          "SELECT platform_discussion_id, bot_comment, comment_author_id, comment_author_username FROM discussion_mappings WHERE id = ?",
+        )
+        .get("mapping_1"),
+    ).toEqual({
+      platform_discussion_id: "disc_1",
+      bot_comment: 1,
+      comment_author_id: 999,
+      comment_author_username: "review-bot",
+    });
+    expect(
+      verifiedDb
+        .prepare(
+          "SELECT migration_id FROM storage_migrations ORDER BY migration_id",
+        )
+        .all(),
+    ).toEqual([
+      { migration_id: "sqlite:0001_v0_baseline" },
+      { migration_id: "sqlite:0002_v1_platform_tenants" },
+      { migration_id: "sqlite:0003_v1_review_entity_ids" },
+      { migration_id: "sqlite:0004_v1_tenant_scoped_reviews" },
+      { migration_id: "sqlite:0005_v1_code_review_snapshots" },
+      { migration_id: "sqlite:0006_v1_drop_legacy_tenant_columns" },
+      { migration_id: "sqlite:0007_v1_generic_storage_column_names" },
+    ]);
+    verifiedDb.close();
   });
 
   it("returns latest prior finding state per identity and updates status in place", async () => {
@@ -312,7 +662,7 @@ describe("SqliteStorage review findings", () => {
       tenantId: tenant.id,
       dedupeKey: "current-job",
       codeReviewId: 7,
-      noteId: 57,
+      commentId: 57,
       headSha: "head-current",
       payloadJson: "{}",
     });
@@ -403,7 +753,7 @@ describe("SqliteStorage review findings", () => {
       tenantId: tenant.id,
       dedupeKey: "current-job-after-failed-run",
       codeReviewId: 7,
-      noteId: 72,
+      commentId: 72,
       headSha: "head-current",
       payloadJson: "{}",
     });
@@ -449,6 +799,7 @@ describe("SqliteStorage review findings", () => {
       { migration_id: "sqlite:0004_v1_tenant_scoped_reviews" },
       { migration_id: "sqlite:0005_v1_code_review_snapshots" },
       { migration_id: "sqlite:0006_v1_drop_legacy_tenant_columns" },
+      { migration_id: "sqlite:0007_v1_generic_storage_column_names" },
     ]);
   });
 
@@ -465,7 +816,7 @@ describe("SqliteStorage review findings", () => {
       tenantId: tenant.id,
       dedupeKey: "dedupe-write-path",
       codeReviewId: 7,
-      noteId: 80,
+      commentId: 80,
       headSha: "head-dedupe",
       payloadJson: "{}",
     });
@@ -542,7 +893,7 @@ describe("SqliteStorage tenants", () => {
       tenantId: tenant.id,
       dedupeKey: "profiled-job",
       codeReviewId: 7,
-      noteId: 55,
+      commentId: 55,
       headSha: "head-profiled",
       payloadJson: "{}",
     });
@@ -662,7 +1013,7 @@ describe("SqliteStorage tenants", () => {
       tenantId: tenant.id,
       dedupeKey: "delete-tenant-job",
       codeReviewId: 7,
-      noteId: 55,
+      commentId: 55,
       headSha: "head-sha",
       payloadJson: "{}",
     });
@@ -674,7 +1025,7 @@ describe("SqliteStorage tenants", () => {
       codeReviewJson: "{}",
       versionsJson: "[]",
       changesJson: "[]",
-      notesJson: "[]",
+      commentsJson: "[]",
       discussionsJson: "[]",
       instructionsJson: "[]",
       projectMemoryJson: null,
@@ -707,8 +1058,8 @@ describe("SqliteStorage tenants", () => {
       promptMode: "full",
       promptChars: 10,
       promptContextChangedFiles: 1,
-      promptContextPriorThreads: 0,
-      promptContextNotes: 1,
+      promptContextPriorDiscussions: 0,
+      promptContextComments: 1,
       assistantTurns: 1,
       assistantCalls: 1,
       toolExecutions: 0,
@@ -733,14 +1084,14 @@ describe("SqliteStorage tenants", () => {
       severity: "medium",
       category: "correctness",
       body: "The finding should be removed",
-      platformThreadId: "discussion-1",
+      platformDiscussionId: "discussion-1",
       platformCommentId: 501,
       anchorJson: null,
       positionJson: null,
       botDiscussion: true,
-      botNote: true,
-      noteAuthorId: 999,
-      noteAuthorUsername: "review-bot",
+      botComment: true,
+      commentAuthorId: 999,
+      commentAuthorUsername: "review-bot",
       status: "open",
       lastInteractionRunId: reviewRun.id,
     });
@@ -796,6 +1147,26 @@ function readTableColumnNames(
       }>
     ).map((column) => column.name),
   );
+}
+
+function expectColumnSetContaining(
+  included: string[],
+  excluded: string[],
+): unknown {
+  return {
+    asymmetricMatch(value: unknown) {
+      if (!(value instanceof Set)) {
+        return false;
+      }
+      return (
+        included.every((columnName) => value.has(columnName)) &&
+        excluded.every((columnName) => !value.has(columnName))
+      );
+    },
+    toString() {
+      return `ColumnSetIncluding(${included.join(",")})Excluding(${excluded.join(",")})`;
+    },
+  };
 }
 
 function readFindingStatuses(
@@ -858,15 +1229,15 @@ async function createCompletedRun(
   storage: StorageHelpers,
   tenantId: string,
   codeReviewId: number,
-  noteId: number,
+  commentId: number,
   headSha: string,
   findings: CreateReviewFindingInput[],
 ): Promise<void> {
   const job = await storage.createOrGetInteractionJob({
     tenantId,
-    dedupeKey: `job-${noteId}`,
+    dedupeKey: `job-${commentId}`,
     codeReviewId,
-    noteId,
+    commentId,
     headSha,
     payloadJson: "{}",
   });
@@ -904,15 +1275,15 @@ async function createFailedRun(
   storage: StorageHelpers,
   tenantId: string,
   codeReviewId: number,
-  noteId: number,
+  commentId: number,
   headSha: string,
   findings: CreateReviewFindingInput[],
 ): Promise<void> {
   const job = await storage.createOrGetInteractionJob({
     tenantId,
-    dedupeKey: `failed-job-${noteId}`,
+    dedupeKey: `failed-job-${commentId}`,
     codeReviewId,
-    noteId,
+    commentId,
     headSha,
     payloadJson: "{}",
   });
@@ -940,15 +1311,15 @@ async function createCancelledRun(
   storage: StorageHelpers,
   tenantId: string,
   codeReviewId: number,
-  noteId: number,
+  commentId: number,
   headSha: string,
   findings: CreateReviewFindingInput[],
 ): Promise<void> {
   const job = await storage.createOrGetInteractionJob({
     tenantId,
-    dedupeKey: `cancelled-job-${noteId}`,
+    dedupeKey: `cancelled-job-${commentId}`,
     codeReviewId,
-    noteId,
+    commentId,
     headSha,
     payloadJson: "{}",
   });

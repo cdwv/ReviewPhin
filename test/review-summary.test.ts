@@ -9,7 +9,7 @@ if (!platform) {
 }
 import { tmpPath } from "./test-paths.js";
 
-describe("review summary note", () => {
+describe("review summary comment", () => {
   it("wraps the suggested fixes prompt in a fenced md block and escapes embedded fences", () => {
     const timestamp = "2026-04-27T11:00:00.000Z";
     const note = buildReviewSummaryNote({
@@ -36,7 +36,7 @@ describe("review summary note", () => {
           tenantId: "tenant_1",
           dedupeKey: "dedupe_1",
           codeReviewId: 7,
-          noteId: 55,
+          commentId: 55,
           headSha: "abc123",
           status: "completed",
           payloadJson: "{}",
@@ -64,7 +64,7 @@ describe("review summary note", () => {
         },
         codeReview: {
           id: 7,
-          title: 'Add ```worker```',
+          title: "Add ```worker```",
           description: "Adds the worker",
           webUrl: "https://gitlab.example.com/group/project/-/merge_requests/7",
           sourceBranch: "feature",
@@ -104,14 +104,14 @@ describe("review summary note", () => {
           codeReviewJson: "{}",
           versionsJson: "[]",
           changesJson: "[]",
-          notesJson: "[]",
+          commentsJson: "[]",
           discussionsJson: "[]",
           instructionsJson: "[]",
           projectMemoryJson: null,
           workspaceStrategy: "git",
           createdAt: timestamp,
         },
-        } as never,
+      } as never,
       reviewResult: {
         overview: {
           summary: "One fix remains",
@@ -165,7 +165,7 @@ describe("review summary note", () => {
           tenantId: "tenant_1",
           dedupeKey: "dedupe_1",
           codeReviewId: 7,
-          noteId: 55,
+          commentId: 55,
           headSha: "abc123",
           status: "completed",
           payloadJson: "{}",
@@ -225,14 +225,14 @@ describe("review summary note", () => {
           codeReviewJson: "{}",
           versionsJson: "[]",
           changesJson: "[]",
-          notesJson: "[]",
+          commentsJson: "[]",
           discussionsJson: "[]",
           instructionsJson: "[]",
           projectMemoryJson: null,
           workspaceStrategy: "git",
           createdAt: timestamp,
         },
-        } as never,
+      } as never,
       reviewResult: {
         overview: {
           summary:
@@ -290,7 +290,7 @@ describe("review summary note", () => {
           tenantId: "tenant_1",
           dedupeKey: "dedupe_1",
           codeReviewId: 7,
-          noteId: 55,
+          commentId: 55,
           headSha: "abc123",
           status: "completed",
           payloadJson: "{}",
@@ -350,14 +350,14 @@ describe("review summary note", () => {
           codeReviewJson: "{}",
           versionsJson: "[]",
           changesJson: "[]",
-          notesJson: "[]",
+          commentsJson: "[]",
           discussionsJson: "[]",
           instructionsJson: "[]",
           projectMemoryJson: null,
           workspaceStrategy: "git",
           createdAt: timestamp,
         },
-        } as never,
+      } as never,
       reviewResult: {
         overview: {
           summary: "The targeted rerun looks good.",

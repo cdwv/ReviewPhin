@@ -16,19 +16,19 @@ export function createInteractionJobDedupeKey(input: {
   baseUrl: string;
   projectId: number;
   codeReviewId: number;
-  noteId: number;
-  noteAction?: "create" | "update" | undefined;
-  noteUpdatedAt?: string | undefined;
-  noteBody?: string | undefined;
+  commentId: number;
+  commentAction?: "create" | "update" | undefined;
+  commentUpdatedAt?: string | undefined;
+  commentBody?: string | undefined;
 }): string {
   return sha256(
     [
       normalizeBaseUrl(input.baseUrl),
       input.projectId,
       input.codeReviewId,
-      input.noteId,
-      input.noteAction ?? "create",
-      resolveInteractionJobNoteRevision(input),
+      input.commentId,
+      input.commentAction ?? "create",
+      resolveInteractionJobCommentRevision(input),
     ].join("::"),
   );
 }
@@ -71,20 +71,20 @@ function normalizeForKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function resolveInteractionJobNoteRevision(input: {
-  noteAction?: "create" | "update" | undefined;
-  noteUpdatedAt?: string | undefined;
-  noteBody?: string | undefined;
+function resolveInteractionJobCommentRevision(input: {
+  commentAction?: "create" | "update" | undefined;
+  commentUpdatedAt?: string | undefined;
+  commentBody?: string | undefined;
 }): string {
-  if (input.noteAction !== "update") {
+  if (input.commentAction !== "update") {
     return "initial";
   }
 
-  if (input.noteUpdatedAt && input.noteUpdatedAt.length > 0) {
-    return `updated-at:${input.noteUpdatedAt}`;
+  if (input.commentUpdatedAt && input.commentUpdatedAt.length > 0) {
+    return `updated-at:${input.commentUpdatedAt}`;
   }
 
-  return `body:${sha256(input.noteBody ?? "")}`;
+  return `body:${sha256(input.commentBody ?? "")}`;
 }
 
 function normalizeBaseUrl(value: string): string {

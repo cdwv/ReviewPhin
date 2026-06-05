@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app.js";
 import { createLogger } from "../src/logger.js";
+import GitLabPlatform from "../src/platforms/gitlab/platform.js";
 import type { WebhookReviewTrigger } from "../src/review/types.js";
 
 const tenant = {
@@ -67,9 +68,9 @@ describe("GitLab webhook route", () => {
   const logger = createLogger("silent");
   const trigger = {
     kind: "direct-mention" as const,
-    note: {
-      kind: "code-review-note" as const,
-      noteId: 55,
+    comment: {
+      kind: "code-review-comment" as const,
+      commentId: 55,
     },
   };
   const tenantRegistry = {
@@ -93,6 +94,9 @@ describe("GitLab webhook route", () => {
     tenantRegistry: tenantRegistry as never,
     reviewWorker: reviewWorker as never,
     queue: queue as never,
+    platforms: [
+      new GitLabPlatform(logger.child({ component: "GitLabPlatform" })),
+    ],
   });
 
   afterEach(async () => {
@@ -107,12 +111,16 @@ describe("GitLab webhook route", () => {
       tenantRegistry: tenantRegistry as never,
       reviewWorker: reviewWorker as never,
       queue: queue as never,
+      platforms: [
+        new GitLabPlatform(logger.child({ component: "GitLabPlatform" })),
+      ],
     });
   });
 
   it("queues a review job for direct mention comments", async () => {
     const app = await appPromise;
     reviewWorker.classifyWebhookTrigger.mockResolvedValueOnce(trigger);
+    const payload = createPayload("@review-bot please review this");
 
     const response = await app.inject({
       method: "POST",
@@ -120,7 +128,7 @@ describe("GitLab webhook route", () => {
       headers: {
         "x-gitlab-token": "secret",
       },
-      payload: createPayload("@review-bot please review this"),
+      payload,
     });
 
     expect(response.statusCode).toBe(202);
@@ -133,16 +141,42 @@ describe("GitLab webhook route", () => {
       1,
     );
     expect(queue.enqueue).toHaveBeenCalledWith("job_1");
+    const webhookRequestCalls = tenantRegistry.resolveWebhookTenant.mock
+      .calls as unknown[][];
+    const webhookRequest = webhookRequestCalls
+      .map((call) => call[2])
+      .find(
+        (
+          value,
+        ): value is {
+          pathSuffix: string;
+          rawBody: Buffer;
+        } =>
+          Boolean(
+            value &&
+            typeof value === "object" &&
+            "pathSuffix" in value &&
+            "rawBody" in value,
+          ),
+      );
+    expect(tenantRegistry.resolveWebhookTenant).toHaveBeenCalled();
+    expect(webhookRequest).toBeDefined();
+    expect(webhookRequest).toMatchObject({
+      pathSuffix: "note",
+    });
+    expect(webhookRequest?.rawBody.toString("utf8")).toBe(
+      JSON.stringify(payload),
+    );
   });
 
   it("queues a review job for follow-up comments in bot-owned threads", async () => {
     const app = await appPromise;
     reviewWorker.classifyWebhookTrigger.mockResolvedValueOnce({
       kind: "follow-up-comment",
-      note: {
-        kind: "discussion-note",
+      comment: {
+        kind: "discussion-comment",
         discussionId: "disc_1",
-        noteId: 55,
+        commentId: 55,
       },
     });
 

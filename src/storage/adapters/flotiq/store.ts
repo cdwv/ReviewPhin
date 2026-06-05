@@ -18,10 +18,18 @@ type JsonRecord = Record<string, unknown>;
 interface FlotiqEntityStoreOptions<
   TEntity extends object,
   TObject extends BaseObject<string>,
+  THydratedObject extends BaseObject<string>,
+  THydratedTwiceObject extends BaseObject<string>,
   TFilterField extends string,
 > {
   readonly logger?: Logger | undefined;
-  readonly api: ApiRequest<TObject, TObject, TObject, TFilterField>;
+  readonly api: ApiRequest<
+    TObject,
+    THydratedObject,
+    THydratedTwiceObject,
+    TFilterField
+  >;
+  readonly ctdName: string;
   readonly toRecord: (object: TObject) => TEntity;
   readonly toRemote: (entity: TEntity) => JsonRecord;
   readonly emptyStringNullFields?: readonly (keyof TEntity & string)[];
@@ -40,8 +48,16 @@ export function createFlotiqEntityStore<
   TOrder extends string,
   TObject extends BaseObject<string>,
   TFilterField extends string,
+  THydratedObject extends BaseObject<string> = TObject,
+  THydratedTwiceObject extends BaseObject<string> = TObject,
 >(
-  options: FlotiqEntityStoreOptions<TEntity, TObject, TFilterField>,
+  options: FlotiqEntityStoreOptions<
+    TEntity,
+    TObject,
+    THydratedObject,
+    THydratedTwiceObject,
+    TFilterField
+  >,
 ): EntityStore<TEntity, TFilters, TOrder> {
   const emptyStringNullFields = new Set(options.emptyStringNullFields ?? []);
   const relationFields = new Map<string, FlotiqRelationField>(
@@ -79,6 +95,7 @@ export function createFlotiqEntityStore<
       ...(input?.pageSize ? { limit: input.pageSize } : {}),
       ...(input?.page ? { page: input.page } : {}),
     };
+
     const response = await options.api.list(requestParams);
 
     return response.data;
@@ -125,7 +142,10 @@ export function createFlotiqEntityStore<
       params.ids = ids;
     }
 
-    options.logger?.debug({ params }, "Flotiq list params");
+    options.logger?.debug(
+      { params, ctdName: options.ctdName },
+      "Flotiq list params",
+    );
 
     return params;
   }
@@ -507,8 +527,8 @@ function translateRelationEqualsFilter(
   }
 
   return {
-    type: "includes",
-    filter: toRelationDataUrl(value, relationField),
+    type: "overlaps",
+    filter: [toRelationDataUrl(value, relationField)],
   };
 }
 

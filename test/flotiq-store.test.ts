@@ -256,6 +256,7 @@ describe("Flotiq entity store adapter", () => {
         string
       >({
         logger,
+        ctdName: "model_profile",
         api: api as unknown as TestFlotiqApi<RemoteModelProfile>,
         toRecord: (item) => ({
           name: readPath(item, "name") as string,
@@ -285,6 +286,7 @@ describe("Flotiq entity store adapter", () => {
 
       expect(logger.debug).toHaveBeenCalledWith(
         {
+          ctdName: "model_profile",
           params: {
             filters: {
               name: { type: "equals", filter: "alpha" },
@@ -345,6 +347,7 @@ describe("Flotiq entity store adapter", () => {
       RemoteModelProfile,
       string
     >({
+      ctdName: "model_profile",
       api: api as unknown as TestFlotiqApi<RemoteModelProfile>,
       toRecord: (item) => ({
         name: readPath(item, "name") as string,
@@ -669,6 +672,7 @@ describe("Flotiq entity store adapter", () => {
       RemoteInteractionRun,
       string
     >({
+      ctdName: "interaction_run",
       api: api as unknown as TestFlotiqApi<RemoteInteractionRun>,
       toRecord: (item) => ({
         id: readPath(item, "id") as string,
@@ -738,8 +742,8 @@ describe("Flotiq entity store adapter", () => {
     expect(api.listCalls.at(-1)).toMatchObject({
       filters: {
         "tenantId[*].dataUrl": {
-          type: "includes",
-          filter: "/api/v1/content/tenant/tenant-1",
+          type: "overlaps",
+          filter: ["/api/v1/content/tenant/tenant-1"],
         },
         "interactionJobId[*].dataUrl": {
           type: "overlaps",

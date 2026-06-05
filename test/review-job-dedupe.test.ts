@@ -76,7 +76,7 @@ describe("review job dedupe", () => {
             tenantId: tenant.id,
             dedupeKey: input.dedupeKey,
             codeReviewId: input.codeReviewId,
-            noteId: input.noteId,
+            commentId: input.commentId,
             headSha: input.headSha,
             status: "queued" as const,
             payloadJson: input.payloadJson,
@@ -105,9 +105,9 @@ describe("review job dedupe", () => {
 
     await worker.createInteractionJobFromWebhook(payload, tenant, {
       kind: "direct-mention",
-      note: {
-        kind: "code-review-note",
-        noteId: 55,
+      comment: {
+        kind: "code-review-comment",
+        commentId: 55,
       },
     });
 
@@ -117,13 +117,13 @@ describe("review job dedupe", () => {
           baseUrl: tenant.baseUrl,
           projectId: tenant.projectId,
           codeReviewId: 7,
-          noteId: 55,
-          noteAction: "update",
-          noteUpdatedAt: "2026-04-27T11:00:00.000Z",
-          noteBody: "@review-bot please review this again",
+          commentId: 55,
+          commentAction: "update",
+          commentUpdatedAt: "2026-04-27T11:00:00.000Z",
+          commentBody: "@review-bot please review this again",
         }),
         headSha: "abc123",
-        noteId: 55,
+        commentId: 55,
       }),
     );
   });

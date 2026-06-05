@@ -68,7 +68,7 @@ export class CodeReviewContextHydrator {
       codeReviewJson: JSON.stringify(materializedContext.mergeRequest),
       versionsJson: JSON.stringify(versions),
       changesJson: JSON.stringify(materializedContext.changes),
-      notesJson: JSON.stringify(materializedContext.notes),
+      commentsJson: JSON.stringify(materializedContext.notes),
       discussionsJson: JSON.stringify(materializedContext.discussions),
       instructionsJson: JSON.stringify(
         materializedContext.workspace.instructionFiles,
@@ -84,7 +84,7 @@ export class CodeReviewContextHydrator {
         codeReviewId: job.codeReviewId,
         changedFiles: materializedContext.changes.length,
         discussionCount: materializedContext.discussions.length,
-        noteCount: materializedContext.notes.length,
+        commentCount: materializedContext.notes.length,
         workspaceStrategy: materializedContext.workspace.strategy,
       },
       "hydrated merge request context",

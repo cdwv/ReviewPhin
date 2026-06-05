@@ -36,7 +36,20 @@ function createPayload(): GitLabNoteHookPayload {
   };
 }
 
-function createStorageForTenants(...tenants: ReturnType<typeof createGitLabTenantRecord>[]) {
+function createWebhookRequest(payload: GitLabNoteHookPayload) {
+  return {
+    headers: {
+      "x-gitlab-token": "secret",
+    },
+    body: payload,
+    rawBody: Buffer.from(JSON.stringify(payload)),
+    pathSuffix: "note",
+  };
+}
+
+function createStorageForTenants(
+  ...tenants: ReturnType<typeof createGitLabTenantRecord>[]
+) {
   return {
     stores: {
       tenants: {
@@ -79,12 +92,7 @@ describe("TenantRegistry", () => {
     const tenant = await registry.resolveWebhookTenant(
       platform,
       createPayload(),
-      {
-        headers: {
-          "x-gitlab-token": "secret",
-        },
-        body: createPayload(),
-      },
+      createWebhookRequest(createPayload()),
     );
     expect(tenant?.id).toBe("tenant_prefixed");
   });
@@ -103,12 +111,11 @@ describe("TenantRegistry", () => {
     const payload = createPayload();
     delete payload.project.web_url;
 
-    const tenant = await registry.resolveWebhookTenant(platform, payload, {
-      headers: {
-        "x-gitlab-token": "secret",
-      },
-      body: payload,
-    });
+    const tenant = await registry.resolveWebhookTenant(
+      platform,
+      payload,
+      createWebhookRequest(payload),
+    );
 
     expect(tenant?.id).toBe("tenant-prefixed");
   });

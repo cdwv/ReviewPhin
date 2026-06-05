@@ -45,7 +45,7 @@ describe("HarnessChatterRunner", () => {
             type: "blob",
             data: "AQID",
             mimeType: "image/png",
-            displayName: "trigger-note-55-diagram.png",
+            displayName: "trigger-comment-55-diagram.png",
           },
         ],
         phase: "memory",
@@ -73,7 +73,7 @@ describe("HarnessChatterRunner", () => {
             type: "blob",
             data: "AQID",
             mimeType: "image/png",
-            displayName: "trigger-note-55-diagram.png",
+            displayName: "trigger-comment-55-diagram.png",
           },
         ],
         model: "gpt-5.4-mini",
@@ -119,7 +119,7 @@ describe("HarnessChatterRunner", () => {
             type: "blob",
             data: "AQID",
             mimeType: "image/png",
-            displayName: "trigger-note-55-diagram.png",
+            displayName: "trigger-comment-55-diagram.png",
           },
         ],
         phase: "reply",
@@ -146,7 +146,7 @@ describe("HarnessChatterRunner", () => {
             type: "blob",
             data: "AQID",
             mimeType: "image/png",
-            displayName: "trigger-note-55-diagram.png",
+            displayName: "trigger-comment-55-diagram.png",
           },
         ],
         workingDirectory: "H:\\repo",
@@ -170,7 +170,7 @@ describe("HarnessChatterRunner", () => {
         run: vi.fn(async () => ({
           response: {
             data: {
-              content: "Good question first.\n\n{\"note\":\"ignored here\"}",
+              content: 'Good question first.\n\n{"note":"ignored here"}',
             },
           },
           parsed: {
@@ -179,7 +179,7 @@ describe("HarnessChatterRunner", () => {
               {
                 target: {
                   kind: "summary-discussion-reply",
-                  noteId: 55,
+                  commentId: 55,
                   discussionId: "disc_summary",
                 },
                 replyBody: "The payload is still valid.",
@@ -198,7 +198,7 @@ describe("HarnessChatterRunner", () => {
             type: "blob",
             data: "AQID",
             mimeType: "image/png",
-            displayName: "trigger-note-55-diagram.png",
+            displayName: "trigger-comment-55-diagram.png",
           },
         ],
         phase: "reply",
@@ -223,12 +223,72 @@ describe("HarnessChatterRunner", () => {
         {
           target: {
             kind: "summary-discussion-reply",
-            noteId: 55,
+            commentId: 55,
             discussionId: "disc_summary",
           },
           replyBody: "The payload is still valid.",
         },
       ],
+    });
+  });
+
+  it("accepts an empty memory summary when memory is skipped", async () => {
+    const runner = new HarnessChatterRunner({
+      modelConfig: createModelConfig(),
+      harnessRuntime: {
+        run: vi.fn(async () => ({
+          response: {
+            data: {
+              content: JSON.stringify({
+                memory: {
+                  status: "skipped",
+                  summary: "",
+                },
+                replies: [],
+              }),
+            },
+          },
+          parsed: {
+            memory: {
+              status: "skipped",
+              summary: "",
+            },
+            replies: [],
+          },
+          events: [],
+        })),
+      } as never,
+    });
+
+    const result = await runner.run(
+      {
+        attachments: [
+          {
+            type: "blob",
+            data: "AQID",
+            mimeType: "image/png",
+            displayName: "trigger-comment-55-diagram.png",
+          },
+        ],
+        phase: "reply",
+        replyStyle: "direct-answer",
+        trigger: createTrigger(),
+        responseTargets: [createTrigger().responseTarget],
+        reviewContext: createReviewContext(),
+        projectMemory: {
+          enabled: true,
+          page: null,
+          entries: [],
+        },
+      },
+      {
+        tenant: createTenantRuntimeContext(),
+      },
+    );
+
+    expect(result.memory).toEqual({
+      status: "skipped",
+      summary: "",
     });
   });
 
@@ -260,7 +320,7 @@ describe("HarnessChatterRunner", () => {
               type: "blob",
               data: "AQID",
               mimeType: "image/png",
-              displayName: "trigger-note-55-diagram.png",
+              displayName: "trigger-comment-55-diagram.png",
             },
           ],
           phase: "reply",
@@ -319,18 +379,18 @@ function createTenantRuntimeContext(): HarnessTenantContext {
 function createTrigger() {
   return {
     kind: "summary-follow-up" as const,
-    noteId: 55,
+    commentId: 55,
     authorUsername: "developer",
     body: "For future reference, keep the tone concise.",
     instruction: "For future reference, keep the tone concise.",
-    targetThreadId: null,
-    targetDiscussionId: "disc_summary",
-    targetThreadTitle: null,
+    targetDiscussionId: null,
+    targetPlatformDiscussionId: "disc_summary",
+    targetDiscussionTitle: null,
     responseTarget: {
       kind: "summary-discussion-reply" as const,
       locationType: "summary-discussion" as const,
       triggerKind: "summary-follow-up" as const,
-      noteId: 55,
+      commentId: 55,
       discussionId: "disc_summary",
       authorUsername: "developer",
       body: "For future reference, keep the tone concise.",
@@ -343,9 +403,9 @@ function createReviewContext(): ReviewContext {
   return {
     attachments: [
       {
-        sourceKind: "trigger-note",
-        noteId: 55,
-        displayName: "trigger-note-55-diagram.png",
+        sourceKind: "trigger-comment",
+        commentId: 55,
+        displayName: "trigger-comment-55-diagram.png",
         contentType: "image/png",
       },
     ],
@@ -361,7 +421,7 @@ function createReviewContext(): ReviewContext {
       authorUsername: "developer",
     },
     changes: [],
-    notes: [],
+    comments: [],
     discussions: [],
     instructionFiles: [],
     projectMemory: {
@@ -370,14 +430,14 @@ function createReviewContext(): ReviewContext {
       entries: [],
     },
     trigger: createTrigger(),
-    priorThreads: [],
+    priorDiscussions: [],
     scope: {
       mode: "first-pass-full" as const,
       scopeSummary: "Full review",
       widenScopeHints: [],
       allChangedFiles: [],
       omittedChangedFiles: [],
-      targetThread: null,
+      targetDiscussion: null,
       previousReview: null,
       priorFindings: [],
       deltaSincePreviousReview: null,

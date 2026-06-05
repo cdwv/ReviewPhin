@@ -1,9 +1,9 @@
 import { isReviewSummaryNoteBody } from "../../review/summary.js";
 import type {
-  ProviderThreadContext,
+  ProviderDiscussionContext,
   ResponseTarget,
   ReviewTriggerContext,
-  TriggerNoteReference,
+  TriggerCommentReference,
   WebhookReviewTrigger,
 } from "../../review/types.js";
 import type { TenantRecord } from "../../storage/contract/index.js";
@@ -11,10 +11,7 @@ import { isBotUser } from "./bot-user.js";
 import type { GitLabClient } from "./client.js";
 import { getGitLabTenantConfig } from "./tenant-config.js";
 import type { GitLabDiscussion, GitLabNoteHookPayload } from "./types.js";
-import {
-  containsBotMention,
-  extractBotMentionInstruction,
-} from "./webhook.js";
+import { containsBotMention, extractBotMentionInstruction } from "./webhook.js";
 
 export async function classifyGitLabWebhookTrigger(input: {
   payload: GitLabNoteHookPayload;
@@ -39,13 +36,13 @@ export async function classifyGitLabWebhookTrigger(input: {
     tenantConfig.projectId,
     payload.merge_request.iid,
   );
-  const note = locateTriggerNoteReference(
+  const comment = locateTriggerCommentReference(
     discussions,
     payload.object_attributes.id,
   );
-  if (note.kind === "discussion-note") {
+  if (comment.kind === "discussion-comment") {
     const discussion =
-      discussions.find((entry) => entry.id === note.discussionId) ?? null;
+      discussions.find((entry) => entry.id === comment.discussionId) ?? null;
     const rootNote = discussion?.notes[0];
     if (
       rootNote &&
@@ -54,7 +51,7 @@ export async function classifyGitLabWebhookTrigger(input: {
     ) {
       return {
         kind: "follow-up-comment",
-        note,
+        comment,
       };
     }
 
@@ -65,20 +62,23 @@ export async function classifyGitLabWebhookTrigger(input: {
     ) {
       return {
         kind: "summary-follow-up",
-        note,
+        comment,
       };
     }
   }
 
   if (
-    !containsBotMention(payload.object_attributes.note, tenantConfig.botUsername)
+    !containsBotMention(
+      payload.object_attributes.note,
+      tenantConfig.botUsername,
+    )
   ) {
     return null;
   }
 
   return {
     kind: "direct-mention",
-    note,
+    comment,
   };
 }
 
@@ -88,30 +88,31 @@ export function buildGitLabReviewTriggerContext(input: {
   payload: GitLabNoteHookPayload;
   tenant: TenantRecord;
   discussions: GitLabDiscussion[];
-  priorThreads: ProviderThreadContext[];
+  priorDiscussions: ProviderDiscussionContext[];
 }): ReviewTriggerContext {
   const tenantConfig = getGitLabTenantConfig(input.tenant);
-  const note = locateTriggerNoteReference(
+  const comment = locateTriggerCommentReference(
     input.discussions,
     input.payload.object_attributes.id,
   );
-  const responseTargetNote = locateResponseTargetReference(
+  const responseTargetComment = locateResponseTargetReference(
     input.discussions,
     input.payload.object_attributes.id,
   );
-  const targetThread =
-    input.priorThreads.find((thread) =>
-      thread.humanReplies.some(
-        (reply) => reply.noteId === input.payload.object_attributes.id,
+  const targetDiscussion =
+    input.priorDiscussions.find((discussion) =>
+      discussion.humanReplies.some(
+        (reply) =>
+          reply.platformCommentId === input.payload.object_attributes.id,
       ),
     ) ?? null;
   const kind =
-    targetThread !== null
+    targetDiscussion !== null
       ? "follow-up-comment"
-      : note.kind === "discussion-note" &&
+      : comment.kind === "discussion-comment" &&
           isSummaryDiscussionReply(
             input.discussions,
-            note.discussionId,
+            comment.discussionId,
             input.tenant,
           )
         ? "summary-follow-up"
@@ -126,16 +127,16 @@ export function buildGitLabReviewTriggerContext(input: {
 
   return {
     kind,
-    noteId: input.payload.object_attributes.id,
+    commentId: input.payload.object_attributes.id,
     authorUsername: input.payload.user?.username ?? null,
     body: input.payload.object_attributes.note,
     instruction,
-    targetThreadId: targetThread?.threadId ?? null,
-    targetDiscussionId: targetThread?.discussionId ?? null,
-    targetThreadTitle: targetThread?.title ?? null,
+    targetDiscussionId: targetDiscussion?.discussionId ?? null,
+    targetPlatformDiscussionId: targetDiscussion?.platformDiscussionId ?? null,
+    targetDiscussionTitle: targetDiscussion?.title ?? null,
     responseTarget: buildResponseTarget({
       kind,
-      note: responseTargetNote,
+      comment: responseTargetComment,
       authorUsername: input.payload.user?.username ?? null,
       body: input.payload.object_attributes.note,
       instruction,
@@ -155,58 +156,58 @@ function isSummaryDiscussionReply(
   const rootNote = discussion?.notes[0];
   return Boolean(
     rootNote &&
-      isBotUser(rootNote.author, tenant) &&
-      isReviewSummaryNoteBody(rootNote.body),
+    isBotUser(rootNote.author, tenant) &&
+    isReviewSummaryNoteBody(rootNote.body),
   );
 }
 
-export function locateTriggerNoteReference(
+export function locateTriggerCommentReference(
   discussions: GitLabDiscussion[],
-  noteId: number,
-): TriggerNoteReference {
+  commentId: number,
+): TriggerCommentReference {
   for (const discussion of discussions) {
-    if (!discussion.notes.some((note) => note.id === noteId)) {
+    if (!discussion.notes.some((note) => note.id === commentId)) {
       continue;
     }
 
     if (!discussion.individual_note) {
       return {
-        kind: "discussion-note",
+        kind: "discussion-comment",
         discussionId: discussion.id,
-        noteId,
+        commentId,
       };
     }
   }
 
   return {
-    kind: "code-review-note",
-    noteId,
+    kind: "code-review-comment",
+    commentId,
   };
 }
 
 function locateResponseTargetReference(
   discussions: GitLabDiscussion[],
-  noteId: number,
-): TriggerNoteReference {
+  commentId: number,
+): TriggerCommentReference {
   for (const discussion of discussions) {
-    if (discussion.notes.some((note) => note.id === noteId)) {
+    if (discussion.notes.some((note) => note.id === commentId)) {
       return {
-        kind: "discussion-note",
+        kind: "discussion-comment",
         discussionId: discussion.id,
-        noteId,
+        commentId,
       };
     }
   }
 
   return {
-    kind: "code-review-note",
-    noteId,
+    kind: "code-review-comment",
+    commentId,
   };
 }
 
 function buildResponseTarget(input: {
   kind: ReviewTriggerContext["kind"];
-  note: TriggerNoteReference;
+  comment: TriggerCommentReference;
   authorUsername: string | null;
   body: string;
   instruction: string | null;
@@ -216,10 +217,10 @@ function buildResponseTarget(input: {
       kind: "summary-discussion-reply",
       locationType: "summary-discussion",
       triggerKind: input.kind,
-      noteId: input.note.noteId,
+      commentId: input.comment.commentId,
       discussionId:
-        input.note.kind === "discussion-note"
-          ? input.note.discussionId
+        input.comment.kind === "discussion-comment"
+          ? input.comment.discussionId
           : undefined,
       authorUsername: input.authorUsername,
       body: input.body,
@@ -229,13 +230,13 @@ function buildResponseTarget(input: {
 
   if (input.kind === "follow-up-comment") {
     return {
-      kind: "finding-thread-reply",
-      locationType: "finding-thread",
+      kind: "finding-discussion-reply",
+      locationType: "finding-discussion",
       triggerKind: input.kind,
-      noteId: input.note.noteId,
+      commentId: input.comment.commentId,
       discussionId:
-        input.note.kind === "discussion-note"
-          ? input.note.discussionId
+        input.comment.kind === "discussion-comment"
+          ? input.comment.discussionId
           : undefined,
       authorUsername: input.authorUsername,
       body: input.body,
@@ -245,18 +246,18 @@ function buildResponseTarget(input: {
 
   return {
     kind:
-      input.note.kind === "discussion-note"
+      input.comment.kind === "discussion-comment"
         ? "discussion-reply"
-        : "code-review-note",
+        : "code-review-comment",
     locationType:
-      input.note.kind === "discussion-note"
-        ? "discussion-note"
-        : "code-review-note",
+      input.comment.kind === "discussion-comment"
+        ? "discussion-comment"
+        : "code-review-comment",
     triggerKind: input.kind,
-    noteId: input.note.noteId,
+    commentId: input.comment.commentId,
     discussionId:
-      input.note.kind === "discussion-note"
-        ? input.note.discussionId
+      input.comment.kind === "discussion-comment"
+        ? input.comment.discussionId
         : undefined,
     authorUsername: input.authorUsername,
     body: input.body,

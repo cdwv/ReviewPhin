@@ -14,11 +14,11 @@ interface SuggestionLike {
   endLine: number;
 }
 
-const REVIEW_THREAD_MARKER_PREFIX = "reviewphin-review-thread:";
-const REVIEW_THREAD_MARKER_PATTERN =
-  /\n*\[comment\]: <> \((?:gitlab-agentic|reviewphin)-review-thread:([^\s)]+)\)\s*/g;
-const REVIEW_THREAD_MARKER_EXTRACTOR =
-  /\[comment\]: <> \((?:gitlab-agentic|reviewphin)-review-thread:([^\s)]+)\)/;
+const REVIEW_DISCUSSION_MARKER_PREFIX = "reviewphin-review-discussion:";
+const REVIEW_DISCUSSION_MARKER_PATTERN =
+  /\n*\[comment\]: <> \((?:gitlab-agentic|reviewphin)-review-discussion:([^\s)]+)\)\s*/g;
+const REVIEW_DISCUSSION_MARKER_EXTRACTOR =
+  /\[comment\]: <> \((?:gitlab-agentic|reviewphin)-review-discussion:([^\s)]+)\)/;
 
 export function renderSuggestionMarkdown(
   suggestion: SuggestionLike | null | undefined,
@@ -76,16 +76,19 @@ export function renderReviewFindingBody(
   );
 }
 
-export function appendReviewThreadMarker(body: string, marker: string): string {
-  return `${body}\n\n[comment]: <> (${REVIEW_THREAD_MARKER_PREFIX}${marker})`;
+export function appendReviewDiscussionMarker(
+  body: string,
+  marker: string,
+): string {
+  return `${body}\n\n[comment]: <> (${REVIEW_DISCUSSION_MARKER_PREFIX}${marker})`;
 }
 
-export function stripReviewThreadMarker(body: string): string {
-  return body.replace(REVIEW_THREAD_MARKER_PATTERN, "\n").trim();
+export function stripReviewDiscussionMarker(body: string): string {
+  return body.replace(REVIEW_DISCUSSION_MARKER_PATTERN, "\n").trim();
 }
 
-export function extractReviewThreadMarker(body: string): string | null {
-  const match = REVIEW_THREAD_MARKER_EXTRACTOR.exec(body);
+export function extractReviewDiscussionMarker(body: string): string | null {
+  const match = REVIEW_DISCUSSION_MARKER_EXTRACTOR.exec(body);
   return match?.[1] ?? null;
 }
 

@@ -17,7 +17,7 @@ The app loads the module from `STORAGE_PROVIDER_MODULE` when set, otherwise it u
 ## Compatibility rules
 
 - Your adapter must report an exact storage contract revision match.
-- The current required revision is `storage-v000`.
+- The current required revision is `storage-v001`.
 - The app validates compatibility in two phases:
   1. `getSupportedStorageContract()` is checked before `prepare()` is called.
   2. `prepare()` must return a `StoragePreparationResult` whose `storageContractRevision` is also checked after `prepare()` returns.

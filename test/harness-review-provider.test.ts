@@ -94,7 +94,7 @@ describe("HarnessReviewProvider", () => {
           type: "blob",
           data: "AQID",
           mimeType: "image/png",
-          displayName: "trigger-note-55-diagram.png",
+          displayName: "trigger-comment-55-diagram.png",
         },
       ],
       tenant: tenantRuntime,
@@ -108,7 +108,7 @@ describe("HarnessReviewProvider", () => {
             type: "blob",
             data: "AQID",
             mimeType: "image/png",
-            displayName: "trigger-note-55-diagram.png",
+            displayName: "trigger-comment-55-diagram.png",
           },
         ],
         model: "gpt-5.4",
@@ -136,7 +136,7 @@ describe("HarnessReviewProvider", () => {
             findings: [],
             priorDispositions: [
               {
-                threadId: "thread_1",
+                discussionId: "thread_1",
                 action: "resolve",
                 resolution: "dismissed",
               },
@@ -146,7 +146,7 @@ describe("HarnessReviewProvider", () => {
               targets: [
                 {
                   kind: "discussion-reply",
-                  noteId: 55,
+                  commentId: 55,
                   discussionId: "disc_1",
                   guidance:
                     "The concern is not applicable because the value is validated before this path runs.",
@@ -164,7 +164,7 @@ describe("HarnessReviewProvider", () => {
         findings: [],
         priorDispositions: [
           {
-            threadId: "thread_1",
+            discussionId: "thread_1",
             action: "resolve",
             resolution: "dismissed",
           },
@@ -174,7 +174,7 @@ describe("HarnessReviewProvider", () => {
           targets: [
             {
               kind: "discussion-reply",
-              noteId: 55,
+              commentId: 55,
               discussionId: "disc_1",
               guidance:
                 "The concern is not applicable because the value is validated before this path runs.",
@@ -203,7 +203,7 @@ describe("HarnessReviewProvider", () => {
           type: "blob",
           data: "AQID",
           mimeType: "image/png",
-          displayName: "trigger-note-55-diagram.png",
+          displayName: "trigger-comment-55-diagram.png",
         },
       ],
       tenant: createTenantRuntimeContext(),
@@ -211,7 +211,7 @@ describe("HarnessReviewProvider", () => {
 
     expect(result.priorDispositions).toEqual([
       {
-        threadId: "thread_1",
+        discussionId: "thread_1",
         action: "resolve",
         resolution: "dismissed",
       },
@@ -222,7 +222,7 @@ describe("HarnessReviewProvider", () => {
       targets: [
         {
           kind: "discussion-reply",
-          noteId: 55,
+          commentId: 55,
           discussionId: "disc_1",
           guidance:
             "The concern is not applicable because the value is validated before this path runs.",
@@ -249,7 +249,7 @@ describe("HarnessReviewProvider", () => {
             findings: [],
             priorDispositions: [
               {
-                threadId: "thread_1",
+                discussionId: "thread_1",
                 action: "resolve",
                 resolution: "resolved",
               },
@@ -259,7 +259,7 @@ describe("HarnessReviewProvider", () => {
               targets: [
                 {
                   kind: "discussion-reply",
-                  noteId: 55,
+                  commentId: 55,
                   discussionId: "disc_1",
                   guidance: "   ",
                 },
@@ -281,7 +281,7 @@ describe("HarnessReviewProvider", () => {
         findings: [],
         priorDispositions: [
           {
-            threadId: "thread_1",
+            discussionId: "thread_1",
             action: "resolve",
             resolution: "resolved",
           },
@@ -291,7 +291,7 @@ describe("HarnessReviewProvider", () => {
           targets: [
             {
               kind: "discussion-reply",
-              noteId: 55,
+              commentId: 55,
               discussionId: "disc_1",
               guidance: "   ",
             },
@@ -322,7 +322,7 @@ describe("HarnessReviewProvider", () => {
       targets: [
         {
           kind: "discussion-reply",
-          noteId: 55,
+          commentId: 55,
           discussionId: "disc_1",
           guidance: "   ",
         },
@@ -375,9 +375,9 @@ function createReviewContext(): ReviewContext {
   return {
     attachments: [
       {
-        sourceKind: "trigger-note",
-        noteId: 55,
-        displayName: "trigger-note-55-diagram.png",
+        sourceKind: "trigger-comment",
+        commentId: 55,
+        displayName: "trigger-comment-55-diagram.png",
         contentType: "image/png",
       },
     ],
@@ -393,7 +393,7 @@ function createReviewContext(): ReviewContext {
       authorUsername: "developer",
     },
     changes: [],
-    notes: [],
+    comments: [],
     discussions: [],
     instructionFiles: [],
     projectMemory: {
@@ -408,32 +408,32 @@ function createReviewContext(): ReviewContext {
     },
     trigger: {
       kind: "summary-follow-up",
-      noteId: 55,
+      commentId: 55,
       authorUsername: "developer",
       body: "Please commit this to memory.",
       instruction: "Please commit this to memory.",
-      targetThreadId: null,
       targetDiscussionId: null,
-      targetThreadTitle: null,
+      targetPlatformDiscussionId: null,
+      targetDiscussionTitle: null,
       responseTarget: {
         kind: "summary-discussion-reply",
         locationType: "summary-discussion",
         triggerKind: "summary-follow-up",
-        noteId: 55,
+        commentId: 55,
         discussionId: "disc_summary",
         authorUsername: "developer",
         body: "Please commit this to memory.",
         instruction: "Please commit this to memory.",
       },
     },
-    priorThreads: [],
+    priorDiscussions: [],
     scope: {
       mode: "incremental-rereview",
-      scopeSummary: "Summary note requested another review pass.",
+      scopeSummary: "Summary comment requested another review pass.",
       widenScopeHints: [],
       allChangedFiles: [],
       omittedChangedFiles: [],
-      targetThread: null,
+      targetDiscussion: null,
       previousReview: null,
       priorFindings: [],
       deltaSincePreviousReview: null,

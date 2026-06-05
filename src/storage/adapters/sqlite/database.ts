@@ -577,8 +577,8 @@ export class SqliteStoreDatabase {
           prompt_mode,
           prompt_chars,
           prompt_context_changed_files,
-          prompt_context_prior_threads,
-          prompt_context_notes,
+          prompt_context_prior_discussions,
+          prompt_context_comments,
           assistant_turns,
           assistant_calls,
           tool_executions,
@@ -602,8 +602,8 @@ export class SqliteStoreDatabase {
           prompt_mode = excluded.prompt_mode,
           prompt_chars = excluded.prompt_chars,
           prompt_context_changed_files = excluded.prompt_context_changed_files,
-          prompt_context_prior_threads = excluded.prompt_context_prior_threads,
-          prompt_context_notes = excluded.prompt_context_notes,
+          prompt_context_prior_discussions = excluded.prompt_context_prior_discussions,
+          prompt_context_comments = excluded.prompt_context_comments,
           assistant_turns = excluded.assistant_turns,
           assistant_calls = excluded.assistant_calls,
           tool_executions = excluded.tool_executions,
@@ -628,8 +628,8 @@ export class SqliteStoreDatabase {
         input.promptMode,
         input.promptChars,
         input.promptContextChangedFiles,
-        input.promptContextPriorThreads,
-        input.promptContextNotes,
+        input.promptContextPriorDiscussions,
+        input.promptContextComments,
         input.assistantTurns,
         input.assistantCalls,
         input.toolExecutions,
@@ -668,9 +668,9 @@ export class SqliteStoreDatabase {
     const database = this.getDb();
     const existing = database
       .prepare(
-        "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND code_review_id = ? AND platform_thread_id = ?",
+        "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND code_review_id = ? AND platform_discussion_id = ?",
       )
-      .get(input.tenantId, input.codeReviewId, input.platformThreadId) as
+      .get(input.tenantId, input.codeReviewId, input.platformDiscussionId) as
       | Row
       | undefined;
 
@@ -692,21 +692,21 @@ export class SqliteStoreDatabase {
           severity,
           category,
           body,
-          platform_thread_id,
+          platform_discussion_id,
           platform_comment_id,
           anchor_json,
           position_json,
           bot_discussion,
-          bot_note,
-          note_author_id,
-          note_author_username,
+          bot_comment,
+          comment_author_id,
+          comment_author_username,
           status,
           last_interaction_run_id,
           created_at,
           updated_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(tenant_id, code_review_id, platform_thread_id) DO UPDATE SET
+        ON CONFLICT(tenant_id, code_review_id, platform_discussion_id) DO UPDATE SET
           identity_key = excluded.identity_key,
           finding_fingerprint = excluded.finding_fingerprint,
           title = excluded.title,
@@ -717,9 +717,9 @@ export class SqliteStoreDatabase {
           anchor_json = excluded.anchor_json,
           position_json = excluded.position_json,
           bot_discussion = excluded.bot_discussion,
-          bot_note = excluded.bot_note,
-          note_author_id = excluded.note_author_id,
-          note_author_username = excluded.note_author_username,
+          bot_comment = excluded.bot_comment,
+          comment_author_id = excluded.comment_author_id,
+          comment_author_username = excluded.comment_author_username,
           status = excluded.status,
           last_interaction_run_id = excluded.last_interaction_run_id,
           updated_at = excluded.updated_at
@@ -735,14 +735,14 @@ export class SqliteStoreDatabase {
         input.severity,
         input.category,
         input.body,
-        input.platformThreadId,
+        input.platformDiscussionId,
         input.platformCommentId,
         input.anchorJson,
         input.positionJson,
         input.botDiscussion ? 1 : 0,
-        input.botNote ? 1 : 0,
-        input.noteAuthorId,
-        input.noteAuthorUsername,
+        input.botComment ? 1 : 0,
+        input.commentAuthorId,
+        input.commentAuthorUsername,
         input.status,
         input.lastInteractionRunId,
         existing ? String(existing.created_at) : now,
@@ -751,15 +751,15 @@ export class SqliteStoreDatabase {
 
     const row = database
       .prepare(
-        "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND code_review_id = ? AND platform_thread_id = ?",
+        "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND code_review_id = ? AND platform_discussion_id = ?",
       )
-      .get(input.tenantId, input.codeReviewId, input.platformThreadId) as
+      .get(input.tenantId, input.codeReviewId, input.platformDiscussionId) as
       | Row
       | undefined;
 
     if (!row) {
       throw new Error(
-        `Failed to upsert discussion mapping for discussion ${input.platformThreadId}`,
+        `Failed to upsert discussion mapping for discussion ${input.platformDiscussionId}`,
       );
     }
 
@@ -991,7 +991,7 @@ export class SqliteStoreDatabase {
           tenant_id,
           dedupe_key,
           code_review_id,
-          note_id,
+          comment_id,
           head_sha,
           status,
           payload_json,
@@ -1011,7 +1011,7 @@ export class SqliteStoreDatabase {
         entity.tenantId,
         entity.dedupeKey,
         entity.codeReviewId,
-        entity.noteId,
+        entity.commentId,
         entity.headSha,
         entity.status,
         entity.payloadJson,
@@ -1040,7 +1040,7 @@ export class SqliteStoreDatabase {
       .prepare(
         `
         UPDATE interaction_jobs
-        SET tenant_id = ?, dedupe_key = ?, code_review_id = ?, note_id = ?, head_sha = ?,
+        SET tenant_id = ?, dedupe_key = ?, code_review_id = ?, comment_id = ?, head_sha = ?,
             status = ?, payload_json = ?, retry_count = ?, last_error = ?, enqueued_at = ?, started_at = ?, finished_at = ?
         WHERE id = ?
       `,
@@ -1049,7 +1049,7 @@ export class SqliteStoreDatabase {
         entity.tenantId,
         entity.dedupeKey,
         entity.codeReviewId,
-        entity.noteId,
+        entity.commentId,
         entity.headSha,
         entity.status,
         entity.payloadJson,
@@ -1155,7 +1155,7 @@ export class SqliteStoreDatabase {
           code_review_json,
           versions_json,
           changes_json,
-          notes_json,
+          comments_json,
           discussions_json,
           instructions_json,
           project_memory_json,
@@ -1171,7 +1171,7 @@ export class SqliteStoreDatabase {
           code_review_json = excluded.code_review_json,
           versions_json = excluded.versions_json,
           changes_json = excluded.changes_json,
-          notes_json = excluded.notes_json,
+          comments_json = excluded.comments_json,
           discussions_json = excluded.discussions_json,
           instructions_json = excluded.instructions_json,
           project_memory_json = excluded.project_memory_json,
@@ -1188,7 +1188,7 @@ export class SqliteStoreDatabase {
         entity.codeReviewJson,
         entity.versionsJson,
         entity.changesJson,
-        entity.notesJson,
+        entity.commentsJson,
         entity.discussionsJson,
         entity.instructionsJson,
         entity.projectMemoryJson,
@@ -1432,8 +1432,8 @@ export class SqliteStoreDatabase {
       promptMode: entity.promptMode,
       promptChars: entity.promptChars,
       promptContextChangedFiles: entity.promptContextChangedFiles,
-      promptContextPriorThreads: entity.promptContextPriorThreads,
-      promptContextNotes: entity.promptContextNotes,
+      promptContextPriorDiscussions: entity.promptContextPriorDiscussions,
+      promptContextComments: entity.promptContextComments,
       assistantTurns: entity.assistantTurns,
       assistantCalls: entity.assistantCalls,
       toolExecutions: entity.toolExecutions,
@@ -1681,14 +1681,14 @@ export class SqliteStoreDatabase {
       severity: entity.severity,
       category: entity.category,
       body: entity.body,
-      platformThreadId: entity.platformThreadId,
+      platformDiscussionId: entity.platformDiscussionId,
       platformCommentId: entity.platformCommentId,
       anchorJson: entity.anchorJson,
       positionJson: entity.positionJson,
       botDiscussion: entity.botDiscussion,
-      botNote: entity.botNote,
-      noteAuthorId: entity.noteAuthorId,
-      noteAuthorUsername: entity.noteAuthorUsername,
+      botComment: entity.botComment,
+      commentAuthorId: entity.commentAuthorId,
+      commentAuthorUsername: entity.commentAuthorUsername,
       status: entity.status,
       lastInteractionRunId: entity.lastInteractionRunId,
     });
@@ -1880,7 +1880,7 @@ const discussionMappingFilterColumns: Record<
   id: "id",
   tenantId: "tenant_id",
   codeReviewId: "code_review_id",
-  platformThreadId: "platform_thread_id",
+  platformDiscussionId: "platform_discussion_id",
   identityKey: "identity_key",
   status: "status",
   updatedAt: "updated_at",
@@ -1893,7 +1893,7 @@ const discussionMappingOrderColumns: Record<
 > = {
   tenantId: "tenant_id",
   codeReviewId: "code_review_id",
-  platformThreadId: "platform_thread_id",
+  platformDiscussionId: "platform_discussion_id",
   identityKey: "identity_key",
   status: "status",
   updatedAt: "updated_at",
@@ -2200,7 +2200,7 @@ function mapInteractionJobRow(row: Row): InteractionJobRecord {
     tenantId: asString(row.tenant_id),
     dedupeKey: asString(row.dedupe_key),
     codeReviewId: asNumber(row.code_review_id),
-    noteId: asNumber(row.note_id),
+    commentId: asNumber(row.comment_id),
     headSha: asString(row.head_sha),
     status: asString(row.status) as InteractionJobRecord["status"],
     payloadJson: asString(row.payload_json),
@@ -2223,14 +2223,14 @@ function mapDiscussionMappingRow(row: Row): DiscussionMappingRecord {
     severity: asString(row.severity),
     category: asString(row.category),
     body: asString(row.body),
-    platformThreadId: asString(row.platform_thread_id),
+    platformDiscussionId: asString(row.platform_discussion_id),
     platformCommentId: asNumber(row.platform_comment_id),
     anchorJson: asNullableString(row.anchor_json),
     positionJson: asNullableString(row.position_json),
     botDiscussion: asBoolean(row.bot_discussion),
-    botNote: asBoolean(row.bot_note),
-    noteAuthorId: asNullableNumber(row.note_author_id),
-    noteAuthorUsername: asNullableString(row.note_author_username),
+    botComment: asBoolean(row.bot_comment),
+    commentAuthorId: asNullableNumber(row.comment_author_id),
+    commentAuthorUsername: asNullableString(row.comment_author_username),
     status: asString(row.status) as DiscussionMappingRecord["status"],
     lastInteractionRunId: asNullableString(row.last_interaction_run_id),
     createdAt: asString(row.created_at),
@@ -2248,7 +2248,7 @@ function mapCodeReviewSnapshotRow(row: Row): CodeReviewSnapshotRecord {
     codeReviewJson: asString(row.code_review_json),
     versionsJson: asString(row.versions_json),
     changesJson: asString(row.changes_json),
-    notesJson: asString(row.notes_json),
+    commentsJson: asString(row.comments_json),
     discussionsJson: asString(row.discussions_json),
     instructionsJson: asString(row.instructions_json),
     projectMemoryJson: asNullableString(row.project_memory_json),
@@ -2265,8 +2265,10 @@ function mapInteractionRunMetricsRow(row: Row): InteractionRunMetricsRecord {
     promptMode: asNullableString(row.prompt_mode),
     promptChars: asNumber(row.prompt_chars),
     promptContextChangedFiles: asNumber(row.prompt_context_changed_files),
-    promptContextPriorThreads: asNumber(row.prompt_context_prior_threads),
-    promptContextNotes: asNumber(row.prompt_context_notes),
+    promptContextPriorDiscussions: asNumber(
+      row.prompt_context_prior_discussions,
+    ),
+    promptContextComments: asNumber(row.prompt_context_comments),
     assistantTurns: asNumber(row.assistant_turns),
     assistantCalls: asNumber(row.assistant_calls),
     toolExecutions: asNumber(row.tool_executions),

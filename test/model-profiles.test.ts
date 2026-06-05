@@ -8,7 +8,22 @@ import type { ModelProfileRecord } from "../src/storage/contract/index.js";
 
 const tenant = {
   id: "tenant_1",
-  key: "https://gitlab.example.com::123",   platform: "gitlab",   platformConfigJson: JSON.stringify({     baseUrl: "https://gitlab.example.com",     projectId: 123,     apiToken: "token",     webhookSecret: "secret",     botUserId: 999,     botUsername: "review-bot",   }),   baseUrl: "https://gitlab.example.com",   projectId: 123,   apiToken: "token",   webhookSecret: "secret",   botUserId: 999,   botUsername: "review-bot",
+  key: "https://gitlab.example.com::123",
+  platform: "gitlab",
+  platformConfigJson: JSON.stringify({
+    baseUrl: "https://gitlab.example.com",
+    projectId: 123,
+    apiToken: "token",
+    webhookSecret: "secret",
+    botUserId: 999,
+    botUsername: "review-bot",
+  }),
+  baseUrl: "https://gitlab.example.com",
+  projectId: 123,
+  apiToken: "token",
+  webhookSecret: "secret",
+  botUserId: 999,
+  botUsername: "review-bot",
   modelProfileName: "tenant-profile",
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),

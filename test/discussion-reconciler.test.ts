@@ -8,7 +8,7 @@ import { GitLabReviewDiscussionAdapter } from "../src/platforms/gitlab/review-di
 import type { HydratedMergeRequestContext } from "../src/platforms/gitlab/types.js";
 import { createLogger } from "../src/logger.js";
 import {
-  buildProviderThreads,
+  buildProviderDiscussions,
   DiscussionReconciler,
 } from "../src/reconcile/discussion-reconciler.js";
 import { REVIEW_SUMMARY_NOTE_MARKER } from "../src/review/summary.js";
@@ -72,7 +72,7 @@ describe("Discussion reconciler", () => {
     });
 
     const replyToDiscussion = vi.fn();
-    const createCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn(
       async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 90,
         body,
@@ -82,7 +82,7 @@ describe("Discussion reconciler", () => {
         system: false,
       }),
     );
-    const updateCodeReviewNote = vi.fn();
+    const updateCodeReviewComment = vi.fn();
     const updateDiscussionNote = vi.fn(async () => ({
       id: 10,
       body: "**Old finding**\n\nUpdated body",
@@ -105,14 +105,14 @@ describe("Discussion reconciler", () => {
         severity: "medium",
         category: "bug",
         body: "**Old finding**\n\nOld body",
-        platformThreadId: "disc_1",
+        platformDiscussionId: "disc_1",
         platformCommentId: 10,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
-        botNote: true,
-        noteAuthorId: 999,
-        noteAuthorUsername: "review-bot",
+        botComment: true,
+        commentAuthorId: 999,
+        commentAuthorUsername: "review-bot",
         status: "open" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
@@ -133,7 +133,7 @@ describe("Discussion reconciler", () => {
         },
         findings: [
           {
-            priorThreadId: "map_1",
+            priorDiscussionId: "map_1",
             title: "Old finding",
             body: "Updated body",
             severity: "medium",
@@ -143,9 +143,9 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: createDiscussionAdapter(createHydratedContext(), {
-        createCodeReviewNote,
+        createCodeReviewComment,
         replyToDiscussion,
-        updateCodeReviewNote,
+        updateCodeReviewComment,
         updateDiscussionNote,
         createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion: vi.fn(),
@@ -153,39 +153,41 @@ describe("Discussion reconciler", () => {
     });
 
     expect(summary.updated).toBe(1);
-    expect(summary.summaryNoteAction).toBe("created");
+    expect(summary.summaryCommentAction).toBe("created");
     expect(replyToDiscussion).not.toHaveBeenCalled();
     expect(updateDiscussionNote).toHaveBeenCalledTimes(1);
-    expect(createCodeReviewNote).toHaveBeenCalledTimes(1);
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewComment).toHaveBeenCalledTimes(1);
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).toContain(
       REVIEW_SUMMARY_NOTE_MARKER,
     );
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).toContain(
       "### Overall assessment",
     );
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).toContain(
       "\n\nFound one issue\n\n### Merge readiness",
     );
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).toContain(
       "- **Status:** Needs attention",
     );
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).toContain(
       "- **Confidence:** Medium",
     );
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).toContain(
       "<details><summary>Suggested fixes prompt</summary>",
     );
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).toContain(
       "\n\n```md\nReview and fix the issues called out for code review",
     );
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).toContain(
       "Findings to address (highest severity first):",
     );
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).toContain(
       "\n```\n\n</details>",
     );
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledTimes(1);
-    expect(createCodeReviewNote.mock.invocationCallOrder[0] ?? 0).toBeLessThan(
+    expect(
+      createCodeReviewComment.mock.invocationCallOrder[0] ?? 0,
+    ).toBeLessThan(
       updateDiscussionNote.mock.invocationCallOrder[0] ??
         Number.MAX_SAFE_INTEGER,
     );
@@ -215,7 +217,7 @@ describe("Discussion reconciler", () => {
       system: false,
       resolved: false,
     }));
-    const createCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn(
       async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 91,
         body,
@@ -225,7 +227,7 @@ describe("Discussion reconciler", () => {
         system: false,
       }),
     );
-    const updateCodeReviewNote = vi.fn();
+    const updateCodeReviewComment = vi.fn();
     const updateDiscussionNote = vi.fn();
 
     const context = createHydratedContext();
@@ -240,14 +242,14 @@ describe("Discussion reconciler", () => {
         severity: "medium",
         category: "bug",
         body: "**Old finding**\n\nOld body",
-        platformThreadId: "disc_1",
+        platformDiscussionId: "disc_1",
         platformCommentId: 10,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
-        botNote: true,
-        noteAuthorId: 999,
-        noteAuthorUsername: "review-bot",
+        botComment: true,
+        commentAuthorId: 999,
+        commentAuthorUsername: "review-bot",
         status: "open" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
@@ -269,16 +271,16 @@ describe("Discussion reconciler", () => {
         findings: [],
         priorDispositions: [
           {
-            threadId: "map_1",
+            discussionId: "map_1",
             action: "reply",
             replyBody: "Thanks, I reworded it.",
           },
         ],
       },
       discussionAdapter: createDiscussionAdapter(createHydratedContext(), {
-        createCodeReviewNote,
+        createCodeReviewComment,
         replyToDiscussion,
-        updateCodeReviewNote,
+        updateCodeReviewComment,
         updateDiscussionNote,
         createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion: vi.fn(),
@@ -286,8 +288,8 @@ describe("Discussion reconciler", () => {
     });
 
     expect(summary.replied).toBe(1);
-    expect(summary.summaryNoteAction).toBe("created");
-    expect(createCodeReviewNote).toHaveBeenCalledTimes(1);
+    expect(summary.summaryCommentAction).toBe("created");
+    expect(createCodeReviewComment).toHaveBeenCalledTimes(1);
     expect(replyToDiscussion).toHaveBeenCalledTimes(1);
     expect(updateDiscussionNote).not.toHaveBeenCalled();
   });
@@ -316,7 +318,7 @@ describe("Discussion reconciler", () => {
       system: false,
       resolved: false,
     }));
-    const createCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn(
       async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 92,
         body,
@@ -339,14 +341,14 @@ describe("Discussion reconciler", () => {
         severity: "medium",
         category: "bug",
         body: "**Old finding**\n\nOld body",
-        platformThreadId: "disc_1",
+        platformDiscussionId: "disc_1",
         platformCommentId: 10,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
-        botNote: true,
-        noteAuthorId: 999,
-        noteAuthorUsername: "review-bot",
+        botComment: true,
+        commentAuthorId: 999,
+        commentAuthorUsername: "review-bot",
         status: "open" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
@@ -371,7 +373,7 @@ describe("Discussion reconciler", () => {
         },
         findings: [
           {
-            priorThreadId: "map_1",
+            priorDiscussionId: "map_1",
             title: "Replacement finding",
             body: "New body",
             severity: "medium",
@@ -381,9 +383,9 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: createDiscussionAdapter(createHydratedContext(), {
-        createCodeReviewNote,
+        createCodeReviewComment,
         replyToDiscussion: vi.fn(),
-        updateCodeReviewNote: vi.fn(),
+        updateCodeReviewComment: vi.fn(),
         updateDiscussionNote,
         createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion: vi.fn(),
@@ -393,7 +395,7 @@ describe("Discussion reconciler", () => {
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
       expect.objectContaining({
         identityKey: nextIdentityKey,
-        platformThreadId: "disc_1",
+        platformDiscussionId: "disc_1",
       }),
     );
     expect(storage.updateReviewFindingStatus).toHaveBeenNthCalledWith(
@@ -476,7 +478,7 @@ describe("Discussion reconciler", () => {
       system: false,
       resolved: false,
     }));
-    const createCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn(
       async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 94,
         body,
@@ -504,14 +506,14 @@ describe("Discussion reconciler", () => {
           severity: "medium",
           category: "bug",
           body: "**Old finding**\n\nOld body",
-          platformThreadId: "disc_1",
+          platformDiscussionId: "disc_1",
           platformCommentId: 10,
           anchorJson: null,
           positionJson: null,
           botDiscussion: true,
-          botNote: true,
-          noteAuthorId: 999,
-          noteAuthorUsername: "review-bot",
+          botComment: true,
+          commentAuthorId: 999,
+          commentAuthorUsername: "review-bot",
           status: "open" as const,
           lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
@@ -526,7 +528,7 @@ describe("Discussion reconciler", () => {
         },
         findings: [
           {
-            priorThreadId: "map_1",
+            priorDiscussionId: "map_1",
             title: "Replacement finding",
             body: "New body",
             severity: "medium",
@@ -536,20 +538,20 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote,
+        createCodeReviewComment,
         replyToDiscussion: vi.fn(),
-        updateCodeReviewNote: vi.fn(),
+        updateCodeReviewComment: vi.fn(),
         updateDiscussionNote,
         createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion: vi.fn(),
       }),
     });
 
-    expect(createCodeReviewNote).toHaveBeenCalledOnce();
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewComment).toHaveBeenCalledOnce();
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).toContain(
       "Replacement finding",
     );
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).not.toContain(
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).not.toContain(
       "Old finding",
     );
   });
@@ -585,7 +587,7 @@ describe("Discussion reconciler", () => {
     });
 
     const resolveDiscussion = vi.fn(async () => undefined);
-    const createCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn(
       async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 93,
         body,
@@ -613,14 +615,14 @@ describe("Discussion reconciler", () => {
           severity: "medium",
           category: "bug",
           body: "**Old finding**\n\nOld body",
-          platformThreadId: "disc_1",
+          platformDiscussionId: "disc_1",
           platformCommentId: 10,
           anchorJson: null,
           positionJson: null,
           botDiscussion: true,
-          botNote: true,
-          noteAuthorId: 999,
-          noteAuthorUsername: "review-bot",
+          botComment: true,
+          commentAuthorId: 999,
+          commentAuthorUsername: "review-bot",
           status: "open" as const,
           lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
@@ -636,15 +638,15 @@ describe("Discussion reconciler", () => {
         findings: [],
         priorDispositions: [
           {
-            threadId: "map_1",
+            discussionId: "map_1",
             action: "resolve",
             resolution: "dismissed",
           },
         ],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote,
-        updateCodeReviewNote: vi.fn(),
+        createCodeReviewComment,
+        updateCodeReviewComment: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         createCodeReviewDiscussion: vi.fn(),
@@ -659,12 +661,12 @@ describe("Discussion reconciler", () => {
       "identity",
       "dismissed",
     );
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).toContain(
       "Remaining storage correctness fix",
     );
   });
 
-  it("excludes persisted findings that the current review resolved from the summary note", async () => {
+  it("excludes persisted findings that the current review resolved from the summary comment", async () => {
     const persistedStatuses = new Map<string, "open" | "resolved">([
       ["identity", "open"],
       ["identity_open", "open"],
@@ -719,7 +721,7 @@ describe("Discussion reconciler", () => {
       logger,
     });
 
-    const createCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn(
       async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 94,
         body,
@@ -747,14 +749,14 @@ describe("Discussion reconciler", () => {
           severity: "medium",
           category: "bug",
           body: "**Old finding**\n\nOld body",
-          platformThreadId: "disc_1",
+          platformDiscussionId: "disc_1",
           platformCommentId: 10,
           anchorJson: null,
           positionJson: null,
           botDiscussion: true,
-          botNote: true,
-          noteAuthorId: 999,
-          noteAuthorUsername: "review-bot",
+          botComment: true,
+          commentAuthorId: 999,
+          commentAuthorUsername: "review-bot",
           status: "open" as const,
           lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
@@ -776,15 +778,15 @@ describe("Discussion reconciler", () => {
         findings: [],
         priorDispositions: [
           {
-            threadId: "map_1",
+            discussionId: "map_1",
             action: "resolve",
             resolution: "resolved",
           },
         ],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote,
-        updateCodeReviewNote: vi.fn(),
+        createCodeReviewComment,
+        updateCodeReviewComment: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         createCodeReviewDiscussion: vi.fn(),
@@ -792,12 +794,12 @@ describe("Discussion reconciler", () => {
       }),
     });
 
-    expect(createCodeReviewNote).toHaveBeenCalledTimes(1);
+    expect(createCodeReviewComment).toHaveBeenCalledTimes(1);
 
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).toContain(
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).toContain(
       "Remaining storage correctness fix",
     );
-    expect(createCodeReviewNote.mock.calls[0]?.[2]).not.toContain(
+    expect(createCodeReviewComment.mock.calls[0]?.[2]).not.toContain(
       "Resolved storage correctness fix",
     );
   });
@@ -827,7 +829,7 @@ describe("Discussion reconciler", () => {
       resolvable: true,
       resolved: true,
     }));
-    const createCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn(
       async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 92,
         body,
@@ -837,7 +839,7 @@ describe("Discussion reconciler", () => {
         system: false,
       }),
     );
-    const updateCodeReviewNote = vi.fn();
+    const updateCodeReviewComment = vi.fn();
     const updateDiscussionNote = vi.fn();
     const resolveDiscussion = vi.fn(async () => undefined);
     const mappings = [
@@ -851,14 +853,14 @@ describe("Discussion reconciler", () => {
         severity: "medium",
         category: "bug",
         body: "**Old finding**\n\nOld body",
-        platformThreadId: "disc_1",
+        platformDiscussionId: "disc_1",
         platformCommentId: 10,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
-        botNote: true,
-        noteAuthorId: 999,
-        noteAuthorUsername: "review-bot",
+        botComment: true,
+        commentAuthorId: 999,
+        commentAuthorUsername: "review-bot",
         status: "resolved" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
@@ -900,7 +902,7 @@ describe("Discussion reconciler", () => {
         },
         findings: [
           {
-            priorThreadId: "map_1",
+            priorDiscussionId: "map_1",
             title: "Old finding",
             body: "Updated after resolution",
             severity: "medium",
@@ -910,9 +912,9 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote,
+        createCodeReviewComment,
         replyToDiscussion,
-        updateCodeReviewNote,
+        updateCodeReviewComment,
         updateDiscussionNote,
         createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion,
@@ -949,7 +951,7 @@ describe("Discussion reconciler", () => {
     });
 
     const resolveDiscussion = vi.fn(async () => undefined);
-    const createCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn(
       async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 93,
         body,
@@ -996,14 +998,14 @@ describe("Discussion reconciler", () => {
           severity: "medium",
           category: "bug",
           body: "**Old finding**\n\nOld body",
-          platformThreadId: "disc_1",
+          platformDiscussionId: "disc_1",
           platformCommentId: 10,
           anchorJson: null,
           positionJson: null,
           botDiscussion: true,
-          botNote: true,
-          noteAuthorId: 999,
-          noteAuthorUsername: "review-bot",
+          botComment: true,
+          commentAuthorId: 999,
+          commentAuthorUsername: "review-bot",
           status: "open" as const,
           lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
@@ -1019,15 +1021,15 @@ describe("Discussion reconciler", () => {
         findings: [],
         priorDispositions: [
           {
-            threadId: "map_1",
+            discussionId: "map_1",
             action: "resolve",
             resolution: "dismissed",
           },
         ],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote,
-        updateCodeReviewNote: vi.fn(),
+        createCodeReviewComment,
+        updateCodeReviewComment: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         createCodeReviewDiscussion: vi.fn(),
@@ -1073,7 +1075,7 @@ describe("Discussion reconciler", () => {
       resolvable: false,
       resolved: true,
     }));
-    const createCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn(
       async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 94,
         body,
@@ -1095,14 +1097,14 @@ describe("Discussion reconciler", () => {
         severity: "medium",
         category: "bug",
         body: "**Old finding**\n\nOld body",
-        platformThreadId: "disc_1",
+        platformDiscussionId: "disc_1",
         platformCommentId: 10,
         anchorJson: null,
         positionJson: null,
         botDiscussion: true,
-        botNote: true,
-        noteAuthorId: 999,
-        noteAuthorUsername: "review-bot",
+        botComment: true,
+        commentAuthorId: 999,
+        commentAuthorUsername: "review-bot",
         status: "resolved" as const,
         lastInteractionRunId: "run_old",
         createdAt: new Date().toISOString(),
@@ -1144,7 +1146,7 @@ describe("Discussion reconciler", () => {
         },
         findings: [
           {
-            priorThreadId: "map_1",
+            priorDiscussionId: "map_1",
             title: "Old finding",
             body: "Updated after resolution",
             severity: "medium",
@@ -1154,9 +1156,9 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote,
+        createCodeReviewComment,
         replyToDiscussion,
-        updateCodeReviewNote: vi.fn(),
+        updateCodeReviewComment: vi.fn(),
         updateDiscussionNote: vi.fn(),
         createCodeReviewDiscussion: vi.fn(),
         resolveDiscussion,
@@ -1188,7 +1190,7 @@ describe("Discussion reconciler", () => {
     );
   });
 
-  it("updates the existing merge request review summary note instead of creating a new one", async () => {
+  it("updates the existing merge request review summary comment instead of creating a new one", async () => {
     const storage = {
       upsertDiscussionMapping: vi.fn(async (input) => ({
         id: "map_1",
@@ -1203,15 +1205,15 @@ describe("Discussion reconciler", () => {
       logger,
     });
 
-    const createCodeReviewNote = vi.fn();
-    const updateCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn();
+    const updateCodeReviewComment = vi.fn(
       async (
         _projectId: number,
         _codeReviewId: number,
-        noteId: number,
+        commentId: number,
         body: string,
       ) => ({
-        id: noteId,
+        id: commentId,
         body,
         author: { id: 999, username: "review-bot", name: "Review Bot" },
         created_at: new Date().toISOString(),
@@ -1254,8 +1256,8 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote,
-        updateCodeReviewNote,
+        createCodeReviewComment,
+        updateCodeReviewComment,
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         createCodeReviewDiscussion: vi.fn(),
@@ -1263,26 +1265,28 @@ describe("Discussion reconciler", () => {
       }),
     });
 
-    expect(summary.summaryNoteAction).toBe("updated");
-    expect(createCodeReviewNote).not.toHaveBeenCalled();
-    expect(updateCodeReviewNote).toHaveBeenCalledTimes(1);
-    expect(updateCodeReviewNote.mock.calls[0]?.[2]).toBe(70);
-    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
+    expect(summary.summaryCommentAction).toBe("updated");
+    expect(createCodeReviewComment).not.toHaveBeenCalled();
+    expect(updateCodeReviewComment).toHaveBeenCalledTimes(1);
+    expect(updateCodeReviewComment.mock.calls[0]?.[2]).toBe(70);
+    expect(updateCodeReviewComment.mock.calls[0]?.[3]).toContain(
       "### Merge readiness",
     );
-    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
+    expect(updateCodeReviewComment.mock.calls[0]?.[3]).toContain(
       "- **Status:** Ready",
     );
-    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
+    expect(updateCodeReviewComment.mock.calls[0]?.[3]).toContain(
       "- **Confidence:** High",
     );
-    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain("### Highlights");
-    expect(updateCodeReviewNote.mock.calls[0]?.[3]).not.toContain(
+    expect(updateCodeReviewComment.mock.calls[0]?.[3]).toContain(
+      "### Highlights",
+    );
+    expect(updateCodeReviewComment.mock.calls[0]?.[3]).not.toContain(
       "<details><summary>Suggested fixes prompt</summary>",
     );
   });
 
-  it("keeps the summary note in needs-attention when persisted open findings remain", async () => {
+  it("keeps the summary comment in needs-attention when persisted open findings remain", async () => {
     const storage = {
       upsertDiscussionMapping: vi.fn(async (input) => ({
         id: "map_1",
@@ -1312,15 +1316,15 @@ describe("Discussion reconciler", () => {
       logger,
     });
 
-    const createCodeReviewNote = vi.fn();
-    const updateCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn();
+    const updateCodeReviewComment = vi.fn(
       async (
         _projectId: number,
         _codeReviewId: number,
-        noteId: number,
+        commentId: number,
         body: string,
       ) => ({
-        id: noteId,
+        id: commentId,
         body,
         author: { id: 999, username: "review-bot", name: "Review Bot" },
         created_at: new Date().toISOString(),
@@ -1364,8 +1368,8 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote,
-        updateCodeReviewNote,
+        createCodeReviewComment,
+        updateCodeReviewComment,
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         createCodeReviewDiscussion: vi.fn(),
@@ -1373,32 +1377,32 @@ describe("Discussion reconciler", () => {
       }),
     });
 
-    expect(summary.summaryNoteAction).toBe("updated");
-    expect(createCodeReviewNote).not.toHaveBeenCalled();
-    expect(updateCodeReviewNote).toHaveBeenCalledTimes(1);
-    expect(updateCodeReviewNote.mock.calls[0]?.[2]).toBe(71);
-    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
+    expect(summary.summaryCommentAction).toBe("updated");
+    expect(createCodeReviewComment).not.toHaveBeenCalled();
+    expect(updateCodeReviewComment).toHaveBeenCalledTimes(1);
+    expect(updateCodeReviewComment.mock.calls[0]?.[2]).toBe(71);
+    expect(updateCodeReviewComment.mock.calls[0]?.[3]).toContain(
       "- **Status:** Needs attention",
     );
-    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
+    expect(updateCodeReviewComment.mock.calls[0]?.[3]).toContain(
       "- **Rationale:** Persisted open findings remain and should be reviewed before merge.",
     );
-    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
+    expect(updateCodeReviewComment.mock.calls[0]?.[3]).toContain(
       "- **Overall severity:** Medium",
     );
-    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
+    expect(updateCodeReviewComment.mock.calls[0]?.[3]).toContain(
       "Remaining storage correctness fix",
     );
-    expect(updateCodeReviewNote.mock.calls[0]?.[3]).toContain(
+    expect(updateCodeReviewComment.mock.calls[0]?.[3]).toContain(
       "<details><summary>Suggested fixes prompt</summary>",
     );
-    expect(updateCodeReviewNote.mock.calls[0]?.[3]).not.toContain(
+    expect(updateCodeReviewComment.mock.calls[0]?.[3]).not.toContain(
       "- **Status:** Ready",
     );
   });
 
   it("ignores stored mappings when the live root note is not bot-authored", () => {
-    const threads = buildProviderThreads({
+    const threads = buildProviderDiscussions({
       discussions: [
         {
           id: "disc_human",
@@ -1432,14 +1436,14 @@ describe("Discussion reconciler", () => {
           severity: "medium",
           category: "bug",
           body: "Stored body",
-          platformThreadId: "disc_human",
+          platformDiscussionId: "disc_human",
           platformCommentId: 20,
           anchorJson: null,
           positionJson: null,
           botDiscussion: true,
-          botNote: true,
-          noteAuthorId: 999,
-          noteAuthorUsername: "review-bot",
+          botComment: true,
+          commentAuthorId: 999,
+          commentAuthorUsername: "review-bot",
           status: "open",
           lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
@@ -1452,7 +1456,7 @@ describe("Discussion reconciler", () => {
   });
 
   it("excludes review summary discussions from provider threads", () => {
-    const threads = buildProviderThreads({
+    const threads = buildProviderDiscussions({
       discussions: [
         {
           id: "disc_finding",
@@ -1532,14 +1536,14 @@ describe("Discussion reconciler", () => {
           severity: "low",
           category: "maintainability",
           body: `${REVIEW_SUMMARY_NOTE_MARKER}\n\n## Review summary`,
-          platformThreadId: "disc_summary",
+          platformDiscussionId: "disc_summary",
           platformCommentId: 20,
           anchorJson: null,
           positionJson: null,
           botDiscussion: true,
-          botNote: true,
-          noteAuthorId: 999,
-          noteAuthorUsername: "review-bot",
+          botComment: true,
+          commentAuthorId: 999,
+          commentAuthorUsername: "review-bot",
           status: "open",
           lastInteractionRunId: "run_old",
           createdAt: new Date().toISOString(),
@@ -1550,12 +1554,13 @@ describe("Discussion reconciler", () => {
 
     expect(threads).toHaveLength(1);
     expect(threads[0]).toMatchObject({
-      discussionId: "disc_finding",
+      discussionId: "discussion:disc_finding",
+      platformDiscussionId: "disc_finding",
       title: "Finding",
     });
     expect(threads[0]?.humanReplies).toEqual([
       {
-        noteId: 11,
+        platformCommentId: 11,
         authorUsername: "dev",
         body: "Please clarify this.",
       },
@@ -1591,7 +1596,7 @@ describe("Discussion reconciler", () => {
       logger,
     });
 
-    const createCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn(
       async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 90,
         body,
@@ -1695,12 +1700,12 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote,
+        createCodeReviewComment,
         createCodeReviewDraftNote,
         bulkPublishCodeReviewDraftNotes,
         listCodeReviewDiscussions,
         deleteCodeReviewDraftNote: vi.fn(),
-        updateCodeReviewNote: vi.fn(),
+        updateCodeReviewComment: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         resolveDiscussion: vi.fn(),
@@ -1711,7 +1716,7 @@ describe("Discussion reconciler", () => {
     expect(createCodeReviewDraftNote).toHaveBeenCalledTimes(2);
     expect(createCodeReviewDraftNote).toHaveBeenNthCalledWith(1, 123, 7, {
       note: expect.stringMatching(
-        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(reviewphin-review-thread:draftthread_/,
+        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(reviewphin-review-discussion:draftthread_/,
       ),
       position: {
         base_sha: "base",
@@ -1725,7 +1730,7 @@ describe("Discussion reconciler", () => {
     });
     expect(createCodeReviewDraftNote).toHaveBeenNthCalledWith(2, 123, 7, {
       note: expect.stringMatching(
-        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(reviewphin-review-thread:draftthread_/,
+        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(reviewphin-review-discussion:draftthread_/,
       ),
       position: {
         base_sha: "base",
@@ -1759,7 +1764,7 @@ describe("Discussion reconciler", () => {
       logger,
     });
 
-    const createCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn(
       async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 90,
         body,
@@ -1860,12 +1865,12 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote,
+        createCodeReviewComment,
         createCodeReviewDraftNote,
         bulkPublishCodeReviewDraftNotes,
         listCodeReviewDiscussions,
         deleteCodeReviewDraftNote: vi.fn(),
-        updateCodeReviewNote: vi.fn(),
+        updateCodeReviewComment: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         resolveDiscussion: vi.fn(),
@@ -1875,7 +1880,7 @@ describe("Discussion reconciler", () => {
     expect(createCodeReviewDraftNote).toHaveBeenCalledTimes(1);
     expect(createCodeReviewDraftNote).toHaveBeenCalledWith(123, 7, {
       note: expect.stringMatching(
-        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(reviewphin-review-thread:draftthread_/,
+        /^\*\*Broad finding\*\*\n\nAnchor body[\s\S]*\[comment\]: <> \(reviewphin-review-discussion:draftthread_/,
       ),
       position: {
         base_sha: "base",
@@ -1971,12 +1976,12 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote: vi.fn(),
+        createCodeReviewComment: vi.fn(),
         createCodeReviewDraftNote,
         bulkPublishCodeReviewDraftNotes,
         listCodeReviewDiscussions,
         deleteCodeReviewDraftNote: vi.fn(),
-        updateCodeReviewNote: vi.fn(),
+        updateCodeReviewComment: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         resolveDiscussion: vi.fn(),
@@ -1988,7 +1993,7 @@ describe("Discussion reconciler", () => {
     });
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
       expect.objectContaining({
-        platformThreadId: "disc_newer",
+        platformDiscussionId: "disc_newer",
         platformCommentId: 12,
       }),
     );
@@ -2086,12 +2091,12 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote: vi.fn(),
+        createCodeReviewComment: vi.fn(),
         createCodeReviewDraftNote,
         bulkPublishCodeReviewDraftNotes,
         listCodeReviewDiscussions,
         deleteCodeReviewDraftNote: vi.fn(),
-        updateCodeReviewNote: vi.fn(),
+        updateCodeReviewComment: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         resolveDiscussion: vi.fn(),
@@ -2100,7 +2105,7 @@ describe("Discussion reconciler", () => {
 
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
       expect.objectContaining({
-        platformThreadId: "disc_marked",
+        platformDiscussionId: "disc_marked",
         platformCommentId: 12,
         body: "**New finding**\n\nAnchor body",
       }),
@@ -2123,7 +2128,7 @@ describe("Discussion reconciler", () => {
       logger: { warn } as never,
     });
 
-    const createCodeReviewNote = vi.fn(
+    const createCodeReviewComment = vi.fn(
       async (_projectId: number, _codeReviewId: number, body: string) => ({
         id: 90,
         body,
@@ -2184,12 +2189,12 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: createDiscussionAdapter(context, {
-        createCodeReviewNote,
+        createCodeReviewComment,
         createCodeReviewDraftNote,
         bulkPublishCodeReviewDraftNotes,
         listCodeReviewDiscussions,
         deleteCodeReviewDraftNote: vi.fn(),
-        updateCodeReviewNote: vi.fn(),
+        updateCodeReviewComment: vi.fn(),
         replyToDiscussion: vi.fn(),
         updateDiscussionNote: vi.fn(),
         resolveDiscussion: vi.fn(),
@@ -2288,12 +2293,12 @@ describe("Discussion reconciler", () => {
           priorDispositions: [],
         },
         discussionAdapter: createDiscussionAdapter(context, {
-          createCodeReviewNote: vi.fn(),
+          createCodeReviewComment: vi.fn(),
           createCodeReviewDraftNote,
           bulkPublishCodeReviewDraftNotes: vi.fn(),
           listCodeReviewDiscussions: vi.fn(),
           deleteCodeReviewDraftNote: vi.fn(),
-          updateCodeReviewNote: vi.fn(),
+          updateCodeReviewComment: vi.fn(),
           replyToDiscussion: vi.fn(),
           updateDiscussionNote: vi.fn(),
           resolveDiscussion: vi.fn(),
@@ -2360,12 +2365,12 @@ describe("Discussion reconciler", () => {
           priorDispositions: [],
         },
         discussionAdapter: createDiscussionAdapter(context, {
-          createCodeReviewNote: vi.fn(),
+          createCodeReviewComment: vi.fn(),
           createCodeReviewDraftNote,
           bulkPublishCodeReviewDraftNotes,
           listCodeReviewDiscussions,
           deleteCodeReviewDraftNote,
-          updateCodeReviewNote: vi.fn(),
+          updateCodeReviewComment: vi.fn(),
           replyToDiscussion: vi.fn(),
           updateDiscussionNote: vi.fn(),
           resolveDiscussion: vi.fn(),
@@ -2414,24 +2419,24 @@ describe("Discussion reconciler", () => {
       resolved: false,
     };
 
-    const listThreads = vi
+    const listDiscussions = vi
       .fn()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([publishedThread]);
-    const publishDraftThreads = vi.fn(async () => undefined);
-    const deleteDraftThread = vi.fn(async () => undefined);
-    const matchPublishedDraftThreads = vi.fn(
-      async ({ pendingDraftThreads, existingThreadIds }) => {
-        expect(existingThreadIds.has(publishedThread.id)).toBe(false);
-        const pending = pendingDraftThreads[0];
+    const publishDraftDiscussions = vi.fn(async () => undefined);
+    const deleteDraftDiscussion = vi.fn(async () => undefined);
+    const matchPublishedDraftDiscussions = vi.fn(
+      async ({ pendingDraftDiscussions, existingDiscussionIds }) => {
+        expect(existingDiscussionIds.has(publishedThread.id)).toBe(false);
+        const pending = pendingDraftDiscussions[0];
         if (!pending) {
           throw new Error("missing pending draft thread");
         }
 
         return [
           {
-            thread: publishedThread,
+            discussion: publishedThread,
             pending,
             rootComment: publishedThread.comments[0],
           },
@@ -2463,36 +2468,36 @@ describe("Discussion reconciler", () => {
         priorDispositions: [],
       },
       discussionAdapter: {
-        listThreads,
-        listSummaryNotes: vi.fn(async () => []),
-        replyToThread: vi.fn(),
-        setThreadResolved: vi.fn(),
+        listDiscussions,
+        listSummaryComments: vi.fn(async () => []),
+        replyToDiscussion: vi.fn(),
+        setDiscussionResolved: vi.fn(),
         updateComment: vi.fn(),
-        createDraftThread: vi.fn(async (input) => ({
+        createDraftDiscussion: vi.fn(async (input) => ({
           id: "draft_1",
           draftMarker: input.draftMarker,
           finding: input.finding,
           body: input.body,
           positionJson: null,
         })),
-        publishDraftThreads,
-        deleteDraftThread,
-        matchPublishedDraftThreads,
-        createSummaryNote: vi.fn(async () => undefined),
-        updateSummaryNote: vi.fn(async () => undefined),
+        publishDraftDiscussions,
+        deleteDraftDiscussion,
+        matchPublishedDraftDiscussions,
+        createSummaryComment: vi.fn(async () => undefined),
+        updateSummaryComment: vi.fn(async () => undefined),
       } as never,
     });
 
     expect(summary.created).toBe(1);
-    expect(matchPublishedDraftThreads).toHaveBeenCalledTimes(2);
-    expect(listThreads).toHaveBeenCalledTimes(2);
-    expect(publishDraftThreads).toHaveBeenCalledTimes(1);
-    expect(deleteDraftThread).not.toHaveBeenCalled();
+    expect(matchPublishedDraftDiscussions).toHaveBeenCalledTimes(2);
+    expect(listDiscussions).toHaveBeenCalledTimes(2);
+    expect(publishDraftDiscussions).toHaveBeenCalledTimes(1);
+    expect(deleteDraftDiscussion).not.toHaveBeenCalled();
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledTimes(2);
     expect(storage.updateReviewFindingStatus).toHaveBeenCalledTimes(1);
     expect(storage.upsertDiscussionMapping).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        platformThreadId: "disc_new",
+        platformDiscussionId: "disc_new",
         platformCommentId: 801,
       }),
     );
@@ -2528,7 +2533,7 @@ function createHydratedContext(overrides?: {
       tenantId: "tenant_1",
       dedupeKey: "dedupe",
       codeReviewId: 7,
-      noteId: 55,
+      commentId: 55,
       headSha: "abc123",
       status: "in_progress",
       payloadJson: "{}",
@@ -2562,26 +2567,26 @@ function createHydratedContext(overrides?: {
         id: "disc_1",
         individual_note: false,
         notes: [
-            {
-              id: 10,
-              body: "**Old finding**\n\nOld body",
-              author: { id: 999, username: "review-bot", name: "Review Bot" },
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              system: false,
-              resolvable: true,
-              resolved: false,
-            },
-            {
-              id: 11,
-              body: "Can you clarify this?",
-              author: { id: 1, username: "dev", name: "Developer" },
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              system: false,
-              resolvable: true,
-              resolved: false,
-            },
+          {
+            id: 10,
+            body: "**Old finding**\n\nOld body",
+            author: { id: 999, username: "review-bot", name: "Review Bot" },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            system: false,
+            resolvable: true,
+            resolved: false,
+          },
+          {
+            id: 11,
+            body: "Can you clarify this?",
+            author: { id: 1, username: "dev", name: "Developer" },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            system: false,
+            resolvable: true,
+            resolved: false,
+          },
         ],
       },
     ],
@@ -2605,7 +2610,7 @@ function createHydratedContext(overrides?: {
       codeReviewJson: "{}",
       versionsJson: "[]",
       changesJson: "[]",
-      notesJson: "[]",
+      commentsJson: "[]",
       discussionsJson: "[]",
       instructionsJson: "[]",
       projectMemoryJson: null,

@@ -44,6 +44,18 @@ function createPayload() {
   };
 }
 
+function createWebhookRequest() {
+  const payload = createPayload();
+  return {
+    headers: {
+      "x-gitlab-token": "replace-me",
+    },
+    body: payload,
+    rawBody: Buffer.from(JSON.stringify(payload)),
+    pathSuffix: "note",
+  };
+}
+
 describe("tenant CLI", () => {
   it("adds a tenant to SQLite and makes it resolvable without env registration", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
@@ -94,12 +106,7 @@ describe("tenant CLI", () => {
     const tenant = await registry.resolveWebhookTenant(
       platform,
       createPayload(),
-      {
-        headers: {
-          "x-gitlab-token": "replace-me",
-        },
-        body: createPayload(),
-      },
+      createWebhookRequest(),
     );
     expect(tenant).not.toBeNull();
     expect(tenant?.key).toBe("https://gitlab.example.com::123");
@@ -485,6 +492,58 @@ describe("tenant CLI", () => {
     });
   });
 
+  it("describes trigger dedupe for non-GitLab tenants without parsing GitLab config", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+    const storage = await openSqliteTestStorage(databasePath);
+    const tenant = await storage.upsertTenant({
+      key: "external::project-1",
+      platform: "external",
+      platformConfigJson: JSON.stringify({ project: "project-1" }),
+    });
+    await storage.createOrGetInteractionJob({
+      tenantId: tenant.id,
+      dedupeKey: "external-job",
+      codeReviewId: 7,
+      commentId: 55,
+      headSha: "abc123",
+      payloadJson: "{}",
+    });
+
+    let stdout = "";
+    const stdoutSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk: string | Uint8Array) => {
+        stdout +=
+          typeof chunk === "string"
+            ? chunk
+            : Buffer.from(chunk).toString("utf8");
+        return true;
+      });
+
+    const exitCode = await runCli([
+      "mr",
+      "describe",
+      "--sqlite-database-path",
+      databasePath,
+      "--key",
+      "external::project-1",
+      "--code-review-id",
+      "7",
+      "--trigger-comment-id",
+      "55",
+    ]);
+
+    stdoutSpy.mockRestore();
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("tenant: external::project-1 (external)");
+    expect(stdout).toContain("candidate: unsupported for this platform");
+    expect(stdout).toContain(
+      "Trigger-comment dedupe inspection is currently available for GitLab tenants only.",
+    );
+  });
+
   it("removes a tenant by base URL and project ID", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
     const databasePath = join(workspace, "tenants.sqlite");
@@ -546,12 +605,7 @@ describe("tenant CLI", () => {
     const tenant = await registry.resolveWebhookTenant(
       platform,
       createPayload(),
-      {
-        headers: {
-          "x-gitlab-token": "replace-me",
-        },
-        body: createPayload(),
-      },
+      createWebhookRequest(),
     );
     expect(tenant).toBeNull();
   });
@@ -629,7 +683,7 @@ describe("tenant CLI", () => {
       tenantId: tenant.id,
       dedupeKey: "tenant-remove-job",
       codeReviewId: 7,
-      noteId: 55,
+      commentId: 55,
       headSha: "abc123",
       payloadJson: "{}",
     });
@@ -641,7 +695,7 @@ describe("tenant CLI", () => {
       codeReviewJson: "{}",
       versionsJson: "[]",
       changesJson: "[]",
-      notesJson: "[]",
+      commentsJson: "[]",
       discussionsJson: "[]",
       instructionsJson: "[]",
       projectMemoryJson: null,
@@ -676,8 +730,8 @@ describe("tenant CLI", () => {
       promptMode: "full",
       promptChars: 10,
       promptContextChangedFiles: 1,
-      promptContextPriorThreads: 0,
-      promptContextNotes: 1,
+      promptContextPriorDiscussions: 0,
+      promptContextComments: 1,
       assistantTurns: 1,
       assistantCalls: 1,
       toolExecutions: 0,
@@ -702,14 +756,14 @@ describe("tenant CLI", () => {
       severity: "medium",
       category: "correctness",
       body: "This data should be removed",
-      platformThreadId: "discussion-1",
+      platformDiscussionId: "discussion-1",
       platformCommentId: 501,
       anchorJson: null,
       positionJson: null,
       botDiscussion: true,
-      botNote: true,
-      noteAuthorId: 999,
-      noteAuthorUsername: "review-bot",
+      botComment: true,
+      commentAuthorId: 999,
+      commentAuthorUsername: "review-bot",
       status: "open",
       lastInteractionRunId: reviewRun.id,
     });
@@ -795,7 +849,7 @@ describe("tenant CLI", () => {
       tenantId: tenant.id,
       dedupeKey: "tenant-remove-job-initial",
       codeReviewId: 7,
-      noteId: 55,
+      commentId: 55,
       headSha: "abc123",
       payloadJson: "{}",
     });
@@ -839,7 +893,7 @@ describe("tenant CLI", () => {
           tenantId: tenant.id,
           dedupeKey: "tenant-remove-job-late",
           codeReviewId: 8,
-          noteId: 56,
+          commentId: 56,
           headSha: "def456",
           payloadJson: "{}",
         });

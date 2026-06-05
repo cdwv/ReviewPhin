@@ -5,7 +5,7 @@ import type { IPlatform } from "../platforms/IPlatform.js";
 import type {
   PlatformReviewComment,
   PlatformReviewDiscussionAdapter,
-  PlatformReviewThread,
+  PlatformReviewDiscussion,
 } from "../platforms/review-adapter.js";
 import type {
   DiscussionMappingRecord,
@@ -25,21 +25,21 @@ import {
 } from "../review/summary.js";
 import {
   renderReviewFindingBody,
-  stripReviewThreadMarker,
+  stripReviewDiscussionMarker,
 } from "../review/discussion-format.js";
 import type {
   PriorDisposition,
-  ProviderThreadContext,
+  ProviderDiscussionContext,
   ReviewAnchor,
   ReviewFinding,
   ReviewResult,
   ReviewSummaryContext,
 } from "../review/types.js";
 
-interface KnownThread {
-  threadId: string;
+interface KnownDiscussion {
   discussionId: string;
-  discussion: PlatformReviewThread;
+  platformDiscussionId: string;
+  discussion: PlatformReviewDiscussion;
   mapping: DiscussionMappingRecord | null;
   latestBotNote: PlatformReviewComment | null;
   anchor: ReviewAnchor | null;
@@ -48,7 +48,7 @@ interface KnownThread {
   title: string;
   body: string;
   humanReplies: Array<{
-    noteId: number;
+    platformCommentId: number;
     authorUsername: string;
     body: string;
   }>;
@@ -60,7 +60,7 @@ export interface ReconcileSummary {
   replied: number;
   resolved: number;
   kept: number;
-  summaryNoteAction: "created" | "updated" | null;
+  summaryCommentAction: "created" | "updated" | null;
 }
 
 interface DiscussionReconcilerOptions {
@@ -68,7 +68,7 @@ interface DiscussionReconcilerOptions {
   logger: Logger;
 }
 
-interface PendingDraftThread {
+interface PendingDraftDiscussion {
   id: string;
   body: string;
   draftMarker: string;
@@ -78,13 +78,13 @@ interface PendingDraftThread {
   positionJson: string | null;
 }
 
-interface PublishedDraftThreadMatch {
-  discussion: PlatformReviewThread;
-  pending: PendingDraftThread;
+interface PublishedDraftDiscussionMatch {
+  discussion: PlatformReviewDiscussion;
+  pending: PendingDraftDiscussion;
   rootNote: PlatformReviewComment;
 }
 
-type ThreadReconcileAction =
+type DiscussionReconcileAction =
   | "created"
   | "updated"
   | "replied"
@@ -109,18 +109,21 @@ export class DiscussionReconciler {
     reviewResult: ReviewResult;
     discussionAdapter: PlatformReviewDiscussionAdapter;
   }): Promise<ReconcileSummary> {
-    const discussions = await input.discussionAdapter.listThreads();
-    const knownThreads = buildKnownThreads({
+    const discussions = await input.discussionAdapter.listDiscussions();
+    const knownDiscussions = buildKnownDiscussions({
       discussions,
       mappings: input.mappings,
     });
 
-    const threadById = new Map(
-      knownThreads.map((thread) => [thread.threadId, thread]),
+    const discussionById = new Map(
+      knownDiscussions.map((discussion) => [
+        discussion.discussionId,
+        discussion,
+      ]),
     );
-    const dispositionByThreadId = new Map(
+    const dispositionByDiscussionId = new Map(
       input.reviewResult.priorDispositions.map((disposition) => [
-        disposition.threadId,
+        disposition.discussionId,
         disposition,
       ]),
     );
@@ -131,40 +134,42 @@ export class DiscussionReconciler {
       replied: 0,
       resolved: 0,
       kept: 0,
-      summaryNoteAction: null,
+      summaryCommentAction: null,
     };
 
-    const referencedThreadIds = collectReferencedThreadIds(
+    const referencedDiscussionIds = collectReferencedDiscussionIds(
       input.reviewResult.findings,
-      threadById,
+      discussionById,
     );
     const projectedActiveFindings = await this.projectActiveFindings({
       tenant: input.tenant,
       codeReviewId: input.context.codeReview.id,
       reviewResult: input.reviewResult,
-      threadById,
-      referencedThreadIds,
+      discussionById,
+      referencedDiscussionIds,
     });
 
-    summary.summaryNoteAction = await this.syncSummaryNote({
+    summary.summaryCommentAction = await this.syncSummaryNote({
       ...input,
       activeFindings: projectedActiveFindings,
     });
 
-    const pendingDraftThreads: PendingDraftThread[] = [];
+    const pendingDraftDiscussions: PendingDraftDiscussion[] = [];
     try {
       for (const finding of input.reviewResult.findings) {
-        const matchedThread = finding.priorThreadId
-          ? (threadById.get(finding.priorThreadId) ?? null)
+        const matchedDiscussion = finding.priorDiscussionId
+          ? (discussionById.get(finding.priorDiscussionId) ?? null)
           : null;
-        if (matchedThread) {
-          const disposition = dispositionByThreadId.get(matchedThread.threadId);
-          const action = await this.applyFindingToExistingThread({
+        if (matchedDiscussion) {
+          const disposition = dispositionByDiscussionId.get(
+            matchedDiscussion.discussionId,
+          );
+          const action = await this.applyFindingToExistingDiscussion({
             tenant: input.tenant,
             context: input.context,
             discussionAdapter: input.discussionAdapter,
             interactionRunId: input.interactionRunId,
-            thread: matchedThread,
+            knownDiscussion: matchedDiscussion,
             finding,
             disposition,
           });
@@ -172,8 +177,8 @@ export class DiscussionReconciler {
           continue;
         }
 
-        pendingDraftThreads.push(
-          await this.createPendingDraftThread({
+        pendingDraftDiscussions.push(
+          await this.createPendingDraftDiscussion({
             tenant: input.tenant,
             context: input.context,
             discussionAdapter: input.discussionAdapter,
@@ -184,140 +189,146 @@ export class DiscussionReconciler {
         summary.created += 1;
       }
     } catch (error) {
-      await this.cleanupPendingDraftThreads({
+      await this.cleanupPendingDraftDiscussions({
         tenant: input.tenant,
         codeReviewId: input.context.codeReview.id,
         discussionAdapter: input.discussionAdapter,
-        pendingDraftThreads,
+        pendingDraftDiscussions,
       });
       throw error;
     }
 
-    if (pendingDraftThreads.length > 0) {
-      await this.publishPendingDraftThreads({
+    if (pendingDraftDiscussions.length > 0) {
+      await this.publishPendingDraftDiscussions({
         tenant: input.tenant,
         context: input.context,
         discussionAdapter: input.discussionAdapter,
         interactionRunId: input.interactionRunId,
-        pendingDraftThreads,
+        pendingDraftDiscussions,
       });
     }
 
     for (const disposition of input.reviewResult.priorDispositions) {
-      if (referencedThreadIds.has(disposition.threadId)) {
+      if (referencedDiscussionIds.has(disposition.discussionId)) {
         continue;
       }
 
-      const thread = threadById.get(disposition.threadId);
-      if (!thread) {
+      const knownDiscussion = discussionById.get(disposition.discussionId);
+      if (!knownDiscussion) {
         continue;
       }
 
       if (disposition.action === "resolve") {
-        if (!thread.resolved) {
-          if (thread.resolvable) {
-            await input.discussionAdapter.setThreadResolved(
-              thread.discussionId,
+        if (!knownDiscussion.resolved) {
+          if (knownDiscussion.resolvable) {
+            await input.discussionAdapter.setDiscussionResolved(
+              knownDiscussion.platformDiscussionId,
               true,
             );
           } else {
-            this.logSkippedThreadResolutionChange({
+            this.logSkippedDiscussionResolutionChange({
               tenant: input.tenant,
               codeReviewId: input.context.codeReview.id,
               interactionRunId: input.interactionRunId,
-              thread,
+              knownDiscussion,
               resolved: true,
             });
           }
         }
 
-        await this.persistThreadState({
+        await this.persistDiscussionState({
           tenant: input.tenant,
           context: input.context,
           interactionRunId: input.interactionRunId,
-          thread,
-          note: thread.latestBotNote ?? thread.discussion.comments[0] ?? null,
+          knownDiscussion,
+          note:
+            knownDiscussion.latestBotNote ??
+            knownDiscussion.discussion.comments[0] ??
+            null,
           identityKey:
-            thread.mapping?.identityKey ??
+            knownDiscussion.mapping?.identityKey ??
             createFindingIdentityKey({
-              title: thread.title,
-              category: thread.mapping?.category ?? "correctness",
-              path: thread.anchor?.path,
-              startLine: thread.anchor?.startLine,
-              endLine: thread.anchor?.endLine,
-              side: thread.anchor?.side,
+              title: knownDiscussion.title,
+              category: knownDiscussion.mapping?.category ?? "correctness",
+              path: knownDiscussion.anchor?.path,
+              startLine: knownDiscussion.anchor?.startLine,
+              endLine: knownDiscussion.anchor?.endLine,
+              side: knownDiscussion.anchor?.side,
             }),
           fingerprint:
-            thread.mapping?.findingFingerprint ??
+            knownDiscussion.mapping?.findingFingerprint ??
             createFindingFingerprint({
               identityKey:
-                thread.mapping?.identityKey ??
+                knownDiscussion.mapping?.identityKey ??
                 createFindingIdentityKey({
-                  title: thread.title,
-                  category: thread.mapping?.category ?? "correctness",
-                  path: thread.anchor?.path,
-                  startLine: thread.anchor?.startLine,
-                  endLine: thread.anchor?.endLine,
-                  side: thread.anchor?.side,
+                  title: knownDiscussion.title,
+                  category: knownDiscussion.mapping?.category ?? "correctness",
+                  path: knownDiscussion.anchor?.path,
+                  startLine: knownDiscussion.anchor?.startLine,
+                  endLine: knownDiscussion.anchor?.endLine,
+                  side: knownDiscussion.anchor?.side,
                 }),
-              body: thread.body,
+              body: knownDiscussion.body,
             }),
-          title: thread.title,
-          body: thread.body,
-          severity: thread.mapping?.severity ?? "medium",
-          category: thread.mapping?.category ?? "correctness",
-          positionJson: thread.discussion.comments[0]?.positionJson ?? null,
+          title: knownDiscussion.title,
+          body: knownDiscussion.body,
+          severity: knownDiscussion.mapping?.severity ?? "medium",
+          category: knownDiscussion.mapping?.category ?? "correctness",
+          positionJson:
+            knownDiscussion.discussion.comments[0]?.positionJson ?? null,
           discussionStatus:
-            thread.resolved || thread.resolvable ? "resolved" : "open",
+            knownDiscussion.resolved || knownDiscussion.resolvable
+              ? "resolved"
+              : "open",
           findingStatus: disposition.resolution ?? "resolved",
         });
         summary.resolved += 1;
       } else if (disposition.action === "reply" && disposition.replyBody) {
-        const note = await input.discussionAdapter.replyToThread(
-          thread.discussionId,
+        const note = await input.discussionAdapter.replyToDiscussion(
+          knownDiscussion.platformDiscussionId,
           disposition.replyBody,
         );
-        await this.persistThreadState({
+        await this.persistDiscussionState({
           tenant: input.tenant,
           context: input.context,
           interactionRunId: input.interactionRunId,
-          thread,
+          knownDiscussion,
           note,
           identityKey:
-            thread.mapping?.identityKey ??
+            knownDiscussion.mapping?.identityKey ??
             createFindingIdentityKey({
-              title: thread.title,
-              category: thread.mapping?.category ?? "correctness",
-              path: thread.anchor?.path,
-              startLine: thread.anchor?.startLine,
-              endLine: thread.anchor?.endLine,
-              side: thread.anchor?.side,
+              title: knownDiscussion.title,
+              category: knownDiscussion.mapping?.category ?? "correctness",
+              path: knownDiscussion.anchor?.path,
+              startLine: knownDiscussion.anchor?.startLine,
+              endLine: knownDiscussion.anchor?.endLine,
+              side: knownDiscussion.anchor?.side,
             }),
           fingerprint:
-            thread.mapping?.findingFingerprint ??
+            knownDiscussion.mapping?.findingFingerprint ??
             createFindingFingerprint({
               identityKey:
-                thread.mapping?.identityKey ??
+                knownDiscussion.mapping?.identityKey ??
                 createFindingIdentityKey({
-                  title: thread.title,
-                  category: thread.mapping?.category ?? "correctness",
-                  path: thread.anchor?.path,
-                  startLine: thread.anchor?.startLine,
-                  endLine: thread.anchor?.endLine,
-                  side: thread.anchor?.side,
+                  title: knownDiscussion.title,
+                  category: knownDiscussion.mapping?.category ?? "correctness",
+                  path: knownDiscussion.anchor?.path,
+                  startLine: knownDiscussion.anchor?.startLine,
+                  endLine: knownDiscussion.anchor?.endLine,
+                  side: knownDiscussion.anchor?.side,
                 }),
               body: disposition.replyBody,
             }),
-          title: thread.title,
+          title: knownDiscussion.title,
           body: disposition.replyBody,
-          severity: thread.mapping?.severity ?? "medium",
-          category: thread.mapping?.category ?? "correctness",
+          severity: knownDiscussion.mapping?.severity ?? "medium",
+          category: knownDiscussion.mapping?.category ?? "correctness",
           positionJson:
             note.positionJson ??
-            thread.discussion.comments[0]?.positionJson ??
+            knownDiscussion.discussion.comments[0]?.positionJson ??
             null,
-          discussionStatus: thread.resolved ? "resolved" : "open",
-          findingStatus: thread.resolved ? "resolved" : "open",
+          discussionStatus: knownDiscussion.resolved ? "resolved" : "open",
+          findingStatus: knownDiscussion.resolved ? "resolved" : "open",
         });
         summary.replied += 1;
       }
@@ -326,15 +337,15 @@ export class DiscussionReconciler {
     return summary;
   }
 
-  private async applyFindingToExistingThread(input: {
+  private async applyFindingToExistingDiscussion(input: {
     tenant: TenantRecord;
     context: ReviewSummaryContext;
     discussionAdapter: PlatformReviewDiscussionAdapter;
     interactionRunId: string;
-    thread: KnownThread;
+    knownDiscussion: KnownDiscussion;
     finding: ReviewFinding;
     disposition: PriorDisposition | undefined;
-  }): Promise<ThreadReconcileAction> {
+  }): Promise<DiscussionReconcileAction> {
     const body = renderReviewFindingBody(input.finding);
     const identityKey = createFindingIdentityKey({
       title: input.finding.title,
@@ -353,21 +364,21 @@ export class DiscussionReconciler {
     const shouldReply =
       input.disposition?.action === "reply" ||
       Boolean(input.finding.replyInDiscussion) ||
-      !input.thread.latestBotNote ||
-      input.thread.resolved;
+      !input.knownDiscussion.latestBotNote ||
+      input.knownDiscussion.resolved;
 
     if (
-      input.thread.mapping?.findingFingerprint === fingerprint &&
+      input.knownDiscussion.mapping?.findingFingerprint === fingerprint &&
       !shouldReply
     ) {
-      await this.persistThreadState({
+      await this.persistDiscussionState({
         tenant: input.tenant,
         context: input.context,
         interactionRunId: input.interactionRunId,
-        thread: input.thread,
+        knownDiscussion: input.knownDiscussion,
         note:
-          input.thread.latestBotNote ??
-          input.thread.discussion.comments[0] ??
+          input.knownDiscussion.latestBotNote ??
+          input.knownDiscussion.discussion.comments[0] ??
           null,
         identityKey,
         fingerprint,
@@ -375,7 +386,8 @@ export class DiscussionReconciler {
         body,
         severity: input.finding.severity,
         category: input.finding.category,
-        positionJson: input.thread.discussion.comments[0]?.positionJson ?? null,
+        positionJson:
+          input.knownDiscussion.discussion.comments[0]?.positionJson ?? null,
         discussionStatus: "open",
         findingStatus: "open",
       });
@@ -384,33 +396,33 @@ export class DiscussionReconciler {
 
     if (shouldReply) {
       let discussionStatus: "open" | "resolved" = "open";
-      if (input.thread.resolved) {
-        if (input.thread.resolvable) {
-          await input.discussionAdapter.setThreadResolved(
-            input.thread.discussionId,
+      if (input.knownDiscussion.resolved) {
+        if (input.knownDiscussion.resolvable) {
+          await input.discussionAdapter.setDiscussionResolved(
+            input.knownDiscussion.platformDiscussionId,
             false,
           );
         } else {
           discussionStatus = "resolved";
-          this.logSkippedThreadResolutionChange({
+          this.logSkippedDiscussionResolutionChange({
             tenant: input.tenant,
             codeReviewId: input.context.codeReview.id,
             interactionRunId: input.interactionRunId,
-            thread: input.thread,
+            knownDiscussion: input.knownDiscussion,
             resolved: false,
           });
         }
       }
 
-      const note = await input.discussionAdapter.replyToThread(
-        input.thread.discussionId,
+      const note = await input.discussionAdapter.replyToDiscussion(
+        input.knownDiscussion.platformDiscussionId,
         input.disposition?.replyBody ?? body,
       );
-      await this.persistThreadState({
+      await this.persistDiscussionState({
         tenant: input.tenant,
         context: input.context,
         interactionRunId: input.interactionRunId,
-        thread: input.thread,
+        knownDiscussion: input.knownDiscussion,
         note,
         identityKey,
         fingerprint,
@@ -420,7 +432,7 @@ export class DiscussionReconciler {
         category: input.finding.category,
         positionJson:
           note.positionJson ??
-          input.thread.discussion.comments[0]?.positionJson ??
+          input.knownDiscussion.discussion.comments[0]?.positionJson ??
           null,
         discussionStatus,
         findingStatus: "open",
@@ -428,23 +440,23 @@ export class DiscussionReconciler {
       return "replied";
     }
 
-    const latestBotNote = input.thread.latestBotNote;
+    const latestBotNote = input.knownDiscussion.latestBotNote;
     if (!latestBotNote) {
       throw new Error(
-        `Expected a bot-authored note for discussion ${input.thread.discussionId}`,
+        `Expected a bot-authored note for discussion ${input.knownDiscussion.discussionId}`,
       );
     }
 
     const updatedNote = await input.discussionAdapter.updateComment(
-      input.thread.discussionId,
+      input.knownDiscussion.platformDiscussionId,
       latestBotNote.id,
       body,
     );
-    await this.persistThreadState({
+    await this.persistDiscussionState({
       tenant: input.tenant,
       context: input.context,
       interactionRunId: input.interactionRunId,
-      thread: input.thread,
+      knownDiscussion: input.knownDiscussion,
       note: updatedNote,
       identityKey,
       fingerprint,
@@ -454,7 +466,7 @@ export class DiscussionReconciler {
       category: input.finding.category,
       positionJson:
         updatedNote.positionJson ??
-        input.thread.discussion.comments[0]?.positionJson ??
+        input.knownDiscussion.discussion.comments[0]?.positionJson ??
         null,
       discussionStatus: "open",
       findingStatus: "open",
@@ -462,13 +474,13 @@ export class DiscussionReconciler {
     return "updated";
   }
 
-  private async createPendingDraftThread(input: {
+  private async createPendingDraftDiscussion(input: {
     tenant: TenantRecord;
     context: ReviewSummaryContext;
     discussionAdapter: PlatformReviewDiscussionAdapter;
     interactionRunId: string;
     finding: ReviewFinding;
-  }): Promise<PendingDraftThread> {
+  }): Promise<PendingDraftDiscussion> {
     const body = renderReviewFindingBody(input.finding);
     const draftMarker = createId("draftthread");
     const identityKey = createFindingIdentityKey({
@@ -484,7 +496,7 @@ export class DiscussionReconciler {
       body,
       suggestionReplacement: input.finding.suggestion?.replacement,
     });
-    const createdDraft = await input.discussionAdapter.createDraftThread({
+    const createdDraft = await input.discussionAdapter.createDraftDiscussion({
       finding: input.finding,
       body,
       draftMarker,
@@ -500,78 +512,80 @@ export class DiscussionReconciler {
     };
   }
 
-  private async publishPendingDraftThreads(input: {
+  private async publishPendingDraftDiscussions(input: {
     tenant: TenantRecord;
     context: ReviewSummaryContext;
     discussionAdapter: PlatformReviewDiscussionAdapter;
     interactionRunId: string;
-    pendingDraftThreads: PendingDraftThread[];
+    pendingDraftDiscussions: PendingDraftDiscussion[];
   }): Promise<void> {
-    const existingThreadIds = new Set(
-      (await input.discussionAdapter.listThreads()).map((discussion) => discussion.id),
+    const existingDiscussionIds = new Set(
+      (await input.discussionAdapter.listDiscussions()).map(
+        (discussion) => discussion.id,
+      ),
     );
     try {
-      await input.discussionAdapter.publishDraftThreads();
+      await input.discussionAdapter.publishDraftDiscussions();
       const matched = (
-        await input.discussionAdapter.matchPublishedDraftThreads({
-          pendingDraftThreads: input.pendingDraftThreads,
-          existingThreadIds,
+        await input.discussionAdapter.matchPublishedDraftDiscussions({
+          pendingDraftDiscussions: input.pendingDraftDiscussions,
+          existingDiscussionIds: existingDiscussionIds,
         })
       ).map((match) => ({
-        discussion: match.thread,
+        discussion: match.discussion,
         pending: match.pending,
         rootNote: match.rootComment,
       }));
-      await this.persistPublishedDraftThreadMatches({
+      await this.persistPublishedDraftDiscussionMatches({
         tenant: input.tenant,
         context: input.context,
         interactionRunId: input.interactionRunId,
         matches: matched,
       });
     } catch (error) {
-      const recovered = await this.tryRecoverPublishedDraftThreads({
+      const recovered = await this.tryRecoverPublishedDraftDiscussions({
         tenant: input.tenant,
         context: input.context,
         discussionAdapter: input.discussionAdapter,
         interactionRunId: input.interactionRunId,
-        pendingDraftThreads: input.pendingDraftThreads,
-        existingThreadIds,
+        pendingDraftDiscussions: input.pendingDraftDiscussions,
+        existingDiscussionIds,
       });
       if (recovered) {
         return;
       }
 
-      await this.cleanupPendingDraftThreads({
+      await this.cleanupPendingDraftDiscussions({
         tenant: input.tenant,
         codeReviewId: input.context.codeReview.id,
         discussionAdapter: input.discussionAdapter,
-        pendingDraftThreads: input.pendingDraftThreads,
+        pendingDraftDiscussions: input.pendingDraftDiscussions,
       });
       throw error;
     }
   }
 
-  private async tryRecoverPublishedDraftThreads(input: {
+  private async tryRecoverPublishedDraftDiscussions(input: {
     tenant: TenantRecord;
     context: ReviewSummaryContext;
     discussionAdapter: PlatformReviewDiscussionAdapter;
     interactionRunId: string;
-    pendingDraftThreads: PendingDraftThread[];
-    existingThreadIds: ReadonlySet<string>;
+    pendingDraftDiscussions: PendingDraftDiscussion[];
+    existingDiscussionIds: ReadonlySet<string>;
   }): Promise<boolean> {
     try {
       const matches = (
-        await input.discussionAdapter.matchPublishedDraftThreads({
-          pendingDraftThreads: input.pendingDraftThreads,
-          existingThreadIds: input.existingThreadIds,
+        await input.discussionAdapter.matchPublishedDraftDiscussions({
+          pendingDraftDiscussions: input.pendingDraftDiscussions,
+          existingDiscussionIds: input.existingDiscussionIds,
           maxAttempts: 1,
         })
       ).map((match) => ({
-        discussion: match.thread,
+        discussion: match.discussion,
         pending: match.pending,
         rootNote: match.rootComment,
       }));
-      await this.persistPublishedDraftThreadMatches({
+      await this.persistPublishedDraftDiscussionMatches({
         tenant: input.tenant,
         context: input.context,
         interactionRunId: input.interactionRunId,
@@ -583,15 +597,15 @@ export class DiscussionReconciler {
     }
   }
 
-  private async cleanupPendingDraftThreads(input: {
+  private async cleanupPendingDraftDiscussions(input: {
     tenant: TenantRecord;
     codeReviewId: number;
     discussionAdapter: PlatformReviewDiscussionAdapter;
-    pendingDraftThreads: PendingDraftThread[];
+    pendingDraftDiscussions: PendingDraftDiscussion[];
   }): Promise<void> {
-    for (const pending of input.pendingDraftThreads) {
+    for (const pending of input.pendingDraftDiscussions) {
       try {
-        await input.discussionAdapter.deleteDraftThread(pending.id);
+        await input.discussionAdapter.deleteDraftDiscussion(pending.id);
       } catch (error) {
         if (isNotFoundError(error)) {
           continue;
@@ -604,20 +618,20 @@ export class DiscussionReconciler {
             codeReviewId: input.codeReviewId,
             draftNoteId: pending.id,
           },
-          "failed to clean up platform draft thread",
+          "failed to clean up platform draft discussion",
         );
       }
     }
   }
 
-  private async persistPublishedDraftThreadMatches(input: {
+  private async persistPublishedDraftDiscussionMatches(input: {
     tenant: TenantRecord;
     context: ReviewSummaryContext;
     interactionRunId: string;
-    matches: PublishedDraftThreadMatch[];
+    matches: PublishedDraftDiscussionMatch[];
   }): Promise<void> {
     for (const match of input.matches) {
-      await this.persistCreatedThread({
+      await this.persistCreatedDiscussion({
         tenant: input.tenant,
         context: input.context,
         interactionRunId: input.interactionRunId,
@@ -631,7 +645,7 @@ export class DiscussionReconciler {
     }
   }
 
-  private async persistCreatedThread(input: {
+  private async persistCreatedDiscussion(input: {
     tenant: TenantRecord;
     context: ReviewSummaryContext;
     interactionRunId: string;
@@ -639,7 +653,7 @@ export class DiscussionReconciler {
     identityKey: string;
     fingerprint: string;
     body: string;
-    discussion: PlatformReviewThread;
+    discussion: PlatformReviewDiscussion;
     note: PlatformReviewComment;
   }): Promise<void> {
     await this.storage.upsertDiscussionMapping({
@@ -651,16 +665,16 @@ export class DiscussionReconciler {
       severity: input.finding.severity,
       category: input.finding.category,
       body: input.body,
-      platformThreadId: input.discussion.id,
+      platformDiscussionId: input.discussion.id,
       platformCommentId: Number(input.note.id),
       anchorJson: input.finding.anchor
         ? JSON.stringify(input.finding.anchor)
         : null,
       positionJson: input.note.positionJson,
       botDiscussion: input.discussion.comments[0]?.isBot ?? input.note.isBot,
-      botNote: input.note.isBot,
-      noteAuthorId: parseNumericId(input.note.authorId),
-      noteAuthorUsername: input.note.authorUsername,
+      botComment: input.note.isBot,
+      commentAuthorId: parseNumericId(input.note.authorId),
+      commentAuthorUsername: input.note.authorUsername,
       status: input.discussion.comments.some((note) => note.resolved === true)
         ? "resolved"
         : "open",
@@ -674,11 +688,11 @@ export class DiscussionReconciler {
     );
   }
 
-  private async persistThreadState(input: {
+  private async persistDiscussionState(input: {
     tenant: TenantRecord;
     context: ReviewSummaryContext;
     interactionRunId: string;
-    thread: KnownThread;
+    knownDiscussion: KnownDiscussion;
     note: PlatformReviewComment | null;
     identityKey: string;
     fingerprint: string;
@@ -690,13 +704,15 @@ export class DiscussionReconciler {
     discussionStatus: "open" | "resolved";
     findingStatus: ReviewFindingStatus;
   }): Promise<void> {
-    const rootNote = input.thread.discussion.comments[0];
+    const rootNote = input.knownDiscussion.discussion.comments[0];
     if (!rootNote || !input.note) {
       return;
     }
 
     await this.storage.upsertDiscussionMapping({
-      ...(input.thread.mapping ? { id: input.thread.mapping.id } : {}),
+      ...(input.knownDiscussion.mapping
+        ? { id: input.knownDiscussion.mapping.id }
+        : {}),
       tenantId: input.tenant.id,
       codeReviewId: input.context.codeReview.id,
       identityKey: input.identityKey,
@@ -705,16 +721,16 @@ export class DiscussionReconciler {
       severity: input.severity,
       category: input.category,
       body: input.body,
-      platformThreadId: input.thread.discussionId,
+      platformDiscussionId: input.knownDiscussion.platformDiscussionId,
       platformCommentId: Number(input.note.id),
-      anchorJson: input.thread.anchor
-        ? JSON.stringify(input.thread.anchor)
+      anchorJson: input.knownDiscussion.anchor
+        ? JSON.stringify(input.knownDiscussion.anchor)
         : null,
       positionJson: input.positionJson,
       botDiscussion: rootNote.isBot,
-      botNote: input.note.isBot,
-      noteAuthorId: parseNumericId(input.note.authorId),
-      noteAuthorUsername: input.note.authorUsername,
+      botComment: input.note.isBot,
+      commentAuthorId: parseNumericId(input.note.authorId),
+      commentAuthorUsername: input.note.authorUsername,
       status: input.discussionStatus,
       lastInteractionRunId: input.interactionRunId,
     });
@@ -727,7 +743,7 @@ export class DiscussionReconciler {
     );
     const shouldWarnAboutFindingStatusUpdate =
       input.findingStatus !== "open" ||
-      input.thread.mapping?.status === "resolved";
+      input.knownDiscussion.mapping?.status === "resolved";
     if (!updatedFinding && shouldWarnAboutFindingStatusUpdate) {
       this.logger.warn(
         {
@@ -743,16 +759,16 @@ export class DiscussionReconciler {
     await this.retireReplacedFinding({
       tenantId: input.tenant.id,
       codeReviewId: input.context.codeReview.id,
-      previousIdentityKey: input.thread.mapping?.identityKey ?? null,
+      previousIdentityKey: input.knownDiscussion.mapping?.identityKey ?? null,
       nextIdentityKey: input.identityKey,
     });
   }
 
-  private logSkippedThreadResolutionChange(input: {
+  private logSkippedDiscussionResolutionChange(input: {
     tenant: TenantRecord;
     codeReviewId: number;
     interactionRunId: string;
-    thread: KnownThread;
+    knownDiscussion: KnownDiscussion;
     resolved: boolean;
   }): void {
     this.logger.warn(
@@ -760,11 +776,11 @@ export class DiscussionReconciler {
         tenantId: input.tenant.id,
         codeReviewId: input.codeReviewId,
         interactionRunId: input.interactionRunId,
-        threadId: input.thread.threadId,
-        discussionId: input.thread.discussionId,
+        discussionId: input.knownDiscussion.discussionId,
+        platformDiscussionId: input.knownDiscussion.platformDiscussionId,
         requestedResolved: input.resolved,
       },
-      "skipping discussion resolution change because the thread is not resolvable",
+      "skipping discussion resolution change because the discussion is not resolvable",
     );
   }
 
@@ -776,7 +792,7 @@ export class DiscussionReconciler {
     reviewResult: ReviewResult;
     discussionAdapter: PlatformReviewDiscussionAdapter;
     activeFindings: SummaryFinding[];
-  }): Promise<ReconcileSummary["summaryNoteAction"]> {
+  }): Promise<ReconcileSummary["summaryCommentAction"]> {
     const body = buildReviewSummaryNote({
       platform: input.platform,
       tenant: input.tenant,
@@ -785,16 +801,16 @@ export class DiscussionReconciler {
       activeFindings: input.activeFindings,
     });
     const existingNote = findLatestReviewSummaryNote(
-      await input.discussionAdapter.listSummaryNotes(),
+      await input.discussionAdapter.listSummaryComments(),
       (note) => note.isBot,
     );
 
     if (existingNote) {
-      await input.discussionAdapter.updateSummaryNote(existingNote.id, body);
+      await input.discussionAdapter.updateSummaryComment(existingNote.id, body);
       return "updated";
     }
 
-    await input.discussionAdapter.createSummaryNote(body);
+    await input.discussionAdapter.createSummaryComment(body);
     return "created";
   }
 
@@ -835,8 +851,8 @@ export class DiscussionReconciler {
     tenant: TenantRecord;
     codeReviewId: number;
     reviewResult: ReviewResult;
-    threadById: ReadonlyMap<string, KnownThread>;
-    referencedThreadIds: ReadonlySet<string>;
+    discussionById: ReadonlyMap<string, KnownDiscussion>;
+    referencedDiscussionIds: ReadonlySet<string>;
   }): Promise<SummaryFinding[]> {
     const activeFindings = new Map<string, SummaryFinding>();
     const persistedFindings = await this.storage.listLatestReviewFindings(
@@ -866,11 +882,12 @@ export class DiscussionReconciler {
         endLine: finding.anchor?.endLine,
         side: finding.anchor?.side,
       });
-      const matchedThread = finding.priorThreadId
-        ? (input.threadById.get(finding.priorThreadId) ?? null)
+      const matchedDiscussion = finding.priorDiscussionId
+        ? (input.discussionById.get(finding.priorDiscussionId) ?? null)
         : null;
-      if (matchedThread) {
-        const previousIdentityKey = matchedThread.mapping?.identityKey ?? null;
+      if (matchedDiscussion) {
+        const previousIdentityKey =
+          matchedDiscussion.mapping?.identityKey ?? null;
         if (previousIdentityKey && previousIdentityKey !== nextIdentityKey) {
           activeFindings.delete(previousIdentityKey);
         }
@@ -887,25 +904,27 @@ export class DiscussionReconciler {
     for (const disposition of input.reviewResult.priorDispositions) {
       if (
         disposition.action !== "resolve" ||
-        input.referencedThreadIds.has(disposition.threadId)
+        input.referencedDiscussionIds.has(disposition.discussionId)
       ) {
         continue;
       }
 
-      const thread = input.threadById.get(disposition.threadId);
-      if (!thread) {
+      const knownDiscussion = input.discussionById.get(
+        disposition.discussionId,
+      );
+      if (!knownDiscussion) {
         continue;
       }
 
       const identityKey =
-        thread.mapping?.identityKey ??
+        knownDiscussion.mapping?.identityKey ??
         createFindingIdentityKey({
-          title: thread.title,
-          category: thread.mapping?.category ?? "correctness",
-          path: thread.anchor?.path,
-          startLine: thread.anchor?.startLine,
-          endLine: thread.anchor?.endLine,
-          side: thread.anchor?.side,
+          title: knownDiscussion.title,
+          category: knownDiscussion.mapping?.category ?? "correctness",
+          path: knownDiscussion.anchor?.path,
+          startLine: knownDiscussion.anchor?.startLine,
+          endLine: knownDiscussion.anchor?.endLine,
+          side: knownDiscussion.anchor?.side,
         });
       activeFindings.delete(identityKey);
     }
@@ -919,36 +938,38 @@ type SummaryFinding = Pick<
   "title" | "body" | "severity" | "category"
 >;
 
-export function buildProviderThreads(input: {
-  discussions: PlatformReviewThread[];
+export function buildProviderDiscussions(input: {
+  discussions: PlatformReviewDiscussion[];
   mappings: DiscussionMappingRecord[];
-}): ProviderThreadContext[] {
-  return buildKnownThreads(input).map((thread) => ({
-    threadId: thread.threadId,
-    discussionId: thread.discussionId,
-    noteId: Number(
-      thread.latestBotNote?.id ?? thread.discussion.comments[0]?.id ?? 0,
+}): ProviderDiscussionContext[] {
+  return buildKnownDiscussions(input).map((knownDiscussion) => ({
+    discussionId: knownDiscussion.discussionId,
+    platformDiscussionId: knownDiscussion.platformDiscussionId,
+    platformCommentId: Number(
+      knownDiscussion.latestBotNote?.id ??
+        knownDiscussion.discussion.comments[0]?.id ??
+        0,
     ),
-    title: thread.title,
-    body: thread.body,
-    anchor: thread.anchor,
-    resolvable: thread.resolvable,
-    resolved: thread.resolved,
-    humanReplies: thread.humanReplies,
+    title: knownDiscussion.title,
+    body: knownDiscussion.body,
+    anchor: knownDiscussion.anchor,
+    resolvable: knownDiscussion.resolvable,
+    resolved: knownDiscussion.resolved,
+    humanReplies: knownDiscussion.humanReplies,
   }));
 }
 
-function buildKnownThreads(input: {
-  discussions: PlatformReviewThread[];
+function buildKnownDiscussions(input: {
+  discussions: PlatformReviewDiscussion[];
   mappings: DiscussionMappingRecord[];
-}): KnownThread[] {
+}): KnownDiscussion[] {
   const mappingByDiscussionId = new Map(
     input.mappings.map(
-      (mapping) => [mapping.platformThreadId, mapping] as const,
+      (mapping) => [mapping.platformDiscussionId, mapping] as const,
     ),
   );
 
-  const threads: KnownThread[] = [];
+  const knownDiscussions: KnownDiscussion[] = [];
 
   for (const discussion of input.discussions) {
     const rootNote = discussion.comments[0];
@@ -975,61 +996,64 @@ function buildKnownThreads(input: {
       ? (JSON.parse(mapping.anchorJson) as ReviewAnchor)
       : (latestBotNote?.anchor ?? rootNote.anchor);
 
-    const threadTitle = stripTitleDecoration(
+    const discussionTitle = stripTitleDecoration(
       mapping?.title ??
         firstNonEmptyLine(
-          stripReviewThreadMarker(
+          stripReviewDiscussionMarker(
             mapping?.body ?? latestBotNote?.body ?? rootNote.body,
           ),
         ),
     );
-    const threadBody = stripReviewThreadMarker(
+    const discussionBody = stripReviewDiscussionMarker(
       mapping?.body ?? latestBotNote?.body ?? rootNote.body,
     );
 
-    threads.push({
-      threadId: mapping?.id ?? `discussion:${discussion.id}`,
-      discussionId: discussion.id,
+    knownDiscussions.push({
+      discussionId: mapping?.id ?? `discussion:${discussion.id}`,
+      platformDiscussionId: discussion.id,
       discussion,
       mapping,
       latestBotNote,
       anchor,
       resolvable: discussion.resolvable,
       resolved: discussion.comments.some((note) => note.resolved === true),
-      title: threadTitle || "Review finding",
-      body: threadBody,
+      title: discussionTitle || "Review finding",
+      body: discussionBody,
       humanReplies: discussion.comments
         .filter((note) => !note.isBot)
         .map((note) => ({
-          noteId: Number(note.id),
+          platformCommentId: Number(note.id),
           authorUsername: note.authorUsername ?? "(unknown)",
           body: note.body,
         })),
     });
   }
 
-  return threads;
+  return knownDiscussions;
 }
 
 function stripTitleDecoration(value: string): string {
   return value.replace(/^[#*\s`]+/, "").replace(/[*\s`]+$/, "");
 }
 
-function collectReferencedThreadIds(
+function collectReferencedDiscussionIds(
   findings: ReadonlyArray<ReviewFinding>,
-  threadById: ReadonlyMap<string, KnownThread>,
+  discussionById: ReadonlyMap<string, KnownDiscussion>,
 ): Set<string> {
-  const referencedThreadIds = new Set<string>();
+  const referencedDiscussionIds = new Set<string>();
 
   for (const finding of findings) {
-    if (!finding.priorThreadId || !threadById.has(finding.priorThreadId)) {
+    if (
+      !finding.priorDiscussionId ||
+      !discussionById.has(finding.priorDiscussionId)
+    ) {
       continue;
     }
 
-    referencedThreadIds.add(finding.priorThreadId);
+    referencedDiscussionIds.add(finding.priorDiscussionId);
   }
 
-  return referencedThreadIds;
+  return referencedDiscussionIds;
 }
 
 function parseNumericId(value: string | null): number | null {

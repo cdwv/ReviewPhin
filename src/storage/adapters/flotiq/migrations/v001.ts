@@ -75,7 +75,7 @@ export const V001_CTDS = [
         label: "Code Review ID",
         required: true,
       },
-      noteId: { type: "number", label: "Note ID", required: true },
+      commentId: { type: "number", label: "Comment ID", required: true },
       headSha: { type: "string", label: "Head SHA", required: true },
       status: { type: "string", label: "Status", required: true },
       payloadJson: {
@@ -203,9 +203,9 @@ export const V001_CTDS = [
         required: true,
         inputType: "textMarkdown",
       },
-      platformThreadId: {
+      platformDiscussionId: {
         type: "string",
-        label: "Platform Thread ID",
+        label: "Platform Discussion ID",
         required: true,
       },
       platformCommentId: {
@@ -230,15 +230,15 @@ export const V001_CTDS = [
         label: "Bot Discussion",
         required: true,
       },
-      botNote: { type: "boolean", label: "Bot Note", required: true },
-      noteAuthorId: {
+      botComment: { type: "boolean", label: "Bot Comment", required: true },
+      commentAuthorId: {
         type: "number",
-        label: "Note Author ID",
+        label: "Comment Author ID",
         required: false,
       },
-      noteAuthorUsername: {
+      commentAuthorUsername: {
         type: "string",
-        label: "Note Author Username",
+        label: "Comment Author Username",
         required: false,
       },
       status: { type: "string", label: "Status", required: true },
@@ -290,9 +290,9 @@ export const V001_CTDS = [
         required: true,
         inputType: "textarea",
       },
-      notesJson: {
+      commentsJson: {
         type: "string",
-        label: "Notes JSON",
+        label: "Comments JSON",
         required: true,
         inputType: "textarea",
       },
@@ -351,14 +351,14 @@ export const V001_CTDS = [
         label: "Prompt Context Changed Files",
         required: true,
       },
-      promptContextPriorThreads: {
+      promptContextPriorDiscussions: {
         type: "number",
-        label: "Prompt Context Prior Threads",
+        label: "Prompt Context Prior Discussions",
         required: true,
       },
-      promptContextNotes: {
+      promptContextComments: {
         type: "number",
-        label: "Prompt Context Notes",
+        label: "Prompt Context Comments",
         required: true,
       },
       assistantTurns: {

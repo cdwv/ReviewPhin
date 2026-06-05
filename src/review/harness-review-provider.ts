@@ -85,10 +85,7 @@ export class HarnessReviewProvider implements ReviewProvider {
     }
 
     return reviewResultSchema.parse(
-      this.normalizeOptionalReplyHandoff(
-        response.parsed,
-        effectiveContext,
-      ),
+      this.normalizeOptionalReplyHandoff(response.parsed, effectiveContext),
     );
   }
 

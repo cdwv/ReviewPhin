@@ -122,7 +122,7 @@ export function buildReviewSummaryNote(input: {
 
   const tenant = input.tenant ?? input.context.tenant;
   if (!tenant) {
-    throw new Error("Review summary note requires tenant context");
+    throw new Error("Review summary comment requires tenant context");
   }
 
   lines.push(...input.platform.getReviewSummaryInstructions(tenant), "");

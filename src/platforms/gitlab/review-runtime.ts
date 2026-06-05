@@ -8,19 +8,17 @@ import type {
   PlatformReviewRoutingContext,
   PlatformReviewRuntime,
 } from "../IPlatform.js";
-import {
-  buildProviderThreads,
-} from "../../reconcile/discussion-reconciler.js";
+import { buildProviderDiscussions } from "../../reconcile/discussion-reconciler.js";
 import type {
   CodeReviewChange,
   CodeReviewDiscussion,
   CodeReviewItem,
-  CodeReviewNote,
+  CodeReviewComment,
   ChatterBatchResult,
-  ProviderThreadContext,
+  ProviderDiscussionContext,
   ResponseTarget,
   ReviewContext,
-  TriggerNoteReference,
+  TriggerCommentReference,
 } from "../../review/types.js";
 import { buildScopedReviewContext } from "../../review/review-scope.js";
 import type { InteractionRunArtifacts } from "../../review/run-artifacts.js";
@@ -40,7 +38,7 @@ import {
 } from "./image-attachments.js";
 import {
   GitLabReviewDiscussionAdapter,
-  toPlatformReviewThread,
+  toPlatformReviewDiscussion,
 } from "./review-discussion-adapter.js";
 import { getGitLabTenantConfig } from "./tenant-config.js";
 import type {
@@ -54,7 +52,7 @@ import type {
 } from "./types.js";
 import {
   buildGitLabReviewTriggerContext,
-  locateTriggerNoteReference,
+  locateTriggerCommentReference,
 } from "./trigger.js";
 import { WorkspaceMaterializer } from "./workspace.js";
 
@@ -119,20 +117,21 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       tenant: this.tenant,
       job: input.job,
       client: this.client,
-      context:
-        input.context?.platformContext as LightweightMergeRequestContext | undefined,
+      context: input.context?.platformContext as
+        | LightweightMergeRequestContext
+        | undefined,
     });
     return this.wrapContext(context);
   }
 
-  public buildProviderThreads(input: {
+  public buildProviderDiscussions(input: {
     context: PlatformReviewRoutingContext;
     mappings: DiscussionMappingRecord[];
   }) {
     const context = this.unwrapContext(input.context);
-    return buildProviderThreads({
+    return buildProviderDiscussions({
       discussions: context.discussions.map((discussion) =>
-        toPlatformReviewThread(discussion, this.tenant),
+        toPlatformReviewDiscussion(discussion, this.tenant),
       ),
       mappings: input.mappings,
     });
@@ -141,24 +140,24 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   public buildReviewTriggerContext(input: {
     payload: unknown;
     context: PlatformReviewRoutingContext;
-    priorThreads: ProviderThreadContext[];
+    priorDiscussions: ProviderDiscussionContext[];
   }): ReviewContext["trigger"] {
     const context = this.unwrapContext(input.context);
     return buildGitLabReviewTriggerContext({
       payload: input.payload as never,
       tenant: this.tenant,
       discussions: context.discussions,
-      priorThreads: input.priorThreads,
+      priorDiscussions: input.priorDiscussions,
     });
   }
 
-  public locateTriggerNoteReference(input: {
+  public locateTriggerCommentReference(input: {
     context: PlatformReviewRoutingContext;
-    noteId: number;
-  }): TriggerNoteReference {
-    return locateTriggerNoteReference(
+    commentId: number;
+  }): TriggerCommentReference {
+    return locateTriggerCommentReference(
       this.unwrapContext(input.context).discussions,
-      input.noteId,
+      input.commentId,
     );
   }
 
@@ -172,7 +171,9 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     trigger: ReviewContext["trigger"];
     context: PlatformReviewRoutingContext;
     mappings: DiscussionMappingRecord[];
-    priorFindings: Awaited<ReturnType<StorageHelpers["listPriorReviewFindings"]>>;
+    priorFindings: Awaited<
+      ReturnType<StorageHelpers["listPriorReviewFindings"]>
+    >;
     previousInteraction: PreviousCompletedInteractionRecord | null;
   }): ReviewContext {
     const context = this.unwrapContext(input.context);
@@ -182,16 +183,16 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       workspacePath: context.workspace.rootPath,
       codeReview: toCodeReviewItem(context.mergeRequest),
       changes: context.changes.map(toCodeReviewChange),
-      notes: context.notes.map(toCodeReviewNote),
+      comments: context.notes.map(toCodeReviewComment),
       discussions: context.discussions.map((discussion) =>
         toCodeReviewDiscussion(discussion, this.tenant),
       ),
       instructionFiles: context.workspace.instructionFiles,
       projectMemory: context.projectMemory,
       trigger: input.trigger,
-      priorThreads: buildProviderThreads({
+      priorDiscussions: buildProviderDiscussions({
         discussions: context.discussions.map((discussion) =>
-          toPlatformReviewThread(discussion, this.tenant),
+          toPlatformReviewDiscussion(discussion, this.tenant),
         ),
         mappings: input.mappings,
       }),
@@ -237,13 +238,15 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   }): Promise<DiscussionMappingRecord[]> {
     const context = this.unwrapContext(input.context);
     const discussionById = new Map(
-      context.discussions.map((discussion) => [discussion.id, discussion] as const),
+      context.discussions.map(
+        (discussion) => [discussion.id, discussion] as const,
+      ),
     );
     const syncedMappings = [...input.mappings];
     let synchronizedCount = 0;
 
     for (const [index, mapping] of input.mappings.entries()) {
-      const discussion = discussionById.get(mapping.platformThreadId);
+      const discussion = discussionById.get(mapping.platformDiscussionId);
       if (!discussion) {
         continue;
       }
@@ -265,14 +268,14 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
         severity: mapping.severity,
         category: mapping.category,
         body: mapping.body,
-        platformThreadId: mapping.platformThreadId,
+        platformDiscussionId: mapping.platformDiscussionId,
         platformCommentId: mapping.platformCommentId,
         anchorJson: mapping.anchorJson,
         positionJson: mapping.positionJson,
         botDiscussion: mapping.botDiscussion,
-        botNote: mapping.botNote,
-        noteAuthorId: mapping.noteAuthorId,
-        noteAuthorUsername: mapping.noteAuthorUsername,
+        botComment: mapping.botComment,
+        commentAuthorId: mapping.commentAuthorId,
+        commentAuthorUsername: mapping.commentAuthorUsername,
         status: liveStatus,
         lastInteractionRunId: mapping.lastInteractionRunId,
       });
@@ -291,7 +294,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
           {
             tenantId: input.tenant.id,
             codeReviewId: input.codeReviewId,
-            discussionId: mapping.platformThreadId,
+            discussionId: mapping.platformDiscussionId,
             identityKey: mapping.identityKey,
             findingStatus: liveStatus,
           },
@@ -329,15 +332,19 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     });
   }
 
-  public async resolveTriggerNoteReference(input: {
+  public async resolveTriggerCommentReference(input: {
     codeReviewId: number;
-    noteId: number;
-  }): Promise<TriggerNoteReference> {
+    commentId: number;
+  }): Promise<TriggerCommentReference> {
     const tenantConfig = getGitLabTenantConfig(this.tenant);
     const [notes, discussions] = await Promise.all([
-      this.client.listCodeReviewNotes(tenantConfig.projectId, input.codeReviewId, {
-        noCache: true,
-      }),
+      this.client.listCodeReviewNotes(
+        tenantConfig.projectId,
+        input.codeReviewId,
+        {
+          noCache: true,
+        },
+      ),
       this.client.listCodeReviewDiscussions(
         tenantConfig.projectId,
         input.codeReviewId,
@@ -345,27 +352,27 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       ),
     ]);
 
-    const noteExists =
-      notes.some((note) => note.id === input.noteId) ||
+    const commentExists =
+      notes.some((note) => note.id === input.commentId) ||
       discussions.some((discussion) =>
-        discussion.notes.some((note) => note.id === input.noteId),
+        discussion.notes.some((note) => note.id === input.commentId),
       );
-    if (!noteExists) {
+    if (!commentExists) {
       throw new Error(
-        `Trigger note ${input.noteId} no longer exists on merge request ${input.codeReviewId}`,
+        `Trigger comment ${input.commentId} no longer exists on merge request ${input.codeReviewId}`,
       );
     }
 
-    return locateTriggerNoteReference(discussions, input.noteId);
+    return locateTriggerCommentReference(discussions, input.commentId);
   }
 
-  public async ensureTriggerNoteReaction(input: {
+  public async ensureTriggerCommentReaction(input: {
     codeReviewId: number;
-    note: TriggerNoteReference;
+    comment: TriggerCommentReference;
     reactionName: string;
     interactionJobId: string;
   }): Promise<void> {
-    if (input.note.kind === "discussion-note") {
+    if (input.comment.kind === "discussion-comment") {
       return;
     }
 
@@ -374,10 +381,12 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       const existing = await this.client.listTriggerNoteAwardEmojis(
         tenantConfig.projectId,
         input.codeReviewId,
-        input.note,
+        input.comment,
       );
       const hasReaction = existing.some(
-        (award) => award.name === input.reactionName && isBotUser(award.user, this.tenant),
+        (award) =>
+          award.name === input.reactionName &&
+          isBotUser(award.user, this.tenant),
       );
       if (hasReaction) {
         return;
@@ -386,7 +395,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       await this.client.createTriggerNoteAwardEmoji(
         tenantConfig.projectId,
         input.codeReviewId,
-        input.note,
+        input.comment,
         input.reactionName,
       );
     } catch (error) {
@@ -396,10 +405,10 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
           tenantId: this.tenant.id,
           interactionJobId: input.interactionJobId,
           codeReviewId: input.codeReviewId,
-          note: input.note,
+          comment: input.comment,
           reactionName: input.reactionName,
         },
-        "failed to synchronize trigger-note reaction",
+        "failed to synchronize trigger-comment reaction",
       );
     }
   }
@@ -419,7 +428,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       mergeRequest: context.mergeRequest,
       triggerNote: {
         body: input.trigger.body,
-        noteId: input.trigger.noteId,
+        commentId: input.trigger.commentId,
       },
     });
     if (references.length === 0) {
@@ -452,14 +461,14 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
         data: {
           issueCount: materialized.issues.length,
           attachmentCount: materialized.attachments.length,
-          triggerNoteId: input.trigger.noteId,
+          triggerCommentId: input.trigger.commentId,
           issues: materialized.issues,
         },
       });
       this.logger.warn(
         {
           tenantId: this.tenant.id,
-          triggerNoteId: input.trigger.noteId,
+          triggerCommentId: input.trigger.commentId,
           issueCount: materialized.issues.length,
         },
         "gitlab image attachment downloads failed for some referenced images; continuing with partial image context",
@@ -481,7 +490,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     Array<{
       target: ResponseTarget;
       status: "published" | "failed";
-      noteId?: number | undefined;
+      commentId?: number | undefined;
       error?: string | undefined;
     }>
   > {
@@ -491,7 +500,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     const outcomes: Array<{
       target: ResponseTarget;
       status: "published" | "failed";
-      noteId?: number | undefined;
+      commentId?: number | undefined;
       error?: string | undefined;
     }> = [];
     const tenantConfig = getGitLabTenantConfig(this.tenant);
@@ -526,7 +535,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
         outcomes.push({
           target: matchingTarget,
           status: "published",
-          noteId: published.id,
+          commentId: published.id,
         });
       } catch (error) {
         outcomes.push({
@@ -543,7 +552,9 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   public async cleanupWorkspace(
     workspace: PlatformMaterializedWorkspace,
   ): Promise<void> {
-    await this.workspaceMaterializer.cleanup(workspace as MaterializedWorkspace);
+    await this.workspaceMaterializer.cleanup(
+      workspace as MaterializedWorkspace,
+    );
   }
 
   private wrapContext(
@@ -558,7 +569,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       workspace: context.workspace,
       projectMemory: context.projectMemory,
       changedFileCount: context.changes.length,
-      noteCount: context.notes.length,
+      commentCount: context.notes.length,
       discussionCount: context.discussions.length,
       platformContext: context,
     };
@@ -603,9 +614,9 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   }
 
   private responseTargetKey(
-    target: Pick<ResponseTarget, "kind" | "noteId" | "discussionId">,
+    target: Pick<ResponseTarget, "kind" | "commentId" | "discussionId">,
   ): string {
-    return `${target.kind}::${target.noteId}::${target.discussionId ?? ""}`;
+    return `${target.kind}::${target.commentId}::${target.discussionId ?? ""}`;
   }
 }
 
@@ -629,7 +640,9 @@ function toCodeReviewItem(mergeRequest: GitLabMergeRequest): CodeReviewItem {
   };
 }
 
-function toCodeReviewChange(change: GitLabMergeRequestChange): CodeReviewChange {
+function toCodeReviewChange(
+  change: GitLabMergeRequestChange,
+): CodeReviewChange {
   return {
     oldPath: change.old_path,
     newPath: change.new_path,
@@ -640,7 +653,7 @@ function toCodeReviewChange(change: GitLabMergeRequestChange): CodeReviewChange 
   };
 }
 
-function toCodeReviewNote(note: GitLabNote): CodeReviewNote {
+function toCodeReviewComment(note: GitLabNote): CodeReviewComment {
   return {
     id: note.id,
     body: note.body,

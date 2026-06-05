@@ -1,3 +1,4 @@
+import type { FastifyReply, FastifyRequest } from "fastify";
 import type { Logger } from "pino";
 import type { ZodObject, ZodRawShape } from "zod";
 
@@ -9,12 +10,12 @@ import type {
 import type { InteractionRunArtifacts } from "../review/run-artifacts.js";
 import type {
   ChatterBatchResult,
-  ProviderThreadContext,
+  ProviderDiscussionContext,
   ResponseTarget,
   ReviewContext,
   ReviewSummaryContext,
   ReviewTriggerContext,
-  TriggerNoteReference,
+  TriggerCommentReference,
   WebhookReviewTrigger,
 } from "../review/types.js";
 import type {
@@ -29,6 +30,13 @@ import type { PlatformReviewDiscussionAdapter } from "./review-adapter.js";
 export interface PlatformWebhookRequest {
   headers: Record<string, string | string[] | undefined>;
   body: unknown;
+  rawBody: Buffer;
+  pathSuffix: string;
+}
+
+export interface PlatformSetupContext {
+  pathSuffix: string;
+  rawBody: Buffer;
 }
 
 export interface PlatformMaterializedWorkspace {
@@ -43,32 +51,40 @@ export interface PlatformReviewRoutingContext {
   workspace: PlatformMaterializedWorkspace;
   projectMemory: ReviewContext["projectMemory"];
   changedFileCount: number;
-  noteCount: number;
+  commentCount: number;
   discussionCount: number;
   platformContext: unknown;
 }
 
 export type PlatformHydratedReviewContext = PlatformReviewRoutingContext;
 
+export type PlatformSetupHandler = (input: {
+  request: FastifyRequest;
+  reply: FastifyReply;
+  context: PlatformSetupContext;
+}) => Promise<void> | void;
+
 export interface PlatformReviewRuntime {
-  loadRoutingContext(job: InteractionJobRecord): Promise<PlatformReviewRoutingContext>;
+  loadRoutingContext(
+    job: InteractionJobRecord,
+  ): Promise<PlatformReviewRoutingContext>;
   hydrate(input: {
     job: InteractionJobRecord;
     context?: PlatformReviewRoutingContext | undefined;
   }): Promise<PlatformReviewRoutingContext>;
-  buildProviderThreads(input: {
+  buildProviderDiscussions(input: {
     context: PlatformReviewRoutingContext;
     mappings: DiscussionMappingRecord[];
-  }): ProviderThreadContext[];
+  }): ProviderDiscussionContext[];
   buildReviewTriggerContext(input: {
     payload: unknown;
     context: PlatformReviewRoutingContext;
-    priorThreads: ProviderThreadContext[];
+    priorDiscussions: ProviderDiscussionContext[];
   }): ReviewTriggerContext;
-  locateTriggerNoteReference(input: {
+  locateTriggerCommentReference(input: {
     context: PlatformReviewRoutingContext;
-    noteId: number;
-  }): TriggerNoteReference;
+    commentId: number;
+  }): TriggerCommentReference;
   buildPromptContext(input: {
     attachments: ReviewContext["attachments"];
     attachmentIssues: ReviewContext["attachmentIssues"];
@@ -79,7 +95,9 @@ export interface PlatformReviewRuntime {
     trigger: ReviewContext["trigger"];
     context: PlatformReviewRoutingContext;
     mappings: DiscussionMappingRecord[];
-    priorFindings: Awaited<ReturnType<StorageHelpers["listPriorReviewFindings"]>>;
+    priorFindings: Awaited<
+      ReturnType<StorageHelpers["listPriorReviewFindings"]>
+    >;
     previousInteraction: PreviousCompletedInteractionRecord | null;
   }): ReviewContext;
   syncDiscussionFindingStatuses(input: {
@@ -92,13 +110,13 @@ export interface PlatformReviewRuntime {
     context: PlatformReviewRoutingContext;
     interactionRunId: string;
   }): PlatformReviewDiscussionAdapter;
-  resolveTriggerNoteReference(input: {
+  resolveTriggerCommentReference(input: {
     codeReviewId: number;
-    noteId: number;
-  }): Promise<TriggerNoteReference>;
-  ensureTriggerNoteReaction(input: {
+    commentId: number;
+  }): Promise<TriggerCommentReference>;
+  ensureTriggerCommentReaction(input: {
     codeReviewId: number;
-    note: TriggerNoteReference;
+    comment: TriggerCommentReference;
     reactionName: string;
     interactionJobId: string;
   }): Promise<void>;
@@ -119,7 +137,7 @@ export interface PlatformReviewRuntime {
     Array<{
       target: ResponseTarget;
       status: "published" | "failed";
-      noteId?: number | undefined;
+      commentId?: number | undefined;
       error?: string | undefined;
     }>
   >;
@@ -127,15 +145,12 @@ export interface PlatformReviewRuntime {
 }
 
 export interface IPlatform {
-  getSetupRoutes(): {
-    path: string;
-    handler: (req: Request, res: Response) => void;
-  }[];
   getPlatformInfo(): {
     name: string;
     description: string;
     slug: string;
   };
+  getSetupHandler?(): PlatformSetupHandler | null;
   getTenantKey(platformConfig: Record<string, unknown>): string;
   parseWebhookPayload(payload: unknown): unknown;
   identifyTenantKey(
@@ -156,7 +171,7 @@ export interface IPlatform {
   }): Promise<{
     dedupeKey: string;
     codeReviewId: number;
-    noteId: number;
+    commentId: number;
     headSha: string;
     payloadJson: string;
   }>;

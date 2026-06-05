@@ -239,9 +239,9 @@ describe("GitLab reactions", () => {
 
     await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
       kind: "direct-mention",
-      note: {
-        kind: "code-review-note",
-        noteId: 55,
+      comment: {
+        kind: "code-review-comment",
+        commentId: 55,
       },
     });
     await worker.processJob("job_1");
@@ -334,9 +334,9 @@ describe("GitLab reactions", () => {
 
     await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
       kind: "direct-mention",
-      note: {
-        kind: "code-review-note",
-        noteId: 55,
+      comment: {
+        kind: "code-review-comment",
+        commentId: 55,
       },
     });
 
@@ -418,9 +418,9 @@ describe("GitLab reactions", () => {
 
     await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
       kind: "direct-mention",
-      note: {
-        kind: "code-review-note",
-        noteId: 55,
+      comment: {
+        kind: "code-review-comment",
+        commentId: 55,
       },
     });
 
@@ -521,10 +521,10 @@ describe("GitLab reactions", () => {
 
     await worker.createInteractionJobFromWebhook(followUpPayload, tenant, {
       kind: "follow-up-comment",
-      note: {
-        kind: "discussion-note",
+      comment: {
+        kind: "discussion-comment",
         discussionId: "disc_1",
-        noteId: 56,
+        commentId: 56,
       },
     });
     await worker.processJob("job_1");
@@ -549,7 +549,7 @@ function createWorker(input: {
     dedupeKey: "dedupe",
     projectId: tenant.projectId,
     codeReviewId: 7,
-    noteId: input.payload.object_attributes.id,
+    commentId: input.payload.object_attributes.id,
     headSha: "abc123",
     status: "queued" as const,
     payloadJson: JSON.stringify(input.payload),

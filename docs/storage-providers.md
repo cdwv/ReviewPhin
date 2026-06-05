@@ -22,7 +22,28 @@ The SQLite adapter runs idempotent schema migrations on startup. No manual migra
 
 ### Backup and portability
 
-SQLite produces a single file. Back it up by copying the file. To move data to another adapter, use the `storage migrate` CLI command:
+SQLite produces a single file. Back it up by copying the file or using the `sqlite3 .backup` command:
+
+```bash
+sqlite3 ./data/review-worker.sqlite ".backup './data/review-worker.sqlite.$(date -Iminutes).bak'"
+```
+
+To automate backups, add this to a cron job (e.g., daily backups):
+
+```bash
+#!/bin/bash
+BACKUP_DIR="./data/backups"
+mkdir -p "$BACKUP_DIR"
+sqlite3 ./data/review-worker.sqlite ".backup '$BACKUP_DIR/review-worker.sqlite.$(date -Iminutes).bak'"
+```
+
+To clean up backups older than 2 weeks:
+
+```bash
+find ./data/backups -name "review-worker.sqlite.*.bak" -mtime +14 -delete
+```
+
+To move data to another adapter, use the `storage migrate` CLI command:
 
 ```bash
 reviewphin storage migrate \
@@ -92,7 +113,7 @@ The storage layer is designed to be extended. To implement your own adapter (Pos
 
    ```ts
    getSupportedStorageContract(): string {
-     return "storage-v000";
+     return "storage-v001";
    }
    ```
 
