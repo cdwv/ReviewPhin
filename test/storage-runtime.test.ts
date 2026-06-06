@@ -6,7 +6,10 @@ import { describe, expect, it } from "vitest";
 
 import { listAll } from "../src/storage/storage-helpers.js";
 import { initializeStorageRuntime } from "../src/storage/runtime.js";
-import { createGitLabTenantInput } from "./helpers/gitlab-tenant.js";
+import {
+  createGitLabConnectionRecord,
+  createGitLabTenantInput,
+} from "./helpers/gitlab-tenant.js";
 
 describe("storage runtime", () => {
   it("loads the built-in sqlite provider and prepares storage", async () => {
@@ -22,6 +25,9 @@ describe("storage runtime", () => {
     });
 
     try {
+      await runtime.storage.stores.platformConnections.upsert(
+        createGitLabConnectionRecord(),
+      );
       await runtime.storage.upsertTenant(createGitLabTenantInput());
 
       expect(await listAll(runtime.storage.stores.tenants)).toHaveLength(1);
@@ -33,6 +39,7 @@ describe("storage runtime", () => {
         "sqlite:0005_v1_code_review_snapshots",
         "sqlite:0006_v1_drop_legacy_tenant_columns",
         "sqlite:0007_v1_generic_storage_column_names",
+        "sqlite:0008_v2_platform_connections",
       ]);
     } finally {
       await runtime.provider.close();

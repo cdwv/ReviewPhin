@@ -7,6 +7,7 @@ import type {
   PlatformMaterializedWorkspace,
   PlatformReviewRoutingContext,
   PlatformReviewRuntime,
+  ResolvedTenant,
 } from "../IPlatform.js";
 import { buildProviderDiscussions } from "../../reconcile/discussion-reconciler.js";
 import type {
@@ -40,7 +41,10 @@ import {
   GitLabReviewDiscussionAdapter,
   toPlatformReviewDiscussion,
 } from "./review-discussion-adapter.js";
-import { getGitLabTenantConfig } from "./tenant-config.js";
+import {
+  getGitLabConnectionConfig,
+  getGitLabTenantConfig,
+} from "./tenant-config.js";
 import type {
   GitLabDiscussion,
   GitLabMergeRequest,
@@ -59,7 +63,7 @@ import { WorkspaceMaterializer } from "./workspace.js";
 interface GitLabReviewRuntimeOptions {
   storage: StorageHelpers;
   logger: Logger;
-  tenant: TenantRecord;
+  resolvedTenant: ResolvedTenant;
   interactionJobId: string;
   workspaceRoot: string;
   memoryEnabled: boolean;
@@ -71,6 +75,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   private readonly storage: StorageHelpers;
   private readonly logger: Logger;
   private readonly tenant: TenantRecord;
+  private readonly resolvedTenant: ResolvedTenant;
   private readonly workspaceMaterializer: WorkspaceMaterializer;
   private readonly hydrator: CodeReviewContextHydrator;
   private readonly client: GitLabClient;
@@ -78,7 +83,8 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   public constructor(options: GitLabReviewRuntimeOptions) {
     this.storage = options.storage;
     this.logger = options.logger;
-    this.tenant = options.tenant;
+    this.resolvedTenant = options.resolvedTenant;
+    this.tenant = options.resolvedTenant.tenant;
     this.workspaceMaterializer = new WorkspaceMaterializer({
       workspaceRoot: options.workspaceRoot,
       logger: options.logger,
@@ -91,7 +97,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     });
     this.client = this.createGitLabClient({
       logger: options.logger,
-      tenant: options.tenant,
+      resolvedTenant: options.resolvedTenant,
       interactionJobId: options.interactionJobId,
       interactionRunId: options.interactionRunId,
       runArtifacts: options.runArtifacts,
@@ -131,7 +137,10 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     const context = this.unwrapContext(input.context);
     return buildProviderDiscussions({
       discussions: context.discussions.map((discussion) =>
-        toPlatformReviewDiscussion(discussion, this.tenant),
+        toPlatformReviewDiscussion(
+          discussion,
+          getGitLabConnectionConfig(this.resolvedTenant.connection).botUserId,
+        ),
       ),
       mappings: input.mappings,
     });
@@ -146,6 +155,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     return buildGitLabReviewTriggerContext({
       payload: input.payload as never,
       tenant: this.tenant,
+      connection: this.resolvedTenant.connection,
       discussions: context.discussions,
       priorDiscussions: input.priorDiscussions,
     });
@@ -185,14 +195,20 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       changes: context.changes.map(toCodeReviewChange),
       comments: context.notes.map(toCodeReviewComment),
       discussions: context.discussions.map((discussion) =>
-        toCodeReviewDiscussion(discussion, this.tenant),
+        toCodeReviewDiscussion(
+          discussion,
+          getGitLabConnectionConfig(this.resolvedTenant.connection).botUserId,
+        ),
       ),
       instructionFiles: context.workspace.instructionFiles,
       projectMemory: context.projectMemory,
       trigger: input.trigger,
       priorDiscussions: buildProviderDiscussions({
         discussions: context.discussions.map((discussion) =>
-          toPlatformReviewDiscussion(discussion, this.tenant),
+          toPlatformReviewDiscussion(
+            discussion,
+            getGitLabConnectionConfig(this.resolvedTenant.connection).botUserId,
+          ),
         ),
         mappings: input.mappings,
       }),
@@ -325,6 +341,8 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   }) {
     return new GitLabReviewDiscussionAdapter({
       tenant: this.tenant,
+      botUserId: getGitLabConnectionConfig(this.resolvedTenant.connection)
+        .botUserId,
       context: this.unwrapContext(input.context),
       client: this.client,
       logger: this.logger,
@@ -386,7 +404,10 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       const hasReaction = existing.some(
         (award) =>
           award.name === input.reactionName &&
-          isBotUser(award.user, this.tenant),
+          isBotUser(
+            award.user,
+            getGitLabConnectionConfig(this.resolvedTenant.connection).botUserId,
+          ),
       );
       if (hasReaction) {
         return;
@@ -424,7 +445,8 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   }> {
     const context = this.unwrapContext(input.context);
     const references = discoverGitLabImageAttachmentReferences({
-      gitLabBaseUrl: getGitLabTenantConfig(this.tenant).baseUrl,
+      gitLabBaseUrl: getGitLabConnectionConfig(this.resolvedTenant.connection)
+        .baseUrl,
       mergeRequest: context.mergeRequest,
       triggerNote: {
         body: input.trigger.body,
@@ -585,18 +607,20 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
 
   private createGitLabClient(input: {
     logger: Logger;
-    tenant: TenantRecord;
+    resolvedTenant: ResolvedTenant;
     interactionJobId: string;
     interactionRunId?: string | undefined;
     runArtifacts?: InteractionRunArtifacts | undefined;
   }): GitLabClient {
-    const tenantConfig = getGitLabTenantConfig(input.tenant);
+    const connectionConfig = getGitLabConnectionConfig(
+      input.resolvedTenant.connection,
+    );
     const runArtifacts = input.runArtifacts;
     return new GitLabClient({
-      baseUrl: tenantConfig.baseUrl,
-      apiToken: tenantConfig.apiToken,
+      baseUrl: connectionConfig.baseUrl,
+      apiToken: connectionConfig.apiToken,
       logger: input.logger.child({
-        tenantId: input.tenant.id,
+        tenantId: input.resolvedTenant.tenant.id,
         interactionJobId: input.interactionJobId,
         ...(input.interactionRunId
           ? { interactionRunId: input.interactionRunId }
@@ -665,7 +689,7 @@ function toCodeReviewComment(note: GitLabNote): CodeReviewComment {
 
 function toCodeReviewDiscussion(
   discussion: GitLabDiscussion,
-  tenant: TenantRecord,
+  botUserId: number,
 ): CodeReviewDiscussion {
   return {
     id: discussion.id,
@@ -696,7 +720,7 @@ function toCodeReviewDiscussion(
             : null
         : null,
       positionJson: note.position ? JSON.stringify(note.position) : null,
-      isBot: isBotUser(note.author, tenant),
+      isBot: isBotUser(note.author, botUserId),
       createdAt: note.created_at ?? null,
       updatedAt: note.updated_at ?? null,
     })),

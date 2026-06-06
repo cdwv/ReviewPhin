@@ -21,6 +21,8 @@ import type {
 import type {
   DiscussionMappingRecord,
   InteractionJobRecord,
+  PlatformConnectionRecord,
+  PlatformConnectionStatus,
   PreviousCompletedInteractionRecord,
   TenantRecord,
 } from "../storage/contract/current.js";
@@ -32,6 +34,11 @@ export interface PlatformWebhookRequest {
   body: unknown;
   rawBody: Buffer;
   pathSuffix: string;
+}
+
+export interface ResolvedTenant {
+  tenant: TenantRecord;
+  connection: PlatformConnectionRecord;
 }
 
 export interface PlatformSetupContext {
@@ -151,22 +158,25 @@ export interface IPlatform {
     slug: string;
   };
   getSetupHandler?(): PlatformSetupHandler | null;
-  getTenantKey(platformConfig: Record<string, unknown>): string;
+  getTenantKey(
+    tenantConfig: Record<string, unknown>,
+    connection: PlatformConnectionRecord,
+  ): string;
   parseWebhookPayload(payload: unknown): unknown;
   identifyTenantKey(
     payload: unknown,
     req?: PlatformWebhookRequest,
   ): Promise<string | null> | string | null;
   isWebhookRequestAuthorized(
-    tenant: TenantRecord,
+    resolvedTenant: ResolvedTenant,
     req: PlatformWebhookRequest,
   ): boolean | Promise<boolean>;
   classifyWebhookTrigger(
-    tenant: TenantRecord,
+    resolvedTenant: ResolvedTenant,
     payload: unknown,
   ): WebhookReviewTrigger | Promise<WebhookReviewTrigger | null> | null;
   createInteractionJob(input: {
-    tenant: TenantRecord;
+    resolvedTenant: ResolvedTenant;
     payload: unknown;
   }): Promise<{
     dedupeKey: string;
@@ -178,7 +188,9 @@ export interface IPlatform {
   createReviewRuntime(input: {
     storage: StorageHelpers;
     logger: Logger;
-    tenant: TenantRecord;
+    resolvedTenant?: ResolvedTenant;
+    tenant?: TenantRecord;
+    connection?: PlatformConnectionRecord;
     interactionJobId: string;
     workspaceRoot: string;
     memoryEnabled: boolean;
@@ -186,15 +198,23 @@ export interface IPlatform {
     runArtifacts?: InteractionRunArtifacts | undefined;
   }): PlatformReviewRuntime;
   buildHarnessTenantContext(input: {
-    tenant: TenantRecord;
+    resolvedTenant: ResolvedTenant;
     logger: Logger;
     memoryEnabled: boolean;
     logging?: HarnessRunLoggingContext | undefined;
   }): HarnessTenantContext;
-  getReviewSummaryInstructions(tenant: TenantRecord): string[];
-  getRegistrationSchema(): ZodObject<ZodRawShape>;
-  onBeforeRegisterTenant?(
+  getReviewSummaryInstructions(resolvedTenant: ResolvedTenant): string[];
+  getTenantRegistrationSchema(): ZodObject<ZodRawShape>;
+  getConnectionRegistrationSchema(): ZodObject<ZodRawShape>;
+  onBeforeAddConnection?(
+    connectionConfig: Record<string, unknown>,
+  ): PlatformConnectionStatus | Promise<PlatformConnectionStatus>;
+  onBeforeUpdateConnection?(
+    connection: PlatformConnectionRecord,
+    connectionConfig: Record<string, unknown>,
+  ): PlatformConnectionStatus | Promise<PlatformConnectionStatus>;
+  onBeforeAddTenant?(
     tenantConfig: Record<string, unknown>,
-    platformConfig: Record<string, unknown>,
+    connection: PlatformConnectionRecord,
   ): void | Promise<void>;
 }

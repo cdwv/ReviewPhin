@@ -11,6 +11,8 @@ export type FieldSettings =
       partOfTitle?: boolean;
       isPassword?: boolean;
       inputType?: "textMarkdown" | "textarea";
+      readonly?: boolean;
+      hidden?: boolean;
     }
   | {
       type: "number";
@@ -20,6 +22,8 @@ export type FieldSettings =
       unique?: boolean;
       default?: number;
       partOfTitle?: boolean;
+      readonly?: boolean;
+      hidden?: boolean;
     }
   | {
       type: "boolean";
@@ -28,6 +32,8 @@ export type FieldSettings =
       required: boolean;
       default?: boolean;
       partOfTitle?: boolean;
+      readonly?: boolean;
+      hidden?: boolean;
     }
   | {
       type: "datasource";
@@ -37,6 +43,8 @@ export type FieldSettings =
       unique?: boolean;
       multiple?: boolean;
       relationContentType: string;
+      readonly?: boolean;
+      hidden?: boolean;
     };
 
 export type FieldsDescriptor = Record<string, FieldSettings>;
@@ -656,6 +664,9 @@ type FieldMeta = {
   multiple?: boolean;
   useOptionsWithLabels?: boolean;
   isPassword?: boolean;
+  readonly?: boolean;
+  isTitlePart?: boolean;
+  hidden?: boolean;
   validation?: {
     relationMultiple: boolean;
     relationContenttype: string;
@@ -689,6 +700,9 @@ function buildStringFieldInfo(
     helpText: field.helpText ?? "",
     unique: field.unique ?? false,
     isPassword: field.isPassword ?? false,
+    readonly: field.readonly ?? false,
+    isTitlePart: field.partOfTitle ?? false,
+    hidden: field.hidden ?? false,
   };
 
   if (field.multiple) {
@@ -717,6 +731,9 @@ function buildNumberFieldInfo(
     inputType: "number",
     helpText: field.helpText ?? "",
     unique: field.unique ?? false,
+    readonly: field.readonly ?? false,
+    isTitlePart: field.partOfTitle ?? false,
+    hidden: field.hidden ?? false,
   };
 
   if (field.default !== undefined) {
@@ -735,6 +752,9 @@ function buildBooleanFieldInfo(
     inputType: "checkbox",
     helpText: field.helpText ?? "",
     unique: false,
+    readonly: field.readonly ?? false,
+    isTitlePart: field.partOfTitle ?? false,
+    hidden: field.hidden ?? false,
   };
 
   if (field.default !== undefined) {
@@ -760,6 +780,8 @@ function buildDatasourceFieldInfo(
       inputType: "datasource",
       helpText: field.helpText ?? "",
       unique: field.unique ?? false,
+      readonly: field.readonly ?? false,
+      hidden: field.hidden ?? false,
       validation: {
         relationMultiple: field.multiple ?? false,
         relationContenttype: field.relationContentType,

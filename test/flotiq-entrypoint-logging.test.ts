@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Logger } from "pino";
 
-const { ensureV001CtdsExistMock, listMigrationsMock, createMigrationMock } =
+const { ensureV002CtdsExistMock, listMigrationsMock, createMigrationMock } =
   vi.hoisted(() => ({
-    ensureV001CtdsExistMock: vi.fn(),
+    ensureV002CtdsExistMock: vi.fn(),
     listMigrationsMock: vi.fn(),
     createMigrationMock: vi.fn(),
   }));
@@ -19,15 +19,15 @@ vi.mock("@flotiq/flotiq-api-sdk", () => ({
   })),
 }));
 
-vi.mock("../src/storage/adapters/flotiq/migrations/v001.js", () => ({
-  default: ensureV001CtdsExistMock,
+vi.mock("../src/storage/adapters/flotiq/migrations/v002.js", () => ({
+  default: ensureV002CtdsExistMock,
 }));
 
 import { createStorageProvider } from "../src/storage/adapters/flotiq/entrypoint.js";
 
 describe("Flotiq storage provider logging", () => {
   beforeEach(() => {
-    ensureV001CtdsExistMock.mockReset();
+    ensureV002CtdsExistMock.mockReset();
     listMigrationsMock.mockReset();
     createMigrationMock.mockReset();
   });
@@ -52,13 +52,13 @@ describe("Flotiq storage provider logging", () => {
 
       await provider.prepare();
 
-      expect(ensureV001CtdsExistMock).toHaveBeenCalledWith(
+      expect(ensureV002CtdsExistMock).toHaveBeenCalledWith(
         "test-api-key",
         logger,
       );
-      expect(createMigrationMock).toHaveBeenCalledWith({ name: "v001" });
+      expect(createMigrationMock).toHaveBeenCalledWith({ name: "v002" });
       expect(logger.info).toHaveBeenCalledWith(
-        { migrationId: "v001" },
+        { migrationId: "v002" },
         "Applied Flotiq migration.",
       );
       expect(consoleErrorSpy).not.toHaveBeenCalled();
@@ -78,7 +78,7 @@ describe("Flotiq storage provider logging", () => {
     });
 
     await expect(provider.prepare()).resolves.toMatchObject({
-      appliedMigrationIds: ["v001"],
+      appliedMigrationIds: ["v002"],
     });
   });
 });

@@ -4,11 +4,13 @@ import { createApp } from "../src/app.js";
 import { createLogger } from "../src/logger.js";
 import GitLabPlatform from "../src/platforms/gitlab/platform.js";
 import type { WebhookReviewTrigger } from "../src/review/types.js";
+import { createGitLabConnectionRecord } from "./helpers/gitlab-tenant.js";
 
 const tenant = {
   id: "tenant_1",
   key: "https://gitlab.example.com::123",
   platform: "gitlab",
+  platformConnectionId: "connection-1",
   platformConfigJson: JSON.stringify({
     baseUrl: "https://gitlab.example.com",
     projectId: 123,
@@ -26,6 +28,10 @@ const tenant = {
   modelProfileName: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
+};
+const resolvedTenant = {
+  tenant,
+  connection: createGitLabConnectionRecord(),
 };
 
 function createPayload(note: string) {
@@ -74,7 +80,7 @@ describe("GitLab webhook route", () => {
     },
   };
   const tenantRegistry = {
-    resolveWebhookTenant: vi.fn(async () => tenant),
+    resolveWebhookTenant: vi.fn(async () => resolvedTenant),
   };
   const reviewWorker = {
     classifyWebhookTrigger: vi.fn(

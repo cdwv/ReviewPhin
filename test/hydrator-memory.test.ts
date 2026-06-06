@@ -33,6 +33,7 @@ describe("CodeReviewContextHydrator project memory", () => {
         id: "tenant_1",
         key: "https://gitlab.example.com::123",
         platform: "gitlab",
+        platformConnectionId: "connection-1",
         platformConfigJson: JSON.stringify({
           baseUrl: "https://gitlab.example.com",
           projectId: 123,

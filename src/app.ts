@@ -105,7 +105,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
         });
       }
 
-      const tenant = await options.tenantRegistry.resolveWebhookTenant(
+      const resolvedTenant = await options.tenantRegistry.resolveWebhookTenant(
         platform,
         payload,
         {
@@ -115,15 +115,15 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
           pathSuffix: getRouteSuffix(request.params, "webhookPath"),
         },
       );
-      if (!tenant) {
-        return reply.code(401).send({
-          error: "unauthorized",
+      if (!resolvedTenant) {
+        return reply.code(404).send({
+          error: "not-found",
         });
       }
 
       const trigger = await options.reviewWorker.classifyWebhookTrigger(
         payload,
-        tenant,
+        resolvedTenant,
       );
       if (!trigger) {
         return reply.code(202).send({
@@ -135,7 +135,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
       const { job, created } =
         await options.reviewWorker.createInteractionJobFromWebhook(
           payload,
-          tenant,
+          resolvedTenant,
           trigger,
         );
       if (created) {

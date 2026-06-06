@@ -20,6 +20,9 @@ import type {
   ModelProfileRecord,
   ModelProfileFilters,
   ModelProfileOrderField,
+  PlatformConnectionFilters,
+  PlatformConnectionOrderField,
+  PlatformConnectionRecord,
   ReviewFindingRecord,
   ReviewFindingFilters,
   ReviewFindingOrderField,
@@ -119,6 +122,62 @@ export class SqliteStoreDatabase {
           ),
         delete: (id) => this.deleteModelProfileRecord(id),
         deleteMany: (ids) => this.deleteModelProfileRecords(ids),
+      },
+      platformConnections: {
+        get: (id) => this.getPlatformConnectionById(id),
+        getMany: async (ids) =>
+          selectRowsByIds(
+            this.getDb(),
+            "platform_connections",
+            "id",
+            ids,
+            mapPlatformConnectionRow,
+          ),
+        find: async (filters) =>
+          findRow(
+            this.getDb(),
+            "platform_connections",
+            filters,
+            platformConnectionFilterColumns,
+            mapPlatformConnectionRow,
+          ),
+        list: async (input) =>
+          listRows(
+            this.getDb(),
+            "platform_connections",
+            input,
+            platformConnectionFilterColumns,
+            platformConnectionOrderColumns,
+            mapPlatformConnectionRow,
+          ),
+        upsert: (entity) => this.upsertPlatformConnectionRecord(entity),
+        upsertMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.upsertPlatformConnectionRecord(entity),
+          ),
+        replace: (entity) => this.replacePlatformConnectionRecord(entity),
+        replaceMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.replacePlatformConnectionRecord(entity),
+          ),
+        update: ({ value }) => this.replacePlatformConnectionRecord(value),
+        updateMany: (inputs) =>
+          this.applyMany(inputs, ({ value }) =>
+            this.replacePlatformConnectionRecord(value),
+          ),
+        patch: ({ id, value }) => this.patchPlatformConnectionRecord(id, value),
+        patchMany: (inputs) =>
+          this.applyMany(inputs, ({ id, value }) =>
+            this.patchPlatformConnectionRecord(id, value),
+          ),
+        delete: async (id) => {
+          this.getDb()
+            .prepare("DELETE FROM platform_connections WHERE id = ?")
+            .run(id);
+        },
+        deleteMany: async (ids) => {
+          deleteRowsByIds(this.getDb(), "platform_connections", "id", ids);
+        },
       },
       tenants: {
         get: (id) => this.getTenantById(id),
@@ -522,6 +581,8 @@ export class SqliteStoreDatabase {
         id: existing?.id ?? createId("tenant"),
         key: tenant.key,
         platform: tenant.platform,
+        platformConnectionId:
+          existing?.platformConnectionId ?? tenant.platformConnectionId,
         platformConfigJson: tenant.platformConfigJson,
         modelProfileName: resolvedModelProfileName,
         createdAt: existing?.createdAt ?? now,
@@ -858,6 +919,69 @@ export class SqliteStoreDatabase {
     return selectRowsByIds(this.getDb(), "tenants", "id", ids, mapTenantRow);
   }
 
+  private async getPlatformConnectionById(
+    id: string,
+  ): Promise<PlatformConnectionRecord | null> {
+    const row = this.getDb()
+      .prepare("SELECT * FROM platform_connections WHERE id = ?")
+      .get(id) as Row | undefined;
+    return row ? mapPlatformConnectionRow(row) : null;
+  }
+
+  private async upsertPlatformConnectionRecord(
+    entity: PlatformConnectionRecord,
+  ): Promise<void> {
+    this.getDb()
+      .prepare(
+        `INSERT INTO platform_connections (
+          id, name, platform, status, platform_connection_config_json,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          platform = excluded.platform,
+          status = excluded.status,
+          platform_connection_config_json = excluded.platform_connection_config_json,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at`,
+      )
+      .run(
+        entity.id,
+        entity.name,
+        entity.platform,
+        entity.status,
+        entity.platformConnectionConfigJson,
+        entity.createdAt,
+        entity.updatedAt,
+      );
+  }
+
+  private async replacePlatformConnectionRecord(
+    entity: PlatformConnectionRecord,
+  ): Promise<void> {
+    if (!(await this.getPlatformConnectionById(entity.id))) {
+      throw new Error(`Unknown platform connection ${entity.id}`);
+    }
+    await this.upsertPlatformConnectionRecord(entity);
+  }
+
+  private async patchPlatformConnectionRecord(
+    id: string,
+    value: Partial<PlatformConnectionRecord>,
+  ): Promise<void> {
+    const existing = await this.getPlatformConnectionById(id);
+    if (!existing) {
+      throw new Error(`Unknown platform connection ${id}`);
+    }
+    await this.upsertPlatformConnectionRecord({
+      ...existing,
+      ...value,
+      id: existing.id,
+      name: existing.name,
+      platform: existing.platform,
+    });
+  }
+
   private async findTenantRecord(
     filters: TenantFilters,
   ): Promise<TenantRecord | null> {
@@ -897,6 +1021,7 @@ export class SqliteStoreDatabase {
         id: entity.id,
         key: entity.key,
         platform: entity.platform,
+        platformConnectionId: entity.platformConnectionId,
         platformConfigJson: entity.platformConfigJson,
         modelProfileName: entity.modelProfileName,
         createdAt: entity.createdAt,
@@ -931,6 +1056,7 @@ export class SqliteStoreDatabase {
       ...value,
       id: existing.id,
       key: existing.key,
+      platformConnectionId: existing.platformConnectionId,
     });
   }
 
@@ -1757,15 +1883,34 @@ const tenantFilterColumns: Record<keyof TenantFilters, string> = {
   id: "id",
   key: "tenant_key",
   platform: "platform",
+  platformConnectionId: "platform_connection_id",
   modelProfileName: "model_profile_name",
   createdAt: "created_at",
   updatedAt: "updated_at",
 };
 
+const platformConnectionFilterColumns: Record<
+  keyof PlatformConnectionFilters,
+  string
+> = {
+  id: "id",
+  name: "name",
+  platform: "platform",
+  status: "status",
+  createdAt: "created_at",
+  updatedAt: "updated_at",
+};
+
+const platformConnectionOrderColumns: Record<
+  PlatformConnectionOrderField,
+  string
+> = platformConnectionFilterColumns;
+
 const tenantOrderColumns: Record<TenantOrderField, string> = {
   id: "id",
   key: "tenant_key",
   platform: "platform",
+  platformConnectionId: "platform_connection_id",
   modelProfileName: "model_profile_name",
   createdAt: "created_at",
   updatedAt: "updated_at",
@@ -2054,6 +2199,7 @@ function buildTenantUpsertSql(conflictTarget: "id" | "tenant_key"): string {
     "id",
     "tenant_key",
     "platform",
+    "platform_connection_id",
     "platform_config_json",
     "model_profile_name",
     "created_at",
@@ -2062,6 +2208,7 @@ function buildTenantUpsertSql(conflictTarget: "id" | "tenant_key"): string {
   const updates = [
     "tenant_key = excluded.tenant_key",
     "platform = excluded.platform",
+    "platform_connection_id = excluded.platform_connection_id",
     "platform_config_json = excluded.platform_config_json",
     "model_profile_name = excluded.model_profile_name",
     "created_at = excluded.created_at",
@@ -2086,6 +2233,7 @@ function buildTenantUpsertParams(
     | "id"
     | "key"
     | "platform"
+    | "platformConnectionId"
     | "platformConfigJson"
     | "modelProfileName"
     | "createdAt"
@@ -2096,6 +2244,7 @@ function buildTenantUpsertParams(
     id: entity.id,
     tenantKey: entity.key,
     platform: entity.platform,
+    platformConnectionId: entity.platformConnectionId,
     platformConfigJson: entity.platformConfigJson,
     modelProfileName: entity.modelProfileName,
     createdAt: entity.createdAt,
@@ -2187,8 +2336,21 @@ function mapTenantRow(row: Row): TenantRecord {
     id: asString(row.id),
     key: asString(row.tenant_key),
     platform: asString(row.platform),
+    platformConnectionId: asString(row.platform_connection_id),
     platformConfigJson: asString(row.platform_config_json),
     modelProfileName: asNullableString(row.model_profile_name),
+    createdAt: asString(row.created_at),
+    updatedAt: asString(row.updated_at),
+  };
+}
+
+function mapPlatformConnectionRow(row: Row): PlatformConnectionRecord {
+  return {
+    id: asString(row.id),
+    name: asString(row.name),
+    platform: asString(row.platform),
+    status: asString(row.status) as PlatformConnectionRecord["status"],
+    platformConnectionConfigJson: asString(row.platform_connection_config_json),
     createdAt: asString(row.created_at),
     updatedAt: asString(row.updated_at),
   };

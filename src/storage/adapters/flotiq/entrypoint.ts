@@ -16,6 +16,9 @@ import type {
   InteractionRunMetricsHydratedTwice,
   CodeReviewSnapshot,
   ModelProfile,
+  PlatformConnection,
+  PlatformConnectionHydrated,
+  PlatformConnectionHydratedTwice,
   ReviewFinding,
   ReviewFindingHydrated,
   ReviewFindingHydratedTwice,
@@ -44,6 +47,9 @@ import {
   type ModelProfileFilters,
   type ModelProfileOrderField,
   type ModelProfileRecord,
+  type PlatformConnectionFilters,
+  type PlatformConnectionOrderField,
+  type PlatformConnectionRecord,
   type ReviewFindingFilters,
   type ReviewFindingOrderField,
   type ReviewFindingRecord,
@@ -56,7 +62,7 @@ import type {
   StorageProvider,
   StorageProviderFactoryContext,
 } from "../../provider.js";
-import ensureV001CtdsExist from "./migrations/v001.js";
+import ensureV002CtdsExist from "./migrations/v002.js";
 import { createFlotiqEntityStore } from "./store.js";
 import type { Logger } from "pino";
 
@@ -65,6 +71,7 @@ const flotiqProviderEnvSchema = z.object({
 });
 
 const tenantRelationFields = {
+  platformConnectionId: { contentType: "platform_connection" },
   modelProfileName: { contentType: "model_profile" },
 } as const;
 
@@ -113,15 +120,15 @@ export function createStorageProvider(
       return "flotiq";
     },
     getSupportedStorageContract() {
-      return "storage-v001";
+      return "storage-v002";
     },
     async open() {
       // Flotiq is accessed over HTTP, so there is no persistent connection.
     },
     async prepare() {
       const migrations = {
-        v001: () =>
-          ensureV001CtdsExist(
+        v002: () =>
+          ensureV002CtdsExist(
             parsedEnv.FLOTIQ_API_KEY,
             logger?.child({ component: "migrations" }),
           ),
@@ -198,6 +205,21 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
         "reviewModel",
         "textGenerationModel",
       ],
+    }),
+    platformConnections: createFlotiqEntityStore<
+      PlatformConnectionRecord,
+      PlatformConnectionFilters,
+      PlatformConnectionOrderField,
+      PlatformConnection,
+      PlatformConnection.FilterableFields,
+      PlatformConnectionHydrated,
+      PlatformConnectionHydratedTwice
+    >({
+      logger: createStoreLogger("platformConnections"),
+      api: flotiqClient.content.platform_connection,
+      ctdName: "platform_connection",
+      toRecord: mapPlatformConnectionRecord,
+      toRemote: mapIdentityEntity,
     }),
     tenants: createFlotiqEntityStore<
       TenantRecord,
@@ -368,8 +390,32 @@ function mapTenantRecord(entity: Tenant): TenantRecord {
     id: readRequiredString(entity, "id"),
     key: readRequiredString(entity, "key"),
     platform: readRequiredString(entity, "platform"),
+    platformConnectionId: readRequiredRelationId(
+      entity,
+      "platformConnectionId",
+    ),
     platformConfigJson: readRequiredString(entity, "platformConfigJson"),
     modelProfileName: readNullableRelationId(entity, "modelProfileName"),
+    createdAt: readInternalTimestamp(entity, "createdAt"),
+    updatedAt: readInternalTimestamp(entity, "updatedAt"),
+  };
+}
+
+function mapPlatformConnectionRecord(
+  entity: PlatformConnection,
+): PlatformConnectionRecord {
+  return {
+    id: readRequiredString(entity, "id"),
+    name: readRequiredString(entity, "name"),
+    platform: readRequiredString(entity, "platform"),
+    status: readRequiredString(
+      entity,
+      "status",
+    ) as PlatformConnectionRecord["status"],
+    platformConnectionConfigJson: readRequiredString(
+      entity,
+      "platformConnectionConfigJson",
+    ),
     createdAt: readInternalTimestamp(entity, "createdAt"),
     updatedAt: readInternalTimestamp(entity, "updatedAt"),
   };

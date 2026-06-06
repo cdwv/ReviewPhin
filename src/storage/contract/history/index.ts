@@ -45,6 +45,18 @@ export const STORAGE_CONTRACT_HISTORY = [
       "Built-in adapters must report storage-v001 and preserve provider-local migrations for existing data.",
     ],
   },
+  {
+    id: "storage-v002",
+    summary:
+      "First-class platform connections with required tenant connection references.",
+    changeKind: "breaking",
+    affectedSurfaces: ["platform-connections", "tenants"],
+    providerNotes: [
+      "Adapters add a globally name-unique platform connection store.",
+      "Every tenant requires platformConnectionId.",
+      "SQLite migrates reusable GitLab credentials out of tenant config.",
+    ],
+  },
 ] as const satisfies readonly StorageContractRevisionMetadata[];
 
 export type StorageContractRevisionId =

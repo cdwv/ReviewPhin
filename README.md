@@ -132,27 +132,35 @@ Required project membership: **Developer or higher** (needed to resolve code rev
 
 Use the GitLab UI or API to collect the project's `id`.
 
-### 3. Register the tenant with the CLI
+### 3. Register the platform connection and tenant
 
 #### In a Docker container
 
 ```bash
-docker compose run --rm worker reviewphin tenant add \
+docker compose run --rm worker reviewphin platform connection add \
+  --name main-gitlab \
   --platform gitlab \
   --base-url https://gitlab.example.com \
+  --api-token <your-gitlab-token>
+
+docker compose run --rm worker reviewphin tenant add \
+  --connection main-gitlab \
   --project-id 123 \
-  --api-token <your-gitlab-token> \
   --webhook-secret <your-webhook-secret>
 ```
 
 #### From a local checkout
 
 ```bash
-pnpm cli tenant add \
+pnpm cli platform connection add \
+  --name main-gitlab \
   --platform gitlab \
   --base-url https://gitlab.example.com \
+  --api-token <your-gitlab-token>
+
+pnpm cli tenant add \
+  --connection main-gitlab \
   --project-id 123 \
-  --api-token <your-gitlab-token> \
   --webhook-secret <your-webhook-secret>
 ```
 

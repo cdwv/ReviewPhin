@@ -53,7 +53,8 @@ describe("provider setup routes", () => {
         throw new Error("unused");
       },
       getReviewSummaryInstructions: () => [],
-      getRegistrationSchema: () => z.object({}),
+      getTenantRegistrationSchema: () => z.object({}),
+      getConnectionRegistrationSchema: () => z.object({}),
     };
 
     app = await createApp({

@@ -6,13 +6,15 @@ ReviewPhin connects to a code review platform to receive webhooks, read code rev
 
 ## GitLab
 
-GitLab is currently the only supported platform. `reviewphin tenant add` accepts `--platform gitlab`, but that flag is optional because GitLab is the default today.
+GitLab is currently the only supported platform. Register a platform
+connection before adding tenants. Connections hold reusable API credentials,
+base URL, and bot identity; tenants hold project and webhook-specific data.
 
 A GitLab tenant registration needs the following pieces of information - reducing the number of steps required to onboard a project is on the roadmap.
 
 - **GitLab access token** - personal, group, or project access token. Must have the `api` scope (used for reading code review data, creating/updating/resolving bot-owned discussions, and cloning the repository over Git-over-HTTPS) and the token's user must have at least the **Developer** role on the project.
-- **Bot username** - usually discovered automatically from the GitLab token during `tenant add`. You can still pass it explicitly as an override if auto-discovery fails or you want to avoid the extra API lookup.
-- **Bot user ID** - usually discovered automatically from the GitLab token during `tenant add`. You can still pass it explicitly as an override if auto-discovery fails or you want to avoid the extra API lookup.
+- **Bot username** - discovered during platform connection add/update.
+- **Bot user ID** - discovered during platform connection add/update.
 - **GitLab base URL** - e.g. `https://gitlab.example.com`.
 - **GitLab project ID** - the numeric ID of the project to support.
 - **Webhook + webhook secret** - point the GitLab project webhook at `https://<reviewphin-instance-host>/webhooks/gitlab`. A webhook secret is required to protect against malicious traffic burning your tokens. The older `/webhooks/gitlab/note` path is still accepted as a compatibility alias for existing setups.
@@ -45,7 +47,8 @@ Every provider module must export a factory as either `createPlatform(context)` 
 
 The factory must return an `IPlatform` implementation. Platform slugs must be unique across all loaded modules; startup fails if two providers return the same slug.
 
-CLI commands that need platform registration, such as `tenant add --platform <slug>`, use the same `PLATFORM_MODULES` setting from the environment. Load a custom provider module before registering tenants for that provider.
+Providers expose separate tenant and connection registration schemas.
+Runtime methods receive resolved tenant and connection context.
 
 ---
 

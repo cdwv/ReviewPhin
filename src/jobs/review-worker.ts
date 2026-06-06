@@ -6,6 +6,7 @@ import type {
   PlatformMaterializedWorkspace,
   PlatformReviewRoutingContext,
   PlatformReviewRuntime,
+  ResolvedTenant,
 } from "../platforms/IPlatform.js";
 import { getPlatformBySlug } from "../platforms/platform-registry.js";
 import type {
@@ -45,6 +46,7 @@ interface ReviewRuntimeFactoryInput {
   storage: StorageHelpers;
   logger: Logger;
   tenant: TenantRecord;
+  connection: ResolvedTenant["connection"];
   interactionJobId: string;
   workspaceRoot: string;
   memoryEnabled: boolean;
@@ -104,7 +106,10 @@ export class ReviewWorker {
         input.platform.createReviewRuntime({
           storage: input.storage,
           logger: input.logger,
-          tenant: input.tenant,
+          resolvedTenant: {
+            tenant: input.tenant,
+            connection: input.connection,
+          },
           interactionJobId: input.interactionJobId,
           workspaceRoot: input.workspaceRoot,
           memoryEnabled: input.memoryEnabled,
@@ -115,19 +120,19 @@ export class ReviewWorker {
 
   public async createInteractionJobFromWebhook(
     payload: unknown,
-    tenant: TenantRecord,
+    resolvedTenant: ResolvedTenant,
     trigger: WebhookReviewTrigger,
   ): Promise<{
     job: InteractionJobRecord;
     created: boolean;
   }> {
-    const platform = this.resolvePlatform(tenant.platform);
+    const platform = this.resolvePlatform(resolvedTenant.tenant.platform);
     const interactionJob = await platform.createInteractionJob({
-      tenant,
+      resolvedTenant,
       payload,
     });
     const createdJob = await this.storage.createOrGetInteractionJob({
-      tenantId: tenant.id,
+      tenantId: resolvedTenant.tenant.id,
       dedupeKey: interactionJob.dedupeKey,
       codeReviewId: interactionJob.codeReviewId,
       commentId: interactionJob.commentId,
@@ -140,7 +145,8 @@ export class ReviewWorker {
         platform,
         storage: this.storage,
         logger: this.logger,
-        tenant,
+        tenant: resolvedTenant.tenant,
+        connection: resolvedTenant.connection,
         interactionJobId: createdJob.job.id,
         workspaceRoot: this.workspaceRoot,
         memoryEnabled: this.memoryEnabled,
@@ -158,10 +164,10 @@ export class ReviewWorker {
 
   public async classifyWebhookTrigger(
     payload: unknown,
-    tenant: TenantRecord,
+    resolvedTenant: ResolvedTenant,
   ): Promise<WebhookReviewTrigger | null> {
-    const platform = this.resolvePlatform(tenant.platform);
-    return platform.classifyWebhookTrigger(tenant, payload);
+    const platform = this.resolvePlatform(resolvedTenant.tenant.platform);
+    return platform.classifyWebhookTrigger(resolvedTenant, payload);
   }
 
   public async processJob(
@@ -176,10 +182,13 @@ export class ReviewWorker {
       return;
     }
 
-    const tenant = await this.tenantRegistry.getTenantById(job.tenantId);
-    if (!tenant) {
+    const resolvedTenant = await this.tenantRegistry.getResolvedTenantById(
+      job.tenantId,
+    );
+    if (!resolvedTenant) {
       throw new Error(`Unknown tenant ${job.tenantId} for job ${job.id}`);
     }
+    const { tenant, connection } = resolvedTenant;
 
     await this.storage.markJobInProgress(job.id);
 
@@ -214,6 +223,7 @@ export class ReviewWorker {
         storage: this.storage,
         logger: this.logger,
         tenant,
+        connection,
         interactionJobId: job.id,
         workspaceRoot: this.workspaceRoot,
         memoryEnabled: this.memoryEnabled,
@@ -264,6 +274,7 @@ export class ReviewWorker {
         storage: this.storage,
         logger: this.logger,
         tenant,
+        connection,
         interactionJobId: job.id,
         interactionRunId: interactionRun.id,
         runArtifacts,
@@ -407,6 +418,7 @@ export class ReviewWorker {
             tenant: this.buildHarnessTenantContext({
               platform,
               tenant,
+              connection,
               interactionRunId: interactionRun.id,
               interactionJobId: job.id,
               runDirectory: runArtifacts.runDirectory,
@@ -504,6 +516,7 @@ export class ReviewWorker {
           tenant: this.buildHarnessTenantContext({
             platform,
             tenant,
+            connection,
             interactionRunId: interactionRun.id,
             interactionJobId: job.id,
             runDirectory: runArtifacts.runDirectory,
@@ -547,6 +560,7 @@ export class ReviewWorker {
         reconcileSummary = await this.reconciler.reconcile({
           platform,
           tenant,
+          connection,
           context: hydratedContext.summaryContext,
           mappings,
           interactionRunId: interactionRun.id,
@@ -604,6 +618,7 @@ export class ReviewWorker {
             tenant: this.buildHarnessTenantContext({
               platform,
               tenant,
+              connection,
               interactionRunId: interactionRun.id,
               interactionJobId: job.id,
               runDirectory: runArtifacts.runDirectory,
@@ -888,13 +903,17 @@ export class ReviewWorker {
   private buildHarnessTenantContext(input: {
     platform: IPlatform;
     tenant: TenantRecord;
+    connection: ResolvedTenant["connection"];
     interactionRunId: string;
     interactionJobId: string;
     runDirectory: string;
     memoryEnabled: boolean;
   }) {
     return input.platform.buildHarnessTenantContext({
-      tenant: input.tenant,
+      resolvedTenant: {
+        tenant: input.tenant,
+        connection: input.connection,
+      },
       logger: this.logger,
       memoryEnabled: input.memoryEnabled,
       logging: {

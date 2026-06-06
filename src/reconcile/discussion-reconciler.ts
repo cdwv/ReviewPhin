@@ -12,6 +12,7 @@ import type {
   ReviewFindingStatus,
   TenantRecord,
 } from "../storage/contract/index.js";
+import type { PlatformConnectionRecord } from "../storage/contract/index.js";
 import {
   createId,
   createFindingFingerprint,
@@ -103,6 +104,7 @@ export class DiscussionReconciler {
   public async reconcile(input: {
     platform: IPlatform;
     tenant: TenantRecord;
+    connection?: PlatformConnectionRecord;
     context: ReviewSummaryContext;
     mappings: DiscussionMappingRecord[];
     interactionRunId: string;
@@ -787,6 +789,7 @@ export class DiscussionReconciler {
   private async syncSummaryNote(input: {
     platform: IPlatform;
     tenant: TenantRecord;
+    connection?: PlatformConnectionRecord;
     context: ReviewSummaryContext;
     interactionRunId: string;
     reviewResult: ReviewResult;
@@ -796,6 +799,14 @@ export class DiscussionReconciler {
     const body = buildReviewSummaryNote({
       platform: input.platform,
       tenant: input.tenant,
+      ...(input.connection
+        ? {
+            resolvedTenant: {
+              tenant: input.tenant,
+              connection: input.connection,
+            },
+          }
+        : {}),
       context: input.context,
       reviewResult: input.reviewResult,
       activeFindings: input.activeFindings,

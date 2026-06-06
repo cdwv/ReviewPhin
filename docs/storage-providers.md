@@ -113,7 +113,7 @@ The storage layer is designed to be extended. To implement your own adapter (Pos
 
    ```ts
    getSupportedStorageContract(): string {
-     return "storage-v001";
+     return "storage-v002";
    }
    ```
 

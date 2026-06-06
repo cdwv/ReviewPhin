@@ -17,7 +17,12 @@ The app loads the module from `STORAGE_PROVIDER_MODULE` when set, otherwise it u
 ## Compatibility rules
 
 - Your adapter must report an exact storage contract revision match.
-- The current required revision is `storage-v001`.
+- The current required revision is `storage-v002`.
+- Adapters must expose `platformConnections`; every tenant requires
+  `platformConnectionId`.
+- Connection names are globally unique. SQLite migration
+  `sqlite:0008_v2_platform_connections` preserves tenant ids and keys while
+  moving reusable GitLab credentials into connections.
 - The app validates compatibility in two phases:
   1. `getSupportedStorageContract()` is checked before `prepare()` is called.
   2. `prepare()` must return a `StoragePreparationResult` whose `storageContractRevision` is also checked after `prepare()` returns.
