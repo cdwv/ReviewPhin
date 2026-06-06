@@ -8,7 +8,10 @@ import { describe, expect, it, vi } from "vitest";
 import { runCli } from "../src/cli.js";
 import { createLogger } from "../src/logger.js";
 import GitLabPlatform from "../src/platforms/gitlab/platform.js";
-import { getGitLabTenantConfig } from "../src/platforms/gitlab/tenant-config.js";
+import {
+  getGitLabConnectionConfig,
+  getGitLabTenantConfig,
+} from "../src/platforms/gitlab/tenant-config.js";
 import { StoreBackedStorage, listAll } from "../src/storage/storage-helpers.js";
 import { TenantRegistry } from "../src/tenants/tenant-registry.js";
 import { createGitLabTenantInput } from "./helpers/gitlab-tenant.js";
@@ -56,14 +59,42 @@ function createWebhookRequest() {
   };
 }
 
+async function addGitLabConnection(
+  databasePath: string,
+  baseUrl = "https://gitlab.example.com",
+): Promise<void> {
+  await runCli([
+    "platform",
+    "connection",
+    "add",
+    "--sqlite-database-path",
+    databasePath,
+    "--name",
+    "test-connection",
+    "--platform",
+    "gitlab",
+    "--base-url",
+    baseUrl,
+    "--api-token",
+    "glpat-xxxxxxxx",
+    "--bot-user-id",
+    "999",
+    "--bot-username",
+    "review-bot",
+  ]);
+}
+
 describe("tenant CLI", () => {
   it("adds a tenant to SQLite and makes it resolvable without env registration", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
     const databasePath = join(workspace, "tenants.sqlite");
+    await addGitLabConnection(databasePath);
 
     const exitCode = await runCli([
       "tenant",
       "add",
+      "--connection",
+      "test-connection",
       "--sqlite-database-path",
       databasePath,
       "--base-url",
@@ -92,8 +123,14 @@ describe("tenant CLI", () => {
       key: "https://gitlab.example.com::123",
     });
     expect(getGitLabTenantConfig(persistedTenant!)).toMatchObject({
-      baseUrl: "https://gitlab.example.com",
       projectId: 123,
+    });
+    expect(
+      getGitLabConnectionConfig(
+        (await storage.resolvePlatformConnection("test-connection"))!,
+      ),
+    ).toMatchObject({
+      baseUrl: "https://gitlab.example.com",
       botUserId: 999,
       botUsername: "review-bot",
     });
@@ -109,10 +146,10 @@ describe("tenant CLI", () => {
       createWebhookRequest(),
     );
     expect(tenant).not.toBeNull();
-    expect(tenant?.key).toBe("https://gitlab.example.com::123");
+    expect(tenant?.tenant.key).toBe("https://gitlab.example.com::123");
 
     const logger = createLogger("silent");
-    logger.info({ tenantId: tenant?.id }, "tenant resolved");
+    logger.info({ tenantId: tenant?.tenant.id }, "tenant resolved");
   });
 
   it("requires bot user id when adding a tenant", async () => {
@@ -123,6 +160,8 @@ describe("tenant CLI", () => {
       runCli([
         "tenant",
         "add",
+        "--connection",
+        "test-connection",
         "--sqlite-database-path",
         databasePath,
         "--base-url",
@@ -147,6 +186,8 @@ describe("tenant CLI", () => {
       runCli([
         "tenant",
         "add",
+        "--connection",
+        "test-connection",
         "--sqlite-database-path",
         databasePath,
         "--base-url",
@@ -348,6 +389,7 @@ describe("tenant CLI", () => {
   it("assigns and clears tenant model profiles through the CLI", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
     const databasePath = join(workspace, "tenants.sqlite");
+    await addGitLabConnection(databasePath);
 
     await runCli([
       "model-profile",
@@ -362,6 +404,8 @@ describe("tenant CLI", () => {
     await runCli([
       "tenant",
       "add",
+      "--connection",
+      "test-connection",
       "--sqlite-database-path",
       databasePath,
       "--base-url",
@@ -420,6 +464,7 @@ describe("tenant CLI", () => {
   it("preserves an existing tenant profile when tenant add reruns without --model-profile", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
     const databasePath = join(workspace, "tenants.sqlite");
+    await addGitLabConnection(databasePath);
 
     await runCli([
       "model-profile",
@@ -435,6 +480,8 @@ describe("tenant CLI", () => {
     await runCli([
       "tenant",
       "add",
+      "--connection",
+      "test-connection",
       "--sqlite-database-path",
       databasePath,
       "--base-url",
@@ -456,6 +503,8 @@ describe("tenant CLI", () => {
     const exitCode = await runCli([
       "tenant",
       "add",
+      "--connection",
+      "test-connection",
       "--sqlite-database-path",
       databasePath,
       "--base-url",
@@ -487,7 +536,6 @@ describe("tenant CLI", () => {
     const persistedTenant = (await listAll(storage.stores.tenants))[0];
     expect(persistedTenant).toBeDefined();
     expect(getGitLabTenantConfig(persistedTenant!)).toMatchObject({
-      apiToken: "glpat-rotated",
       webhookSecret: "replace-me-2",
     });
   });
@@ -496,9 +544,18 @@ describe("tenant CLI", () => {
     const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
     const databasePath = join(workspace, "tenants.sqlite");
     const storage = await openSqliteTestStorage(databasePath);
+    await storage.createPlatformConnection({
+      name: "external",
+      platform: "external",
+      status: "ready",
+      platformConnectionConfigJson: "{}",
+    });
+    const externalConnection =
+      await storage.resolvePlatformConnection("external");
     const tenant = await storage.upsertTenant({
       key: "external::project-1",
       platform: "external",
+      platformConnectionId: externalConnection!.id,
       platformConfigJson: JSON.stringify({ project: "project-1" }),
     });
     await storage.createOrGetInteractionJob({
@@ -547,10 +604,16 @@ describe("tenant CLI", () => {
   it("removes a tenant by base URL and project ID", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
     const databasePath = join(workspace, "tenants.sqlite");
+    await addGitLabConnection(
+      databasePath,
+      "https://gitlab.example.com/gitlab/",
+    );
 
     await runCli([
       "tenant",
       "add",
+      "--connection",
+      "test-connection",
       "--sqlite-database-path",
       databasePath,
       "--base-url",
@@ -613,10 +676,13 @@ describe("tenant CLI", () => {
   it("refuses tenant removal without confirmation in non-interactive mode", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
     const databasePath = join(workspace, "tenants.sqlite");
+    await addGitLabConnection(databasePath);
 
     await runCli([
       "tenant",
       "add",
+      "--connection",
+      "test-connection",
       "--sqlite-database-path",
       databasePath,
       "--base-url",

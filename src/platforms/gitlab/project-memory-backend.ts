@@ -24,23 +24,29 @@ import {
   REVIEWPHIN_MEMORY_PAGE_SLUG,
   REVIEWPHIN_MEMORY_PAGE_TITLE,
 } from "../../memory/types.js";
-import type { TenantRecord } from "../../storage/contract/current.js";
-import { getGitLabTenantConfig } from "./tenant-config.js";
+import type { ResolvedTenant } from "../IPlatform.js";
+import {
+  getGitLabConnectionConfig,
+  getGitLabTenantConfig,
+} from "./tenant-config.js";
 
 export function createGitLabProjectMemoryBackendForTenant(input: {
-  tenant: TenantRecord;
+  resolvedTenant: ResolvedTenant;
   logger: Logger;
   logging?: HarnessRunLoggingContext | undefined;
   enabled: boolean;
 }): ProjectMemoryBackend {
-  const tenantConfig = getGitLabTenantConfig(input.tenant);
+  const tenantConfig = getGitLabTenantConfig(input.resolvedTenant.tenant);
+  const connectionConfig = getGitLabConnectionConfig(
+    input.resolvedTenant.connection,
+  );
   const client = new GitLabClient({
-    baseUrl: tenantConfig.baseUrl,
-    apiToken: tenantConfig.apiToken,
+    baseUrl: connectionConfig.baseUrl,
+    apiToken: connectionConfig.apiToken,
     logger: input.logger.child({
       interactionRunId: input.logging?.interactionRunId ?? null,
       interactionJobId: input.logging?.interactionJobId ?? null,
-      tenantId: input.logging?.tenantId ?? input.tenant.id,
+      tenantId: input.logging?.tenantId ?? input.resolvedTenant.tenant.id,
       component: "project-memory-backend",
     }),
   });

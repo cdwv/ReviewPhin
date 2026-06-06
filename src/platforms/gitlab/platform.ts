@@ -1,13 +1,17 @@
 import z from "zod";
 import type { Logger } from "pino";
 import type { HarnessRunLoggingContext } from "../../harness/types.js";
-import type { TenantRecord } from "../../storage/contract/current.js";
+import type {
+  PlatformConnectionRecord,
+  TenantRecord,
+} from "../../storage/contract/current.js";
 import type { InteractionRunArtifacts } from "../../review/run-artifacts.js";
 import type { StorageHelpers } from "../../storage/storage-helpers.js";
 import type {
   IPlatform,
   PlatformSetupHandler,
   PlatformWebhookRequest,
+  ResolvedTenant,
 } from "../IPlatform.js";
 import {
   createInteractionJobDedupeKey,
@@ -20,7 +24,10 @@ import { extractWebhookGitLabBaseUrl } from "./webhook.js";
 import type { GitLabNoteHookPayload } from "./types.js";
 import { normalizeGitLabBaseUrl } from "./url.js";
 import { GitLabClient } from "./client.js";
-import { getGitLabTenantConfig } from "./tenant-config.js";
+import {
+  getGitLabConnectionConfig,
+  getGitLabTenantConfig,
+} from "./tenant-config.js";
 import { classifyGitLabWebhookTrigger } from "./trigger.js";
 import { GitLabReviewRuntime } from "./review-runtime.js";
 import { createGitLabProjectMemoryBackendForTenant } from "./project-memory-backend.js";
@@ -52,19 +59,22 @@ export default class GitLabPlatform implements IPlatform {
       slug: "gitlab",
     };
   }
-  getTenantKey(platformConfig: Record<string, unknown>): string {
-    const parsedConfig = this.getRegistrationSchema().parse(platformConfig);
-    return createTenantKey(parsedConfig.baseUrl, parsedConfig.projectId);
+  getTenantKey(
+    tenantConfig: Record<string, unknown>,
+    connection: PlatformConnectionRecord,
+  ): string {
+    const parsedTenant = this.getTenantRegistrationSchema().parse(tenantConfig);
+    const parsedConnection = getGitLabConnectionConfig(connection);
+    return createTenantKey(parsedConnection.baseUrl, parsedTenant.projectId);
   }
   parseWebhookPayload(payload: unknown): GitLabNoteHookPayload {
     return parseGitLabNoteHook(payload);
   }
-  async onBeforeRegisterTenant(
-    _tenantConfig: Record<string, unknown>,
-    platformConfig: Record<string, unknown>,
-  ): Promise<void> {
-    const apiToken = platformConfig.apiToken;
-    const baseUrl = platformConfig.baseUrl;
+  async onBeforeAddConnection(
+    connectionConfig: Record<string, unknown>,
+  ): Promise<"ready"> {
+    const apiToken = connectionConfig.apiToken;
+    const baseUrl = connectionConfig.baseUrl;
     if (
       !apiToken ||
       !baseUrl ||
@@ -75,21 +85,28 @@ export default class GitLabPlatform implements IPlatform {
         "baseUrl and apiToken are required to register GitLab tenant",
       );
     }
-    if (!validateTenantBot(platformConfig)) {
+    if (!validateTenantBot(connectionConfig)) {
       const client = new GitLabClient({
         baseUrl,
         apiToken,
         logger: this.logger,
       });
       const botUser = await client.getCurrentUser();
-      platformConfig.botUserId ??= botUser.id;
-      platformConfig.botUsername ??= botUser.username;
+      connectionConfig.botUserId ??= botUser.id;
+      connectionConfig.botUsername ??= botUser.username;
     }
-    if (!validateTenantBot(platformConfig)) {
+    if (!validateTenantBot(connectionConfig)) {
       throw new Error(
         "Failed to determine bot user details from GitLab API. Please provide --bot-user-id and --bot-username explicitly or make sure token you used is correct.",
       );
     }
+    return "ready";
+  }
+  async onBeforeUpdateConnection(
+    _connection: PlatformConnectionRecord,
+    connectionConfig: Record<string, unknown>,
+  ): Promise<"ready"> {
+    return this.onBeforeAddConnection(connectionConfig);
   }
   async identifyTenantKey(payload: unknown): Promise<string | null> {
     const parseResult = this.tryParseNoteHookPayload(payload);
@@ -104,7 +121,7 @@ export default class GitLabPlatform implements IPlatform {
     return createTenantKey(gitlabUrl, parseResult.project.id);
   }
   isWebhookRequestAuthorized(
-    tenant: TenantRecord,
+    resolvedTenant: ResolvedTenant,
     req: PlatformWebhookRequest,
   ): boolean {
     const secretHeader = req.headers["x-gitlab-token"];
@@ -117,21 +134,25 @@ export default class GitLabPlatform implements IPlatform {
     }
 
     return constantTimeEqual(
-      getGitLabTenantConfig(tenant).webhookSecret,
+      getGitLabTenantConfig(resolvedTenant.tenant).webhookSecret,
       providedSecret,
     );
   }
-  async classifyWebhookTrigger(tenant: TenantRecord, payload: unknown) {
+  async classifyWebhookTrigger(
+    resolvedTenant: ResolvedTenant,
+    payload: unknown,
+  ) {
     const parsedPayload = parseGitLabNoteHook(payload);
-    const client = this.createGitLabClient(tenant);
+    const client = this.createGitLabClient(resolvedTenant);
     return classifyGitLabWebhookTrigger({
       payload: parsedPayload,
-      tenant,
+      tenant: resolvedTenant.tenant,
+      connection: resolvedTenant.connection,
       client,
     });
   }
   async createInteractionJob(input: {
-    tenant: TenantRecord;
+    resolvedTenant: ResolvedTenant;
     payload: unknown;
   }): Promise<{
     dedupeKey: string;
@@ -141,10 +162,13 @@ export default class GitLabPlatform implements IPlatform {
     payloadJson: string;
   }> {
     const parsedPayload = parseGitLabNoteHook(input.payload);
-    const tenantConfig = getGitLabTenantConfig(input.tenant);
+    const tenantConfig = getGitLabTenantConfig(input.resolvedTenant.tenant);
+    const connectionConfig = getGitLabConnectionConfig(
+      input.resolvedTenant.connection,
+    );
     return {
       dedupeKey: createInteractionJobDedupeKey({
-        baseUrl: tenantConfig.baseUrl,
+        baseUrl: connectionConfig.baseUrl,
         projectId: tenantConfig.projectId,
         codeReviewId: parsedPayload.merge_request.iid,
         commentId: parsedPayload.object_attributes.id,
@@ -158,63 +182,81 @@ export default class GitLabPlatform implements IPlatform {
       payloadJson: JSON.stringify(parsedPayload),
     };
   }
-  getReviewSummaryInstructions(tenant: TenantRecord): string[] {
-    const tenantConfig = getGitLabTenantConfig(tenant);
+  getReviewSummaryInstructions(resolvedTenant: ResolvedTenant): string[] {
+    const connectionConfig = getGitLabConnectionConfig(
+      resolvedTenant.connection,
+    );
     return [
-      `- If you made changes to the code, you can request a re-review to get new feedback by leaving new comment, e.g. \`@${tenantConfig.botUsername} review\``,
-      `- You can ask \`@${tenantConfig.botUsername}\` for help or to clarify anything regarding this codebase`,
+      `- If you made changes to the code, you can request a re-review to get new feedback by leaving new comment, e.g. \`@${connectionConfig.botUsername} review\``,
+      `- You can ask \`@${connectionConfig.botUsername}\` for help or to clarify anything regarding this codebase`,
     ];
   }
   createReviewRuntime(input: {
     storage: StorageHelpers;
     logger: Logger;
-    tenant: TenantRecord;
+    resolvedTenant?: ResolvedTenant;
+    tenant?: TenantRecord;
+    connection?: PlatformConnectionRecord;
     interactionJobId: string;
     workspaceRoot: string;
     memoryEnabled: boolean;
     interactionRunId?: string | undefined;
     runArtifacts?: InteractionRunArtifacts | undefined;
   }) {
-    return new GitLabReviewRuntime(input);
+    const resolvedTenant =
+      input.resolvedTenant ??
+      (input.tenant && input.connection
+        ? { tenant: input.tenant, connection: input.connection }
+        : null);
+    if (!resolvedTenant) {
+      throw new Error("Resolved tenant is required");
+    }
+    return new GitLabReviewRuntime({ ...input, resolvedTenant });
   }
   buildHarnessTenantContext(input: {
-    tenant: TenantRecord;
+    resolvedTenant: ResolvedTenant;
     logger: Logger;
     memoryEnabled: boolean;
     logging?: HarnessRunLoggingContext | undefined;
   }) {
     return {
-      id: input.tenant.id,
+      id: input.resolvedTenant.tenant.id,
       memoryEnabled: input.memoryEnabled,
       projectMemoryBackend: createGitLabProjectMemoryBackendForTenant({
-        tenant: input.tenant,
+        resolvedTenant: input.resolvedTenant,
         logger: input.logger,
         logging: input.logging,
         enabled: input.memoryEnabled,
       }),
     };
   }
-  getRegistrationSchema() {
+  getTenantRegistrationSchema() {
+    return z.object({
+      projectId: z.coerce.number().int().positive(),
+      webhookSecret: z.string().min(1),
+    });
+  }
+  getConnectionRegistrationSchema() {
     return z.object({
       baseUrl: z
         .string()
         .url()
         .transform((value) => normalizeGitLabBaseUrl(value)),
-      projectId: z.coerce.number().int().positive(),
       apiToken: z.string().min(1),
-      webhookSecret: z.string().min(1),
       botUserId: z.coerce.number().int().positive().optional(),
       botUsername: z.string().min(1).optional(),
     });
   }
 
-  private createGitLabClient(tenant: TenantRecord): GitLabClient {
-    const tenantConfig = getGitLabTenantConfig(tenant);
+  private createGitLabClient(resolvedTenant: ResolvedTenant): GitLabClient {
+    const connectionConfig = getGitLabConnectionConfig(
+      resolvedTenant.connection,
+    );
     return new GitLabClient({
-      baseUrl: tenantConfig.baseUrl,
-      apiToken: tenantConfig.apiToken,
+      baseUrl: connectionConfig.baseUrl,
+      apiToken: connectionConfig.apiToken,
       logger: this.logger.child({
-        tenantId: tenant.id,
+        tenantId: resolvedTenant.tenant.id,
       }),
     });
   }

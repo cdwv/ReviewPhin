@@ -183,7 +183,7 @@ describe("storage migrate CLI", () => {
     expect(stdout).toContain("- interactionRunMetrics: 1");
     expect(stdout).toContain("- reviewFindings: 1");
     expect(stdout).toContain("- discussionMappings: 1");
-    expect(stdout).toContain("total: 58");
+    expect(stdout).toContain("total: 59");
 
     const targetStorage = await openSqliteTestStorage(targetDatabasePath);
 

@@ -106,6 +106,10 @@ describe("SqliteStorage review findings", () => {
         adapter_name: "sqlite",
         migration_id: "sqlite:0007_v1_generic_storage_column_names",
       },
+      {
+        adapter_name: "sqlite",
+        migration_id: "sqlite:0008_v2_platform_connections",
+      },
     ]);
     expect(columnNames.has("anchor_json")).toBe(true);
     expect(columnNames.has("interaction_run_id")).toBe(true);
@@ -114,6 +118,7 @@ describe("SqliteStorage review findings", () => {
         "id",
         "tenant_key",
         "platform",
+        "platform_connection_id",
         "platform_config_json",
         "model_profile_name",
         "created_at",
@@ -209,6 +214,58 @@ describe("SqliteStorage review findings", () => {
         '2026-04-01T00:00:00.000Z',
         '2026-04-01T00:00:00.000Z'
       );
+      INSERT INTO tenants VALUES (
+        'tenant_2',
+        'https://gitlab.example.com::124',
+        'https://gitlab.example.com',
+        124,
+        'token',
+        'secret-2',
+        999,
+        'alternate-display-name',
+        NULL,
+        '2026-04-01T00:00:00.000Z',
+        '2026-04-01T00:00:00.000Z'
+      );
+      INSERT INTO tenants VALUES (
+        'tenant_3',
+        'https://gitlab.example.com::125',
+        'https://gitlab.example.com',
+        125,
+        'different-token',
+        'secret-3',
+        999,
+        'review-bot',
+        NULL,
+        '2026-04-01T00:00:00.000Z',
+        '2026-04-01T00:00:00.000Z'
+      );
+      INSERT INTO tenants VALUES (
+        'tenant_4',
+        'https://malformed.example.com::126',
+        'https://malformed.example.com',
+        126,
+        'token',
+        'secret-4',
+        999,
+        NULL,
+        NULL,
+        '2026-04-01T00:00:00.000Z',
+        '2026-04-01T00:00:00.000Z'
+      );
+      INSERT INTO tenants VALUES (
+        'tenant_5',
+        'https://gitlab.example.com::127',
+        'https://gitlab.example.com/api/v4',
+        127,
+        'token',
+        'secret-5',
+        999,
+        'review-bot',
+        NULL,
+        '2026-04-01T00:00:00.000Z',
+        '2026-04-01T00:00:00.000Z'
+      );
       INSERT INTO interaction_jobs VALUES (
         'job_1',
         'tenant_1',
@@ -240,12 +297,13 @@ describe("SqliteStorage review findings", () => {
     const verifiedDb = new DatabaseSync(databasePath);
     const persistedTenant = verifiedDb
       .prepare(
-        "SELECT id, tenant_key, platform, platform_config_json FROM tenants WHERE id = ?",
+        "SELECT id, tenant_key, platform, platform_connection_id, platform_config_json FROM tenants WHERE id = ?",
       )
       .get("tenant_1") as {
       id: string;
       tenant_key: string;
       platform: string;
+      platform_connection_id: string;
       platform_config_json: string;
     };
     const persistedJob = verifiedDb
@@ -256,6 +314,14 @@ describe("SqliteStorage review findings", () => {
       tenant_id: string;
       code_review_id: number;
     };
+    const migratedAssignments = verifiedDb
+      .prepare("SELECT id, platform_connection_id FROM tenants ORDER BY id")
+      .all() as Array<{ id: string; platform_connection_id: string }>;
+    const migratedConnections = verifiedDb
+      .prepare(
+        "SELECT id, name, status FROM platform_connections WHERE name NOT LIKE 'test-%' ORDER BY name",
+      )
+      .all() as Array<{ id: string; name: string; status: string }>;
     const migrations = verifiedDb
       .prepare("SELECT COUNT(*) AS count FROM storage_migrations")
       .get() as { count: number };
@@ -266,31 +332,49 @@ describe("SqliteStorage review findings", () => {
       id: "tenant_1",
       tenant_key: "https://gitlab.example.com::123",
       platform: "gitlab",
+      platform_connection_id: expect.stringMatching(/^connection_/),
       platform_config_json: JSON.stringify({
-        baseUrl: "https://gitlab.example.com",
         projectId: 123,
-        apiToken: "token-updated",
         webhookSecret: "secret-updated",
-        botUserId: 999,
-        botUsername: "review-bot",
       }),
     });
     expect(persistedJob).toEqual({
       tenant_id: "tenant_1",
       code_review_id: 7,
     });
+    expect(migratedAssignments[0]?.platform_connection_id).toBe(
+      migratedAssignments[1]?.platform_connection_id,
+    );
+    expect(migratedAssignments[2]?.platform_connection_id).not.toBe(
+      migratedAssignments[0]?.platform_connection_id,
+    );
+    expect(migratedAssignments[4]?.platform_connection_id).toBe(
+      migratedAssignments[0]?.platform_connection_id,
+    );
+    expect(
+      migratedConnections.find(
+        (connection) =>
+          connection.id === migratedAssignments[3]?.platform_connection_id,
+      )?.status,
+    ).toBe("setup_required");
+    expect(migratedConnections.map((connection) => connection.name)).toEqual([
+      "gitlab-example",
+      "gitlab-example-1",
+      "malformed-example",
+    ]);
     expect(tenantColumnNames).toEqual(
       new Set([
         "id",
         "tenant_key",
         "platform",
+        "platform_connection_id",
         "platform_config_json",
         "model_profile_name",
         "created_at",
         "updated_at",
       ]),
     );
-    expect(migrations.count).toBe(7);
+    expect(migrations.count).toBe(8);
     await storage.close();
   });
 
@@ -616,6 +700,7 @@ describe("SqliteStorage review findings", () => {
       { migration_id: "sqlite:0005_v1_code_review_snapshots" },
       { migration_id: "sqlite:0006_v1_drop_legacy_tenant_columns" },
       { migration_id: "sqlite:0007_v1_generic_storage_column_names" },
+      { migration_id: "sqlite:0008_v2_platform_connections" },
     ]);
     verifiedDb.close();
   });
@@ -800,6 +885,7 @@ describe("SqliteStorage review findings", () => {
       { migration_id: "sqlite:0005_v1_code_review_snapshots" },
       { migration_id: "sqlite:0006_v1_drop_legacy_tenant_columns" },
       { migration_id: "sqlite:0007_v1_generic_storage_column_names" },
+      { migration_id: "sqlite:0008_v2_platform_connections" },
     ]);
   });
 

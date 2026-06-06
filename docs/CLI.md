@@ -16,11 +16,51 @@ pnpm cli <resource> <action> [options]
 
 Both invocations accept the same flags.
 
+## Help
+
+Append `--help` to any command path to show only matching usage entries:
+
+```bash
+reviewphin --help
+reviewphin tenant --help
+reviewphin tenant add --help
+```
+
+Help requests exit successfully. Incomplete or unknown commands exit with an
+error after displaying contextual help. When a recognized command fails,
+its usage entry is displayed with the error.
+
 ---
 
 ## Tenant commands
 
-Tenants belong to a code review platform. Today the only supported platform is GitLab, so a tenant is effectively a `(GitLab instance URL, project ID)` pair plus platform metadata.
+Reusable credentials are registered as platform connections before tenants.
+
+### `platform connection`
+
+```bash
+reviewphin platform connection add \
+  --name main-gitlab \
+  --platform gitlab \
+  --base-url https://gitlab.example.com \
+  --api-token glpat-xxxxxxxx
+```
+
+Bot identity is inferred from the token unless explicitly supplied. The
+`update`, `remove`, and `describe` commands accept
+`--connection <name-or-id>`. `list` and `describe` redact connection secrets.
+
+| Flag             | Add required | Description                                                                                                    |
+| ---------------- | ------------ | -------------------------------------------------------------------------------------------------------------- |
+| `--name`         | Yes          | Globally unique connection name.                                                                               |
+| `--platform`     | No           | Platform slug. Defaults to `gitlab`.                                                                           |
+| `--base-url`     | Yes          | Base URL of the GitLab instance.                                                                               |
+| `--api-token`    | Yes          | API token used for GitLab requests.                                                                            |
+| `--bot-user-id`  | No           | Numeric GitLab user ID of the bot. If omitted, it is requested from the GitLab API using the connection token. |
+| `--bot-username` | No           | GitLab username used to match direct mentions. If omitted, it is requested from the GitLab API.                |
+
+Provider options, including bot identity, can also be changed with
+`platform connection update --connection <name-or-id>`.
 
 ### `tenant add`
 
@@ -29,24 +69,20 @@ Register a new tenant. Today GitLab is the only supported platform, so `--platfo
 ```bash
 reviewphin tenant add \
   --platform gitlab \
-  --base-url https://gitlab.example.com \
+  --connection main-gitlab \
   --project-id 123 \
-  --api-token glpat-xxxxxxxx \
   --webhook-secret replace-me
 ```
 
-| Flag                        | Required | Description                                                                                                                           |
-| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| `--platform`                | No       | Code review platform slug. Defaults to `gitlab`; custom slugs require loading their provider with `PLATFORM_MODULES`.                 |
-| `--base-url`                | Yes      | GitLab instance root URL. May include a path prefix for proxied installs. Do not include `/api/v4`.                                   |
-| `--project-id`              | Yes      | Numeric GitLab project ID.                                                                                                            |
-| `--api-token`               | Yes      | Project, group, or personal access token with `api` scope.                                                                            |
-| `--webhook-secret`          | Yes      | Value expected in the `X-Gitlab-Token` header for this project's webhooks.                                                            |
-| `--bot-user-id`             | No       | Numeric GitLab user ID of the bot. If not provided, it will be requested from gitlab api with provided token.                         |
-| `--bot-username`            | No       | GitLab username of the bot. Used to match direct mentions. If not provided, it will be requested from gitlab api with provided token. |     |
-| `--model-profile`           | No       | Assign a named model profile to this tenant at registration time.                                                                     |
-| `--sqlite-database-path`    | No       | Override the SQLite file path instead of reading `SQLITE_DATABASE_PATH` from `.env`.                                                  |
-| `--storage-provider-module` | No       | Override the storage adapter module instead of reading `STORAGE_PROVIDER_MODULE` from `.env`.                                         |
+| Flag                        | Required | Description                                                                                                           |
+| --------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
+| `--platform`                | No       | Code review platform slug. Defaults to `gitlab`; custom slugs require loading their provider with `PLATFORM_MODULES`. |
+| `--connection`              | Yes      | Globally unique connection name or id. It must be ready and match the tenant platform.                                |
+| `--project-id`              | Yes      | Numeric GitLab project ID.                                                                                            |
+| `--webhook-secret`          | Yes      | Value expected in the `X-Gitlab-Token` header for this project's webhooks.                                            |
+| `--model-profile`           | No       | Assign a named model profile to this tenant at registration time.                                                     |
+| `--sqlite-database-path`    | No       | Override the SQLite file path instead of reading `SQLITE_DATABASE_PATH` from `.env`.                                  |
+| `--storage-provider-module` | No       | Override the storage adapter module instead of reading `STORAGE_PROVIDER_MODULE` from `.env`.                         |
 
 For non-built-in platforms, set `PLATFORM_MODULES` in the environment before running `tenant add`; CLI platform registration uses the same comma-separated module list as the server. See [Code review platform providers](code-review-platform-providers.md#loading-platform-modules).
 

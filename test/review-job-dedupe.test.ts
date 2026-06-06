@@ -5,12 +5,14 @@ import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
 import type { CreateInteractionJobInput } from "../src/storage/contract/index.js";
 import { createInteractionJobDedupeKey } from "../src/utils/ids.js";
+import { createGitLabConnectionRecord } from "./helpers/gitlab-tenant.js";
 import { tmpPath } from "./test-paths.js";
 
 const tenant = {
   id: "tenant_1",
   key: "https://gitlab.example.com::123",
   platform: "gitlab",
+  platformConnectionId: "connection-1",
   platformConfigJson: JSON.stringify({
     baseUrl: "https://gitlab.example.com",
     projectId: 123,
@@ -69,6 +71,11 @@ describe("review job dedupe", () => {
     };
 
     const storage = {
+      stores: {
+        platformConnections: {
+          get: vi.fn(async () => createGitLabConnectionRecord()),
+        },
+      },
       createOrGetInteractionJob: vi.fn(
         async (input: CreateInteractionJobInput) => ({
           job: {
@@ -103,13 +110,20 @@ describe("review job dedupe", () => {
       retryBackoffMs: 1000,
     });
 
-    await worker.createInteractionJobFromWebhook(payload, tenant, {
-      kind: "direct-mention",
-      comment: {
-        kind: "code-review-comment",
-        commentId: 55,
+    await worker.createInteractionJobFromWebhook(
+      payload,
+      {
+        tenant,
+        connection: createGitLabConnectionRecord(),
       },
-    });
+      {
+        kind: "direct-mention",
+        comment: {
+          kind: "code-review-comment",
+          commentId: 55,
+        },
+      },
+    );
 
     expect(storage.createOrGetInteractionJob).toHaveBeenCalledWith(
       expect.objectContaining({

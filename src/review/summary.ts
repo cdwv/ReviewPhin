@@ -4,7 +4,7 @@ import type {
   ReviewResult,
   ReviewSummaryContext,
 } from "./types.js";
-import type { IPlatform } from "../platforms/IPlatform.js";
+import type { IPlatform, ResolvedTenant } from "../platforms/IPlatform.js";
 import type { TenantRecord } from "../storage/contract/index.js";
 
 export const REVIEW_SUMMARY_NOTE_MARKER = "<!-- reviewphin-review-summary -->";
@@ -54,6 +54,7 @@ export function findLatestReviewSummaryNote<
 export function buildReviewSummaryNote(input: {
   platform: IPlatform;
   tenant?: TenantRecord;
+  resolvedTenant?: ResolvedTenant;
   context: ReviewSummaryContext;
   reviewResult: ReviewResult;
   activeFindings?: SummaryFinding[];
@@ -125,7 +126,13 @@ export function buildReviewSummaryNote(input: {
     throw new Error("Review summary comment requires tenant context");
   }
 
-  lines.push(...input.platform.getReviewSummaryInstructions(tenant), "");
+  const resolvedTenant = input.resolvedTenant;
+  lines.push(
+    ...(resolvedTenant
+      ? input.platform.getReviewSummaryInstructions(resolvedTenant)
+      : []),
+    "",
+  );
 
   if (shouldIncludeSuggestedFixesPrompt(overview)) {
     lines.push(

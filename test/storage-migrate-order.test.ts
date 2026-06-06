@@ -18,6 +18,7 @@ describe("storage migrate ordering", () => {
   it("pages source stores with deterministic per-store order", async () => {
     const orderCalls = {
       modelProfiles: [] as unknown[],
+      platformConnections: [] as unknown[],
       tenants: [] as unknown[],
       interactionJobs: [] as unknown[],
       codeReviewSnapshots: [] as unknown[],
@@ -38,6 +39,10 @@ describe("storage migrate ordering", () => {
             },
           ],
           orderCalls.modelProfiles,
+        ),
+        platformConnections: createSourceStore(
+          [{ id: "connection-1" }],
+          orderCalls.platformConnections,
         ),
         tenants: createSourceStore(
           [
@@ -111,6 +116,7 @@ describe("storage migrate ordering", () => {
       moduleSpecifier: "target-module",
       stores: {
         modelProfiles: createTargetStore(),
+        platformConnections: createTargetStore(),
         tenants: createTargetStore(),
         interactionJobs: createTargetStore(),
         codeReviewSnapshots: createTargetStore(),

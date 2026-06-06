@@ -13,6 +13,7 @@ import type { GitLabNoteHookPayload } from "../src/platforms/gitlab/types.js";
 import type { InteractionRunArtifacts } from "../src/review/run-artifacts.js";
 import type { TenantRecord } from "../src/storage/contract/index.js";
 import type { StorageHelpers } from "../src/storage/storage-helpers.js";
+import { createGitLabConnectionRecord } from "./helpers/gitlab-tenant.js";
 import { wrapGitLabPlatformContext } from "./helpers/platform-context.js";
 import { overridePlatformRuntime } from "./helpers/platform-runtime.js";
 
@@ -20,6 +21,7 @@ const tenant = {
   id: "tenant_1",
   key: "https://gitlab.example.com::123",
   platform: "gitlab",
+  platformConnectionId: "connection-1",
   platformConfigJson: JSON.stringify({
     baseUrl: "https://gitlab.example.com",
     projectId: 123,
@@ -38,6 +40,7 @@ const tenant = {
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };
+const connection = createGitLabConnectionRecord();
 
 const payload: GitLabNoteHookPayload = {
   object_kind: "note",
@@ -271,7 +274,7 @@ describe("ReviewWorker orchestration", () => {
         markJobFailed,
       } as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant),
+        getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
       } as never,
       reviewRuntimeFactory: createReviewRuntimeFactory({
         loadRoutingContext: vi.fn(async () =>
@@ -502,7 +505,7 @@ describe("ReviewWorker orchestration", () => {
         markJobFailed: vi.fn(async () => {}),
       } as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant),
+        getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
       } as never,
       reviewRuntimeFactory: createReviewRuntimeFactory({
         loadRoutingContext: vi.fn(async () =>
@@ -752,7 +755,7 @@ describe("ReviewWorker orchestration", () => {
         markJobFailed: vi.fn(async () => {}),
       } as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant),
+        getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
       } as never,
       reviewRuntimeFactory: createReviewRuntimeFactory({
         loadRoutingContext: vi.fn(async () =>
@@ -971,7 +974,7 @@ describe("ReviewWorker orchestration", () => {
         markJobFailed: vi.fn(async () => {}),
       } as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant),
+        getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
       } as never,
       reviewRuntimeFactory: createReviewRuntimeFactory({
         loadRoutingContext: vi.fn(async () =>
@@ -1190,7 +1193,7 @@ describe("ReviewWorker orchestration", () => {
         markJobFailed: vi.fn(async () => {}),
       } as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant),
+        getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
       } as never,
       reviewRuntimeFactory: createReviewRuntimeFactory({
         loadRoutingContext: vi.fn(async () =>
@@ -1583,7 +1586,7 @@ describe("ReviewWorker orchestration", () => {
         markJobFailed: vi.fn(async () => {}),
       } as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant),
+        getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
       } as never,
       reviewRuntimeFactory: createReviewRuntimeFactory({
         loadRoutingContext: vi.fn(async () => routingContext),
@@ -1937,7 +1940,7 @@ describe("ReviewWorker orchestration", () => {
         markJobFailed: vi.fn(async () => {}),
       } as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant),
+        getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
       } as never,
       reviewRuntimeFactory: createReviewRuntimeFactory({
         loadRoutingContext: vi.fn(async () => routingContext),

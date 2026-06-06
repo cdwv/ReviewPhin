@@ -46,6 +46,7 @@ interface GitLabReviewContext {
 
 export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAdapter {
   private readonly tenant: TenantRecord;
+  private readonly botUserId: number;
   private readonly client: GitLabClient;
   private readonly logger: Logger;
   private readonly interactionRunId: string;
@@ -53,12 +54,17 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
 
   public constructor(input: {
     tenant: TenantRecord;
+    botUserId?: number;
     context: LightweightMergeRequestContext | HydratedMergeRequestContext;
     client: GitLabClient;
     logger: Logger;
     interactionRunId: string;
   }) {
     this.tenant = input.tenant;
+    this.botUserId =
+      input.botUserId ??
+      (JSON.parse(input.tenant.platformConfigJson) as { botUserId: number })
+        .botUserId;
     this.context = input.context;
     this.client = input.client;
     this.logger = input.logger;
@@ -76,7 +82,7 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
         )
       : this.context.discussions;
     return discussions.map((discussion) =>
-      toPlatformReviewDiscussion(discussion, this.tenant),
+      toPlatformReviewDiscussion(discussion, this.botUserId),
     );
   }
 
@@ -84,7 +90,7 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
     return this.context.notes.map((note) => ({
       id: String(note.id),
       body: note.body,
-      isBot: isBotUser(note.author, this.tenant),
+      isBot: isBotUser(note.author, this.botUserId),
       updatedAt: note.updated_at ?? null,
     }));
   }
@@ -99,7 +105,7 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
       discussionId,
       body,
     );
-    return toPlatformReviewComment(note, this.tenant);
+    return toPlatformReviewComment(note, this.botUserId);
   }
 
   public async setDiscussionResolved(
@@ -126,7 +132,7 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
       Number(commentId),
       body,
     );
-    return toPlatformReviewComment(note, this.tenant);
+    return toPlatformReviewComment(note, this.botUserId);
   }
 
   public async createDraftDiscussion(input: {
@@ -357,10 +363,10 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
 
 export function toPlatformReviewDiscussion(
   discussion: GitLabDiscussion,
-  tenant: TenantRecord,
+  botUserId: number,
 ): PlatformReviewDiscussion {
   const comments = discussion.notes.map((note) =>
-    toPlatformReviewComment(note, tenant),
+    toPlatformReviewComment(note, botUserId),
   );
   return {
     id: discussion.id,
@@ -372,14 +378,14 @@ export function toPlatformReviewDiscussion(
 
 export function toPlatformReviewComment(
   note: GitLabNote,
-  tenant: TenantRecord,
+  botUserId: number,
 ): PlatformReviewComment {
   return {
     id: String(note.id),
     body: note.body,
     authorId: String(note.author.id),
     authorUsername: note.author.username,
-    isBot: isBotUser(note.author, tenant),
+    isBot: isBotUser(note.author, botUserId),
     resolvable: note.resolvable === true,
     resolved: note.resolved === true,
     createdAt: note.created_at ?? null,

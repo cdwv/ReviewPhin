@@ -9,6 +9,7 @@ import type {
 } from "../src/platforms/gitlab/types.js";
 import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
+import { createGitLabConnectionRecord } from "./helpers/gitlab-tenant.js";
 import { wrapGitLabPlatformContext } from "./helpers/platform-context.js";
 import { overridePlatformRuntime } from "./helpers/platform-runtime.js";
 
@@ -16,6 +17,7 @@ const tenant = {
   id: "tenant_1",
   key: "https://gitlab.example.com::123",
   platform: "gitlab",
+  platformConnectionId: "connection-1",
   platformConfigJson: JSON.stringify({
     baseUrl: "https://gitlab.example.com",
     projectId: 123,
@@ -34,6 +36,7 @@ const tenant = {
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };
+const connection = createGitLabConnectionRecord();
 
 const directMentionPayload: GitLabNoteHookPayload = {
   object_kind: "note",
@@ -237,13 +240,17 @@ describe("GitLab reactions", () => {
       discussions: [],
     });
 
-    await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
-      kind: "direct-mention",
-      comment: {
-        kind: "code-review-comment",
-        commentId: 55,
+    await worker.createInteractionJobFromWebhook(
+      directMentionPayload,
+      { tenant, connection },
+      {
+        kind: "direct-mention",
+        comment: {
+          kind: "code-review-comment",
+          commentId: 55,
+        },
       },
-    });
+    );
     await worker.processJob("job_1");
 
     const postedUrls = fetchMock.mock.calls
@@ -332,13 +339,17 @@ describe("GitLab reactions", () => {
       reviewError: new Error("final failure"),
     });
 
-    await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
-      kind: "direct-mention",
-      comment: {
-        kind: "code-review-comment",
-        commentId: 55,
+    await worker.createInteractionJobFromWebhook(
+      directMentionPayload,
+      { tenant, connection },
+      {
+        kind: "direct-mention",
+        comment: {
+          kind: "code-review-comment",
+          commentId: 55,
+        },
       },
-    });
+    );
 
     await expect(worker.processJob("job_1")).rejects.toThrow("final failure");
 
@@ -416,13 +427,17 @@ describe("GitLab reactions", () => {
       reviewError: new Error("retryable failure"),
     });
 
-    await worker.createInteractionJobFromWebhook(directMentionPayload, tenant, {
-      kind: "direct-mention",
-      comment: {
-        kind: "code-review-comment",
-        commentId: 55,
+    await worker.createInteractionJobFromWebhook(
+      directMentionPayload,
+      { tenant, connection },
+      {
+        kind: "direct-mention",
+        comment: {
+          kind: "code-review-comment",
+          commentId: 55,
+        },
       },
-    });
+    );
 
     await expect(worker.processJob("job_1")).resolves.toEqual({
       requeueAfterMs: 5000,
@@ -519,14 +534,18 @@ describe("GitLab reactions", () => {
       discussions,
     });
 
-    await worker.createInteractionJobFromWebhook(followUpPayload, tenant, {
-      kind: "follow-up-comment",
-      comment: {
-        kind: "discussion-comment",
-        discussionId: "disc_1",
-        commentId: 56,
+    await worker.createInteractionJobFromWebhook(
+      followUpPayload,
+      { tenant, connection },
+      {
+        kind: "follow-up-comment",
+        comment: {
+          kind: "discussion-comment",
+          discussionId: "disc_1",
+          commentId: 56,
+        },
       },
-    });
+    );
     await worker.processJob("job_1");
 
     const awardEmojiRequests = fetchMock.mock.calls.filter(([input]) =>
@@ -562,6 +581,9 @@ function createWorker(input: {
 
   const storage = {
     stores: {
+      platformConnections: {
+        get: vi.fn(async () => connection),
+      },
       interactionJobs: {
         get: vi.fn(async () => job),
       },
@@ -702,7 +724,7 @@ function createWorker(input: {
   return new ReviewWorker({
     storage: storage as never,
     tenantRegistry: {
-      getTenantById: vi.fn(async () => tenant),
+      getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
     } as never,
     reviewRuntimeFactory: ({ platform, ...runtimeInput }) =>
       overridePlatformRuntime(platform.createReviewRuntime(runtimeInput), {

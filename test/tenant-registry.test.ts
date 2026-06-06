@@ -4,7 +4,10 @@ import { createLogger } from "../src/logger.js";
 import GitLabPlatform from "../src/platforms/gitlab/platform.js";
 import type { GitLabNoteHookPayload } from "../src/platforms/gitlab/types.js";
 import { TenantRegistry } from "../src/tenants/tenant-registry.js";
-import { createGitLabTenantRecord } from "./helpers/gitlab-tenant.js";
+import {
+  createGitLabConnectionRecord,
+  createGitLabTenantRecord,
+} from "./helpers/gitlab-tenant.js";
 
 function createPayload(): GitLabNoteHookPayload {
   return {
@@ -50,6 +53,7 @@ function createWebhookRequest(payload: GitLabNoteHookPayload) {
 function createStorageForTenants(
   ...tenants: ReturnType<typeof createGitLabTenantRecord>[]
 ) {
+  const connection = createGitLabConnectionRecord();
   return {
     stores: {
       tenants: {
@@ -62,7 +66,11 @@ function createStorageForTenants(
               tenant.key === filters?.key?.eq &&
               tenant.platform === filters?.platform?.eq,
           ) ?? null,
-        get: async () => null,
+        get: async (id: string) =>
+          tenants.find((tenant) => tenant.id === id) ?? null,
+      },
+      platformConnections: {
+        get: async (id: string) => (id === connection.id ? connection : null),
       },
     },
   };
@@ -94,7 +102,7 @@ describe("TenantRegistry", () => {
       createPayload(),
       createWebhookRequest(createPayload()),
     );
-    expect(tenant?.id).toBe("tenant_prefixed");
+    expect(tenant?.tenant.id).toBe("tenant_prefixed");
   });
 
   it("resolves a tenant from repository.homepage when project.web_url is missing", async () => {
@@ -117,6 +125,34 @@ describe("TenantRegistry", () => {
       createWebhookRequest(payload),
     );
 
-    expect(tenant?.id).toBe("tenant-prefixed");
+    expect(tenant?.tenant.id).toBe("tenant-prefixed");
+  });
+
+  it("does not resolve tenants with missing or unusable connections", async () => {
+    const tenant = createGitLabTenantRecord();
+    const connection = createGitLabConnectionRecord();
+
+    for (const invalidConnection of [
+      null,
+      { ...connection, status: "setup_required" as const },
+      { ...connection, platform: "github" },
+    ]) {
+      const registry = new TenantRegistry({
+        storage: {
+          stores: {
+            tenants: {
+              get: async () => tenant,
+            },
+            platformConnections: {
+              get: async () => invalidConnection,
+            },
+          },
+        } as never,
+      });
+
+      await expect(
+        registry.getResolvedTenantById(tenant.id),
+      ).resolves.toBeNull();
+    }
   });
 });

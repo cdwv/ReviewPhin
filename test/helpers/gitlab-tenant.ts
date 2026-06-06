@@ -1,5 +1,6 @@
 import { getGitLabTenantConfig } from "../../src/platforms/gitlab/tenant-config.js";
 import type {
+  PlatformConnectionRecord,
   StorageTenantInput,
   TenantRecord,
 } from "../../src/storage/contract/index.js";
@@ -14,6 +15,7 @@ type GitLabTenantFixtureOptions = {
   botUserId?: number;
   botUsername?: string;
   modelProfileName?: string | null;
+  platformConnectionId?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -24,25 +26,48 @@ export function createGitLabTenantInput(
   const {
     baseUrl = "https://gitlab.example.com",
     projectId = 123,
-    apiToken = "token",
     webhookSecret = "secret",
-    botUserId = 999,
-    botUsername = "review-bot",
     modelProfileName = null,
+    platformConnectionId = "connection-1",
   } = options;
 
   return {
     key: createTenantKey(baseUrl, projectId),
     platform: "gitlab",
+    platformConnectionId,
     platformConfigJson: JSON.stringify({
-      baseUrl,
       projectId,
-      apiToken,
       webhookSecret,
+    }),
+    modelProfileName,
+  };
+}
+
+export function createGitLabConnectionRecord(
+  options: GitLabTenantFixtureOptions = {},
+): PlatformConnectionRecord {
+  const {
+    baseUrl = "https://gitlab.example.com",
+    apiToken = "token",
+    botUserId = 999,
+    botUsername = "review-bot",
+    platformConnectionId = "connection-1",
+    createdAt = "2026-05-08T12:00:00.000Z",
+    updatedAt = "2026-05-08T12:00:00.000Z",
+  } = options;
+  return {
+    id: platformConnectionId,
+    name: `test-${platformConnectionId}`,
+    platform: "gitlab",
+    status: "ready",
+    platformConnectionConfigJson: JSON.stringify({
+      baseUrl,
+      apiToken,
       botUserId,
       botUsername,
     }),
-    modelProfileName,
+    createdAt,
+    updatedAt,
   };
 }
 
@@ -60,6 +85,7 @@ export function createGitLabTenantRecord(
     id,
     key: tenantInput.key,
     platform: tenantInput.platform,
+    platformConnectionId: tenantInput.platformConnectionId,
     platformConfigJson: tenantInput.platformConfigJson,
     modelProfileName: tenantInput.modelProfileName ?? null,
     createdAt,
@@ -72,5 +98,5 @@ export function getGitLabTenantProjectId(tenant: TenantRecord): number {
 }
 
 export function getGitLabTenantBaseUrl(tenant: TenantRecord): string {
-  return getGitLabTenantConfig(tenant).baseUrl;
+  return tenant.key.split("::")[0] ?? "";
 }

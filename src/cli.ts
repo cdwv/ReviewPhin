@@ -30,6 +30,7 @@ import type {
   InteractionRunRecord,
   CodeReviewSnapshotRecord,
   PreviousCompletedInteractionRecord,
+  PlatformConnectionRecord,
   PriorReviewFindingRecord,
   StorageStores,
   StoreListOrder,
@@ -88,6 +89,7 @@ interface TenantArtifactSummary {
 
 const tenantAddSchema = tenantConfigSchema.extend({
   platform: z.string().default("gitlab"),
+  connection: z.string().min(1),
   databasePath: z.string().min(1).optional(),
 });
 
@@ -241,6 +243,16 @@ const storageMigrationSteps: readonly StorageMigrationStep[] = [
       ),
   },
   {
+    label: "platformConnections",
+    run: (source, target) =>
+      migrateEntityStore(
+        source.platformConnections,
+        target.platformConnections,
+        "platformConnections",
+        { order: ascendingOrder("id") },
+      ),
+  },
+  {
     label: "tenants",
     run: (source, target, context) =>
       migrateTenants(source.tenants, target.tenants, context, {
@@ -373,7 +385,12 @@ export async function runCli(
   const logger = createLogger(config.logLevel);
 
   const { positionals, options } = parseCliArgs(argv);
-  const [resource, action] = positionals;
+  const [resource, action, subAction] = positionals;
+
+  if (options.help === true || options.help === "true") {
+    printHelp(positionals);
+    return 0;
+  }
 
   if (resource === "tenant" && action === "add") {
     await initializePlatformRegistry({
@@ -401,24 +418,37 @@ export async function runCli(
           .join(", ")}`,
       );
     }
-    const platformSchema = platform.getRegistrationSchema();
+    const platformSchema = platform.getTenantRegistrationSchema();
     const parsedPlatformConfig = platformSchema.parse(rawData) as Record<
       string,
       unknown
     >;
 
-    await platform.onBeforeRegisterTenant?.(tenant, parsedPlatformConfig);
-
-    const newTenant = {
-      key: platform.getTenantKey(parsedPlatformConfig),
-      platform: platform.getPlatformInfo().slug,
-      platformConfigJson: JSON.stringify(parsedPlatformConfig),
-      ...(tenant.modelProfileName !== undefined
-        ? { modelProfileName: tenant.modelProfileName }
-        : {}),
-    };
-
     return withStorage(options, config, async (storage) => {
+      const connection = await storage.resolvePlatformConnection(
+        tenant.connection,
+      );
+      if (!connection) {
+        throw new Error(`Platform connection ${tenant.connection} not found`);
+      }
+      if (connection.platform !== platform.getPlatformInfo().slug) {
+        throw new Error(
+          `Platform connection ${connection.name} uses ${connection.platform}, expected ${platform.getPlatformInfo().slug}`,
+        );
+      }
+      if (connection.status !== "ready") {
+        throw new Error(`Platform connection ${connection.name} is not ready`);
+      }
+      await platform.onBeforeAddTenant?.(parsedPlatformConfig, connection);
+      const newTenant = {
+        key: platform.getTenantKey(parsedPlatformConfig, connection),
+        platform: platform.getPlatformInfo().slug,
+        platformConnectionId: connection.id,
+        platformConfigJson: JSON.stringify(parsedPlatformConfig),
+        ...(tenant.modelProfileName !== undefined
+          ? { modelProfileName: tenant.modelProfileName }
+          : {}),
+      };
       const savedTenant = await storage.upsertTenant(newTenant);
       process.stdout.write(
         [
@@ -428,6 +458,126 @@ export async function runCli(
           `modelProfile: ${savedTenant.modelProfileName ?? "(none)"}`,
         ].join("\n") + "\n",
       );
+      return 0;
+    });
+  }
+
+  if (resource === "platform" && action === "connection" && subAction) {
+    await initializePlatformRegistry({
+      platformModules: config.platformModules,
+      env: process.env,
+      logger: logger.child({ component: "platform-registry" }),
+    });
+    const rawData = mapCliOptions(options);
+
+    if (subAction === "add") {
+      const name = z.string().min(1).parse(options.name);
+      const platformSlug = z
+        .string()
+        .min(1)
+        .default("gitlab")
+        .parse(options.platform);
+      const platform = getPlatforms().find(
+        (candidate) => candidate.getPlatformInfo().slug === platformSlug,
+      );
+      if (!platform) {
+        throw new Error(`Unsupported platform: ${platformSlug}`);
+      }
+      const connectionConfig = platform
+        .getConnectionRegistrationSchema()
+        .parse(rawData) as Record<string, unknown>;
+      const status =
+        (await platform.onBeforeAddConnection?.(connectionConfig)) ?? "ready";
+
+      return withStorage(options, config, async (storage) => {
+        const saved = await storage.createPlatformConnection({
+          name,
+          platform: platformSlug,
+          status,
+          platformConnectionConfigJson: JSON.stringify(connectionConfig),
+        });
+        process.stdout.write(formatPlatformConnection(saved));
+        return 0;
+      });
+    }
+
+    if (subAction === "list") {
+      return withStorage(options, config, async (storage) => {
+        const connections = await listAll(storage.stores.platformConnections, {
+          order: [{ field: "name", direction: "asc" }],
+        });
+        process.stdout.write(
+          `${JSON.stringify(connections.map(summarizePlatformConnection), null, 2)}\n`,
+        );
+        return 0;
+      });
+    }
+
+    const reference = z
+      .string()
+      .min(1)
+      .parse(options.connection ?? options.name);
+    return withStorage(options, config, async (storage) => {
+      const existing = await storage.resolvePlatformConnection(reference);
+      if (!existing) {
+        throw new Error(`Platform connection ${reference} not found`);
+      }
+      if (subAction === "describe") {
+        process.stdout.write(
+          `${JSON.stringify(summarizePlatformConnection(existing), null, 2)}\n`,
+        );
+        return 0;
+      }
+      if (subAction === "remove") {
+        await storage.deletePlatformConnection(reference);
+        process.stdout.write(`Platform connection ${existing.name} removed.\n`);
+        return 0;
+      }
+      if (subAction !== "update") {
+        throw new Error(`Unsupported platform connection action: ${subAction}`);
+      }
+      if (typeof options.name === "string" && options.name !== existing.name) {
+        throw new Error("Platform connection name is immutable");
+      }
+      if (
+        typeof options.platform === "string" &&
+        options.platform !== existing.platform
+      ) {
+        throw new Error("Platform connection platform is immutable");
+      }
+      const platform = getPlatforms().find(
+        (candidate) => candidate.getPlatformInfo().slug === existing.platform,
+      );
+      if (!platform) {
+        throw new Error(`Unsupported platform: ${existing.platform}`);
+      }
+      const currentConfig = JSON.parse(
+        existing.platformConnectionConfigJson,
+      ) as Record<string, unknown>;
+      const patch = Object.fromEntries(
+        Object.entries(rawData).filter(
+          ([key]) =>
+            ![
+              "name",
+              "platform",
+              "connection",
+              "sqliteDatabasePath",
+              "storageProviderModule",
+            ].includes(key),
+        ),
+      );
+      const combined = platform
+        .getConnectionRegistrationSchema()
+        .parse({ ...currentConfig, ...patch }) as Record<string, unknown>;
+      const status =
+        (await platform.onBeforeUpdateConnection?.(existing, combined)) ??
+        existing.status;
+      const updated = await storage.updatePlatformConnection({
+        reference,
+        status,
+        platformConnectionConfigJson: JSON.stringify(combined),
+      });
+      process.stdout.write(formatPlatformConnection(updated));
       return 0;
     });
   }
@@ -856,7 +1006,7 @@ export async function runCli(
     return 0;
   }
 
-  printHelp();
+  printHelp(positionals);
   return 1;
 }
 
@@ -930,9 +1080,29 @@ async function withStorage<T>(
   }
 }
 
-function printHelp(): void {
+export function detectCliCommand(
+  env: NodeJS.ProcessEnv = process.env,
+  argv: string[] = process.argv,
+): string {
+  if (env.REVIEWPHIN_CLI_COMMAND?.trim()) {
+    return env.REVIEWPHIN_CLI_COMMAND.trim();
+  }
+
+  if (env.npm_lifecycle_event === "cli" && env.npm_execpath?.includes("pnpm")) {
+    return "pnpm cli";
+  }
+
+  const scriptPath = argv[1];
+  return scriptPath ? `node ${scriptPath}` : "reviewphin";
+}
+
+function printHelp(
+  positionals: string[] = [],
+  fallbackToAllCommands = true,
+): boolean {
+  const cliCommand = detectCliCommand();
   const platforms = getPlatforms();
-  const platformAddCommands: string[] = [];
+  const commands: string[] = [];
   for (const platform of platforms) {
     const info = platform.getPlatformInfo();
 
@@ -954,6 +1124,11 @@ function printHelp(): void {
         isOptional: true,
       },
       {
+        paramString: `--connection <name-or-id>`,
+        isOptional: false,
+        priority: -0.75,
+      },
+      {
         paramString: `--sqlite-database-path <path>`,
         isOptional: true,
         priority: 1,
@@ -964,8 +1139,7 @@ function printHelp(): void {
         priority: 2,
       },
     ];
-    process.stdout.write(`  ${info.name} (${info.slug})\n`);
-    const schema = platform.getRegistrationSchema();
+    const schema = platform.getTenantRegistrationSchema();
     // for each property, translate it to a CLI option and add it to the help text
     for (const [key, propertySchema] of Object.entries(schema.shape)) {
       const optionName = key
@@ -991,26 +1165,48 @@ function printHelp(): void {
       p.isOptional ? `[${p.paramString}]` : p.paramString,
     );
 
-    platformAddCommands.push(`  pnpm cli tenant add ${paramStrings.join(" ")}`);
+    commands.push(`tenant add ${paramStrings.join(" ")}`);
   }
-  process.stdout.write(
-    [
-      "Usage:",
-      ...platformAddCommands,
-      "  pnpm cli tenant list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-      "  pnpm cli tenant set-profile (--tenant-id <id> | --key <key>) --model-profile <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-      "  pnpm cli tenant clear-profile (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-      "  pnpm cli tenant remove (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
-      "  pnpm cli model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--default] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-      "  pnpm cli model-profile list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-      "  pnpm cli model-profile remove --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-      "  pnpm cli model-profile set-default --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-      "  pnpm cli model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-      "  pnpm cli storage migrate --from-storage-provider-module <module> [--from-sqlite-database-path <path>] --to-storage-provider-module <module> [--to-sqlite-database-path <path>]",
-      "  pnpm cli mr describe (--tenant-id <id> | --key <key>) --code-review-id <id> [--current-interaction-job-id <id>] [--trigger-comment-id <id> --trigger-comment-action <create|update> [--trigger-comment-updated-at <iso>] [--trigger-comment-body <text>]] [--json] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-      "  pnpm cli metrics sessions [--run-log-dir <path>]",
-    ].join("\n") + "\n",
+  commands.push(
+    "platform connection add --name <name> [--platform gitlab] --base-url <url> --api-token <token> [--bot-user-id <id>] [--bot-username <name>]",
+    "platform connection update --connection <name-or-id> [provider options]",
+    "platform connection remove --connection <name-or-id>",
+    "platform connection list",
+    "platform connection describe --connection <name-or-id>",
+    "tenant list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "tenant set-profile (--tenant-id <id> | --key <key>) --model-profile <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "tenant clear-profile (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "tenant remove (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
+    "model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--default] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "model-profile list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "model-profile remove --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "model-profile set-default --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "storage migrate --from-storage-provider-module <module> [--from-sqlite-database-path <path>] --to-storage-provider-module <module> [--to-sqlite-database-path <path>]",
+    "mr describe (--tenant-id <id> | --key <key>) --code-review-id <id> [--current-interaction-job-id <id>] [--trigger-comment-id <id> --trigger-comment-action <create|update> [--trigger-comment-updated-at <iso>] [--trigger-comment-body <text>]] [--json] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "metrics sessions [--run-log-dir <path>]",
   );
+
+  const positionalPrefix = positionals.join(" ");
+  const matchingCommands = positionalPrefix
+    ? commands.filter(
+        (command) =>
+          command === positionalPrefix ||
+          command.startsWith(`${positionalPrefix} `),
+      )
+    : commands;
+  if (matchingCommands.length === 0 && !fallbackToAllCommands) {
+    return false;
+  }
+  const displayedCommands =
+    matchingCommands.length > 0 ? matchingCommands : commands;
+
+  const usageLines = displayedCommands
+    .toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    .map((command) => `  ${cliCommand} ${command} [--help]`);
+
+  process.stdout.write(["Usage:", ...usageLines].join("\n") + "\n");
+  return true;
 }
 
 async function runCodeReviewDescribeCommand(
@@ -1352,14 +1548,42 @@ function summarizeTenant(tenant: TenantRecord) {
     platform: tenant.platform,
     ...(gitLabConfig
       ? {
-          baseUrl: gitLabConfig.baseUrl,
           projectId: gitLabConfig.projectId,
-          botUserId: gitLabConfig.botUserId,
-          botUsername: gitLabConfig.botUsername,
         }
       : {}),
     modelProfileName: tenant.modelProfileName,
+    platformConnectionId: tenant.platformConnectionId,
   };
+}
+
+function summarizePlatformConnection(connection: PlatformConnectionRecord) {
+  return {
+    id: connection.id,
+    name: connection.name,
+    platform: connection.platform,
+    status: connection.status,
+    createdAt: connection.createdAt,
+    updatedAt: connection.updatedAt,
+  };
+}
+
+function formatPlatformConnection(
+  connection: PlatformConnectionRecord,
+): string {
+  return `${JSON.stringify(summarizePlatformConnection(connection), null, 2)}\n`;
+}
+
+function mapCliOptions(
+  options: Record<string, string | boolean>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(options).map(([key, value]) => [
+      key.replace(/-([a-z])/g, (_match, letter: string) =>
+        letter.toUpperCase(),
+      ),
+      value,
+    ]),
+  );
 }
 
 function summarizeInteractionJob(interactionJob: InteractionJobRecord) {
@@ -1522,7 +1746,7 @@ function summarizeTriggerDedupeInspection(
 
   const tenantConfig = getGitLabTenantConfig(tenant);
   const candidateDedupeKey = createInteractionJobDedupeKey({
-    baseUrl: tenantConfig.baseUrl,
+    baseUrl: tenant.key.split("::")[0] ?? "",
     projectId: tenantConfig.projectId,
     codeReviewId,
     commentId: triggerInput.commentId,
@@ -2448,8 +2672,27 @@ function percentile(values: number[], percentileRank: number): number {
   return lowerValue + (upperValue - lowerValue) * (index - lowerIndex);
 }
 
+export async function runCliEntry(
+  argv: string[] = process.argv.slice(2),
+): Promise<number> {
+  try {
+    const exitCode = await runCli(argv);
+    if (exitCode !== 0) {
+      const { positionals } = parseCliArgs(argv);
+      printHelp(positionals, false);
+    }
+    return exitCode;
+  } catch (error: unknown) {
+    const { positionals } = parseCliArgs(argv);
+    printHelp(positionals, false);
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`${message}\n`);
+    return 1;
+  }
+}
+
 async function main(): Promise<void> {
-  const exitCode = await runCli();
+  const exitCode = await runCliEntry();
   process.exitCode = exitCode;
 }
 
@@ -2457,9 +2700,7 @@ if (
   process.argv[1] &&
   pathToFileURL(process.argv[1]).href === import.meta.url
 ) {
-  main().catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`${message}\n`);
+  main().catch(() => {
     process.exitCode = 1;
   });
 }

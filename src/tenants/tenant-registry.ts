@@ -1,6 +1,7 @@
 import type {
   IPlatform,
   PlatformWebhookRequest,
+  ResolvedTenant,
 } from "../platforms/IPlatform.js";
 import { listAll, type StorageHelpers } from "../storage/storage-helpers.js";
 import type { TenantRecord } from "../storage/contract/index.js";
@@ -16,11 +17,18 @@ export class TenantRegistry {
     return this.storage.stores.tenants.get(tenantId);
   }
 
+  public async getResolvedTenantById(
+    tenantId: string,
+  ): Promise<ResolvedTenant | null> {
+    const tenant = await this.getTenantById(tenantId);
+    return tenant ? this.resolveTenant(tenant) : null;
+  }
+
   public async resolveWebhookTenant(
     platform: IPlatform,
     payload: unknown,
     req: PlatformWebhookRequest,
-  ): Promise<TenantRecord | null> {
+  ): Promise<ResolvedTenant | null> {
     const tenantKey = await platform.identifyTenantKey(payload, req);
     if (!tenantKey) {
       return null;
@@ -34,8 +42,12 @@ export class TenantRegistry {
       return null;
     }
 
-    return (await platform.isWebhookRequestAuthorized(tenant, req))
-      ? tenant
+    const resolvedTenant = await this.resolveTenant(tenant);
+    if (!resolvedTenant) {
+      return null;
+    }
+    return (await platform.isWebhookRequestAuthorized(resolvedTenant, req))
+      ? resolvedTenant
       : null;
   }
 
@@ -50,5 +62,21 @@ export class TenantRegistry {
 
   public getTenantKey(tenant: TenantRecord): string {
     return tenant.key;
+  }
+
+  private async resolveTenant(
+    tenant: TenantRecord,
+  ): Promise<ResolvedTenant | null> {
+    const connection = await this.storage.stores.platformConnections.get(
+      tenant.platformConnectionId,
+    );
+    if (
+      !connection ||
+      connection.status !== "ready" ||
+      connection.platform !== tenant.platform
+    ) {
+      return null;
+    }
+    return { tenant, connection };
   }
 }

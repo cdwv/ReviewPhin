@@ -11,6 +11,8 @@ import type {
   InteractionRunRecord,
   CodeReviewSnapshotRecord,
   ModelProfileRecord,
+  PlatformConnectionRecord,
+  PlatformConnectionStatus,
   PreviousCompletedInteractionRecord,
   PriorReviewFindingRecord,
   ReviewAnchor,
@@ -46,6 +48,23 @@ export interface StorageHelpers {
     name: string | null,
   ): Promise<ModelProfileRecord | null>;
   deleteModelProfile(name: string): Promise<ModelProfileRecord | null>;
+  createPlatformConnection(input: {
+    name: string;
+    platform: string;
+    status: PlatformConnectionStatus;
+    platformConnectionConfigJson: string;
+  }): Promise<PlatformConnectionRecord>;
+  resolvePlatformConnection(
+    reference: string,
+  ): Promise<PlatformConnectionRecord | null>;
+  updatePlatformConnection(input: {
+    reference: string;
+    status: PlatformConnectionStatus;
+    platformConnectionConfigJson: string;
+  }): Promise<PlatformConnectionRecord>;
+  deletePlatformConnection(
+    reference: string,
+  ): Promise<PlatformConnectionRecord | null>;
   upsertTenant(tenant: StorageTenantInput): Promise<TenantRecord>;
   setTenantModelProfile(
     tenantKey: string,
@@ -234,6 +253,19 @@ export class StoreBackedStorage implements StorageHelpers {
       tenant.modelProfileName === undefined
         ? (existing?.modelProfileName ?? null)
         : tenant.modelProfileName;
+    const platformConnection = await this.stores.platformConnections.get(
+      existing?.platformConnectionId ?? tenant.platformConnectionId,
+    );
+    if (!platformConnection) {
+      throw new Error(
+        `Unknown platform connection ${tenant.platformConnectionId}`,
+      );
+    }
+    if (platformConnection.platform !== tenant.platform) {
+      throw new Error(
+        `Platform connection ${platformConnection.name} uses ${platformConnection.platform}, expected ${tenant.platform}`,
+      );
+    }
 
     if (resolvedModelProfileName) {
       const modelProfile = await this.stores.modelProfiles.get(
@@ -250,6 +282,8 @@ export class StoreBackedStorage implements StorageHelpers {
       id: tenantId,
       key: tenant.key,
       platform: tenant.platform,
+      platformConnectionId:
+        existing?.platformConnectionId ?? tenant.platformConnectionId,
       platformConfigJson: tenant.platformConfigJson,
       modelProfileName: resolvedModelProfileName,
       createdAt: existing?.createdAt ?? now,
@@ -261,6 +295,87 @@ export class StoreBackedStorage implements StorageHelpers {
       tenantId,
       `Failed to persist tenant ${tenant.key}`,
     );
+  }
+
+  public async createPlatformConnection(input: {
+    name: string;
+    platform: string;
+    status: PlatformConnectionStatus;
+    platformConnectionConfigJson: string;
+  }): Promise<PlatformConnectionRecord> {
+    if (
+      await this.stores.platformConnections.find({ name: { eq: input.name } })
+    ) {
+      throw new Error(
+        `Platform connection name "${input.name}" already exists`,
+      );
+    }
+    const now = new Date().toISOString();
+    const connection: PlatformConnectionRecord = {
+      id: createId("connection"),
+      ...input,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.stores.platformConnections.upsert(connection);
+    return getRequiredRecord(
+      this.stores.platformConnections,
+      connection.id,
+      `Failed to create platform connection ${input.name}`,
+    );
+  }
+
+  public async resolvePlatformConnection(
+    reference: string,
+  ): Promise<PlatformConnectionRecord | null> {
+    return (
+      (await this.stores.platformConnections.get(reference)) ??
+      this.stores.platformConnections.find({ name: { eq: reference } })
+    );
+  }
+
+  public async updatePlatformConnection(input: {
+    reference: string;
+    status: PlatformConnectionStatus;
+    platformConnectionConfigJson: string;
+  }): Promise<PlatformConnectionRecord> {
+    const existing = await this.resolvePlatformConnection(input.reference);
+    if (!existing) {
+      throw new Error(`Platform connection ${input.reference} not found`);
+    }
+    await this.stores.platformConnections.patch({
+      id: existing.id,
+      value: {
+        status: input.status,
+        platformConnectionConfigJson: input.platformConnectionConfigJson,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    return getRequiredRecord(
+      this.stores.platformConnections,
+      existing.id,
+      `Failed to update platform connection ${existing.name}`,
+    );
+  }
+
+  public async deletePlatformConnection(
+    reference: string,
+  ): Promise<PlatformConnectionRecord | null> {
+    const existing = await this.resolvePlatformConnection(reference);
+    if (!existing) {
+      return null;
+    }
+    const tenants = await listAll(this.stores.tenants, {
+      filters: { platformConnectionId: { eq: existing.id } },
+      order: [{ field: "key", direction: "asc" }],
+    });
+    if (tenants.length > 0) {
+      throw new Error(
+        `Cannot delete platform connection "${existing.name}"; used by tenants: ${tenants.map((tenant) => tenant.key).join(", ")}`,
+      );
+    }
+    await this.stores.platformConnections.delete(existing.id);
+    return existing;
   }
 
   public async setTenantModelProfile(

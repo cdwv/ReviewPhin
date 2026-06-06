@@ -6,20 +6,28 @@ import type {
   TriggerCommentReference,
   WebhookReviewTrigger,
 } from "../../review/types.js";
-import type { TenantRecord } from "../../storage/contract/index.js";
+import type {
+  PlatformConnectionRecord,
+  TenantRecord,
+} from "../../storage/contract/index.js";
 import { isBotUser } from "./bot-user.js";
 import type { GitLabClient } from "./client.js";
-import { getGitLabTenantConfig } from "./tenant-config.js";
+import {
+  getGitLabConnectionConfig,
+  getGitLabTenantConfig,
+} from "./tenant-config.js";
 import type { GitLabDiscussion, GitLabNoteHookPayload } from "./types.js";
 import { containsBotMention, extractBotMentionInstruction } from "./webhook.js";
 
 export async function classifyGitLabWebhookTrigger(input: {
   payload: GitLabNoteHookPayload;
   tenant: TenantRecord;
+  connection?: PlatformConnectionRecord;
   client: Pick<GitLabClient, "listCodeReviewDiscussions">;
 }): Promise<WebhookReviewTrigger | null> {
   const { payload, tenant, client } = input;
   const tenantConfig = getGitLabTenantConfig(tenant);
+  const connectionConfig = getGitLabConnectionConfig(input.connection, tenant);
   if (payload.object_attributes.draft) {
     return null;
   }
@@ -28,7 +36,7 @@ export async function classifyGitLabWebhookTrigger(input: {
     return null;
   }
 
-  if (!payload.user || isBotUser(payload.user, tenant)) {
+  if (!payload.user || isBotUser(payload.user, connectionConfig.botUserId)) {
     return null;
   }
 
@@ -46,7 +54,7 @@ export async function classifyGitLabWebhookTrigger(input: {
     const rootNote = discussion?.notes[0];
     if (
       rootNote &&
-      isBotUser(rootNote.author, tenant) &&
+      isBotUser(rootNote.author, connectionConfig.botUserId) &&
       !isReviewSummaryNoteBody(rootNote.body)
     ) {
       return {
@@ -57,7 +65,7 @@ export async function classifyGitLabWebhookTrigger(input: {
 
     if (
       rootNote &&
-      isBotUser(rootNote.author, tenant) &&
+      isBotUser(rootNote.author, connectionConfig.botUserId) &&
       isReviewSummaryNoteBody(rootNote.body)
     ) {
       return {
@@ -70,7 +78,7 @@ export async function classifyGitLabWebhookTrigger(input: {
   if (
     !containsBotMention(
       payload.object_attributes.note,
-      tenantConfig.botUsername,
+      connectionConfig.botUsername,
     )
   ) {
     return null;
@@ -87,10 +95,14 @@ export const classifyWebhookTrigger = classifyGitLabWebhookTrigger;
 export function buildGitLabReviewTriggerContext(input: {
   payload: GitLabNoteHookPayload;
   tenant: TenantRecord;
+  connection?: PlatformConnectionRecord;
   discussions: GitLabDiscussion[];
   priorDiscussions: ProviderDiscussionContext[];
 }): ReviewTriggerContext {
-  const tenantConfig = getGitLabTenantConfig(input.tenant);
+  const connectionConfig = getGitLabConnectionConfig(
+    input.connection,
+    input.tenant,
+  );
   const comment = locateTriggerCommentReference(
     input.discussions,
     input.payload.object_attributes.id,
@@ -113,7 +125,7 @@ export function buildGitLabReviewTriggerContext(input: {
           isSummaryDiscussionReply(
             input.discussions,
             comment.discussionId,
-            input.tenant,
+            connectionConfig.botUserId,
           )
         ? "summary-follow-up"
         : "direct-mention";
@@ -121,7 +133,7 @@ export function buildGitLabReviewTriggerContext(input: {
     kind === "direct-mention"
       ? extractBotMentionInstruction(
           input.payload.object_attributes.note,
-          tenantConfig.botUsername,
+          connectionConfig.botUsername,
         )
       : input.payload.object_attributes.note.trim();
 
@@ -149,14 +161,14 @@ export const buildReviewTriggerContext = buildGitLabReviewTriggerContext;
 function isSummaryDiscussionReply(
   discussions: GitLabDiscussion[],
   discussionId: string,
-  tenant: TenantRecord,
+  botUserId: number,
 ): boolean {
   const discussion =
     discussions.find((entry) => entry.id === discussionId) ?? null;
   const rootNote = discussion?.notes[0];
   return Boolean(
     rootNote &&
-    isBotUser(rootNote.author, tenant) &&
+    isBotUser(rootNote.author, botUserId) &&
     isReviewSummaryNoteBody(rootNote.body),
   );
 }

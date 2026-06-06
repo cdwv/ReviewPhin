@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
 import type { GitLabNoteHookPayload } from "../src/platforms/gitlab/types.js";
+import { createGitLabConnectionRecord } from "./helpers/gitlab-tenant.js";
 import { wrapGitLabPlatformContext } from "./helpers/platform-context.js";
 import { overridePlatformRuntime } from "./helpers/platform-runtime.js";
 
@@ -12,6 +13,7 @@ const tenant = {
   id: "tenant_1",
   key: "https://gitlab.example.com::123",
   platform: "gitlab",
+  platformConnectionId: "connection-1",
   platformConfigJson: JSON.stringify({
     baseUrl: "https://gitlab.example.com",
     projectId: 123,
@@ -30,6 +32,7 @@ const tenant = {
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };
+const connection = createGitLabConnectionRecord();
 
 const payload: GitLabNoteHookPayload = {
   object_kind: "note",
@@ -280,7 +283,7 @@ describe("ReviewWorker cleanup", () => {
     const worker = new ReviewWorker({
       storage: storage as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => tenant),
+        getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
       } as never,
       reviewRuntimeFactory: ({ platform, ...runtimeInput }) =>
         overridePlatformRuntime(platform.createReviewRuntime(runtimeInput), {
@@ -554,9 +557,12 @@ describe("ReviewWorker cleanup", () => {
     const worker = new ReviewWorker({
       storage: storage as never,
       tenantRegistry: {
-        getTenantById: vi.fn(async () => ({
-          ...tenant,
-          modelProfileName: "missing-profile",
+        getResolvedTenantById: vi.fn(async () => ({
+          tenant: {
+            ...tenant,
+            modelProfileName: "missing-profile",
+          },
+          connection,
         })),
       } as never,
       reviewRuntimeFactory: ({ platform, ...runtimeInput }) =>
