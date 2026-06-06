@@ -3,6 +3,22 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v0.5.0 - 2026-06-06
+### Breaking change
+- Storage schema was bumped to `v002`
+
+### Added
+- Connections to GitLab are now saved under separate entity - `PlatformConnectionRecord`. Platform connection must be added before tenant is registered for given platform. Multiple tenants can use the same connection. For GitLab that means, that multiple tenants can be configured using one gitlab token.
+- Platform connections can now be managed through CLI
+- Support for `--help` argument in all cli commands/subcommands
+
+### Changed
+- Existing tenants connections params are grouped and auto-assigned to new connections during migration.
+- CLI now filters help message down to matching commands only.
+
+### Fixed
+- Flotiq adapter relation filtering was changed from broken `includes` filter to `overlaps`. This must stay until `includes` filter is fixed.
+
 ## v0.4.0 - 2026-06-05
 ### Added:
 - Platform provider dynamic loading
