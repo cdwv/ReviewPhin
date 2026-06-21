@@ -21,7 +21,7 @@ Use this skill to audit storage schema changes before finishing a task or code r
 
 3. Verify built-in adapters.
    - Check SQLite and Flotiq providers report the current contract revision from `getSupportedStorageContract()`.
-   - Check SQLite migrations preserve existing data when columns are renamed or moved.
+   - Check SQLite and Flotiq migrations preserve existing data when columns are renamed or moved. For Flotiq, data needs to be migrated when field names change, but for SQLite, column renames can be handled with `ALTER TABLE RENAME COLUMN` without data loss. Data migrations (e.g. filling in new columns, or data changes in existing columns) should be handled properly both in SQLite and Flotiq. In Flotiq this typically means reading existing data, transforming it, and writing it back if anything changed for content object. In SQLite, this may involve creating a new table with the updated schema, copying data from the old table to the new one, and then replacing the old table with the new one.
    - Check Flotiq CTD definitions use the same entity field names as the current contract.
    - Confirm adapter-local physical column names are either migrated or intentionally mapped from legacy names.
 

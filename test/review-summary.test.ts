@@ -89,7 +89,6 @@ describe("review summary comment", () => {
           rootPath: tmpPath("review-workspaces", "run_1"),
           cleanupRoot: tmpPath("review-workspaces", "run_1"),
           strategy: "git",
-          instructionFiles: [],
         },
         projectMemory: {
           enabled: true,
@@ -211,7 +210,6 @@ describe("review summary comment", () => {
           rootPath: tmpPath("review-workspaces", "run_2"),
           cleanupRoot: tmpPath("review-workspaces", "run_2"),
           strategy: "git",
-          instructionFiles: [],
         },
         projectMemory: {
           enabled: true,
@@ -337,7 +335,6 @@ describe("review summary comment", () => {
           rootPath: tmpPath("review-workspaces", "run_3"),
           cleanupRoot: tmpPath("review-workspaces", "run_3"),
           strategy: "git",
-          instructionFiles: [],
         },
         projectMemory: {
           enabled: true,

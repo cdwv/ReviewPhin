@@ -1,16 +1,19 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
-import { glob } from "glob";
 import type { Logger } from "pino";
 import * as tar from "tar";
 
+import {
+  DEFAULT_REPOSITORY_INSTRUCTION_DIRECTORY,
+  DEFAULT_REPOSITORY_INSTRUCTION_FILES,
+  isDefaultRepositoryInstructionFile,
+} from "../../harness/workspace.js";
 import { GitLabApiError, type GitLabClient } from "./client.js";
 import type {
   GitLabMergeRequestChange,
-  InstructionFile,
   MaterializedWorkspace,
 } from "./types.js";
 
@@ -81,13 +84,10 @@ export class WorkspaceMaterializer {
         strip: 1,
       });
       await rm(archivePath, { force: true });
-      const instructionFiles = await loadInstructionFiles(rootPath);
-
       return {
         rootPath,
         cleanupRoot,
         strategy: "archive",
-        instructionFiles,
       };
     } catch (error) {
       this.logger.warn(
@@ -136,7 +136,7 @@ export class WorkspaceMaterializer {
       await writeFile(outputPath, content, "utf8");
     }
 
-    for (const filePath of ["AGENTS.md", ".github/copilot-instructions.md"]) {
+    for (const filePath of DEFAULT_REPOSITORY_INSTRUCTION_FILES) {
       try {
         const content = await input.client.getRawFile(
           input.projectId,
@@ -157,13 +157,14 @@ export class WorkspaceMaterializer {
       const instructionTree = await input.client.listRepositoryTree(
         input.projectId,
         input.headSha,
-        ".github/instructions",
+        DEFAULT_REPOSITORY_INSTRUCTION_DIRECTORY,
         true,
       );
 
       for (const item of instructionTree.filter(
         (entry) =>
-          entry.type === "blob" && entry.path.endsWith(".instructions.md"),
+          entry.type === "blob" &&
+          isDefaultRepositoryInstructionFile(entry.path),
       )) {
         const content = await input.client.getRawFile(
           input.projectId,
@@ -184,7 +185,6 @@ export class WorkspaceMaterializer {
       rootPath,
       cleanupRoot,
       strategy: "targeted-files",
-      instructionFiles: await loadInstructionFiles(rootPath),
     };
   }
 
@@ -278,60 +278,8 @@ export class WorkspaceMaterializer {
       rootPath,
       cleanupRoot,
       strategy: "git",
-      instructionFiles: await loadInstructionFiles(rootPath),
     };
   }
-}
-
-async function loadInstructionFiles(
-  rootPath: string,
-): Promise<InstructionFile[]> {
-  const matches = await glob(
-    [
-      "AGENTS.md",
-      ".github/copilot-instructions.md",
-      ".github/instructions/**/*.instructions.md",
-    ],
-    {
-      cwd: rootPath,
-      nodir: true,
-      windowsPathsNoEscape: true,
-    },
-  );
-
-  const uniqueMatches = Array.from(new Set(matches)).sort((left, right) => {
-    const leftRank = instructionRank(left);
-    const rightRank = instructionRank(right);
-    if (leftRank !== rightRank) {
-      return leftRank - rightRank;
-    }
-
-    return left.localeCompare(right);
-  });
-
-  const instructionFiles: InstructionFile[] = [];
-
-  for (const relativePath of uniqueMatches) {
-    const absolutePath = join(rootPath, ...relativePath.split("/"));
-    instructionFiles.push({
-      path: relativePath.replaceAll("\\", "/"),
-      content: await readFile(absolutePath, "utf8"),
-    });
-  }
-
-  return instructionFiles;
-}
-
-function instructionRank(path: string): number {
-  if (path === "AGENTS.md") {
-    return 0;
-  }
-
-  if (path === ".github/copilot-instructions.md") {
-    return 1;
-  }
-
-  return 2;
 }
 
 async function runGitCommand(input: GitRunnerInput): Promise<GitRunnerResult> {

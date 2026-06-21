@@ -260,6 +260,26 @@ const storageMigrationSteps: readonly StorageMigrationStep[] = [
       }),
   },
   {
+    label: "projectMemories",
+    run: (source, target, context) =>
+      migrateEntityStore(
+        source.projectMemories,
+        target.projectMemories,
+        "projectMemories",
+        {
+          order: ascendingOrder("id"),
+          mapEntity: (entity) => ({
+            ...entity,
+            tenantId: resolveMappedId(
+              context.tenantIds,
+              entity.tenantId,
+              "tenant",
+            ),
+          }),
+        },
+      ),
+  },
+  {
     label: "interactionJobs",
     run: (source, target, context) =>
       migrateInteractionJobs(
@@ -486,17 +506,49 @@ export async function runCli(
       const connectionConfig = platform
         .getConnectionRegistrationSchema()
         .parse(rawData) as Record<string, unknown>;
-      const status =
-        (await platform.onBeforeAddConnection?.(connectionConfig)) ?? "ready";
+      const recreate = options.recreate === true || options.recreate === "true";
 
       return withStorage(options, config, async (storage) => {
-        const saved = await storage.createPlatformConnection({
-          name,
-          platform: platformSlug,
-          status,
-          platformConnectionConfigJson: JSON.stringify(connectionConfig),
-        });
-        process.stdout.write(formatPlatformConnection(saved));
+        const existing = await storage.resolvePlatformConnection(name);
+        if (existing && !recreate) {
+          throw new Error(`Platform connection name "${name}" already exists`);
+        }
+        if (existing && existing.platform !== platformSlug) {
+          throw new Error(
+            `Platform connection ${name} uses ${existing.platform}, expected ${platformSlug}`,
+          );
+        }
+        const lifecycle = existing
+          ? ((await platform.onBeforeRecreateConnection?.(
+              existing,
+              connectionConfig,
+            )) ?? {
+              status:
+                (await platform.onBeforeAddConnection?.(connectionConfig)) ??
+                "ready",
+            })
+          : {
+              status:
+                (await platform.onBeforeAddConnection?.(connectionConfig)) ??
+                "ready",
+            };
+        writePlatformConnectionNotices(lifecycle.notices);
+        const saved = existing
+          ? await storage.updatePlatformConnection({
+              reference: existing.id,
+              status: lifecycle.status,
+              platformConnectionConfigJson: JSON.stringify(connectionConfig),
+            })
+          : await storage.createPlatformConnection({
+              name,
+              platform: platformSlug,
+              status: lifecycle.status,
+              platformConnectionConfigJson: JSON.stringify(connectionConfig),
+            });
+        const setupUrl = platform.getConnectionSetupUrl?.(connectionConfig);
+        process.stdout.write(
+          `${formatPlatformConnection(saved)}${setupUrl ? `Setup URL: ${setupUrl}\n` : ""}`,
+        );
         return 0;
       });
     }
@@ -529,6 +581,15 @@ export async function runCli(
         return 0;
       }
       if (subAction === "remove") {
+        const platform = getPlatforms().find(
+          (candidate) => candidate.getPlatformInfo().slug === existing.platform,
+        );
+        if (!platform) {
+          throw new Error(`Unsupported platform: ${existing.platform}`);
+        }
+        writePlatformConnectionNotices(
+          await platform.onBeforeRemoveConnection?.(existing),
+        );
         await storage.deletePlatformConnection(reference);
         process.stdout.write(`Platform connection ${existing.name} removed.\n`);
         return 0;
@@ -1139,23 +1200,9 @@ function printHelp(
         priority: 2,
       },
     ];
-    const schema = platform.getTenantRegistrationSchema();
-    // for each property, translate it to a CLI option and add it to the help text
-    for (const [key, propertySchema] of Object.entries(schema.shape)) {
-      const optionName = key
-        .split(/(?=[A-Z])/)
-        .join("-")
-        .toLowerCase();
-
-      const isOptional = propertySchema.isOptional();
-
-      const optionSyntax = `--${optionName} <value>`;
-      platformParams.push({
-        paramString: optionSyntax,
-        isOptional,
-        priority: isOptional ? 0 : -0.5, // required options should come before optional ones, but after platform which has priority -1
-      });
-    }
+    platformParams.push(
+      ...getSchemaCliParams(platform.getTenantRegistrationSchema()),
+    );
 
     const sortedParams = platformParams.toSorted(
       (a, b) => (a.priority ?? 0) - (b.priority ?? 0),
@@ -1166,10 +1213,18 @@ function printHelp(
     );
 
     commands.push(`tenant add ${paramStrings.join(" ")}`);
+
+    const connectionParams = getSchemaCliParams(
+      platform.getConnectionRegistrationSchema(),
+    );
+    commands.push(
+      `platform connection add --name <name> --platform ${info.slug} ${formatCliParams(connectionParams)} [--recreate]`,
+      `platform connection update --connection <name-or-id> ${formatCliParams(
+        connectionParams.map((param) => ({ ...param, isOptional: true })),
+      )}`,
+    );
   }
   commands.push(
-    "platform connection add --name <name> [--platform gitlab] --base-url <url> --api-token <token> [--bot-user-id <id>] [--bot-username <name>]",
-    "platform connection update --connection <name-or-id> [provider options]",
     "platform connection remove --connection <name-or-id>",
     "platform connection list",
     "platform connection describe --connection <name-or-id>",
@@ -1207,6 +1262,39 @@ function printHelp(
 
   process.stdout.write(["Usage:", ...usageLines].join("\n") + "\n");
   return true;
+}
+
+interface CliHelpParam {
+  readonly paramString: string;
+  readonly isOptional: boolean;
+  readonly priority?: number | undefined;
+}
+
+function getSchemaCliParams(
+  schema: z.ZodObject<z.ZodRawShape>,
+): CliHelpParam[] {
+  return Object.entries(schema.shape).map(([key, propertySchema]) => {
+    const optionName = key
+      .split(/(?=[A-Z])/)
+      .join("-")
+      .toLowerCase();
+    const isOptional = propertySchema.isOptional();
+
+    return {
+      paramString: `--${optionName} <value>`,
+      isOptional,
+      priority: isOptional ? 0 : -0.5,
+    };
+  });
+}
+
+function formatCliParams(params: readonly CliHelpParam[]): string {
+  return params
+    .toSorted((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
+    .map((param) =>
+      param.isOptional ? `[${param.paramString}]` : param.paramString,
+    )
+    .join(" ");
 }
 
 async function runCodeReviewDescribeCommand(
@@ -2280,6 +2368,7 @@ function formatTenantRemovalSummary(
     `- ${summary.reviewFindingCount} ${pluralize("review finding", summary.reviewFindingCount)}`,
     `- ${summary.interactionRunMetricCount} ${pluralize("interaction run metric", summary.interactionRunMetricCount)}`,
     `- ${summary.discussionMappingCount} ${pluralize("discussion mapping", summary.discussionMappingCount)}`,
+    `- ${summary.projectMemoryCount} ${pluralize("project memory record", summary.projectMemoryCount)}`,
     `- ${artifactSummary.existingWorkspaceCount}/${artifactSummary.workspacePaths.length} workspace ${pluralize("directory", artifactSummary.workspacePaths.length)} under ${workspaceRoot}`,
     `- ${artifactSummary.existingRunLogCount}/${artifactSummary.runLogPaths.length} run log ${pluralize("directory", artifactSummary.runLogPaths.length)} under ${runLogDir}`,
     "",
@@ -2288,6 +2377,21 @@ function formatTenantRemovalSummary(
 
 function pluralize(noun: string, count: number): string {
   return count === 1 ? noun : `${noun}s`;
+}
+
+function writePlatformConnectionNotices(
+  notices: readonly string[] | undefined,
+): void {
+  if (!notices || notices.length === 0) {
+    return;
+  }
+  process.stdout.write(
+    [
+      "Provider cleanup required:",
+      ...notices.map((notice) => `- ${notice}`),
+      "",
+    ].join("\n"),
+  );
 }
 
 async function promptForConfirmation(prompt: string): Promise<boolean> {

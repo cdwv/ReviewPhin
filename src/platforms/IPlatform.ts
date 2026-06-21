@@ -7,12 +7,14 @@ import type {
   HarnessRunLoggingContext,
   HarnessTenantContext,
 } from "../harness/types.js";
+import type { ProjectMemoryBackend } from "../memory/backend.js";
 import type { InteractionRunArtifacts } from "../review/run-artifacts.js";
 import type {
   ChatterBatchResult,
   ProviderDiscussionContext,
   ResponseTarget,
   ReviewContext,
+  ReviewResult,
   ReviewSummaryContext,
   ReviewTriggerContext,
   TriggerCommentReference,
@@ -27,7 +29,8 @@ import type {
   TenantRecord,
 } from "../storage/contract/current.js";
 import type { StorageHelpers } from "../storage/storage-helpers.js";
-import type { PlatformReviewDiscussionAdapter } from "./review-adapter.js";
+import type { PlatformReviewPublicationAdapter } from "./review-adapter.js";
+import type { ReconcileSummary } from "../reconcile/discussion-reconciler.js";
 
 export interface PlatformWebhookRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -44,12 +47,18 @@ export interface ResolvedTenant {
 export interface PlatformSetupContext {
   pathSuffix: string;
   rawBody: Buffer;
+  storage?: StorageHelpers | undefined;
 }
 
 export interface PlatformMaterializedWorkspace {
   rootPath: string;
   cleanupRoot: string;
   strategy: string;
+}
+
+export interface PlatformConnectionLifecycleResult {
+  status: PlatformConnectionStatus;
+  notices?: readonly string[] | undefined;
 }
 
 export interface PlatformReviewRoutingContext {
@@ -63,7 +72,23 @@ export interface PlatformReviewRoutingContext {
   platformContext: unknown;
 }
 
-export type PlatformHydratedReviewContext = PlatformReviewRoutingContext;
+export interface PlatformTriggerLifecycle {
+  queued(): Promise<void>;
+  inProgress(): Promise<void>;
+  completed(outcome?: PlatformTriggerOutcome): Promise<void>;
+  retry(error: string): Promise<void>;
+  failed(error: string): Promise<void>;
+}
+
+export interface PlatformTriggerOutcome {
+  summary: string;
+  links?:
+    | ReadonlyArray<{
+        label: string;
+        url: string;
+      }>
+    | undefined;
+}
 
 export type PlatformSetupHandler = (input: {
   request: FastifyRequest;
@@ -84,9 +109,11 @@ export interface PlatformReviewRuntime {
     mappings: DiscussionMappingRecord[];
   }): ProviderDiscussionContext[];
   buildReviewTriggerContext(input: {
+    job: InteractionJobRecord;
     payload: unknown;
     context: PlatformReviewRoutingContext;
     priorDiscussions: ProviderDiscussionContext[];
+    mappings: DiscussionMappingRecord[];
   }): ReviewTriggerContext;
   locateTriggerCommentReference(input: {
     context: PlatformReviewRoutingContext;
@@ -113,20 +140,15 @@ export interface PlatformReviewRuntime {
     context: PlatformReviewRoutingContext;
     mappings: DiscussionMappingRecord[];
   }): Promise<DiscussionMappingRecord[]>;
-  createReviewDiscussionAdapter(input: {
+  createReviewPublicationAdapter(input: {
     context: PlatformReviewRoutingContext;
     interactionRunId: string;
-  }): PlatformReviewDiscussionAdapter;
+  }): PlatformReviewPublicationAdapter;
   resolveTriggerCommentReference(input: {
     codeReviewId: number;
     commentId: number;
+    triggerJson?: string | undefined;
   }): Promise<TriggerCommentReference>;
-  ensureTriggerCommentReaction(input: {
-    codeReviewId: number;
-    comment: TriggerCommentReference;
-    reactionName: string;
-    interactionJobId: string;
-  }): Promise<void>;
   materializeAttachments(input: {
     context: PlatformReviewRoutingContext;
     trigger: ReviewContext["trigger"];
@@ -148,6 +170,10 @@ export interface PlatformReviewRuntime {
       error?: string | undefined;
     }>
   >;
+  buildTriggerOutcome(input: {
+    reviewResult: ReviewResult | null;
+    reconcileSummary: ReconcileSummary | null;
+  }): PlatformTriggerOutcome | undefined;
   cleanupWorkspace(workspace: PlatformMaterializedWorkspace): Promise<void>;
 }
 
@@ -162,14 +188,22 @@ export interface IPlatform {
     tenantConfig: Record<string, unknown>,
     connection: PlatformConnectionRecord,
   ): string;
-  parseWebhookPayload(payload: unknown): unknown;
+  parseWebhookPayload(payload: unknown, req?: PlatformWebhookRequest): unknown;
   identifyTenantKey(
     payload: unknown,
     req?: PlatformWebhookRequest,
   ): Promise<string | null> | string | null;
+  shouldIgnoreWebhookWithoutTenant?(
+    payload: unknown,
+    req: PlatformWebhookRequest,
+  ): boolean | Promise<boolean>;
   isWebhookRequestAuthorized(
     resolvedTenant: ResolvedTenant,
     req: PlatformWebhookRequest,
+  ): boolean | Promise<boolean>;
+  handleWebhookEvent?(
+    resolvedTenant: ResolvedTenant,
+    payload: unknown,
   ): boolean | Promise<boolean>;
   classifyWebhookTrigger(
     resolvedTenant: ResolvedTenant,
@@ -178,13 +212,21 @@ export interface IPlatform {
   createInteractionJob(input: {
     resolvedTenant: ResolvedTenant;
     payload: unknown;
+    trigger: WebhookReviewTrigger;
+    storage: StorageHelpers;
   }): Promise<{
     dedupeKey: string;
     codeReviewId: number;
-    commentId: number;
+    commentId: number | null;
+    triggerJson: string;
     headSha: string;
     payloadJson: string;
   }>;
+  createTriggerLifecycle(input: {
+    resolvedTenant: ResolvedTenant;
+    job: InteractionJobRecord;
+    logger: Logger;
+  }): PlatformTriggerLifecycle;
   createReviewRuntime(input: {
     storage: StorageHelpers;
     logger: Logger;
@@ -197,8 +239,16 @@ export interface IPlatform {
     interactionRunId?: string | undefined;
     runArtifacts?: InteractionRunArtifacts | undefined;
   }): PlatformReviewRuntime;
+  createProjectMemoryBackend(input: {
+    resolvedTenant: ResolvedTenant;
+    storage: StorageHelpers;
+    logger: Logger;
+    enabled: boolean;
+    logging?: HarnessRunLoggingContext | undefined;
+  }): ProjectMemoryBackend;
   buildHarnessTenantContext(input: {
     resolvedTenant: ResolvedTenant;
+    storage: StorageHelpers;
     logger: Logger;
     memoryEnabled: boolean;
     logging?: HarnessRunLoggingContext | undefined;
@@ -206,6 +256,9 @@ export interface IPlatform {
   getReviewSummaryInstructions(resolvedTenant: ResolvedTenant): string[];
   getTenantRegistrationSchema(): ZodObject<ZodRawShape>;
   getConnectionRegistrationSchema(): ZodObject<ZodRawShape>;
+  getConnectionSetupUrl?(
+    connectionConfig: Record<string, unknown>,
+  ): string | null;
   onBeforeAddConnection?(
     connectionConfig: Record<string, unknown>,
   ): PlatformConnectionStatus | Promise<PlatformConnectionStatus>;
@@ -213,6 +266,15 @@ export interface IPlatform {
     connection: PlatformConnectionRecord,
     connectionConfig: Record<string, unknown>,
   ): PlatformConnectionStatus | Promise<PlatformConnectionStatus>;
+  onBeforeRecreateConnection?(
+    connection: PlatformConnectionRecord,
+    connectionConfig: Record<string, unknown>,
+  ):
+    | PlatformConnectionLifecycleResult
+    | Promise<PlatformConnectionLifecycleResult>;
+  onBeforeRemoveConnection?(
+    connection: PlatformConnectionRecord,
+  ): readonly string[] | Promise<readonly string[]>;
   onBeforeAddTenant?(
     tenantConfig: Record<string, unknown>,
     connection: PlatformConnectionRecord,

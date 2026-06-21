@@ -92,6 +92,7 @@ async function main(): Promise<void> {
     tenantRegistry,
     reviewWorker,
     queue,
+    storage,
   });
 
   const close = async (): Promise<void> => {

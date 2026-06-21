@@ -1,12 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { GitLabApiError } from "../src/platforms/gitlab/client.js";
-import { GitLabWikiProjectMemoryBackend } from "../src/platforms/gitlab/project-memory-backend.js";
+import {
+  createGitLabProjectMemoryBackend,
+  GitLabWikiProjectMemoryBackend,
+} from "../src/platforms/gitlab/project-memory-backend.js";
+import {
+  deleteStoreProjectMemory,
+  InStoreMemoryProvider,
+} from "../src/memory/store-backend.js";
 import {
   mergeProjectMemoryEntries,
   parseProjectMemoryContent,
   renderProjectMemory,
 } from "../src/memory/project-memory.js";
+import type { ProjectMemoryRecord } from "../src/storage/contract/index.js";
 import {
   REVIEWPHIN_MEMORY_PAGE_TITLE,
   projectMemoryToolInputSchema,
@@ -377,3 +385,242 @@ describe("project memory", () => {
     ]);
   });
 });
+
+describe("InStoreMemoryProvider", () => {
+  it("loads empty enabled memory when no row exists", async () => {
+    const store = createProjectMemoryStore();
+    const backend = new InStoreMemoryProvider({
+      stores: { projectMemories: store },
+      tenantId: "tenant-1",
+    });
+
+    await expect(backend.load()).resolves.toEqual({
+      enabled: true,
+      page: null,
+      entries: [],
+    });
+  });
+
+  it("loads, dedupes, and saves entries in the tenant row", async () => {
+    const store = createProjectMemoryStore();
+    await store.upsert({
+      id: "tenant-1",
+      tenantId: "tenant-1",
+      entriesJson: JSON.stringify([
+        { text: "Use pnpm for scripts." },
+        { text: "Use pnpm for scripts." },
+      ]),
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    });
+    const backend = new InStoreMemoryProvider({
+      stores: { projectMemories: store },
+      tenantId: "tenant-1",
+    });
+
+    await expect(backend.load()).resolves.toMatchObject({
+      entries: [{ text: "Use pnpm for scripts." }],
+    });
+
+    const saved = await backend.saveEntries([
+      { text: "Use Vitest for focused tests." },
+      { text: "Use Vitest for focused tests." },
+    ]);
+
+    expect(saved.entries).toEqual([{ text: "Use Vitest for focused tests." }]);
+    await expect(store.get("tenant-1")).resolves.toMatchObject({
+      id: "tenant-1",
+      tenantId: "tenant-1",
+      entriesJson: JSON.stringify([{ text: "Use Vitest for focused tests." }]),
+      createdAt: "2026-06-20T00:00:00.000Z",
+    });
+  });
+
+  it("preserves concurrent additions and abandons stale consolidation", async () => {
+    const store = createProjectMemoryStore();
+    await store.upsert({
+      id: "tenant-1",
+      tenantId: "tenant-1",
+      entriesJson: JSON.stringify([
+        { text: "Use Zod for API validation." },
+        { text: "Avoid broad snapshot tests." },
+        { text: "Use pnpm for scripts." },
+      ]),
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    });
+    const backend = new InStoreMemoryProvider({
+      stores: { projectMemories: store },
+      tenantId: "tenant-1",
+    });
+
+    await expect(
+      backend.saveEntries(
+        [{ text: "Use Zod and avoid broad snapshot tests." }],
+        {
+          baseEntries: [
+            { text: "Use Zod for API validation." },
+            { text: "Avoid broad snapshot tests." },
+          ],
+        },
+      ),
+    ).resolves.toMatchObject({
+      entries: [
+        { text: "Use Zod and avoid broad snapshot tests." },
+        { text: "Use pnpm for scripts." },
+      ],
+    });
+
+    await expect(
+      backend.saveEntries(
+        [{ text: "Use Jest and pnpm." }],
+        {
+          baseEntries: [
+            { text: "Use Jest for tests." },
+            { text: "Use pnpm for scripts." },
+          ],
+        },
+      ),
+    ).resolves.toMatchObject({
+      entries: [
+        { text: "Use Zod and avoid broad snapshot tests." },
+        { text: "Use pnpm for scripts." },
+      ],
+    });
+  });
+
+  it("deletes store memory for a tenant", async () => {
+    const store = createProjectMemoryStore();
+    await store.upsert({
+      id: "tenant-1",
+      tenantId: "tenant-1",
+      entriesJson: "[]",
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    });
+
+    await deleteStoreProjectMemory({
+      stores: { projectMemories: store },
+      tenantId: "tenant-1",
+    });
+
+    await expect(store.get("tenant-1")).resolves.toBeNull();
+  });
+});
+
+describe("GitLab project memory selection", () => {
+  it("uses store-backed memory when project metadata reports wiki disabled", async () => {
+    const store = createProjectMemoryStore();
+    await store.upsert({
+      id: "tenant-1",
+      tenantId: "tenant-1",
+      entriesJson: JSON.stringify([{ text: "Use store memory." }]),
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    });
+    const backend = createGitLabProjectMemoryBackend({
+      client: {
+        getProject: vi.fn(async () => ({
+          id: 1085,
+          web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
+          http_url_to_repo: "https://gitlab.example.com/group/project.git",
+          wiki_enabled: false,
+        })),
+      } as never,
+      projectId: 1085,
+      tenantId: "tenant-1",
+      enabled: true,
+      stores: { projectMemories: store },
+    });
+
+    await expect(backend.load()).resolves.toMatchObject({
+      enabled: true,
+      page: null,
+      entries: [{ text: "Use store memory." }],
+    });
+  });
+
+  it("uses GitLab wiki memory and deletes store memory when wiki is enabled", async () => {
+    const store = createProjectMemoryStore();
+    await store.upsert({
+      id: "tenant-1",
+      tenantId: "tenant-1",
+      entriesJson: JSON.stringify([{ text: "Use stale store memory." }]),
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    });
+    const backend = createGitLabProjectMemoryBackend({
+      client: {
+        getProject: vi.fn(async () => ({
+          id: 1085,
+          web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
+          http_url_to_repo: "https://gitlab.example.com/group/project.git",
+          wiki_enabled: true,
+        })),
+        getProjectWikiPage: vi.fn(async () => ({
+          title: REVIEWPHIN_MEMORY_PAGE_TITLE,
+          slug: "reviewphin-memory",
+          format: "markdown",
+          content:
+            "## Remembered project knowledge\n- Use GitLab wiki memory.",
+        })),
+        listProjectWikiPages: vi.fn(async () => []),
+      } as never,
+      projectId: 1085,
+      tenantId: "tenant-1",
+      enabled: true,
+      stores: { projectMemories: store },
+    });
+
+    await expect(backend.load()).resolves.toMatchObject({
+      page: { slug: "reviewphin-memory" },
+      entries: [{ text: "Use GitLab wiki memory." }],
+    });
+    await expect(store.get("tenant-1")).resolves.toBeNull();
+  });
+});
+
+function createProjectMemoryStore() {
+  const records = new Map<string, ProjectMemoryRecord>();
+  return {
+    get: vi.fn(async (id: string) => records.get(id) ?? null),
+    getMany: vi.fn(async (ids: string[]) =>
+      ids.flatMap((id) => records.get(id) ?? []),
+    ),
+    find: vi.fn(async () => null),
+    list: vi.fn(async () => [...records.values()]),
+    upsert: vi.fn(async (record: ProjectMemoryRecord) => {
+      records.set(record.id, record);
+    }),
+    upsertMany: vi.fn(async (entries: ProjectMemoryRecord[]) => {
+      for (const record of entries) {
+        records.set(record.id, record);
+      }
+    }),
+    replace: vi.fn(async (record: ProjectMemoryRecord) => {
+      records.set(record.id, record);
+    }),
+    replaceMany: vi.fn(async () => {}),
+    update: vi.fn(async ({ id, value }) => {
+      records.set(id, value);
+    }),
+    updateMany: vi.fn(async () => {}),
+    patch: vi.fn(async ({ id, value }) => {
+      const current = records.get(id);
+      if (current) {
+        records.set(id, { ...current, ...value });
+      }
+    }),
+    patchMany: vi.fn(async () => {}),
+    delete: vi.fn(async (id: string) => {
+      records.delete(id);
+    }),
+    deleteMany: vi.fn(async (ids: string[]) => {
+      for (const id of ids) {
+        records.delete(id);
+      }
+    }),
+  };
+}

@@ -183,6 +183,13 @@ describe("WorkspaceMaterializer", () => {
             path: ".github/instructions/review.instructions.md",
             mode: "100644",
           },
+          {
+            id: "blob_2",
+            name: "README.md",
+            type: "blob",
+            path: ".github/instructions/README.md",
+            mode: "100644",
+          },
         ]),
       } as never,
       jobId: "job_3",
@@ -205,11 +212,26 @@ describe("WorkspaceMaterializer", () => {
     expect(
       await readFile(join(workspace.rootPath, "src", "index.ts"), "utf8"),
     ).toBe("console.log('ok');\n");
-    expect(workspace.instructionFiles.map((file) => file.path)).toEqual([
-      "AGENTS.md",
-      ".github/instructions/review.instructions.md",
-    ]);
+    expect(
+      await readFile(join(workspace.rootPath, "AGENTS.md"), "utf8"),
+    ).toBe("# File instructions\n");
+    expect(
+      await readFile(
+        join(
+          workspace.rootPath,
+          ".github",
+          "instructions",
+          "review.instructions.md",
+        ),
+        "utf8",
+      ),
+    ).toBe("Follow the review guide.\n");
     expect(getRawFile).toHaveBeenCalledWith(1085, "src/index.ts", "abc123");
+    expect(getRawFile).not.toHaveBeenCalledWith(
+      1085,
+      ".github/instructions/README.md",
+      "abc123",
+    );
   });
 
   it("clears leftover workspace files before attempting git checkout", async () => {

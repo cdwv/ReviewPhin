@@ -3,9 +3,12 @@ import type { Logger } from "pino";
 import type { StorageHelpers } from "../storage/storage-helpers.js";
 import type { IPlatform } from "../platforms/IPlatform.js";
 import type {
+  PlatformFindingPublication,
+  PlatformPublicationLink,
   PlatformReviewComment,
-  PlatformReviewDiscussionAdapter,
+  PlatformReviewPublicationAdapter,
   PlatformReviewDiscussion,
+  PlatformSummaryPublication,
 } from "../platforms/review-adapter.js";
 import type {
   DiscussionMappingRecord,
@@ -14,18 +17,16 @@ import type {
 } from "../storage/contract/index.js";
 import type { PlatformConnectionRecord } from "../storage/contract/index.js";
 import {
-  createId,
   createFindingFingerprint,
   createFindingIdentityKey,
 } from "../utils/ids.js";
 import { firstNonEmptyLine } from "../utils/text.js";
 import {
   buildReviewSummaryNote,
-  findLatestReviewSummaryNote,
   isReviewSummaryNoteBody,
 } from "../review/summary.js";
 import {
-  renderReviewFindingBody,
+  renderReviewFindingProse,
   stripReviewDiscussionMarker,
 } from "../review/discussion-format.js";
 import type {
@@ -62,6 +63,7 @@ export interface ReconcileSummary {
   resolved: number;
   kept: number;
   summaryCommentAction: "created" | "updated" | null;
+  links: PlatformPublicationLink[];
 }
 
 interface DiscussionReconcilerOptions {
@@ -69,20 +71,8 @@ interface DiscussionReconcilerOptions {
   logger: Logger;
 }
 
-interface PendingDraftDiscussion {
-  id: string;
+interface PendingFindingPublication extends PlatformFindingPublication {
   body: string;
-  draftMarker: string;
-  finding: ReviewFinding;
-  fingerprint: string;
-  identityKey: string;
-  positionJson: string | null;
-}
-
-interface PublishedDraftDiscussionMatch {
-  discussion: PlatformReviewDiscussion;
-  pending: PendingDraftDiscussion;
-  rootNote: PlatformReviewComment;
 }
 
 type DiscussionReconcileAction =
@@ -107,11 +97,12 @@ export class DiscussionReconciler {
     connection?: PlatformConnectionRecord;
     context: ReviewSummaryContext;
     mappings: DiscussionMappingRecord[];
+    interactionJobId: string;
     interactionRunId: string;
     reviewResult: ReviewResult;
-    discussionAdapter: PlatformReviewDiscussionAdapter;
+    publicationAdapter: PlatformReviewPublicationAdapter;
   }): Promise<ReconcileSummary> {
-    const discussions = await input.discussionAdapter.listDiscussions();
+    const discussions = await input.publicationAdapter.loadDiscussions();
     const knownDiscussions = buildKnownDiscussions({
       discussions,
       mappings: input.mappings,
@@ -137,6 +128,7 @@ export class DiscussionReconciler {
       resolved: 0,
       kept: 0,
       summaryCommentAction: null,
+      links: [],
     };
 
     const referencedDiscussionIds = collectReferencedDiscussionIds(
@@ -151,62 +143,51 @@ export class DiscussionReconciler {
       referencedDiscussionIds,
     });
 
-    summary.summaryCommentAction = await this.syncSummaryNote({
-      ...input,
-      activeFindings: projectedActiveFindings,
-    });
-
-    const pendingDraftDiscussions: PendingDraftDiscussion[] = [];
-    try {
-      for (const finding of input.reviewResult.findings) {
-        const matchedDiscussion = finding.priorDiscussionId
-          ? (discussionById.get(finding.priorDiscussionId) ?? null)
-          : null;
-        if (matchedDiscussion) {
-          const disposition = dispositionByDiscussionId.get(
-            matchedDiscussion.discussionId,
-          );
-          const action = await this.applyFindingToExistingDiscussion({
-            tenant: input.tenant,
-            context: input.context,
-            discussionAdapter: input.discussionAdapter,
-            interactionRunId: input.interactionRunId,
-            knownDiscussion: matchedDiscussion,
-            finding,
-            disposition,
-          });
-          summary[action] += 1;
-          continue;
-        }
-
-        pendingDraftDiscussions.push(
-          await this.createPendingDraftDiscussion({
-            tenant: input.tenant,
-            context: input.context,
-            discussionAdapter: input.discussionAdapter,
-            interactionRunId: input.interactionRunId,
-            finding,
-          }),
+    const pendingFindings: PendingFindingPublication[] = [];
+    for (const finding of input.reviewResult.findings) {
+      const matchedDiscussion = finding.priorDiscussionId
+        ? (discussionById.get(finding.priorDiscussionId) ?? null)
+        : null;
+      if (matchedDiscussion) {
+        const disposition = dispositionByDiscussionId.get(
+          matchedDiscussion.discussionId,
         );
-        summary.created += 1;
+        const action = await this.applyFindingToExistingDiscussion({
+          tenant: input.tenant,
+          context: input.context,
+          publicationAdapter: input.publicationAdapter,
+          interactionRunId: input.interactionRunId,
+          knownDiscussion: matchedDiscussion,
+          finding,
+          disposition,
+        });
+        summary[action] += 1;
+        continue;
       }
-    } catch (error) {
-      await this.cleanupPendingDraftDiscussions({
-        tenant: input.tenant,
-        codeReviewId: input.context.codeReview.id,
-        discussionAdapter: input.discussionAdapter,
-        pendingDraftDiscussions,
-      });
-      throw error;
+
+      pendingFindings.push(
+        this.createPendingFindingPublication({
+          platformSlug: input.platform.getPlatformInfo().slug,
+          interactionJobId: input.interactionJobId,
+          finding,
+        }),
+      );
+      summary.created += 1;
     }
 
-    if (pendingDraftDiscussions.length > 0) {
-      await this.publishPendingDraftDiscussions({
+    if (pendingFindings.length > 0) {
+      const publicationResult = await input.publicationAdapter.publishFindings({
+        publicationKey: input.interactionJobId,
+        findings: pendingFindings,
+        existingDiscussionIds: new Set(discussions.map((entry) => entry.id)),
+      });
+      summary.links.push(...publicationResult.links);
+      await this.persistPublishedFindings({
         tenant: input.tenant,
         context: input.context,
-        discussionAdapter: input.discussionAdapter,
         interactionRunId: input.interactionRunId,
-        pendingDraftDiscussions,
+        pendingFindings,
+        publishedFindings: publicationResult.findings,
       });
     }
 
@@ -223,10 +204,11 @@ export class DiscussionReconciler {
       if (disposition.action === "resolve") {
         if (!knownDiscussion.resolved) {
           if (knownDiscussion.resolvable) {
-            await input.discussionAdapter.setDiscussionResolved(
-              knownDiscussion.platformDiscussionId,
-              true,
-            );
+            await input.publicationAdapter.mutateDiscussion({
+              kind: "set-resolved",
+              discussionId: knownDiscussion.platformDiscussionId,
+              resolved: true,
+            });
           } else {
             this.logSkippedDiscussionResolutionChange({
               tenant: input.tenant,
@@ -286,10 +268,17 @@ export class DiscussionReconciler {
         });
         summary.resolved += 1;
       } else if (disposition.action === "reply" && disposition.replyBody) {
-        const note = await input.discussionAdapter.replyToDiscussion(
-          knownDiscussion.platformDiscussionId,
-          disposition.replyBody,
-        );
+        const mutation = await input.publicationAdapter.mutateDiscussion({
+          kind: "reply-text",
+          discussionId: knownDiscussion.platformDiscussionId,
+          body: disposition.replyBody,
+        });
+        const note = mutation.comment;
+        if (!note) {
+          throw new Error(
+            `Platform did not return a reply comment for discussion ${knownDiscussion.platformDiscussionId}`,
+          );
+        }
         await this.persistDiscussionState({
           tenant: input.tenant,
           context: input.context,
@@ -336,19 +325,30 @@ export class DiscussionReconciler {
       }
     }
 
+    const summaryPublication = await this.syncSummaryNote({
+      ...input,
+      activeFindings: projectedActiveFindings,
+    });
+    summary.summaryCommentAction = summaryPublication.action;
+    if (summaryPublication.url) {
+      summary.links.push({
+        label: "Review summary",
+        url: summaryPublication.url,
+      });
+    }
     return summary;
   }
 
   private async applyFindingToExistingDiscussion(input: {
     tenant: TenantRecord;
     context: ReviewSummaryContext;
-    discussionAdapter: PlatformReviewDiscussionAdapter;
+    publicationAdapter: PlatformReviewPublicationAdapter;
     interactionRunId: string;
     knownDiscussion: KnownDiscussion;
     finding: ReviewFinding;
     disposition: PriorDisposition | undefined;
   }): Promise<DiscussionReconcileAction> {
-    const body = renderReviewFindingBody(input.finding);
+    const body = renderReviewFindingProse(input.finding);
     const identityKey = createFindingIdentityKey({
       title: input.finding.title,
       category: input.finding.category,
@@ -400,10 +400,11 @@ export class DiscussionReconciler {
       let discussionStatus: "open" | "resolved" = "open";
       if (input.knownDiscussion.resolved) {
         if (input.knownDiscussion.resolvable) {
-          await input.discussionAdapter.setDiscussionResolved(
-            input.knownDiscussion.platformDiscussionId,
-            false,
-          );
+          await input.publicationAdapter.mutateDiscussion({
+            kind: "set-resolved",
+            discussionId: input.knownDiscussion.platformDiscussionId,
+            resolved: false,
+          });
         } else {
           discussionStatus = "resolved";
           this.logSkippedDiscussionResolutionChange({
@@ -416,10 +417,25 @@ export class DiscussionReconciler {
         }
       }
 
-      const note = await input.discussionAdapter.replyToDiscussion(
-        input.knownDiscussion.platformDiscussionId,
-        input.disposition?.replyBody ?? body,
+      const mutation = await input.publicationAdapter.mutateDiscussion(
+        input.disposition?.replyBody
+          ? {
+              kind: "reply-text",
+              discussionId: input.knownDiscussion.platformDiscussionId,
+              body: input.disposition.replyBody,
+            }
+          : {
+              kind: "reply-finding",
+              discussionId: input.knownDiscussion.platformDiscussionId,
+              finding: input.finding,
+            },
       );
+      const note = mutation.comment;
+      if (!note) {
+        throw new Error(
+          `Platform did not return a reply comment for discussion ${input.knownDiscussion.platformDiscussionId}`,
+        );
+      }
       await this.persistDiscussionState({
         tenant: input.tenant,
         context: input.context,
@@ -449,11 +465,18 @@ export class DiscussionReconciler {
       );
     }
 
-    const updatedNote = await input.discussionAdapter.updateComment(
-      input.knownDiscussion.platformDiscussionId,
-      latestBotNote.id,
-      body,
-    );
+    const mutation = await input.publicationAdapter.mutateDiscussion({
+      kind: "update-finding",
+      discussionId: input.knownDiscussion.platformDiscussionId,
+      commentId: latestBotNote.id,
+      finding: input.finding,
+    });
+    const updatedNote = mutation.comment;
+    if (!updatedNote) {
+      throw new Error(
+        `Platform did not return an updated comment for discussion ${input.knownDiscussion.platformDiscussionId}`,
+      );
+    }
     await this.persistDiscussionState({
       tenant: input.tenant,
       context: input.context,
@@ -476,15 +499,12 @@ export class DiscussionReconciler {
     return "updated";
   }
 
-  private async createPendingDraftDiscussion(input: {
-    tenant: TenantRecord;
-    context: ReviewSummaryContext;
-    discussionAdapter: PlatformReviewDiscussionAdapter;
-    interactionRunId: string;
+  private createPendingFindingPublication(input: {
+    platformSlug: string;
+    interactionJobId: string;
     finding: ReviewFinding;
-  }): Promise<PendingDraftDiscussion> {
-    const body = renderReviewFindingBody(input.finding);
-    const draftMarker = createId("draftthread");
+  }): PendingFindingPublication {
+    const body = renderReviewFindingProse(input.finding);
     const identityKey = createFindingIdentityKey({
       title: input.finding.title,
       category: input.finding.category,
@@ -498,152 +518,56 @@ export class DiscussionReconciler {
       body,
       suggestionReplacement: input.finding.suggestion?.replacement,
     });
-    const createdDraft = await input.discussionAdapter.createDraftDiscussion({
-      finding: input.finding,
-      body,
-      draftMarker,
-    });
     return {
-      id: createdDraft.id,
-      draftMarker,
       finding: input.finding,
       body,
       identityKey,
       fingerprint,
-      positionJson: createdDraft.positionJson,
+      marker: createPublicationMarker({
+        platformSlug: input.platformSlug,
+        interactionJobId: input.interactionJobId,
+        identityKey,
+      }),
     };
   }
 
-  private async publishPendingDraftDiscussions(input: {
+  private async persistPublishedFindings(input: {
     tenant: TenantRecord;
     context: ReviewSummaryContext;
-    discussionAdapter: PlatformReviewDiscussionAdapter;
     interactionRunId: string;
-    pendingDraftDiscussions: PendingDraftDiscussion[];
+    pendingFindings: PendingFindingPublication[];
+    publishedFindings: Array<{
+      identityKey: string;
+      discussion: PlatformReviewDiscussion;
+      rootComment: PlatformReviewComment;
+    }>;
   }): Promise<void> {
-    const existingDiscussionIds = new Set(
-      (await input.discussionAdapter.listDiscussions()).map(
-        (discussion) => discussion.id,
-      ),
+    const pendingByIdentity = new Map(
+      input.pendingFindings.map((pending) => [pending.identityKey, pending]),
     );
-    try {
-      await input.discussionAdapter.publishDraftDiscussions();
-      const matched = (
-        await input.discussionAdapter.matchPublishedDraftDiscussions({
-          pendingDraftDiscussions: input.pendingDraftDiscussions,
-          existingDiscussionIds: existingDiscussionIds,
-        })
-      ).map((match) => ({
-        discussion: match.discussion,
-        pending: match.pending,
-        rootNote: match.rootComment,
-      }));
-      await this.persistPublishedDraftDiscussionMatches({
-        tenant: input.tenant,
-        context: input.context,
-        interactionRunId: input.interactionRunId,
-        matches: matched,
-      });
-    } catch (error) {
-      const recovered = await this.tryRecoverPublishedDraftDiscussions({
-        tenant: input.tenant,
-        context: input.context,
-        discussionAdapter: input.discussionAdapter,
-        interactionRunId: input.interactionRunId,
-        pendingDraftDiscussions: input.pendingDraftDiscussions,
-        existingDiscussionIds,
-      });
-      if (recovered) {
-        return;
-      }
-
-      await this.cleanupPendingDraftDiscussions({
-        tenant: input.tenant,
-        codeReviewId: input.context.codeReview.id,
-        discussionAdapter: input.discussionAdapter,
-        pendingDraftDiscussions: input.pendingDraftDiscussions,
-      });
-      throw error;
-    }
-  }
-
-  private async tryRecoverPublishedDraftDiscussions(input: {
-    tenant: TenantRecord;
-    context: ReviewSummaryContext;
-    discussionAdapter: PlatformReviewDiscussionAdapter;
-    interactionRunId: string;
-    pendingDraftDiscussions: PendingDraftDiscussion[];
-    existingDiscussionIds: ReadonlySet<string>;
-  }): Promise<boolean> {
-    try {
-      const matches = (
-        await input.discussionAdapter.matchPublishedDraftDiscussions({
-          pendingDraftDiscussions: input.pendingDraftDiscussions,
-          existingDiscussionIds: input.existingDiscussionIds,
-          maxAttempts: 1,
-        })
-      ).map((match) => ({
-        discussion: match.discussion,
-        pending: match.pending,
-        rootNote: match.rootComment,
-      }));
-      await this.persistPublishedDraftDiscussionMatches({
-        tenant: input.tenant,
-        context: input.context,
-        interactionRunId: input.interactionRunId,
-        matches,
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private async cleanupPendingDraftDiscussions(input: {
-    tenant: TenantRecord;
-    codeReviewId: number;
-    discussionAdapter: PlatformReviewDiscussionAdapter;
-    pendingDraftDiscussions: PendingDraftDiscussion[];
-  }): Promise<void> {
-    for (const pending of input.pendingDraftDiscussions) {
-      try {
-        await input.discussionAdapter.deleteDraftDiscussion(pending.id);
-      } catch (error) {
-        if (isNotFoundError(error)) {
-          continue;
-        }
-
-        this.logger.warn(
-          {
-            err: error,
-            tenantId: input.tenant.id,
-            codeReviewId: input.codeReviewId,
-            draftNoteId: pending.id,
-          },
-          "failed to clean up platform draft discussion",
+    for (const published of input.publishedFindings) {
+      const pending = pendingByIdentity.get(published.identityKey);
+      if (!pending) {
+        throw new Error(
+          `Platform returned unknown published finding ${published.identityKey}`,
         );
       }
-    }
-  }
-
-  private async persistPublishedDraftDiscussionMatches(input: {
-    tenant: TenantRecord;
-    context: ReviewSummaryContext;
-    interactionRunId: string;
-    matches: PublishedDraftDiscussionMatch[];
-  }): Promise<void> {
-    for (const match of input.matches) {
       await this.persistCreatedDiscussion({
         tenant: input.tenant,
         context: input.context,
         interactionRunId: input.interactionRunId,
-        finding: match.pending.finding,
-        identityKey: match.pending.identityKey,
-        fingerprint: match.pending.fingerprint,
-        body: match.pending.body,
-        discussion: match.discussion,
-        note: match.rootNote,
+        finding: pending.finding,
+        identityKey: pending.identityKey,
+        fingerprint: pending.fingerprint,
+        body: pending.body,
+        discussion: published.discussion,
+        note: published.rootComment,
       });
+    }
+    if (input.publishedFindings.length !== input.pendingFindings.length) {
+      throw new Error(
+        `Platform published ${input.publishedFindings.length} of ${input.pendingFindings.length} findings`,
+      );
     }
   }
 
@@ -793,9 +717,9 @@ export class DiscussionReconciler {
     context: ReviewSummaryContext;
     interactionRunId: string;
     reviewResult: ReviewResult;
-    discussionAdapter: PlatformReviewDiscussionAdapter;
+    publicationAdapter: PlatformReviewPublicationAdapter;
     activeFindings: SummaryFinding[];
-  }): Promise<ReconcileSummary["summaryCommentAction"]> {
+  }): Promise<PlatformSummaryPublication> {
     const body = buildReviewSummaryNote({
       platform: input.platform,
       tenant: input.tenant,
@@ -811,18 +735,7 @@ export class DiscussionReconciler {
       reviewResult: input.reviewResult,
       activeFindings: input.activeFindings,
     });
-    const existingNote = findLatestReviewSummaryNote(
-      await input.discussionAdapter.listSummaryComments(),
-      (note) => note.isBot,
-    );
-
-    if (existingNote) {
-      await input.discussionAdapter.updateSummaryComment(existingNote.id, body);
-      return "updated";
-    }
-
-    await input.discussionAdapter.createSummaryComment(body);
-    return "created";
+    return input.publicationAdapter.upsertSummary({ body });
   }
 
   private async retireReplacedFinding(input: {
@@ -979,6 +892,9 @@ function buildKnownDiscussions(input: {
       (mapping) => [mapping.platformDiscussionId, mapping] as const,
     ),
   );
+  const mappingByRootCommentId = buildUniqueMappingByRootCommentId(
+    input.mappings,
+  );
 
   const knownDiscussions: KnownDiscussion[] = [];
 
@@ -988,7 +904,12 @@ function buildKnownDiscussions(input: {
       continue;
     }
 
-    const mapping = mappingByDiscussionId.get(discussion.id) ?? null;
+    const rootCommentId = parseNumericId(rootNote.id);
+    const mapping =
+      mappingByDiscussionId.get(discussion.id) ??
+      (rootCommentId === null
+        ? null
+        : (mappingByRootCommentId.get(rootCommentId) ?? null));
     const botOwnedDiscussion = rootNote.isBot;
     if (!botOwnedDiscussion) {
       continue;
@@ -1067,6 +988,25 @@ function collectReferencedDiscussionIds(
   return referencedDiscussionIds;
 }
 
+function buildUniqueMappingByRootCommentId(
+  mappings: DiscussionMappingRecord[],
+): Map<number, DiscussionMappingRecord> {
+  const result = new Map<number, DiscussionMappingRecord>();
+  const duplicateIds = new Set<number>();
+  for (const mapping of mappings) {
+    if (duplicateIds.has(mapping.platformCommentId)) {
+      continue;
+    }
+    if (result.has(mapping.platformCommentId)) {
+      result.delete(mapping.platformCommentId);
+      duplicateIds.add(mapping.platformCommentId);
+      continue;
+    }
+    result.set(mapping.platformCommentId, mapping);
+  }
+  return result;
+}
+
 function parseNumericId(value: string | null): number | null {
   if (value === null || value.trim().length === 0) {
     return null;
@@ -1076,11 +1016,10 @@ function parseNumericId(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function isNotFoundError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "status" in error &&
-    (error as { status?: unknown }).status === 404
-  );
+function createPublicationMarker(input: {
+  platformSlug: string;
+  interactionJobId: string;
+  identityKey: string;
+}): string {
+  return `${input.platformSlug}:${input.interactionJobId}:${input.identityKey}`;
 }

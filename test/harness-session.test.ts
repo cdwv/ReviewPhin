@@ -69,6 +69,10 @@ describe("HarnessSessionRuntime", () => {
       workingDirectory: tmpPath("workspace"),
       tenant: createTenant({
         projectMemoryBackend: {
+          getCapability: vi.fn(async () => ({
+            implemented: true as const,
+            available: true as const,
+          })),
           load,
           saveEntries,
         },
@@ -79,6 +83,7 @@ describe("HarnessSessionRuntime", () => {
     });
 
     const sessionOptions = createSessionMock.mock.calls[0]?.[0];
+    expect(sessionOptions.workingDirectory).toBe(tmpPath("workspace"));
     expect(sessionOptions.availableTools).toEqual([
       "glob",
       "rg",
@@ -140,6 +145,7 @@ describe("HarnessSessionRuntime", () => {
       type: "openai",
     });
     expect(sessionOptions.enableConfigDiscovery).toBe(false);
+    expect(sessionOptions).not.toHaveProperty("workingDirectory");
   });
 
   it("passes a native auth token only when no custom provider is configured", async () => {
@@ -597,6 +603,10 @@ function createTenant(
     id: "tenant_1",
     memoryEnabled: true,
     projectMemoryBackend: {
+      getCapability: vi.fn(async () => ({
+        implemented: true as const,
+        available: true as const,
+      })),
       load: vi.fn(async () => ({
         enabled: true,
         page: null,

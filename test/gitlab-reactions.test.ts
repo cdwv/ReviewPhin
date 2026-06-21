@@ -277,6 +277,73 @@ describe("GitLab reactions", () => {
     ).toBe(true);
   });
 
+  it("processes migrated GitLab jobs with legacy comment trigger JSON", async () => {
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "GET" && url.includes("/discussions?")) {
+          return new Response("[]", {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (
+          init?.method === "GET" &&
+          url.includes("/merge_requests/7/notes?")
+        ) {
+          return createFreshTriggerNoteListResponse(55);
+        }
+        if (init?.method === "GET" && url.includes("/notes/55/award_emoji")) {
+          return new Response("[]", {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+
+        const body = String(init?.body);
+        const reactionName = body.includes("white_check_mark")
+          ? "white_check_mark"
+          : "eyes";
+        return new Response(
+          JSON.stringify({
+            id: reactionName === "eyes" ? 1 : 2,
+            name: reactionName,
+            user: {
+              id: 999,
+              username: "review-bot",
+              name: "Review Bot",
+            },
+            created_at: new Date().toISOString(),
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      },
+    );
+    globalThis.fetch = fetchMock;
+
+    const worker = createWorker({
+      payload: directMentionPayload,
+      discussions: [],
+      triggerJson: '{"kind":"comment","commentId":55}',
+    });
+
+    await worker.processJob("job_1");
+
+    const postedBodies = fetchMock.mock.calls
+      .filter(
+        ([input, init]) =>
+          init?.method === "POST" && String(input).includes("/award_emoji"),
+      )
+      .map(([, init]) => String(init?.body));
+    expect(postedBodies.some((body) => body.includes("name=eyes"))).toBe(true);
+    expect(
+      postedBodies.some((body) => body.includes("name=white_check_mark")),
+    ).toBe(true);
+  });
+
   it("adds a friendly failure reaction to direct mention trigger notes on terminal failure", async () => {
     const fetchMock = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
@@ -554,11 +621,39 @@ describe("GitLab reactions", () => {
 
     expect(awardEmojiRequests).toEqual([]);
   });
+
+  it("does not fail job creation when a lifecycle update fails", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("GitLab unavailable");
+    });
+    const worker = createWorker({
+      payload: directMentionPayload,
+      discussions: [],
+    });
+
+    await expect(
+      worker.createInteractionJobFromWebhook(
+        directMentionPayload,
+        { tenant, connection },
+        {
+          kind: "direct-mention",
+          comment: {
+            kind: "code-review-comment",
+            commentId: 55,
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      created: true,
+      job: { id: "job_1" },
+    });
+  });
 });
 
 function createWorker(input: {
   payload: GitLabNoteHookPayload;
   discussions: GitLabDiscussion[];
+  triggerJson?: string;
   jobRetryCount?: number;
   reviewError?: Error;
 }): ReviewWorker {
@@ -569,6 +664,34 @@ function createWorker(input: {
     projectId: tenant.projectId,
     codeReviewId: 7,
     commentId: input.payload.object_attributes.id,
+    triggerJson:
+      input.triggerJson ??
+      JSON.stringify({
+        kind: "gitlab-comment",
+        comment: {
+          kind: input.discussions.some((discussion) =>
+            discussion.notes.some(
+              (note) => note.id === input.payload.object_attributes.id,
+            ),
+          )
+            ? "discussion-comment"
+            : "code-review-comment",
+          ...(input.discussions.find((discussion) =>
+            discussion.notes.some(
+              (note) => note.id === input.payload.object_attributes.id,
+            ),
+          )
+            ? {
+                discussionId: input.discussions.find((discussion) =>
+                  discussion.notes.some(
+                    (note) => note.id === input.payload.object_attributes.id,
+                  ),
+                )!.id,
+              }
+            : {}),
+          commentId: input.payload.object_attributes.id,
+        },
+      }),
     headSha: "abc123",
     status: "queued" as const,
     payloadJson: JSON.stringify(input.payload),
@@ -657,7 +780,6 @@ function createWorker(input: {
         rootPath: join("tmp", "workspace-routing"),
         cleanupRoot: join("tmp", "cleanup-routing"),
         strategy: "git",
-        instructionFiles: [],
       },
       projectMemory: {
         enabled: true,
@@ -694,7 +816,6 @@ function createWorker(input: {
         rootPath: join("tmp", "workspace"),
         cleanupRoot: join("tmp", "cleanup"),
         strategy: "targeted-files",
-        instructionFiles: [],
       },
       projectMemory: {
         enabled: true,

@@ -70,9 +70,7 @@ export class CodeReviewContextHydrator {
       changesJson: JSON.stringify(materializedContext.changes),
       commentsJson: JSON.stringify(materializedContext.notes),
       discussionsJson: JSON.stringify(materializedContext.discussions),
-      instructionsJson: JSON.stringify(
-        materializedContext.workspace.instructionFiles,
-      ),
+      instructionsJson: "[]",
       projectMemoryJson: JSON.stringify(materializedContext.projectMemory),
       workspaceStrategy: materializedContext.workspace.strategy,
     });
@@ -159,7 +157,10 @@ export class CodeReviewContextHydrator {
       return await createGitLabProjectMemoryBackend({
         client: input.client,
         projectId: getGitLabTenantConfig(input.tenant).projectId,
+        tenantId: input.tenant.id,
         enabled: this.memoryEnabled,
+        stores: this.storage.stores,
+        logger: this.logger,
       }).load();
     } catch (error) {
       this.logger.warn(
@@ -169,7 +170,7 @@ export class CodeReviewContextHydrator {
           interactionJobId: input.job.id,
           projectId: getGitLabTenantConfig(input.tenant).projectId,
         },
-        "project memory unavailable; continuing review without wiki-backed memory",
+        "project memory unavailable; continuing review without memory for this run",
       );
       return {
         enabled: false,

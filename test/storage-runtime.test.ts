@@ -40,6 +40,8 @@ describe("storage runtime", () => {
         "sqlite:0006_v1_drop_legacy_tenant_columns",
         "sqlite:0007_v1_generic_storage_column_names",
         "sqlite:0008_v2_platform_connections",
+        "sqlite:0009_v3_provider_triggers",
+        "sqlite:0010_v4_project_memories",
       ]);
     } finally {
       await runtime.provider.close();

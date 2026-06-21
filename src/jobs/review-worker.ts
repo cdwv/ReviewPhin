@@ -25,7 +25,6 @@ import { InteractionRunArtifacts } from "../review/run-artifacts.js";
 import type {
   ReviewContext,
   ReviewResult,
-  TriggerCommentReference,
   WebhookReviewTrigger,
 } from "../review/types.js";
 import type {
@@ -36,10 +35,6 @@ import type {
 import { listAll, type StorageHelpers } from "../storage/storage-helpers.js";
 import type { TenantRegistry } from "../tenants/tenant-registry.js";
 import { createFindingIdentityKey } from "../utils/ids.js";
-
-const REVIEW_STARTED_REACTION = "eyes";
-const REVIEW_COMPLETED_REACTION = "white_check_mark";
-const REVIEW_FAILED_REACTION = "confounded";
 
 interface ReviewRuntimeFactoryInput {
   platform: IPlatform;
@@ -66,6 +61,7 @@ interface ReviewWorkerOptions {
   memoryEnabled?: boolean | undefined;
   maxJobRetries: number;
   retryBackoffMs: number;
+  platformResolver?: ((platformSlug: string) => IPlatform | null) | undefined;
   reviewRuntimeFactory?:
     | ((input: ReviewRuntimeFactoryInput) => PlatformReviewRuntime)
     | undefined;
@@ -83,6 +79,7 @@ export class ReviewWorker {
   private readonly memoryEnabled: boolean;
   private readonly maxJobRetries: number;
   private readonly retryBackoffMs: number;
+  private readonly platformResolver: (platformSlug: string) => IPlatform | null;
   private readonly reviewRuntimeFactory: (
     input: ReviewRuntimeFactoryInput,
   ) => PlatformReviewRuntime;
@@ -100,6 +97,7 @@ export class ReviewWorker {
     this.memoryEnabled = options.memoryEnabled ?? false;
     this.maxJobRetries = options.maxJobRetries;
     this.retryBackoffMs = options.retryBackoffMs;
+    this.platformResolver = options.platformResolver ?? getPlatformBySlug;
     this.reviewRuntimeFactory =
       options.reviewRuntimeFactory ??
       ((input) =>
@@ -130,33 +128,28 @@ export class ReviewWorker {
     const interactionJob = await platform.createInteractionJob({
       resolvedTenant,
       payload,
+      trigger,
+      storage: this.storage,
     });
     const createdJob = await this.storage.createOrGetInteractionJob({
       tenantId: resolvedTenant.tenant.id,
       dedupeKey: interactionJob.dedupeKey,
       codeReviewId: interactionJob.codeReviewId,
       commentId: interactionJob.commentId,
+      triggerJson: interactionJob.triggerJson,
       headSha: interactionJob.headSha,
       payloadJson: interactionJob.payloadJson,
     });
 
     if (createdJob.created) {
-      const runtime = this.reviewRuntimeFactory({
-        platform,
-        storage: this.storage,
+      const lifecycle = platform.createTriggerLifecycle({
+        resolvedTenant,
+        job: createdJob.job,
         logger: this.logger,
-        tenant: resolvedTenant.tenant,
-        connection: resolvedTenant.connection,
-        interactionJobId: createdJob.job.id,
-        workspaceRoot: this.workspaceRoot,
-        memoryEnabled: this.memoryEnabled,
       });
-      await runtime.ensureTriggerCommentReaction({
-        codeReviewId: createdJob.job.codeReviewId,
-        comment: trigger.comment,
-        reactionName: REVIEW_STARTED_REACTION,
-        interactionJobId: createdJob.job.id,
-      });
+      await this.syncTriggerLifecycle(createdJob.job, "queued", () =>
+        lifecycle.queued(),
+      );
     }
 
     return createdJob;
@@ -189,8 +182,17 @@ export class ReviewWorker {
       throw new Error(`Unknown tenant ${job.tenantId} for job ${job.id}`);
     }
     const { tenant, connection } = resolvedTenant;
+    const platform = this.resolvePlatform(tenant.platform);
+    const triggerLifecycle = platform.createTriggerLifecycle({
+      resolvedTenant,
+      job,
+      logger: this.logger,
+    });
 
     await this.storage.markJobInProgress(job.id);
+    await this.syncTriggerLifecycle(job, "in_progress", () =>
+      triggerLifecycle.inProgress(),
+    );
 
     let interactionRunId: string | null = null;
     let runArtifacts: InteractionRunArtifacts | null = null;
@@ -203,21 +205,11 @@ export class ReviewWorker {
       promptContextPriorDiscussions: number;
       promptContextComments: number;
     } | null = null;
-    let triggerComment: TriggerCommentReference | null = null;
     let cleanupWorkspace:
       | ((workspace: PlatformMaterializedWorkspace) => Promise<void>)
       | null = null;
-    let syncTriggerReaction:
-      | ((input: {
-          codeReviewId: number;
-          comment: TriggerCommentReference;
-          reactionName: string;
-          interactionJobId: string;
-        }) => Promise<void>)
-      | null = null;
 
     try {
-      const platform = this.resolvePlatform(tenant.platform);
       const runtime = this.reviewRuntimeFactory({
         platform,
         storage: this.storage,
@@ -229,18 +221,18 @@ export class ReviewWorker {
         memoryEnabled: this.memoryEnabled,
       });
       cleanupWorkspace = (workspace) => runtime.cleanupWorkspace(workspace);
-      syncTriggerReaction = (input) =>
-        runtime.ensureTriggerCommentReaction(input);
       const parsedPayload = JSON.parse(job.payloadJson) as unknown;
       let routingContext = await this.loadRoutingContext({
         runtime,
         job,
       });
       workspacesToCleanup.push(routingContext.workspace);
-      triggerComment = runtime.locateTriggerCommentReference({
-        context: routingContext,
-        commentId: job.commentId,
-      });
+      if (job.commentId !== null) {
+        runtime.locateTriggerCommentReference({
+          context: routingContext,
+          commentId: job.commentId,
+        });
+      }
 
       const resolvedProviderConfig = await resolveReviewProviderConfig({
         storage: this.storage,
@@ -281,16 +273,17 @@ export class ReviewWorker {
         workspaceRoot: this.workspaceRoot,
         memoryEnabled: this.memoryEnabled,
       });
-      syncTriggerReaction = (input) =>
-        runRuntime.ensureTriggerCommentReaction(input);
-      triggerComment = await runRuntime
-        .resolveTriggerCommentReference({
-          codeReviewId: job.codeReviewId,
-          commentId: job.commentId,
-        })
-        .catch((error: unknown) => {
-          throw new AbandonedReviewError(getErrorMessage(error));
-        });
+      if (job.commentId !== null) {
+        await runRuntime
+          .resolveTriggerCommentReference({
+            codeReviewId: job.codeReviewId,
+            commentId: job.commentId,
+            triggerJson: job.triggerJson,
+          })
+          .catch((error: unknown) => {
+            throw new AbandonedReviewError(getErrorMessage(error));
+          });
+      }
 
       await this.logRunEvent(runArtifacts, "info", "interaction run started", {
         interactionJobId: job.id,
@@ -335,17 +328,12 @@ export class ReviewWorker {
         context: routingContext,
         mappings,
       });
-      await runRuntime.ensureTriggerCommentReaction({
-        codeReviewId: job.codeReviewId,
-        comment: triggerComment,
-        reactionName: REVIEW_STARTED_REACTION,
-        interactionJobId: job.id,
-      });
-
       const trigger = runtime.buildReviewTriggerContext({
+        job,
         payload: parsedPayload,
         context: routingContext,
         priorDiscussions,
+        mappings,
       });
       const previousInteraction =
         await this.storage.getLatestCompletedInteractionForCodeReview(
@@ -397,7 +385,7 @@ export class ReviewWorker {
         previousInteraction,
       });
 
-      if (interactionPlan.memoryCandidate) {
+      if (interactionPlan.memoryCandidate && trigger.kind !== "manual-review") {
         const memoryResult = await chatterRunner.run(
           {
             attachments: imageAttachments.attachments,
@@ -563,9 +551,10 @@ export class ReviewWorker {
           connection,
           context: hydratedContext.summaryContext,
           mappings,
+          interactionJobId: job.id,
           interactionRunId: interactionRun.id,
           reviewResult,
-          discussionAdapter: runRuntime.createReviewDiscussionAdapter({
+          publicationAdapter: runRuntime.createReviewPublicationAdapter({
             context: hydratedContext,
             interactionRunId: interactionRun.id,
           }),
@@ -594,7 +583,7 @@ export class ReviewWorker {
         );
       }
 
-      if (interactionPlan.replyNeeded) {
+      if (interactionPlan.replyNeeded && trigger.kind !== "manual-review") {
         const replyResult = await chatterRunner.run(
           {
             attachments: imageAttachments.attachments,
@@ -681,14 +670,14 @@ export class ReviewWorker {
         reviewResult ? JSON.stringify(reviewResult) : null,
       );
       await this.storage.markJobCompleted(job.id);
-      if (syncTriggerReaction && triggerComment) {
-        await syncTriggerReaction({
-          codeReviewId: job.codeReviewId,
-          comment: triggerComment,
-          reactionName: REVIEW_COMPLETED_REACTION,
-          interactionJobId: job.id,
-        });
-      }
+      await this.syncTriggerLifecycle(job, "completed", () =>
+        triggerLifecycle.completed(
+          runRuntime.buildTriggerOutcome({
+            reviewResult,
+            reconcileSummary,
+          }),
+        ),
+      );
       this.logger.info(
         {
           interactionJobId: job.id,
@@ -732,6 +721,9 @@ export class ReviewWorker {
           nextRetryCount,
           errorMessage,
         );
+        await this.syncTriggerLifecycle(job, "failed", () =>
+          triggerLifecycle.failed(errorMessage),
+        );
         throw error;
       }
 
@@ -740,6 +732,9 @@ export class ReviewWorker {
         nextRetryCount <= this.maxJobRetries
       ) {
         await this.storage.markJobQueued(job.id, nextRetryCount, errorMessage);
+        await this.syncTriggerLifecycle(job, "retry", () =>
+          triggerLifecycle.retry(errorMessage),
+        );
         this.logger.warn(
           {
             err: error,
@@ -752,14 +747,9 @@ export class ReviewWorker {
       }
 
       await this.storage.markJobFailed(job.id, nextRetryCount, errorMessage);
-      if (syncTriggerReaction && triggerComment) {
-        await syncTriggerReaction({
-          codeReviewId: job.codeReviewId,
-          comment: triggerComment,
-          reactionName: REVIEW_FAILED_REACTION,
-          interactionJobId: job.id,
-        });
-      }
+      await this.syncTriggerLifecycle(job, "failed", () =>
+        triggerLifecycle.failed(errorMessage),
+      );
       throw error;
     } finally {
       if (interactionRunId && runArtifacts && metricsContext) {
@@ -893,7 +883,7 @@ export class ReviewWorker {
 
   private resolvePlatform(platformSlug: string): IPlatform {
     return (
-      getPlatformBySlug(platformSlug) ??
+      this.platformResolver(platformSlug) ??
       (() => {
         throw new Error(`Unknown platform ${platformSlug}`);
       })()
@@ -914,6 +904,7 @@ export class ReviewWorker {
         tenant: input.tenant,
         connection: input.connection,
       },
+      storage: this.storage,
       logger: this.logger,
       memoryEnabled: input.memoryEnabled,
       logging: {
@@ -923,6 +914,25 @@ export class ReviewWorker {
         runDirectory: input.runDirectory,
       },
     });
+  }
+
+  private async syncTriggerLifecycle(
+    job: InteractionJobRecord,
+    phase: string,
+    update: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await update();
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          interactionJobId: job.id,
+          triggerLifecyclePhase: phase,
+        },
+        "failed to synchronize provider trigger lifecycle",
+      );
+    }
   }
 }
 

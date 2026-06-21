@@ -1,0 +1,109 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { ReviewWorker } from "../src/jobs/review-worker.js";
+import { createLogger } from "../src/logger.js";
+import type {
+  IPlatform,
+  PlatformTriggerLifecycle,
+} from "../src/platforms/IPlatform.js";
+
+describe("ReviewWorker provider trigger lifecycle", () => {
+  it("processes commentless jobs and keeps lifecycle failures out of job retry logic", async () => {
+    const lifecycle: PlatformTriggerLifecycle = {
+      queued: vi.fn(async () => {}),
+      inProgress: vi.fn(async () => {
+        throw new Error("status API unavailable");
+      }),
+      completed: vi.fn(async () => {}),
+      retry: vi.fn(async () => {}),
+      failed: vi.fn(async () => {}),
+    };
+    const loadRoutingContext = vi.fn(async () => {
+      throw new Error("runtime boundary reached");
+    });
+    const job = {
+      id: "job-github",
+      tenantId: "tenant-github",
+      dedupeKey: "dedupe",
+      codeReviewId: 42,
+      commentId: null,
+      triggerJson: JSON.stringify({
+        kind: "github-check-run",
+        deliveryId: "delivery-1",
+        checkRunId: 1357,
+        actionIdentifier: "run_review",
+        repositoryId: 2468,
+      }),
+      headSha: "abc123",
+      status: "queued" as const,
+      payloadJson: "{}",
+      retryCount: 0,
+      lastError: null,
+      enqueuedAt: "2026-06-11T00:00:00.000Z",
+      startedAt: null,
+      finishedAt: null,
+    };
+    const tenant = {
+      id: "tenant-github",
+      key: "https://api.github.com::2468",
+      platform: "github",
+      platformConnectionId: "connection-github",
+      platformConfigJson: JSON.stringify({
+        repositoryId: 2468,
+        repositoryFullName: "octo-org/reviewphin",
+      }),
+      modelProfileName: null,
+      createdAt: "2026-06-11T00:00:00.000Z",
+      updatedAt: "2026-06-11T00:00:00.000Z",
+    };
+    const connection = {
+      id: "connection-github",
+      name: "github-main",
+      platform: "github",
+      status: "ready" as const,
+      platformConnectionConfigJson: "{}",
+      createdAt: "2026-06-11T00:00:00.000Z",
+      updatedAt: "2026-06-11T00:00:00.000Z",
+    };
+    const markJobFailed = vi.fn(async () => {});
+    const platform = {
+      createTriggerLifecycle: vi.fn(() => lifecycle),
+    } as unknown as IPlatform;
+    const worker = new ReviewWorker({
+      storage: {
+        stores: {
+          interactionJobs: { get: vi.fn(async () => job) },
+        },
+        markJobInProgress: vi.fn(async () => {}),
+        markJobFailed,
+      } as never,
+      tenantRegistry: {
+        getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
+      } as never,
+      reviewProviderFactory: {} as never,
+      chatterRunnerFactory: {} as never,
+      reconciler: {} as never,
+      logger: createLogger("silent"),
+      runLogDir: "tmp/test-trigger-lifecycle",
+      maxJobRetries: 0,
+      retryBackoffMs: 1000,
+      platformResolver: () => platform,
+      reviewRuntimeFactory: () =>
+        ({
+          loadRoutingContext,
+        }) as never,
+    });
+
+    await expect(worker.processJob(job.id)).rejects.toThrow(
+      "runtime boundary reached",
+    );
+    expect(loadRoutingContext).toHaveBeenCalledWith(job);
+    expect(lifecycle.inProgress).toHaveBeenCalledTimes(1);
+    expect(markJobFailed).toHaveBeenCalledWith(
+      job.id,
+      1,
+      "runtime boundary reached",
+    );
+    expect(lifecycle.failed).toHaveBeenCalledWith("runtime boundary reached");
+  });
+});

@@ -3,7 +3,6 @@ import type {
   CodeReviewDiscussion,
   CodeReviewItem,
   CodeReviewComment,
-  InstructionFile,
   ReviewAttachment,
   ReviewAttachmentIssue,
 } from "./types.js";
@@ -37,7 +36,6 @@ interface BuildScopedReviewContextInput {
   changes: CodeReviewChange[];
   comments: CodeReviewComment[];
   discussions: CodeReviewDiscussion[];
-  instructionFiles: InstructionFile[];
   projectMemory?: ProjectMemoryContext | undefined;
   trigger: ReviewTriggerContext;
   priorDiscussions: ProviderDiscussionContext[];
@@ -74,7 +72,9 @@ export function buildScopedReviewContext(
     input.previousReview?.changesJson ?? null,
   );
   const explicitFullRescan = hasExplicitFullRescanInstruction(
-    input.trigger.instruction,
+    input.trigger.kind === "manual-review"
+      ? null
+      : input.trigger.instruction,
   );
   const mode = determineReviewMode(
     input.trigger,
@@ -82,11 +82,15 @@ export function buildScopedReviewContext(
     explicitFullRescan,
   );
   const priorFindings = input.priorFindings ?? [];
+  const targetDiscussionId =
+    input.trigger.kind === "manual-review"
+      ? null
+      : input.trigger.targetDiscussionId;
   const targetDiscussion =
-    input.trigger.targetDiscussionId !== null
+    targetDiscussionId !== null
       ? (input.priorDiscussions.find(
           (discussion) =>
-            discussion.discussionId === input.trigger.targetDiscussionId,
+            discussion.discussionId === targetDiscussionId,
         ) ?? null)
       : null;
 
@@ -203,7 +207,6 @@ export function buildScopedReviewContext(
     changes: selectedChanges,
     comments: selectedComments,
     discussions: selectedDiscussions,
-    instructionFiles: input.instructionFiles,
     projectMemory: input.projectMemory ?? {
       enabled: false,
       page: null,
@@ -549,7 +552,11 @@ function buildScopeSummary(
   if (input.mode === "incremental-rereview") {
     const parts = [];
 
-    if (input.trigger.kind === "summary-follow-up") {
+    if (input.trigger.kind === "manual-review") {
+      parts.push(
+        "A provider-owned manual action requested another review pass.",
+      );
+    } else if (input.trigger.kind === "summary-follow-up") {
       parts.push(
         "A reply on the bot-owned summary comment requested another review pass.",
       );

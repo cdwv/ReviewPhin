@@ -19,6 +19,9 @@ import type {
   PlatformConnection,
   PlatformConnectionHydrated,
   PlatformConnectionHydratedTwice,
+  ProjectMemory,
+  ProjectMemoryHydrated,
+  ProjectMemoryHydratedTwice,
   ReviewFinding,
   ReviewFindingHydrated,
   ReviewFindingHydratedTwice,
@@ -50,6 +53,9 @@ import {
   type PlatformConnectionFilters,
   type PlatformConnectionOrderField,
   type PlatformConnectionRecord,
+  type ProjectMemoryFilters,
+  type ProjectMemoryOrderField,
+  type ProjectMemoryRecord,
   type ReviewFindingFilters,
   type ReviewFindingOrderField,
   type ReviewFindingRecord,
@@ -63,6 +69,8 @@ import type {
   StorageProviderFactoryContext,
 } from "../../provider.js";
 import ensureV002CtdsExist from "./migrations/v002.js";
+import ensureV003CtdsExist from "./migrations/v003.js";
+import ensureV004CtdsExist from "./migrations/v004.js";
 import { createFlotiqEntityStore } from "./store.js";
 import type { Logger } from "pino";
 
@@ -73,6 +81,10 @@ const flotiqProviderEnvSchema = z.object({
 const tenantRelationFields = {
   platformConnectionId: { contentType: "platform_connection" },
   modelProfileName: { contentType: "model_profile" },
+} as const;
+
+const projectMemoryRelationFields = {
+  tenantId: { contentType: "tenant" },
 } as const;
 
 const interactionJobRelationFields = {
@@ -120,7 +132,7 @@ export function createStorageProvider(
       return "flotiq";
     },
     getSupportedStorageContract() {
-      return "storage-v002";
+      return "storage-v004";
     },
     async open() {
       // Flotiq is accessed over HTTP, so there is no persistent connection.
@@ -129,6 +141,17 @@ export function createStorageProvider(
       const migrations = {
         v002: () =>
           ensureV002CtdsExist(
+            parsedEnv.FLOTIQ_API_KEY,
+            logger?.child({ component: "migrations" }),
+          ),
+        v003: () =>
+          ensureV003CtdsExist(
+            parsedEnv.FLOTIQ_API_KEY,
+            flotiqClient,
+            logger?.child({ component: "migrations" }),
+          ),
+        v004: () =>
+          ensureV004CtdsExist(
             parsedEnv.FLOTIQ_API_KEY,
             logger?.child({ component: "migrations" }),
           ),
@@ -236,6 +259,22 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
       toRecord: mapTenantRecord,
       toRemote: mapTenantEntity,
       relationFields: tenantRelationFields,
+    }),
+    projectMemories: createFlotiqEntityStore<
+      ProjectMemoryRecord,
+      ProjectMemoryFilters,
+      ProjectMemoryOrderField,
+      ProjectMemory,
+      ProjectMemory.FilterableFields,
+      ProjectMemoryHydrated,
+      ProjectMemoryHydratedTwice
+    >({
+      logger: createStoreLogger("projectMemories"),
+      api: flotiqClient.content.project_memory,
+      ctdName: "project_memory",
+      toRecord: mapProjectMemoryRecord,
+      toRemote: mapIdentityEntity,
+      relationFields: projectMemoryRelationFields,
     }),
     interactionJobs: createFlotiqEntityStore<
       InteractionJobRecord,
@@ -428,6 +467,16 @@ function mapTenantEntity(entity: TenantRecord): Record<string, unknown> {
   };
 }
 
+function mapProjectMemoryRecord(entity: ProjectMemory): ProjectMemoryRecord {
+  return {
+    id: readRequiredString(entity, "id"),
+    tenantId: readRequiredRelationId(entity, "tenantId"),
+    entriesJson: readRequiredString(entity, "entriesJson"),
+    createdAt: readInternalTimestamp(entity, "createdAt"),
+    updatedAt: readInternalTimestamp(entity, "updatedAt"),
+  };
+}
+
 function mapInteractionJobRecord(entity: InteractionJob): InteractionJobRecord {
   return {
     id: readRequiredString(entity, "id"),
@@ -438,7 +487,13 @@ function mapInteractionJobRecord(entity: InteractionJob): InteractionJobRecord {
       "codeReviewId",
       "codeReviewId",
     ),
-    commentId: readRequiredNumber(entity, "commentId"),
+    commentId: readNullableNumber(entity, "commentId"),
+    triggerJson:
+      readNullableString(entity, "triggerJson") ??
+      JSON.stringify({
+        kind: "comment",
+        commentId: readRequiredNumber(entity, "commentId"),
+      }),
     headSha: readRequiredString(entity, "headSha"),
     status: readRequiredString(
       entity,

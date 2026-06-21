@@ -12,6 +12,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml tsconfig.json tsconfig.build.json ./
 COPY src ./src
 COPY prompts ./prompts
+COPY public ./public
 
 RUN pnpm install --frozen-lockfile \
   && pnpm build \
@@ -43,6 +44,7 @@ COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prompts ./prompts
+COPY --from=build /app/public ./public
 
 RUN mkdir -p /app/data /app/tmp \
   && printf '#!/bin/sh\nREVIEWPHIN_CLI_COMMAND=reviewphin exec node /app/dist/cli.js "$@"\n' > /usr/local/bin/reviewphin \

@@ -238,4 +238,55 @@ describe("GitLab diff positioning", () => {
       ),
     ).toBeNull();
   });
+
+  it("renders GitLab suggestion offsets relative to the positioned diff line", () => {
+    expect(
+      renderSuggestionMarkdown(
+        {
+          replacement: "const answer = 42;\nreturn answer;",
+          startLine: 8,
+          endLine: 10,
+        },
+        {
+          path: "src/index.ts",
+          startLine: 8,
+          endLine: 10,
+          side: "new",
+        },
+        {
+          base_sha: "base",
+          start_sha: "start",
+          head_sha: "head",
+          position_type: "text",
+          old_path: "src/index.ts",
+          new_path: "src/index.ts",
+          new_line: 9,
+        },
+      ),
+    ).toBe("```suggestion:-1+1\nconst answer = 42;\nreturn answer;\n```");
+
+    expect(
+      renderSuggestionMarkdown(
+        {
+          replacement: "return 42;",
+          startLine: 8,
+          endLine: 8,
+        },
+        {
+          path: "src/index.ts",
+          startLine: 8,
+          endLine: 8,
+          side: "new",
+        },
+        {
+          base_sha: "base",
+          start_sha: "start",
+          head_sha: "head",
+          position_type: "file",
+          old_path: "src/index.ts",
+          new_path: "src/index.ts",
+        },
+      ),
+    ).toBeNull();
+  });
 });

@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import GitLabPlatform from "./gitlab/platform.js";
+import GitHubPlatform from "./github/platform.js";
 import type { IPlatform } from "./IPlatform.js";
 import { createLogger } from "../logger.js";
 import { initializePlatformRuntime } from "./runtime.js";
@@ -31,6 +32,10 @@ export function getPlatforms(): readonly IPlatform[] {
     const logger = createLogger("info");
     platforms = [
       new GitLabPlatform(logger.child({ component: "GitLabPlatform" })),
+      new GitHubPlatform({
+        logger: logger.child({ component: "GitHubPlatform" }),
+        publicUrl: "http://localhost:3000",
+      }),
     ];
   }
   return platforms;

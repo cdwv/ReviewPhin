@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ProjectMemoryConsolidator } from "../src/memory/consolidator.js";
+import type { ProjectMemoryBackend } from "../src/memory/backend.js";
 import { ProjectMemoryService } from "../src/memory/service.js";
 
 interface MemoryServiceTestLogger {
@@ -327,20 +328,13 @@ function createService(input?: {
   tenant?: {
     id: string;
     memoryEnabled: boolean;
-    projectMemoryBackend: {
-      load: ReturnType<typeof vi.fn>;
-      saveEntries: ReturnType<typeof vi.fn>;
-    };
+    projectMemoryBackend: Pick<ProjectMemoryBackend, "load" | "saveEntries">;
   };
-  backend?: {
-    load: ReturnType<typeof vi.fn>;
-    saveEntries: ReturnType<typeof vi.fn>;
-  };
+  backend?: Pick<ProjectMemoryBackend, "load" | "saveEntries">;
   consolidator?: ProjectMemoryConsolidator;
 }) {
-  return new ProjectMemoryService({
-    logger: (input?.logger ?? createLogger()) as never,
-    backend: input?.backend ?? {
+  const backend = withCapability(
+    input?.backend ?? {
       load: vi.fn(async () => ({
         enabled: true,
         page: null,
@@ -352,6 +346,10 @@ function createService(input?: {
         entries,
       })),
     },
+  );
+  return new ProjectMemoryService({
+    logger: (input?.logger ?? createLogger()) as never,
+    backend,
     consolidator:
       input?.consolidator ??
       ({
@@ -370,22 +368,18 @@ function createService(input?: {
       providerType: null,
     },
     tenant:
-      input?.tenant ??
+      (input?.tenant
+        ? {
+            ...input.tenant,
+            projectMemoryBackend: withCapability(
+              input.tenant.projectMemoryBackend,
+            ),
+          }
+        : undefined) ??
       ({
         id: "tenant_1",
         memoryEnabled: true,
-        projectMemoryBackend: input?.backend ?? {
-          load: vi.fn(async () => ({
-            enabled: true,
-            page: null,
-            entries: [],
-          })),
-          saveEntries: vi.fn(async (entries) => ({
-            enabled: true,
-            page: null,
-            entries,
-          })),
-        },
+        projectMemoryBackend: backend,
       } as const),
     logging: {
       interactionRunId: "run_1",
@@ -394,6 +388,18 @@ function createService(input?: {
     },
     maxPromptMemoryChars: 5_000,
   });
+}
+
+function withCapability(
+  backend: Pick<ProjectMemoryBackend, "load" | "saveEntries">,
+): ProjectMemoryBackend {
+  return {
+    getCapability: vi.fn(async () => ({
+      implemented: true as const,
+      available: true as const,
+    })),
+    ...backend,
+  };
 }
 
 function createLogger() {

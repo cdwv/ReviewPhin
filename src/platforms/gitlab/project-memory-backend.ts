@@ -5,13 +5,21 @@ import { GitLabClient } from "./client.js";
 import type { GitLabClient as GitLabClientContract } from "./client.js";
 import type { HarnessRunLoggingContext } from "../../harness/types.js";
 import {
+  areProjectMemoryEntriesEqual,
+  mergeConcurrentProjectMemoryEntries,
+} from "../../memory/backend-utils.js";
+import {
   createDisabledProjectMemoryBackend,
   type ProjectMemoryBackend,
+  type ProjectMemoryCapability,
   type ProjectMemorySaveOptions,
 } from "../../memory/backend.js";
 import {
+  deleteStoreProjectMemory,
+  InStoreMemoryProvider,
+} from "../../memory/store-backend.js";
+import {
   dedupeProjectMemoryEntries,
-  normalizeProjectMemoryText,
   parseProjectMemoryContent,
   renderProjectMemory,
 } from "../../memory/project-memory.js";
@@ -25,6 +33,7 @@ import {
   REVIEWPHIN_MEMORY_PAGE_TITLE,
 } from "../../memory/types.js";
 import type { ResolvedTenant } from "../IPlatform.js";
+import type { StorageStores } from "../../storage/contract/index.js";
 import {
   getGitLabConnectionConfig,
   getGitLabTenantConfig,
@@ -35,6 +44,7 @@ export function createGitLabProjectMemoryBackendForTenant(input: {
   logger: Logger;
   logging?: HarnessRunLoggingContext | undefined;
   enabled: boolean;
+  stores: Pick<StorageStores, "projectMemories">;
 }): ProjectMemoryBackend {
   const tenantConfig = getGitLabTenantConfig(input.resolvedTenant.tenant);
   const connectionConfig = getGitLabConnectionConfig(
@@ -54,23 +64,82 @@ export function createGitLabProjectMemoryBackendForTenant(input: {
   return createGitLabProjectMemoryBackend({
     client,
     projectId: tenantConfig.projectId,
+    tenantId: input.resolvedTenant.tenant.id,
     enabled: input.enabled,
+    stores: input.stores,
+    logger: input.logger,
   });
 }
 
 export function createGitLabProjectMemoryBackend(input: {
   client: GitLabClientContract;
   projectId: number;
+  tenantId: string;
   enabled: boolean;
+  stores: Pick<StorageStores, "projectMemories">;
+  logger?: Logger | undefined;
 }): ProjectMemoryBackend {
   if (!input.enabled) {
     return createDisabledProjectMemoryBackend();
   }
 
-  return new GitLabWikiProjectMemoryBackend({
-    client: input.client,
-    projectId: input.projectId,
-  });
+  return new GitLabProjectMemorySelectionBackend(input);
+}
+
+class GitLabProjectMemorySelectionBackend implements ProjectMemoryBackend {
+  public constructor(
+    private readonly options: {
+      client: GitLabClientContract;
+      projectId: number;
+      tenantId: string;
+      stores: Pick<StorageStores, "projectMemories">;
+      logger?: Logger | undefined;
+    },
+  ) {}
+
+  public async getCapability(): Promise<ProjectMemoryCapability> {
+    return (await this.resolveBackend()).getCapability();
+  }
+
+  public async load(): Promise<ProjectMemoryContext> {
+    return (await this.resolveBackend()).load();
+  }
+
+  public async saveEntries(
+    entries: ProjectMemoryEntry[],
+    options: ProjectMemorySaveOptions = {},
+  ): Promise<ProjectMemoryContext> {
+    return (await this.resolveBackend()).saveEntries(entries, options);
+  }
+
+  private async resolveBackend(): Promise<ProjectMemoryBackend> {
+    const project = await this.options.client.getProject(this.options.projectId);
+    if (gitLabProjectHasWiki(project)) {
+      if (await this.options.stores.projectMemories.get(this.options.tenantId)) {
+        await deleteStoreProjectMemory({
+          stores: this.options.stores,
+          tenantId: this.options.tenantId,
+        });
+        this.options.logger?.info(
+          {
+            tenantId: this.options.tenantId,
+            projectId: this.options.projectId,
+          },
+          "deleted store-backed project memory because GitLab wiki is enabled",
+        );
+      }
+
+      return new GitLabWikiProjectMemoryBackend({
+        client: this.options.client,
+        projectId: this.options.projectId,
+      });
+    }
+
+    return new InStoreMemoryProvider({
+      stores: this.options.stores,
+      tenantId: this.options.tenantId,
+    });
+  }
 }
 
 export class GitLabWikiProjectMemoryBackend implements ProjectMemoryBackend {
@@ -83,6 +152,22 @@ export class GitLabWikiProjectMemoryBackend implements ProjectMemoryBackend {
   }) {
     this.client = options.client;
     this.projectId = options.projectId;
+  }
+
+  public async getCapability(): Promise<ProjectMemoryCapability> {
+    try {
+      await resolveProjectMemoryPage(this.client, this.projectId);
+      return { implemented: true, available: true };
+    } catch (error) {
+      return {
+        implemented: true,
+        available: false,
+        reason:
+          error instanceof Error
+            ? error.message
+            : "GitLab project wiki is unavailable",
+      };
+    }
   }
 
   public async load(): Promise<ProjectMemoryContext> {
@@ -103,7 +188,7 @@ export class GitLabWikiProjectMemoryBackend implements ProjectMemoryBackend {
       options.baseEntries &&
       !areEntriesEqual(currentMemory.entries, options.baseEntries)
     ) {
-      const nextEntries = mergeConcurrentEntries(
+      const nextEntries = mergeConcurrentProjectMemoryEntries(
         entries,
         currentMemory.entries,
         options.baseEntries,
@@ -153,33 +238,21 @@ function areEntriesEqual(
   left: ProjectMemoryEntry[],
   right: ProjectMemoryEntry[],
 ): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return areProjectMemoryEntriesEqual(left, right);
 }
 
-function mergeConcurrentEntries(
-  consolidatedEntries: ProjectMemoryEntry[],
-  currentEntries: ProjectMemoryEntry[],
-  baseEntries: ProjectMemoryEntry[],
-): ProjectMemoryEntry[] | null {
-  const baseKeys = new Set(
-    baseEntries.map((entry) => normalizeProjectMemoryText(entry.text)),
-  );
-  const currentKeys = new Set(
-    currentEntries.map((entry) => normalizeProjectMemoryText(entry.text)),
-  );
-  for (const baseKey of baseKeys) {
-    if (!currentKeys.has(baseKey)) {
-      return null;
-    }
+function gitLabProjectHasWiki(project: {
+  wiki_enabled?: boolean | undefined;
+  wiki_access_level?: string | undefined;
+}): boolean {
+  if (project.wiki_enabled === true) {
+    return true;
   }
 
-  const preservedEntries = currentEntries.filter(
-    (entry) => !baseKeys.has(normalizeProjectMemoryText(entry.text)),
+  return (
+    project.wiki_access_level === "enabled" ||
+    project.wiki_access_level === "private"
   );
-  return dedupeProjectMemoryEntries([
-    ...consolidatedEntries,
-    ...preservedEntries,
-  ]);
 }
 
 async function resolveProjectMemoryPage(

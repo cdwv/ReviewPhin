@@ -8,18 +8,18 @@ import type {
 } from "../harness/types.js";
 import type {
   ChatterBatchResult,
+  CommentReviewTriggerContext,
   ReplyStyle,
   ResponseTarget,
   ReviewContext,
   ReviewResult,
-  ReviewTriggerContext,
   ReviewerReplyHandoff,
 } from "./types.js";
 import { chatterBatchResultSchema } from "./types.js";
 
 export interface ChatterRunContext {
   attachments?: HarnessRunAttachments | undefined;
-  trigger: ReviewTriggerContext;
+  trigger: CommentReviewTriggerContext;
   responseTargets: ResponseTarget[];
   projectMemory: ProjectMemoryContext;
   replyStyle: ReplyStyle;

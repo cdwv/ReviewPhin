@@ -3,10 +3,6 @@ import type {
   GitLabMergeRequestChange,
   GitLabMergeRequestVersion,
 } from "./types.js";
-import {
-  appendSuggestion as appendReviewSuggestion,
-  renderSuggestionMarkdown as renderReviewSuggestionMarkdown,
-} from "../../review/discussion-format.js";
 
 export interface LineAnchorLike {
   path: string;
@@ -201,13 +197,44 @@ function lineOverlapsAnchor(
 export function renderSuggestionMarkdown(
   suggestion: SuggestionLike | null | undefined,
   anchor: LineAnchorLike | null | undefined,
+  position?: GitLabDiffPosition | null,
 ): string | null {
-  return renderReviewSuggestionMarkdown(suggestion, anchor);
+  if (!suggestion || !anchor || anchor.side !== "new") {
+    return null;
+  }
+  const commentLine =
+    position === undefined
+      ? anchor.startLine
+      : position?.position_type === "text" &&
+          typeof position.new_line === "number"
+        ? position.new_line
+        : null;
+  if (commentLine === null) {
+    return null;
+  }
+  if (
+    commentLine < anchor.startLine ||
+    commentLine > anchor.endLine ||
+    commentLine < suggestion.startLine ||
+    commentLine > suggestion.endLine
+  ) {
+    return null;
+  }
+  const linesAbove = commentLine - suggestion.startLine;
+  const linesBelow = suggestion.endLine - commentLine;
+  if (linesAbove > 100 || linesBelow > 100) {
+    return null;
+  }
+  return [
+    `\`\`\`suggestion:-${linesAbove}+${linesBelow}`,
+    suggestion.replacement.replace(/\r\n/g, "\n").trimEnd(),
+    "```",
+  ].join("\n");
 }
 
 export function appendSuggestion(
   body: string,
   suggestionMarkdown: string | null,
 ): string {
-  return appendReviewSuggestion(body, suggestionMarkdown);
+  return suggestionMarkdown ? `${body.trim()}\n\n${suggestionMarkdown}` : body;
 }

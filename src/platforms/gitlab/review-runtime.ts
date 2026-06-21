@@ -10,6 +10,7 @@ import type {
   ResolvedTenant,
 } from "../IPlatform.js";
 import { buildProviderDiscussions } from "../../reconcile/discussion-reconciler.js";
+import type { ReconcileSummary } from "../../reconcile/discussion-reconciler.js";
 import type {
   CodeReviewChange,
   CodeReviewDiscussion,
@@ -19,6 +20,7 @@ import type {
   ProviderDiscussionContext,
   ResponseTarget,
   ReviewContext,
+  ReviewResult,
   TriggerCommentReference,
 } from "../../review/types.js";
 import { buildScopedReviewContext } from "../../review/review-scope.js";
@@ -38,9 +40,9 @@ import {
   materializeGitLabImageAttachments,
 } from "./image-attachments.js";
 import {
-  GitLabReviewDiscussionAdapter,
+  GitLabReviewPublicationAdapter,
   toPlatformReviewDiscussion,
-} from "./review-discussion-adapter.js";
+} from "./review-publication-adapter.js";
 import {
   getGitLabConnectionConfig,
   getGitLabTenantConfig,
@@ -147,9 +149,11 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   }
 
   public buildReviewTriggerContext(input: {
+    job: InteractionJobRecord;
     payload: unknown;
     context: PlatformReviewRoutingContext;
     priorDiscussions: ProviderDiscussionContext[];
+    mappings: DiscussionMappingRecord[];
   }): ReviewContext["trigger"] {
     const context = this.unwrapContext(input.context);
     return buildGitLabReviewTriggerContext({
@@ -200,7 +204,6 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
           getGitLabConnectionConfig(this.resolvedTenant.connection).botUserId,
         ),
       ),
-      instructionFiles: context.workspace.instructionFiles,
       projectMemory: context.projectMemory,
       trigger: input.trigger,
       priorDiscussions: buildProviderDiscussions({
@@ -335,11 +338,11 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     return syncedMappings;
   }
 
-  public createReviewDiscussionAdapter(input: {
+  public createReviewPublicationAdapter(input: {
     context: PlatformReviewRoutingContext;
     interactionRunId: string;
   }) {
-    return new GitLabReviewDiscussionAdapter({
+    return new GitLabReviewPublicationAdapter({
       tenant: this.tenant,
       botUserId: getGitLabConnectionConfig(this.resolvedTenant.connection)
         .botUserId,
@@ -353,6 +356,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   public async resolveTriggerCommentReference(input: {
     codeReviewId: number;
     commentId: number;
+    triggerJson?: string | undefined;
   }): Promise<TriggerCommentReference> {
     const tenantConfig = getGitLabTenantConfig(this.tenant);
     const [notes, discussions] = await Promise.all([
@@ -384,56 +388,6 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     return locateTriggerCommentReference(discussions, input.commentId);
   }
 
-  public async ensureTriggerCommentReaction(input: {
-    codeReviewId: number;
-    comment: TriggerCommentReference;
-    reactionName: string;
-    interactionJobId: string;
-  }): Promise<void> {
-    if (input.comment.kind === "discussion-comment") {
-      return;
-    }
-
-    try {
-      const tenantConfig = getGitLabTenantConfig(this.tenant);
-      const existing = await this.client.listTriggerNoteAwardEmojis(
-        tenantConfig.projectId,
-        input.codeReviewId,
-        input.comment,
-      );
-      const hasReaction = existing.some(
-        (award) =>
-          award.name === input.reactionName &&
-          isBotUser(
-            award.user,
-            getGitLabConnectionConfig(this.resolvedTenant.connection).botUserId,
-          ),
-      );
-      if (hasReaction) {
-        return;
-      }
-
-      await this.client.createTriggerNoteAwardEmoji(
-        tenantConfig.projectId,
-        input.codeReviewId,
-        input.comment,
-        input.reactionName,
-      );
-    } catch (error) {
-      this.logger.warn(
-        {
-          err: error,
-          tenantId: this.tenant.id,
-          interactionJobId: input.interactionJobId,
-          codeReviewId: input.codeReviewId,
-          comment: input.comment,
-          reactionName: input.reactionName,
-        },
-        "failed to synchronize trigger-comment reaction",
-      );
-    }
-  }
-
   public async materializeAttachments(input: {
     context: PlatformReviewRoutingContext;
     trigger: ReviewContext["trigger"];
@@ -443,6 +397,14 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     breadcrumbs: ReviewContext["attachments"];
     issues: ReviewContext["attachmentIssues"];
   }> {
+    if (input.trigger.kind === "manual-review") {
+      return {
+        attachments: [],
+        breadcrumbs: [],
+        issues: [],
+      };
+    }
+
     const context = this.unwrapContext(input.context);
     const references = discoverGitLabImageAttachmentReferences({
       gitLabBaseUrl: getGitLabConnectionConfig(this.resolvedTenant.connection)
@@ -569,6 +531,20 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     }
 
     return outcomes;
+  }
+
+  public buildTriggerOutcome(input: {
+    reviewResult: ReviewResult | null;
+    reconcileSummary: ReconcileSummary | null;
+  }) {
+    if (!input.reviewResult) {
+      return undefined;
+    }
+    return {
+      summary:
+        input.reviewResult.overview.overallAssessment ??
+        input.reviewResult.overview.summary,
+    };
   }
 
   public async cleanupWorkspace(

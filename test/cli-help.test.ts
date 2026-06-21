@@ -123,4 +123,40 @@ describe("CLI help", () => {
     expect(text).toContain("pnpm cli model-profile remove ");
     expect(text).not.toContain("pnpm cli model-profile add ");
   });
+
+  it("generates platform connection options from registration schemas", async () => {
+    vi.stubEnv("REVIEWPHIN_CLI_COMMAND", "pnpm cli");
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    await expect(
+      runCli(["platform", "connection", "add", "--help"]),
+    ).resolves.toBe(0);
+
+    const help = output.mock.calls.join("");
+    expect(help).toContain(
+      "pnpm cli platform connection add --name <name> --platform gitlab --base-url <value> --api-token <value> [--bot-user-id <value>] [--bot-username <value>] [--recreate]",
+    );
+    expect(help).toContain(
+      "pnpm cli platform connection add --name <name> --platform github --owner <value> [--api-url <value>] [--recreate]",
+    );
+    expect(help).not.toContain("[provider options]");
+  });
+
+  it("shows platform connection update schema options as patches", async () => {
+    vi.stubEnv("REVIEWPHIN_CLI_COMMAND", "pnpm cli");
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    await expect(
+      runCli(["platform", "connection", "update", "--help"]),
+    ).resolves.toBe(0);
+
+    const help = output.mock.calls.join("");
+    expect(help).toContain(
+      "pnpm cli platform connection update --connection <name-or-id> [--base-url <value>] [--api-token <value>] [--bot-user-id <value>] [--bot-username <value>]",
+    );
+    expect(help).toContain(
+      "pnpm cli platform connection update --connection <name-or-id> [--owner <value>] [--api-url <value>]",
+    );
+    expect(help).not.toContain("[provider options]");
+  });
 });

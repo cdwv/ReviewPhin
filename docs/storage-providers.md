@@ -18,7 +18,7 @@ In Docker, the `./data` directory is mounted as a persistent volume. The default
 
 ### Migrations
 
-The SQLite adapter runs idempotent schema migrations on startup. No manual migration step is needed. The migration history is tracked in the database itself.
+The SQLite adapter runs idempotent schema migrations on startup. No manual migration step is needed. The migration history is tracked in the database itself. In the source tree, each migration is isolated in its own versioned module under `src/storage/adapters/sqlite/migrations/`.
 
 ### Backup and portability
 
@@ -113,7 +113,7 @@ The storage layer is designed to be extended. To implement your own adapter (Pos
 
    ```ts
    getSupportedStorageContract(): string {
-     return "storage-v002";
+     return "storage-v004";
    }
    ```
 
@@ -124,6 +124,18 @@ The storage layer is designed to be extended. To implement your own adapter (Pos
 5. Set `STORAGE_PROVIDER_MODULE` to your adapter's module path or package name.
 
 See `src/storage/adapters/README.md` in the repository for the full adapter author guide, and `src/storage/adapters/sqlite/` for a reference implementation.
+
+`storage-v003` adds `InteractionJobRecord.triggerJson` for provider-owned
+trigger identity and makes `commentId` nullable. SQLite migration
+`sqlite:0009_v3_provider_triggers` preserves every existing job and synthesizes
+GitLab trigger JSON from its existing comment id. The Flotiq v003 migration
+pages through existing interaction jobs, backfills missing trigger JSON in
+batches, and makes `triggerJson` required in the final content type definition.
+
+`storage-v004` adds `ProjectMemoryRecord` and the `projectMemories` store.
+There is at most one project memory record per tenant, with `id` equal to the
+tenant id. Built-in adapters delete that row as part of tenant deletion and
+include it in tenant deletion summaries.
 
 ---
 

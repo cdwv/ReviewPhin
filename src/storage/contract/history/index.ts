@@ -57,6 +57,30 @@ export const STORAGE_CONTRACT_HISTORY = [
       "SQLite migrates reusable GitLab credentials out of tenant config.",
     ],
   },
+  {
+    id: "storage-v003",
+    summary:
+      "Provider-owned interaction trigger identity with nullable comment references.",
+    changeKind: "breaking",
+    affectedSurfaces: ["interaction-jobs"],
+    providerNotes: [
+      "Adapters add triggerJson without removing or renaming historical fields.",
+      "Existing GitLab jobs derive triggerJson from their preserved commentId.",
+      "commentId remains available but becomes nullable for triggers without a comment.",
+    ],
+  },
+  {
+    id: "storage-v004",
+    summary:
+      "First-class store-backed project memory records scoped one-to-one to tenants.",
+    changeKind: "additive",
+    affectedSurfaces: ["project-memories", "tenants"],
+    providerNotes: [
+      "Adapters add a project memory store keyed by tenant id.",
+      "Each tenant may have at most one project memory record.",
+      "Tenant deletion removes the tenant project memory record and reports its count.",
+    ],
+  },
 ] as const satisfies readonly StorageContractRevisionMetadata[];
 
 export type StorageContractRevisionId =

@@ -2,9 +2,11 @@ import z from "zod";
 import type { Logger } from "pino";
 import type { HarnessRunLoggingContext } from "../../harness/types.js";
 import type {
+  InteractionJobRecord,
   PlatformConnectionRecord,
   TenantRecord,
 } from "../../storage/contract/current.js";
+import type { WebhookReviewTrigger } from "../../review/types.js";
 import type { InteractionRunArtifacts } from "../../review/run-artifacts.js";
 import type { StorageHelpers } from "../../storage/storage-helpers.js";
 import type {
@@ -30,6 +32,7 @@ import {
 } from "./tenant-config.js";
 import { classifyGitLabWebhookTrigger } from "./trigger.js";
 import { GitLabReviewRuntime } from "./review-runtime.js";
+import { GitLabTriggerLifecycle } from "./trigger-lifecycle.js";
 import { createGitLabProjectMemoryBackendForTenant } from "./project-memory-backend.js";
 
 function validateTenantBot(botInfo: unknown): botInfo is {
@@ -108,6 +111,25 @@ export default class GitLabPlatform implements IPlatform {
   ): Promise<"ready"> {
     return this.onBeforeAddConnection(connectionConfig);
   }
+  async onBeforeRecreateConnection(
+    _connection: PlatformConnectionRecord,
+    connectionConfig: Record<string, unknown>,
+  ) {
+    const status = await this.onBeforeAddConnection(connectionConfig);
+    return {
+      status,
+      notices: [
+        "Existing GitLab project webhooks and access tokens are not changed by recreating this local connection.",
+        "Remove obsolete project webhooks manually and revoke any dedicated access token that is no longer used.",
+      ],
+    };
+  }
+  onBeforeRemoveConnection(): readonly string[] {
+    return [
+      "Remove this connection's webhooks from the affected GitLab projects manually.",
+      "Revoke the GitLab access token if it was dedicated to this connection and is no longer used.",
+    ];
+  }
   async identifyTenantKey(payload: unknown): Promise<string | null> {
     const parseResult = this.tryParseNoteHookPayload(payload);
     if (!parseResult) {
@@ -154,14 +176,20 @@ export default class GitLabPlatform implements IPlatform {
   async createInteractionJob(input: {
     resolvedTenant: ResolvedTenant;
     payload: unknown;
+    trigger: WebhookReviewTrigger;
+    storage: StorageHelpers;
   }): Promise<{
     dedupeKey: string;
     codeReviewId: number;
-    commentId: number;
+    commentId: number | null;
+    triggerJson: string;
     headSha: string;
     payloadJson: string;
   }> {
     const parsedPayload = parseGitLabNoteHook(input.payload);
+    if (!("comment" in input.trigger)) {
+      throw new Error("GitLab interaction jobs require a comment trigger");
+    }
     const tenantConfig = getGitLabTenantConfig(input.resolvedTenant.tenant);
     const connectionConfig = getGitLabConnectionConfig(
       input.resolvedTenant.connection,
@@ -178,9 +206,24 @@ export default class GitLabPlatform implements IPlatform {
       }),
       codeReviewId: parsedPayload.merge_request.iid,
       commentId: parsedPayload.object_attributes.id,
+      triggerJson: JSON.stringify({
+        kind: "gitlab-comment",
+        comment: input.trigger.comment,
+      }),
       headSha: extractWebhookHeadSha(parsedPayload),
       payloadJson: JSON.stringify(parsedPayload),
     };
+  }
+  createTriggerLifecycle(input: {
+    resolvedTenant: ResolvedTenant;
+    job: InteractionJobRecord;
+    logger: Logger;
+  }) {
+    return new GitLabTriggerLifecycle(
+      input.resolvedTenant,
+      input.job,
+      input.logger,
+    );
   }
   getReviewSummaryInstructions(resolvedTenant: ResolvedTenant): string[] {
     const connectionConfig = getGitLabConnectionConfig(
@@ -213,8 +256,21 @@ export default class GitLabPlatform implements IPlatform {
     }
     return new GitLabReviewRuntime({ ...input, resolvedTenant });
   }
+  createProjectMemoryBackend(input: {
+    resolvedTenant: ResolvedTenant;
+    storage: StorageHelpers;
+    logger: Logger;
+    enabled: boolean;
+    logging?: HarnessRunLoggingContext | undefined;
+  }) {
+    return createGitLabProjectMemoryBackendForTenant({
+      ...input,
+      stores: input.storage.stores,
+    });
+  }
   buildHarnessTenantContext(input: {
     resolvedTenant: ResolvedTenant;
+    storage: StorageHelpers;
     logger: Logger;
     memoryEnabled: boolean;
     logging?: HarnessRunLoggingContext | undefined;
@@ -222,8 +278,9 @@ export default class GitLabPlatform implements IPlatform {
     return {
       id: input.resolvedTenant.tenant.id,
       memoryEnabled: input.memoryEnabled,
-      projectMemoryBackend: createGitLabProjectMemoryBackendForTenant({
+      projectMemoryBackend: this.createProjectMemoryBackend({
         resolvedTenant: input.resolvedTenant,
+        storage: input.storage,
         logger: input.logger,
         logging: input.logging,
         enabled: input.memoryEnabled,

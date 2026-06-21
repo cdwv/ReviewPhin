@@ -18,7 +18,6 @@ describe("CodeReviewContextHydrator project memory", () => {
         rootPath: tmpPath("workspace"),
         cleanupRoot: tmpPath("cleanup"),
         strategy: "git" as const,
-        instructionFiles: [],
       })),
     };
     const hydrator = new CodeReviewContextHydrator({
@@ -52,6 +51,7 @@ describe("CodeReviewContextHydrator project memory", () => {
         dedupeKey: "dedupe",
         codeReviewId: 7,
         commentId: 55,
+        triggerJson: '{"kind":"comment","commentId":55}',
         headSha: "abc123",
         status: "queued",
         payloadJson: "{}",
@@ -103,6 +103,7 @@ describe("CodeReviewContextHydrator project memory", () => {
           page: null,
           entries: [],
         }),
+        instructionsJson: "[]",
       }),
     );
   });
