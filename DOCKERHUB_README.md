@@ -202,6 +202,13 @@ docker compose run --rm worker reviewphin tenant add \
 
 From a local checkout, use the same `platform connection add` and `tenant add` arguments with `pnpm cli`. See [CLI reference](./docs/CLI.md#platform-connection) for the full GitHub connection lifecycle.
 
+During local development, `pnpm dev` logs a
+`http://localhost:<PORT>/github/setup/samples` URL for previewing the GitHub
+setup screens without creating a setup token or starting the GitHub App flow.
+The sample pages use example data and are served outside `/setup/github`, so
+they do not touch storage, call GitHub, or complete any setup step. These
+sample routes are not mounted by the production server.
+
 ### 4. Add the webhook in GitLab
 
 In the project's **Settings → Webhooks**:
@@ -350,24 +357,25 @@ The reviewer selects one of three modes based on trigger context:
 
 ## Environment variables
 
-| Variable                                             | Default                          | Description                                                                                 |
-| ---------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------- |
-| `PORT`                                               | `3000`                           | HTTP port                                                                                   |
-| `HOST`                                               | `0.0.0.0`                        | Bind address                                                                                |
-| `LOG_LEVEL`                                          | `info`                           | `fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` \| `silent`                    |
-| `STORAGE_PROVIDER_MODULE`                            | built-in SQLite                  | Module path or package name for a custom storage adapter                                    |
-| `PLATFORM_MODULES`                                   | `gitlab,github`                  | Comma-separated platform provider modules. Supports built-ins, paths, and packages          |
-| `SQLITE_DATABASE_PATH`                               | `./data/review-worker.sqlite`    | SQLite file path (ignored when a custom storage module is set)                              |
-| `RUN_LOG_DIR`                                        | `./data/run-logs`                | Root directory for per-review run artifacts                                                 |
-| `WORKSPACE_ROOT`                                     | `./tmp/review-workspaces`        | Scratch directory for hydrated repositories                                                 |
-| `MAX_JOB_RETRIES`                                    | `3`                              | Retry attempts for failed review jobs                                                       |
-| `RETRY_BACKOFF_MS`                                   | `5000`                           | Delay (ms) between retries                                                                  |
-| `COPILOT_TIMEOUT_MS`                                 | `180000`                         | Model session timeout in milliseconds                                                       |
-| `COPILOT_SDK_LOG_LEVEL`                              | _(none)_                         | SDK log verbosity: `none` \| `error` \| `warning` \| `info` \| `debug` \| `all`             |
-| `COPILOT_CLI_PATH`                                   | `/usr/local/bin/copilot` (image) | Path to the Copilot CLI binary                                                              |
-| `REVIEWPHIN_MEMORY_ENABLED`                          | `true`                           | Enable per-project memory                                                                   |
-| `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS`                 | `5000`                           | Character budget for injected project memory                                                |
-| `GH_TOKEN` / `GITHUB_TOKEN` / `COPILOT_GITHUB_TOKEN` | _(required for Copilot mode)_    | GitHub PAT with **Copilot Requests** permission                                             |
+| Variable                                             | Default                          | Description                                                                        |
+| ---------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------- |
+| `PORT`                                               | `3000`                           | HTTP port                                                                          |
+| `HOST`                                               | `0.0.0.0`                        | Bind address                                                                       |
+| `PUBLIC_URL`                                         | `http://localhost:<PORT>`        | Public app URL used to print initial provider setup links                          |
+| `LOG_LEVEL`                                          | `info`                           | `fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` \| `silent`           |
+| `STORAGE_PROVIDER_MODULE`                            | built-in SQLite                  | Module path or package name for a custom storage adapter                           |
+| `PLATFORM_MODULES`                                   | `gitlab,github`                  | Comma-separated platform provider modules. Supports built-ins, paths, and packages |
+| `SQLITE_DATABASE_PATH`                               | `./data/review-worker.sqlite`    | SQLite file path (ignored when a custom storage module is set)                     |
+| `RUN_LOG_DIR`                                        | `./data/run-logs`                | Root directory for per-review run artifacts                                        |
+| `WORKSPACE_ROOT`                                     | `./tmp/review-workspaces`        | Scratch directory for hydrated repositories                                        |
+| `MAX_JOB_RETRIES`                                    | `3`                              | Retry attempts for failed review jobs                                              |
+| `RETRY_BACKOFF_MS`                                   | `5000`                           | Delay (ms) between retries                                                         |
+| `COPILOT_TIMEOUT_MS`                                 | `180000`                         | Model session timeout in milliseconds                                              |
+| `COPILOT_SDK_LOG_LEVEL`                              | _(none)_                         | SDK log verbosity: `none` \| `error` \| `warning` \| `info` \| `debug` \| `all`    |
+| `COPILOT_CLI_PATH`                                   | `/usr/local/bin/copilot` (image) | Path to the Copilot CLI binary                                                     |
+| `REVIEWPHIN_MEMORY_ENABLED`                          | `true`                           | Enable per-project memory                                                          |
+| `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS`                 | `5000`                           | Character budget for injected project memory                                       |
+| `GH_TOKEN` / `GITHUB_TOKEN` / `COPILOT_GITHUB_TOKEN` | _(required for Copilot mode)_    | GitHub PAT with **Copilot Requests** permission                                    |
 
 For model profile setup (BYOK providers, Azure OpenAI, etc.) see [Model providers](./docs/model-providers.md).
 For custom storage adapters see [Storage providers](./docs/storage-providers.md).
@@ -377,9 +385,10 @@ For custom code review platform providers see [Code review platform providers](d
 
 ## Routes
 
-| Method | Path                    | Description                                                         |
-| ------ | ----------------------- | ------------------------------------------------------------------- |
-| `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}`                           |
+| Method | Path                    | Description                                                                        |
+| ------ | ----------------------- | ---------------------------------------------------------------------------------- |
+| `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}`                                          |
 | `POST` | `/webhooks/<platform>`  | Platform webhook receiver. Built-ins use `/webhooks/gitlab` and `/webhooks/github` |
-| `*`    | `/setup/<platform>`     | Optional platform setup handler when the provider exposes one       |
-| `POST` | `/webhooks/gitlab/note` | Deprecated GitLab compatibility alias                               |
+| `*`    | `/setup/<platform>`     | Optional platform setup handler when the provider exposes one                      |
+| `GET`  | `/github/setup/samples` | Dev-server-only GitHub setup template previews with example data                   |
+| `POST` | `/webhooks/gitlab/note` | Deprecated GitLab compatibility alias                                              |

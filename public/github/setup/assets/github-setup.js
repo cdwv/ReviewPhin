@@ -92,8 +92,9 @@
       iconUrl.value = page.publicUrl + "/favicon.png";
       manifestInput.value = JSON.stringify(manifest);
       preview.textContent = JSON.stringify(manifest, null, 2);
-      form.action =
-        ownerType.value === "organization"
+      form.action = page.sample
+        ? "#"
+        : ownerType.value === "organization"
           ? "https://github.com/organizations/" +
             encodeURIComponent(page.owner) +
             "/settings/apps/new?state=" +
@@ -102,6 +103,11 @@
     }
 
     form.addEventListener("input", update);
+    if (page.sample) {
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+      });
+    }
     update();
   }
 

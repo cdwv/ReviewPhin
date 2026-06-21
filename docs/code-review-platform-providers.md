@@ -54,6 +54,13 @@ GitHub API, validates the installation account, and confirms installation-token
 access by listing repositories. Only then does it invalidate the setup token
 and mark the connection `ready`.
 
+For template review during local development, `pnpm dev` also serves and logs
+`http://localhost:<PORT>/github/setup/samples`. That gallery renders the
+GitHub setup pages with example data and is intentionally outside
+`/setup/github`, so viewing it does not require a setup token, read or mutate
+storage, contact GitHub, or advance a connection through the setup flow. The
+sample gallery is not mounted by the production server.
+
 GitHub project memory uses the configured ReviewPhin storage provider. It does
 not read or write repository wiki pages for memory, and the generated GitHub
 App does not request repository contents write access for memory.
@@ -193,6 +200,10 @@ The handler receives a setup context containing:
 - `storage` - storage helpers when the app setup route has storage available.
 
 Providers that need multiple setup pages or callbacks should route internally based on `pathSuffix`. ReviewPhin does not register individual setup sub-routes for providers.
+
+The built-in GitHub sample gallery at `/github/setup/samples` is not a provider
+setup handler. It is a dev-server-only template preview route for operators and
+UI review, separate from the token-backed `/setup/github/<token>` flow.
 
 ---
 
