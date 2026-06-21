@@ -81,6 +81,13 @@ request.
 The setup page builds callback, webhook, and asset URLs from `PUBLIC_URL`, so a
 reverse-proxy path prefix such as `https://host/reviewphin` is preserved.
 
+To preview the GitHub setup templates without a setup token during local
+development, run `pnpm dev` and open the logged
+`http://localhost:<PORT>/github/setup/samples` URL. The sample pages are
+populated with example data and live outside `/setup/github`, so they do not
+read or mutate storage, call GitHub, or advance a connection through the setup
+flow. These sample routes are not mounted by the production server.
+
 The Check Run **Run Review** action is the primary GitHub trigger. Pull request
 comments also accept `/reviewphin review`, `@reviewphin review`, or a mention
 of the generated App slug. GitHub does not autocomplete these compatibility

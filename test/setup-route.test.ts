@@ -106,4 +106,155 @@ describe("provider setup routes", () => {
     });
     expect(styleResponse.statusCode).toBe(200);
   });
+
+  it("hosts GitHub setup samples outside the setup flow", async () => {
+    const setupHandler = vi.fn(async () => {
+      throw new Error("sample previews must not enter setup flow");
+    });
+    const platform: IPlatform = {
+      getPlatformInfo: () => ({
+        name: "GitHub",
+        description: "GitHub App integration",
+        slug: "github",
+      }),
+      getSetupHandler: () => setupHandler,
+      getTenantKey: () => "unused",
+      parseWebhookPayload: (payload) => payload,
+      identifyTenantKey: () => null,
+      isWebhookRequestAuthorized: () => true,
+      classifyWebhookTrigger: () => null,
+      createInteractionJob: async () => {
+        throw new Error("unused");
+      },
+      createTriggerLifecycle: () => {
+        throw new Error("unused");
+      },
+      createReviewRuntime: () => {
+        throw new Error("unused");
+      },
+      createProjectMemoryBackend: () => {
+        throw new Error("unused");
+      },
+      buildHarnessTenantContext: () => {
+        throw new Error("unused");
+      },
+      getReviewSummaryInstructions: () => [],
+      getTenantRegistrationSchema: () => z.object({}),
+      getConnectionRegistrationSchema: () => z.object({}),
+    };
+
+    app = await createApp({
+      logger,
+      tenantRegistry: {
+        resolveWebhookTenant: async () => null,
+      } as never,
+      reviewWorker: {
+        classifyWebhookTrigger: async () => null,
+        createInteractionJobFromWebhook: async () => {
+          throw new Error("unused");
+        },
+      } as never,
+      queue: {
+        enqueue: () => undefined,
+      } as never,
+      platforms: [platform],
+      publicUrl: "https://review.example.com/reviewphin/",
+      enableGitHubSetupSamples: true,
+    });
+
+    const indexResponse = await app.inject({
+      method: "GET",
+      url: "/github/setup/samples",
+      headers: {
+        host: "preview.example:4300",
+        "x-forwarded-proto": "https",
+      },
+    });
+    expect(indexResponse.statusCode).toBe(200);
+    expect(indexResponse.body).toContain("GitHub setup samples");
+    expect(indexResponse.body).toContain('href="samples/register"');
+    expect(indexResponse.body).not.toContain(
+      "https://preview.example:4300/github/setup/samples/register",
+    );
+
+    const registerResponse = await app.inject({
+      method: "GET",
+      url: "/github/setup/samples/register",
+      headers: {
+        host: "preview.example:4300",
+        "x-forwarded-proto": "https",
+      },
+    });
+    expect(registerResponse.statusCode).toBe(200);
+    expect(registerResponse.headers["content-type"]).toContain("text/html");
+    expect(registerResponse.body).toContain("Register GitHub App");
+    expect(registerResponse.body).toContain(
+      'href="https://review.example.com/reviewphin/github/setup/assets/github-setup.css"',
+    );
+    expect(parseSetupData(registerResponse.body)).toMatchObject({
+      page: "register",
+      sample: true,
+      owner: "octo-org",
+      publicUrl: "https://review.example.com/reviewphin",
+    });
+    expect(setupHandler).not.toHaveBeenCalled();
+
+    const successResponse = await app.inject({
+      method: "GET",
+      url: "/github/setup/samples/success",
+    });
+    expect(successResponse.statusCode).toBe(200);
+    expect(parseSetupData(successResponse.body)).toMatchObject({
+      page: "success",
+      sample: true,
+      installationId: 789,
+      accessibleRepositoryCount: 12,
+    });
+
+    const missingResponse = await app.inject({
+      method: "GET",
+      url: "/github/setup/samples/unknown",
+    });
+    expect(missingResponse.statusCode).toBe(404);
+  });
+
+  it("does not host GitHub setup samples unless enabled", async () => {
+    app = await createApp({
+      logger,
+      tenantRegistry: {
+        resolveWebhookTenant: async () => null,
+      } as never,
+      reviewWorker: {
+        classifyWebhookTrigger: async () => null,
+        createInteractionJobFromWebhook: async () => {
+          throw new Error("unused");
+        },
+      } as never,
+      queue: {
+        enqueue: () => undefined,
+      } as never,
+      platforms: [],
+    });
+
+    const indexResponse = await app.inject({
+      method: "GET",
+      url: "/github/setup/samples",
+    });
+    expect(indexResponse.statusCode).toBe(404);
+
+    const registerResponse = await app.inject({
+      method: "GET",
+      url: "/github/setup/samples/register",
+    });
+    expect(registerResponse.statusCode).toBe(404);
+  });
 });
+
+function parseSetupData(page: string): Record<string, unknown> {
+  const match =
+    /<script type="application\/json" id="reviewphin-setup-data">(?<json>.*?)<\/script>/s.exec(
+      page,
+    );
+  expect(match?.groups?.json).toBeDefined();
+  return JSON.parse(match!.groups!.json!) as Record<string, unknown>;
+}

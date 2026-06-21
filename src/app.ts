@@ -14,6 +14,11 @@ import type { Logger } from "pino";
 import type { JobQueue } from "./jobs/job-queue.js";
 import type { ReviewWorker } from "./jobs/review-worker.js";
 import type { IPlatform } from "./platforms/IPlatform.js";
+import {
+  isGitHubSetupSamplePageName,
+  renderGitHubSetupSampleIndex,
+  renderGitHubSetupSamplePage,
+} from "./platforms/github/setup-page.js";
 import { getPlatforms } from "./platforms/platform-registry.js";
 import type { TenantRegistry } from "./tenants/tenant-registry.js";
 import type { StorageHelpers } from "./storage/storage-helpers.js";
@@ -31,6 +36,8 @@ interface AppOptions {
   queue: JobQueue;
   platforms?: readonly IPlatform[] | undefined;
   storage?: StorageHelpers | undefined;
+  publicUrl?: string | undefined;
+  enableGitHubSetupSamples?: boolean | undefined;
 }
 
 export async function createApp(options: AppOptions): Promise<FastifyInstance> {
@@ -70,6 +77,41 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   app.get("/healthz", async () => ({
     status: "ok",
   }));
+
+  if (options.enableGitHubSetupSamples) {
+    if (!options.publicUrl) {
+      throw new Error(
+        "publicUrl is required when GitHub setup samples are enabled",
+      );
+    }
+    const gitHubSetupSamplePublicUrl = options.publicUrl;
+
+    app.get("/github/setup/samples", async (_request, reply) => {
+      return reply
+        .type("text/html; charset=utf-8")
+        .send(renderGitHubSetupSampleIndex(gitHubSetupSamplePublicUrl));
+    });
+
+    app.get(
+      "/github/setup/samples/:samplePage",
+      async (
+        request: FastifyRequest<{ Params: { samplePage: string } }>,
+        reply,
+      ) => {
+        const { samplePage } = request.params;
+        if (!isGitHubSetupSamplePageName(samplePage)) {
+          return reply.code(404).send({ error: "not-found" });
+        }
+
+        return reply.type("text/html; charset=utf-8").send(
+          renderGitHubSetupSamplePage({
+            page: samplePage,
+            publicUrl: gitHubSetupSamplePublicUrl,
+          }),
+        );
+      },
+    );
+  }
 
   for (const platform of options.platforms ?? getPlatforms()) {
     const setupHandler = platform.getSetupHandler?.();

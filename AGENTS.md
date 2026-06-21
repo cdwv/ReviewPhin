@@ -1,0 +1,1 @@
+- When adding html pages or other static assets, unless told otherwise, prefer to place static html files in `./public` and load them as templates in server code instead of rendering html from string.

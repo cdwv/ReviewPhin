@@ -2,16 +2,20 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  GITHUB_APP_EVENTS,
-  GITHUB_APP_PERMISSIONS,
-} from "./manifest.js";
+import { GITHUB_APP_EVENTS, GITHUB_APP_PERMISSIONS } from "./manifest.js";
 
-type SetupPageName = "register" | "installation" | "success" | "error";
+export type GitHubSetupSamplePageName =
+  | "register"
+  | "installation"
+  | "success"
+  | "error";
+
+type GitHubSetupTemplateName = GitHubSetupSamplePageName | "samples";
 
 export type GitHubSetupPageData =
   | {
       page: "register";
+      sample?: true | undefined;
       owner: string;
       setupToken: string;
       publicUrl: string;
@@ -21,12 +25,14 @@ export type GitHubSetupPageData =
     }
   | {
       page: "installation";
+      sample?: true | undefined;
       appName: string;
       installUrl: string;
       owner: string;
     }
   | {
       page: "success";
+      sample?: true | undefined;
       appName: string;
       appSlug: string;
       appHtmlUrl?: string | undefined;
@@ -40,10 +46,17 @@ export type GitHubSetupPageData =
     }
   | {
       page: "error";
+      sample?: true | undefined;
       message: string;
     };
 
-const templateCache = new Map<SetupPageName, string>();
+const templateCache = new Map<GitHubSetupTemplateName, string>();
+const setupSamplePageNames = [
+  "register",
+  "installation",
+  "success",
+  "error",
+] as const satisfies readonly GitHubSetupSamplePageName[];
 
 export function renderGitHubSetupPage(input: {
   owner: string;
@@ -128,8 +141,92 @@ export function renderGitHubSetupErrorPage(
   });
 }
 
+export function isGitHubSetupSamplePageName(
+  value: string,
+): value is GitHubSetupSamplePageName {
+  return setupSamplePageNames.includes(value as GitHubSetupSamplePageName);
+}
+
+export function renderGitHubSetupSampleIndex(publicUrl: string): string {
+  const normalizedPublicUrl = normalizePublicUrl(publicUrl);
+  return getTemplate("samples")
+    .replaceAll("{{iconUrl}}", escapeHtml(`${normalizedPublicUrl}/favicon.png`))
+    .replaceAll("{{registerUrl}}", "samples/register")
+    .replaceAll("{{installationUrl}}", "samples/installation")
+    .replaceAll("{{successUrl}}", "samples/success")
+    .replaceAll("{{errorUrl}}", "samples/error");
+}
+
+export function renderGitHubSetupSamplePage(input: {
+  page: GitHubSetupSamplePageName;
+  publicUrl: string;
+}): string {
+  const publicUrl = normalizePublicUrl(input.publicUrl);
+  switch (input.page) {
+    case "register":
+      return renderTemplate("register", {
+        title: "Register GitHub App",
+        iconUrl: `${publicUrl}/favicon.png`,
+        publicUrl,
+        data: {
+          page: "register",
+          sample: true,
+          owner: "octo-org",
+          setupToken: "sample-setup-token",
+          publicUrl,
+          permissions: GITHUB_APP_PERMISSIONS,
+          events: GITHUB_APP_EVENTS,
+        },
+      });
+    case "installation":
+      return renderTemplate("installation", {
+        title: "Install GitHub App",
+        iconUrl: `${publicUrl}/favicon.png`,
+        publicUrl,
+        data: {
+          page: "installation",
+          sample: true,
+          appName: "ReviewPhin octo-org",
+          installUrl: "#",
+          owner: "octo-org",
+        },
+      });
+    case "success":
+      return renderTemplate("success", {
+        title: "GitHub connection ready",
+        iconUrl: `${publicUrl}/favicon.png`,
+        publicUrl,
+        data: {
+          page: "success",
+          sample: true,
+          appName: "ReviewPhin octo-org",
+          appSlug: "reviewphin-octo-org",
+          appHtmlUrl: "https://github.com/apps/reviewphin-octo-org",
+          ownerLogin: "octo-org",
+          ownerType: "Organization",
+          ownerAvatarUrl: `${publicUrl}/favicon.png`,
+          installationId: 789,
+          accessibleRepositoryCount: 12,
+          repositorySelection: "selected",
+          iconUrl: `${publicUrl}/favicon.png`,
+        },
+      });
+    case "error":
+      return renderTemplate("error", {
+        title: "GitHub setup failed",
+        iconUrl: `${publicUrl}/favicon.png`,
+        publicUrl,
+        data: {
+          page: "error",
+          sample: true,
+          message: "Setup link has expired.",
+        },
+      });
+  }
+}
+
 function renderTemplate(
-  name: SetupPageName,
+  name: GitHubSetupTemplateName,
   input: {
     title: string;
     iconUrl: string;
@@ -149,7 +246,7 @@ function renderTemplate(
     .replaceAll("{{setupDataJson}}", serializeSetupData(input.data));
 }
 
-function getTemplate(name: SetupPageName): string {
+function getTemplate(name: GitHubSetupTemplateName): string {
   const cached = templateCache.get(name);
   if (cached !== undefined) {
     return cached;
@@ -186,11 +283,11 @@ function normalizePublicUrl(publicUrl: string): string {
 
 function serializeSetupData(data: GitHubSetupPageData): string {
   return JSON.stringify(data)
-    .replaceAll("<", "\\u003C")
-    .replaceAll(">", "\\u003E")
-    .replaceAll("&", "\\u0026")
-    .replaceAll("\u2028", "\\u2028")
-    .replaceAll("\u2029", "\\u2029");
+    .replaceAll("<", String.raw`\u003C`)
+    .replaceAll(">", String.raw`\u003E`)
+    .replaceAll("&", String.raw`\u0026`)
+    .replaceAll("\u2028", String.raw`\u2028`)
+    .replaceAll("\u2029", String.raw`\u2029`);
 }
 
 function escapeHtml(value: string): string {

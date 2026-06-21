@@ -3,6 +3,22 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v0.6.1 - 2026-06-21
+### Added
+- ReviewPhin developers now can preview how GitHub Platform looks like without adding new platform registration over and over again.
+
+## v0.6.0 - 2026-06-21
+### Added
+- *GitHub platform support** — ReviewPhin can now be connected to GitHub repositories via an App Manifest registration flow; no manual credential wiring required.
+- *GitHub App setup wizard** — A guided setup page walks through creating and installing a GitHub App for your organization or personal account, including webhook and redirect URL pre-population.
+- *"Run Review" action on GitHub** — A neutral check run is created on every pull request, giving reviewers a one-click button to trigger a ReviewPhin review directly from the GitHub Checks tab.
+- *GitHub comment commands** — Mention `@ReviewPhin` (or use `/reviewphin`) in a PR comment to trigger or direct a review from GitHub itself.
+- *Project memory in database** — ReviewPhin can now read and write project-level memory to the dedicated table in database, which gives good fallback for platforms without the support (or where support is hard to implement like in GitHub).
+
+### Changed
+- Review publication interface unified across GitLab and GitHub
+- `favicon.png` is now served as a static asset (used as the GitHub App icon URL hint on the setup page).
+
 ## v0.5.0 - 2026-06-06
 ### Breaking change
 - Storage schema was bumped to `v002`
