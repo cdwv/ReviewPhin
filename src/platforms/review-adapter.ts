@@ -1,5 +1,10 @@
 import type { ReviewAnchor, ReviewFinding } from "../review/types.js";
 
+export interface PlatformPublicationLink {
+  label: string;
+  url: string;
+}
+
 export interface PlatformReviewComment {
   id: string;
   body: string;
@@ -12,6 +17,7 @@ export interface PlatformReviewComment {
   updatedAt: string | null;
   anchor: ReviewAnchor | null;
   positionJson: string | null;
+  url: string | null;
 }
 
 export interface PlatformReviewDiscussion {
@@ -26,53 +32,73 @@ export interface PlatformSummaryComment {
   body: string;
   isBot: boolean;
   updatedAt: string | null;
+  url: string | null;
 }
 
-export interface PlatformDraftDiscussion {
-  id: string;
-  draftMarker: string;
+export type PlatformDiscussionMutation =
+  | {
+      kind: "update-finding";
+      discussionId: string;
+      commentId: string;
+      finding: ReviewFinding;
+    }
+  | {
+      kind: "reply-finding";
+      discussionId: string;
+      finding: ReviewFinding;
+    }
+  | {
+      kind: "reply-text";
+      discussionId: string;
+      body: string;
+    }
+  | {
+      kind: "set-resolved";
+      discussionId: string;
+      resolved: boolean;
+    };
+
+export interface PlatformDiscussionMutationResult {
+  discussion?: PlatformReviewDiscussion | undefined;
+  comment?: PlatformReviewComment | undefined;
+}
+
+export interface PlatformFindingPublication {
   finding: ReviewFinding;
-  body: string;
-  positionJson: string | null;
+  identityKey: string;
+  fingerprint: string;
+  marker: string;
 }
 
-export interface PlatformPublishedDraftDiscussionMatch<
-  TPending extends PlatformDraftDiscussion,
-> {
+export interface PlatformPublishedFinding {
+  identityKey: string;
   discussion: PlatformReviewDiscussion;
-  pending: TPending;
   rootComment: PlatformReviewComment;
+  url: string | null;
 }
 
-export interface PlatformReviewDiscussionAdapter {
-  listDiscussions(options?: {
-    noCache?: boolean | undefined;
+export interface PlatformFindingsPublicationResult {
+  findings: PlatformPublishedFinding[];
+  links: PlatformPublicationLink[];
+}
+
+export interface PlatformSummaryPublication {
+  comment: PlatformSummaryComment;
+  url: string | null;
+  action: "created" | "updated";
+}
+
+export interface PlatformReviewPublicationAdapter {
+  loadDiscussions(options?: {
+    fresh?: boolean | undefined;
   }): Promise<PlatformReviewDiscussion[]>;
-  listSummaryComments(): Promise<PlatformSummaryComment[]>;
-  replyToDiscussion(
-    discussionId: string,
-    body: string,
-  ): Promise<PlatformReviewComment>;
-  setDiscussionResolved(discussionId: string, resolved: boolean): Promise<void>;
-  updateComment(
-    discussionId: string,
-    commentId: string,
-    body: string,
-  ): Promise<PlatformReviewComment>;
-  createDraftDiscussion(input: {
-    finding: ReviewFinding;
-    body: string;
-    draftMarker: string;
-  }): Promise<PlatformDraftDiscussion>;
-  publishDraftDiscussions(): Promise<void>;
-  deleteDraftDiscussion(draftDiscussionId: string): Promise<void>;
-  matchPublishedDraftDiscussions<
-    TPending extends PlatformDraftDiscussion,
-  >(input: {
-    pendingDraftDiscussions: ReadonlyArray<TPending>;
+  mutateDiscussion(
+    mutation: PlatformDiscussionMutation,
+  ): Promise<PlatformDiscussionMutationResult>;
+  publishFindings(input: {
+    publicationKey: string;
+    findings: PlatformFindingPublication[];
     existingDiscussionIds: ReadonlySet<string>;
-    maxAttempts?: number | undefined;
-  }): Promise<PlatformPublishedDraftDiscussionMatch<TPending>[]>;
-  createSummaryComment(body: string): Promise<void>;
-  updateSummaryComment(commentId: string, body: string): Promise<void>;
+  }): Promise<PlatformFindingsPublicationResult>;
+  upsertSummary(input: { body: string }): Promise<PlatformSummaryPublication>;
 }

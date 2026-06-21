@@ -23,6 +23,19 @@ const WORDING_PATTERN =
 export function buildInteractionPlan(
   input: BuildInteractionPlanInput,
 ): InteractionPlan {
+  if (input.trigger.kind === "manual-review") {
+    return {
+      initiatingTrigger: input.trigger,
+      responseTargets: [],
+      plannedResponses: [],
+      memoryCandidate: false,
+      reviewNeeded: true,
+      replyNeeded: false,
+      replyStyle: "none",
+      rerunReason: "manual-review",
+    };
+  }
+
   const normalizedInstruction = normalizeInstruction(
     input.trigger.instruction ?? input.trigger.body,
   );

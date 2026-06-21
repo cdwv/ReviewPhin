@@ -237,11 +237,6 @@ export interface CodeReviewDiscussion {
   comments: CodeReviewDiscussionComment[];
 }
 
-export interface InstructionFile {
-  path: string;
-  content: string;
-}
-
 export type ReviewAttachmentSourceKind =
   | "trigger-comment"
   | "code-review-description";
@@ -304,13 +299,15 @@ export type TriggerCommentReference =
       commentId: number;
     };
 
-export type ReviewTriggerKind =
+export type CommentReviewTriggerKind =
   | "direct-mention"
   | "follow-up-comment"
   | "summary-follow-up";
 
-export interface ReviewTriggerContext {
-  kind: ReviewTriggerKind;
+export type ReviewTriggerKind = CommentReviewTriggerKind | "manual-review";
+
+export interface CommentReviewTriggerContext {
+  kind: CommentReviewTriggerKind;
   commentId: number;
   authorUsername: string | null;
   body: string;
@@ -321,10 +318,27 @@ export interface ReviewTriggerContext {
   responseTarget: ResponseTarget;
 }
 
-export interface WebhookReviewTrigger {
-  kind: ReviewTriggerKind;
-  comment: TriggerCommentReference;
+export interface ManualReviewTriggerContext {
+  kind: "manual-review";
+  provider: string;
+  source: string;
+  metadata: Record<string, string | number | boolean | null>;
 }
+
+export type ReviewTriggerContext =
+  | CommentReviewTriggerContext
+  | ManualReviewTriggerContext;
+
+export type WebhookReviewTrigger =
+  | {
+      kind: CommentReviewTriggerKind;
+      comment: TriggerCommentReference;
+    }
+  | {
+      kind: "check-run-requested-action";
+      checkRunId: number;
+      actionIdentifier: string;
+    };
 
 export interface ReviewSummaryContext {
   tenant?: TenantRecord | undefined;
@@ -385,7 +399,6 @@ export interface ReviewContext {
   changes: CodeReviewChange[];
   comments: CodeReviewComment[];
   discussions: CodeReviewDiscussion[];
-  instructionFiles: InstructionFile[];
   projectMemory: ProjectMemoryContext;
   trigger: ReviewTriggerContext;
   priorDiscussions: ProviderDiscussionContext[];

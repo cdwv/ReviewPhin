@@ -10,4 +10,13 @@ describe("loadConfig", () => {
 
     expect(config.platformModules).toEqual([]);
   });
+
+  it("defaults PUBLIC_URL to the local development server", () => {
+    expect(loadConfig({ PORT: "4123" }).publicUrl).toBe(
+      "http://localhost:4123",
+    );
+    expect(
+      loadConfig({ PUBLIC_URL: "https://review.example.com/" }).publicUrl,
+    ).toBe("https://review.example.com");
+  });
 });

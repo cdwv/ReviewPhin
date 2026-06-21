@@ -21,6 +21,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         dedupeKey: "previous",
         codeReviewId: 18,
         commentId: 1,
+        triggerJson: '{"kind":"comment","commentId":1}',
         headSha: "head-previous",
         status: "completed",
         payloadJson: "{}",
@@ -36,6 +37,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         dedupeKey: "current",
         codeReviewId: 18,
         commentId: 2,
+        triggerJson: '{"kind":"comment","commentId":2}',
         headSha: "head-current",
         status: "completed",
         payloadJson: "{}",
@@ -51,6 +53,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         dedupeKey: "other-tenant",
         codeReviewId: 18,
         commentId: 3,
+        triggerJson: '{"kind":"comment","commentId":3}',
         headSha: "head-other",
         status: "completed",
         payloadJson: "{}",
@@ -255,6 +258,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         dedupeKey: "job-tenant-1",
         codeReviewId: 18,
         commentId: 1,
+        triggerJson: '{"kind":"comment","commentId":1}',
         headSha: "head-1",
         status: "completed",
         payloadJson: "{}",
@@ -270,6 +274,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         dedupeKey: "job-tenant-2",
         codeReviewId: 18,
         commentId: 2,
+        triggerJson: '{"kind":"comment","commentId":2}',
         headSha: "head-2",
         status: "completed",
         payloadJson: "{}",
@@ -308,6 +313,9 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
       discussionMappings: {
         list: vi.fn(async () => []),
       },
+      projectMemories: {
+        get: vi.fn(async () => null),
+      },
     } as unknown as StorageStores;
 
     const storage = new StoreBackedStorage(stores);
@@ -319,6 +327,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
       interactionRunCount: 0,
       codeReviewSnapshotCount: 0,
       discussionMappingCount: 0,
+      projectMemoryCount: 0,
       interactionJobIds: ["job-tenant-1"],
     });
     expect(interactionJobList).toHaveBeenCalledWith(

@@ -317,7 +317,6 @@ describe("ReviewWorker orchestration", () => {
               rootPath: join("tmp", "workspace-routing"),
               cleanupRoot: join("tmp", "cleanup-routing"),
               strategy: "git",
-              instructionFiles: [],
             },
             projectMemory: {
               enabled: true,
@@ -535,7 +534,6 @@ describe("ReviewWorker orchestration", () => {
               rootPath: join("tmp", "workspace-routing"),
               cleanupRoot: join("tmp", "cleanup-routing"),
               strategy: "git",
-              instructionFiles: [],
             },
             projectMemory: {
               enabled: true,
@@ -786,7 +784,6 @@ describe("ReviewWorker orchestration", () => {
               rootPath: join("tmp", "workspace-routing"),
               cleanupRoot: join("tmp", "cleanup-routing"),
               strategy: "git",
-              instructionFiles: [],
             },
             projectMemory: {
               enabled: true,
@@ -1004,7 +1001,6 @@ describe("ReviewWorker orchestration", () => {
               rootPath: join("tmp", "workspace-routing"),
               cleanupRoot: join("tmp", "cleanup-routing"),
               strategy: "git",
-              instructionFiles: [],
             },
             projectMemory: {
               enabled: true,
@@ -1242,7 +1238,6 @@ describe("ReviewWorker orchestration", () => {
               rootPath: join("tmp", "workspace-routing"),
               cleanupRoot: join("tmp", "cleanup-routing"),
               strategy: "git",
-              instructionFiles: [],
             },
             projectMemory: {
               enabled: true,
@@ -1531,7 +1526,6 @@ describe("ReviewWorker orchestration", () => {
         rootPath: join("tmp", "workspace-routing"),
         cleanupRoot: join("tmp", "cleanup-routing"),
         strategy: "git" as const,
-        instructionFiles: [],
       },
       projectMemory: {
         enabled: true,
@@ -1885,7 +1879,6 @@ describe("ReviewWorker orchestration", () => {
         rootPath: join("tmp", "workspace-routing"),
         cleanupRoot: join("tmp", "cleanup-routing"),
         strategy: "git" as const,
-        instructionFiles: [],
       },
       projectMemory: {
         enabled: true,

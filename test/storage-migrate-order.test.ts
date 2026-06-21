@@ -26,6 +26,7 @@ describe("storage migrate ordering", () => {
       interactionRunMetrics: [] as unknown[],
       reviewFindings: [] as unknown[],
       discussionMappings: [] as unknown[],
+      projectMemories: [] as unknown[],
     };
 
     const sourceRuntime = createRuntime({
@@ -51,6 +52,15 @@ describe("storage migrate ordering", () => {
             },
           ],
           orderCalls.tenants,
+        ),
+        projectMemories: createSourceStore(
+          [
+            {
+              id: "tenant-1",
+              tenantId: "tenant-1",
+            },
+          ],
+          orderCalls.projectMemories,
         ),
         interactionJobs: createSourceStore(
           [
@@ -118,6 +128,7 @@ describe("storage migrate ordering", () => {
         modelProfiles: createTargetStore(),
         platformConnections: createTargetStore(),
         tenants: createTargetStore(),
+        projectMemories: createTargetStore(),
         interactionJobs: createTargetStore(),
         codeReviewSnapshots: createTargetStore(),
         interactionRuns: createTargetStore(),
@@ -150,6 +161,10 @@ describe("storage migrate ordering", () => {
       [{ field: "id", direction: "asc" }],
     ]);
     expect(orderCalls.interactionJobs).toEqual([
+      [{ field: "id", direction: "asc" }],
+      [{ field: "id", direction: "asc" }],
+    ]);
+    expect(orderCalls.projectMemories).toEqual([
       [{ field: "id", direction: "asc" }],
       [{ field: "id", direction: "asc" }],
     ]);

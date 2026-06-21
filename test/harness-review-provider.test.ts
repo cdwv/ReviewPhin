@@ -357,6 +357,10 @@ function createTenantRuntimeContext(): HarnessTenantContext {
     id: "tenant_1",
     memoryEnabled: true,
     projectMemoryBackend: {
+      getCapability: vi.fn(async () => ({
+        implemented: true as const,
+        available: true as const,
+      })),
       load: vi.fn(async () => ({
         enabled: true,
         page: null,
@@ -395,7 +399,6 @@ function createReviewContext(): ReviewContext {
     changes: [],
     comments: [],
     discussions: [],
-    instructionFiles: [],
     projectMemory: {
       enabled: true,
       page: {

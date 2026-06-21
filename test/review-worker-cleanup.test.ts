@@ -131,6 +131,10 @@ describe("ReviewWorker cleanup", () => {
       projectId: tenant.projectId,
       codeReviewId: 7,
       commentId: 55,
+      triggerJson: JSON.stringify({
+        kind: "gitlab-comment",
+        comment: { kind: "code-review-comment", commentId: 55 },
+      }),
       headSha: "abc123",
       status: "queued" as const,
       payloadJson: JSON.stringify(payload),
@@ -213,7 +217,6 @@ describe("ReviewWorker cleanup", () => {
           rootPath: join("tmp", "workspace-routing"),
           cleanupRoot: join("tmp", "cleanup-routing"),
           strategy: "git",
-          instructionFiles: [],
         },
         projectMemory: {
           enabled: true,
@@ -251,7 +254,6 @@ describe("ReviewWorker cleanup", () => {
           rootPath: join("tmp", "workspace"),
           cleanupRoot: join("tmp", "cleanup"),
           strategy: "git",
-          instructionFiles: [],
         },
         projectMemory: {
           enabled: true,
@@ -407,6 +409,10 @@ describe("ReviewWorker cleanup", () => {
       projectId: tenant.projectId,
       codeReviewId: 7,
       commentId: 55,
+      triggerJson: JSON.stringify({
+        kind: "gitlab-comment",
+        comment: { kind: "code-review-comment", commentId: 55 },
+      }),
       headSha: "abc123",
       status: "queued" as const,
       payloadJson: JSON.stringify(payload),
@@ -490,7 +496,6 @@ describe("ReviewWorker cleanup", () => {
           rootPath: join("tmp", "workspace-routing"),
           cleanupRoot: join("tmp", "cleanup-routing"),
           strategy: "git",
-          instructionFiles: [],
         },
         projectMemory: {
           enabled: true,
@@ -528,7 +533,6 @@ describe("ReviewWorker cleanup", () => {
           rootPath: join("tmp", "workspace"),
           cleanupRoot: join("tmp", "cleanup"),
           strategy: "git",
-          instructionFiles: [],
         },
         projectMemory: {
           enabled: true,

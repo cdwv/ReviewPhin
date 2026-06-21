@@ -1,8 +1,8 @@
 import { isReviewSummaryNoteBody } from "../../review/summary.js";
 import type {
+  CommentReviewTriggerContext,
   ProviderDiscussionContext,
   ResponseTarget,
-  ReviewTriggerContext,
   TriggerCommentReference,
   WebhookReviewTrigger,
 } from "../../review/types.js";
@@ -98,7 +98,7 @@ export function buildGitLabReviewTriggerContext(input: {
   connection?: PlatformConnectionRecord;
   discussions: GitLabDiscussion[];
   priorDiscussions: ProviderDiscussionContext[];
-}): ReviewTriggerContext {
+}): CommentReviewTriggerContext {
   const connectionConfig = getGitLabConnectionConfig(
     input.connection,
     input.tenant,
@@ -218,7 +218,7 @@ function locateResponseTargetReference(
 }
 
 function buildResponseTarget(input: {
-  kind: ReviewTriggerContext["kind"];
+  kind: CommentReviewTriggerContext["kind"];
   comment: TriggerCommentReference;
   authorUsername: string | null;
   body: string;

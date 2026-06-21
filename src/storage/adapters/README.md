@@ -17,12 +17,21 @@ The app loads the module from `STORAGE_PROVIDER_MODULE` when set, otherwise it u
 ## Compatibility rules
 
 - Your adapter must report an exact storage contract revision match.
-- The current required revision is `storage-v002`.
+- The current required revision is `storage-v004`.
 - Adapters must expose `platformConnections`; every tenant requires
   `platformConnectionId`.
 - Connection names are globally unique. SQLite migration
   `sqlite:0008_v2_platform_connections` preserves tenant ids and keys while
   moving reusable GitLab credentials into connections.
+- Interaction jobs expose provider-owned `triggerJson`; `commentId` is nullable.
+  SQLite migration `sqlite:0009_v3_provider_triggers` rebuilds only the
+  interaction job table, copies all rows, and derives trigger JSON from each
+  preserved comment id. The Flotiq v003 migration pages through existing
+  interaction jobs and batch-updates rows missing `triggerJson` before the
+  migration is recorded.
+- Project memory is a first-class `projectMemories` store. Each record is
+  tenant-scoped, uses the tenant id as its record id, and stores serialized
+  memory entries in `entriesJson`.
 - The app validates compatibility in two phases:
   1. `getSupportedStorageContract()` is checked before `prepare()` is called.
   2. `prepare()` must return a `StoragePreparationResult` whose `storageContractRevision` is also checked after `prepare()` returns.
@@ -58,6 +67,10 @@ The core app owns:
 - Track migrations in provider-owned metadata storage.
 - Make `prepare()` safe to call repeatedly.
 - For baseline adoption, formalize the existing physical schema as a first tracked migration instead of silently repairing drift on startup.
+- Keep each migration and its migration-specific helpers in a separate module.
+  The SQLite adapter registers ordered modules from
+  `src/storage/adapters/sqlite/migrations/`, matching the versioned module
+  pattern used by Flotiq.
 
 ## Official SQLite adapter
 
@@ -66,3 +79,4 @@ The built-in adapter lives under `src/storage/adapters/sqlite/`.
 - Module entrypoint: `src/storage/adapters/sqlite/entrypoint.ts`
 - Runtime config: `SQLITE_DATABASE_PATH`
 - Baseline migration id: `sqlite:0001_v0_baseline`
+- Migration modules: `src/storage/adapters/sqlite/migrations/`

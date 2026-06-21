@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="{{iconUrl}}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "media",
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['"Bricolage Grotesque"', "system-ui", "sans-serif"],
+            body: ['"IBM Plex Sans"', "system-ui", "sans-serif"],
+            mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
+          },
+          colors: {
+            brand: {
+              50: "#eef7fe",
+              100: "#d6ebfb",
+              200: "#b0d8f6",
+              300: "#7cbef0",
+              400: "#4ea4e6",
+              500: "#2f8bd6",
+              600: "#2270b5",
+              700: "#1f5a92",
+              800: "#1e4a76",
+              900: "#102f4d",
+              950: "#0a1f34",
+            },
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="{{assetBaseUrl}}/github-setup.css">
+  <title>{{title}}</title>
+  <script type="application/json" id="reviewphin-setup-data">{{setupDataJson}}</script>
+  <script src="{{assetBaseUrl}}/github-setup.js" defer></script>
+</head>
+<body data-page="installation" class="min-h-screen bg-gradient-to-b from-brand-50 via-white to-brand-50 font-body text-brand-900 antialiased selection:bg-brand-500/20 dark:from-brand-950 dark:via-brand-950 dark:to-brand-900/60 dark:text-brand-100">
+  <div class="mx-auto flex min-h-screen max-w-2xl flex-col px-5 py-10 sm:px-8 sm:py-14">
+    <header class="flex items-center gap-3">
+      <img src="{{iconUrl}}" alt="" class="h-11 w-11 rounded-2xl shadow-sm ring-1 ring-brand-900/10 dark:ring-white/10">
+      <div class="leading-tight">
+        <p class="font-display text-lg font-bold tracking-tight">ReviewPhin</p>
+        <p class="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-brand-600 dark:text-brand-300">GitHub setup</p>
+      </div>
+    </header>
+
+    <nav aria-label="Setup progress" class="mt-9">
+      <ol class="flex items-center gap-2 sm:gap-3">
+        <li class="flex items-center gap-2.5">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white">
+            <svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0l-3.5-3.5a1 1 0 1 1 1.4-1.4l2.8 2.79 6.8-6.79a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
+          </span>
+          <span class="hidden text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-brand-600 dark:text-brand-300 sm:block">Register</span>
+        </li>
+        <li aria-hidden="true" class="h-px flex-1 bg-brand-500/40"></li>
+        <li class="flex items-center gap-2.5">
+          <span aria-current="step" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-500 text-sm font-semibold text-white ring-4 ring-brand-500/20">2</span>
+          <span class="flex flex-col leading-tight">
+            <span class="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-brand-600 dark:text-brand-300">Install</span>
+            <span class="hidden text-xs text-brand-700/70 dark:text-brand-200/60 sm:block">Pick repositories</span>
+          </span>
+        </li>
+        <li aria-hidden="true" class="h-px flex-1 bg-brand-900/10 dark:bg-white/10"></li>
+        <li class="flex items-center gap-2.5">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand-900/15 text-sm font-semibold text-brand-500/60 dark:border-white/15 dark:text-brand-200/40">3</span>
+          <span class="hidden text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-brand-500/60 dark:text-brand-200/40 sm:block">Ready</span>
+        </li>
+      </ol>
+    </nav>
+
+    <main class="rp-rise mt-7 rounded-2xl border border-brand-900/10 bg-white/80 p-6 shadow-xl shadow-brand-900/5 backdrop-blur dark:border-white/10 dark:bg-brand-900/40 dark:shadow-black/30 sm:p-8">
+      <h1 class="font-display text-2xl font-bold tracking-tight sm:text-3xl">Install GitHub App</h1>
+      <p class="mt-2 text-sm text-brand-800/80 dark:text-brand-100/70">The GitHub App <strong class="font-semibold text-brand-900 dark:text-brand-50" data-field="appName"></strong> was registered successfully. Install it on <strong class="font-semibold text-brand-900 dark:text-brand-50" data-field="owner"></strong> and choose the repositories ReviewPhin may access.</p>
+      <a class="mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500" data-field="installUrl" href="#">
+        Install on GitHub
+        <svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4" aria-hidden="true"><path fill-rule="evenodd" d="M7.3 4.3a1 1 0 0 1 1.4 0l5 5a1 1 0 0 1 0 1.4l-5 5a1 1 0 0 1-1.4-1.4L11.58 10 7.3 5.7a1 1 0 0 1 0-1.4Z" clip-rule="evenodd"/></svg>
+      </a>
+      <p class="mt-5 flex items-start gap-2 rounded-xl border border-brand-900/10 bg-brand-50/70 px-4 py-3 text-sm text-brand-800/80 dark:border-white/10 dark:bg-brand-950/40 dark:text-brand-100/70">
+        <svg viewBox="0 0 20 20" fill="currentColor" class="mt-0.5 h-4 w-4 shrink-0 text-brand-500" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm-1 3a1 1 0 0 0-1 1v3a1 1 0 1 0 2 0v-3a1 1 0 0 0-1-1Z" clip-rule="evenodd"/></svg>
+        The connection stays unavailable until the installation is validated.
+      </p>
+    </main>
+
+    <footer class="mt-auto flex items-center justify-between gap-3 pt-10 text-xs text-brand-700/60 dark:text-brand-200/50">
+      <span>ReviewPhin · automated pull request review</span>
+      <span class="inline-flex items-center gap-1.5"><span class="h-1.5 w-1.5 rounded-full bg-brand-500"></span> One step to go</span>
+    </footer>
+  </div>
+</body>
+</html>

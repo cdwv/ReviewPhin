@@ -1,5 +1,9 @@
 import { Readable } from "node:stream";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
+import fastifyStatic from "@fastify/static";
 import Fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -12,6 +16,7 @@ import type { ReviewWorker } from "./jobs/review-worker.js";
 import type { IPlatform } from "./platforms/IPlatform.js";
 import { getPlatforms } from "./platforms/platform-registry.js";
 import type { TenantRegistry } from "./tenants/tenant-registry.js";
+import type { StorageHelpers } from "./storage/storage-helpers.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -25,11 +30,17 @@ interface AppOptions {
   reviewWorker: ReviewWorker;
   queue: JobQueue;
   platforms?: readonly IPlatform[] | undefined;
+  storage?: StorageHelpers | undefined;
 }
 
 export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: false,
+  });
+
+  await app.register(fastifyStatic, {
+    root: resolvePublicRoot(),
+    prefix: "/",
   });
 
   app.addHook("preParsing", (request, _reply, payload, done) => {
@@ -73,6 +84,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
           context: {
             pathSuffix: getRouteSuffix(request.params, "setupPath"),
             rawBody: getRequestRawBody(request),
+            storage: options.storage,
           },
         });
 
@@ -92,9 +104,15 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
       request: FastifyRequest,
       reply: FastifyReply,
     ) => {
+      const webhookRequest = {
+        headers: request.headers,
+        body: request.body,
+        rawBody: getRequestRawBody(request),
+        pathSuffix: getRouteSuffix(request.params, "webhookPath"),
+      };
       let payload: unknown;
       try {
-        payload = platform.parseWebhookPayload(request.body);
+        payload = platform.parseWebhookPayload(request.body, webhookRequest);
       } catch (error) {
         options.logger.warn(
           { err: error, platform: platform.getPlatformInfo().slug },
@@ -108,24 +126,38 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
       const resolvedTenant = await options.tenantRegistry.resolveWebhookTenant(
         platform,
         payload,
-        {
-          headers: request.headers,
-          body: request.body,
-          rawBody: getRequestRawBody(request),
-          pathSuffix: getRouteSuffix(request.params, "webhookPath"),
-        },
+        webhookRequest,
       );
       if (!resolvedTenant) {
+        if (
+          (await platform.shouldIgnoreWebhookWithoutTenant?.(
+            payload,
+            webhookRequest,
+          )) === true
+        ) {
+          return reply.code(202).send({
+            accepted: false,
+            reason: "no-trigger",
+          });
+        }
         return reply.code(404).send({
           error: "not-found",
         });
       }
 
+      const eventHandled =
+        (await platform.handleWebhookEvent?.(resolvedTenant, payload)) ?? false;
       const trigger = await options.reviewWorker.classifyWebhookTrigger(
         payload,
         resolvedTenant,
       );
       if (!trigger) {
+        if (eventHandled) {
+          return reply.code(202).send({
+            accepted: true,
+            reason: "event-handled",
+          });
+        }
         return reply.code(202).send({
           accepted: false,
           reason: "no-trigger",
@@ -154,6 +186,17 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   }
 
   return app;
+}
+
+function resolvePublicRoot(): string {
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolve(moduleDirectory, "..", "public"),
+    resolve(moduleDirectory, "..", "..", "public"),
+  ];
+  return (
+    candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!
+  );
 }
 
 function getRequestRawBody(request: FastifyRequest): Buffer {

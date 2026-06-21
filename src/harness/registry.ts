@@ -40,7 +40,7 @@ export function resolveHarnessTools(
     registeredTools.push(
       defineTool("add_memory_entry", {
         description:
-          "Persist durable project knowledge into the Reviewphin memory wiki page",
+          "Persist durable project knowledge into the selected ReviewPhin project memory backend",
         parameters: {
           type: "object",
           additionalProperties: false,

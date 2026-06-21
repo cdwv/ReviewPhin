@@ -1,9 +1,34 @@
 import { describe, expect, it } from "vitest";
 
 import { buildInteractionPlan } from "../src/review/interaction-plan.js";
-import type { ReviewTriggerContext } from "../src/review/types.js";
+import type {
+  CommentReviewTriggerContext,
+  ReviewTriggerContext,
+} from "../src/review/types.js";
 
 describe("buildInteractionPlan", () => {
+  it("routes provider-owned manual actions to review-only flow", () => {
+    const plan = buildInteractionPlan({
+      trigger: {
+        kind: "manual-review",
+        provider: "github",
+        source: "check-run-requested-action",
+        metadata: {
+          checkRunId: 1357,
+          actionIdentifier: "run_review",
+        },
+      },
+      previousReviewExists: false,
+      priorFindings: [],
+    });
+
+    expect(plan.reviewNeeded).toBe(true);
+    expect(plan.replyNeeded).toBe(false);
+    expect(plan.memoryCandidate).toBe(false);
+    expect(plan.responseTargets).toEqual([]);
+    expect(plan.rerunReason).toBe("manual-review");
+  });
+
   it("routes follow-up finding-discussion comments to reviewer-only flow", () => {
     const plan = buildInteractionPlan({
       trigger: createTrigger(
@@ -141,7 +166,7 @@ describe("buildInteractionPlan", () => {
 });
 
 function createTrigger(
-  kind: ReviewTriggerContext["kind"],
+  kind: CommentReviewTriggerContext["kind"],
   body: string,
   instruction: string,
   discussionId?: string,

@@ -6,7 +6,7 @@ import type { Logger } from "pino";
 import type { IPlatform } from "./IPlatform.js";
 import type { PlatformFactoryContext, PlatformModule } from "./provider.js";
 
-const DEFAULT_PLATFORM_MODULES = ["gitlab"] as const;
+const DEFAULT_PLATFORM_MODULES = ["gitlab", "github"] as const;
 
 export interface InitializedPlatformRuntime {
   readonly moduleSpecifiers: readonly string[];
@@ -91,6 +91,9 @@ async function loadPlatformFactory(
 function resolvePlatformModuleSpecifier(platformModule: string): string {
   if (platformModule === "gitlab") {
     return new URL("./gitlab/entrypoint.js", import.meta.url).href;
+  }
+  if (platformModule === "github") {
+    return new URL("./github/entrypoint.js", import.meta.url).href;
   }
 
   if (isAbsolute(platformModule) || platformModule.startsWith(".")) {

@@ -1,79 +1,15 @@
 import type { ReviewAnchor, ReviewFinding } from "./types.js";
 
-interface LineAnchorLike {
-  path: string;
-  oldPath?: string | null | undefined;
-  startLine: number;
-  endLine: number;
-  side: "new" | "old";
-}
-
-interface SuggestionLike {
-  replacement: string;
-  startLine: number;
-  endLine: number;
-}
-
 const REVIEW_DISCUSSION_MARKER_PREFIX = "reviewphin-review-discussion:";
 const REVIEW_DISCUSSION_MARKER_PATTERN =
   /\n*\[comment\]: <> \((?:gitlab-agentic|reviewphin)-review-discussion:([^\s)]+)\)\s*/g;
 const REVIEW_DISCUSSION_MARKER_EXTRACTOR =
   /\[comment\]: <> \((?:gitlab-agentic|reviewphin)-review-discussion:([^\s)]+)\)/;
 
-export function renderSuggestionMarkdown(
-  suggestion: SuggestionLike | null | undefined,
-  anchor: LineAnchorLike | null | undefined,
-): string | null {
-  if (!suggestion || !anchor) {
-    return null;
-  }
-
-  if (anchor.side !== "new") {
-    return null;
-  }
-
-  if (
-    anchor.startLine < suggestion.startLine ||
-    anchor.startLine > suggestion.endLine
-  ) {
-    return null;
-  }
-
-  const linesAbove = anchor.startLine - suggestion.startLine;
-  const linesBelow = suggestion.endLine - anchor.startLine;
-  if (linesAbove > 100 || linesBelow > 100) {
-    return null;
-  }
-
-  return [
-    `\`\`\`suggestion:-${linesAbove}+${linesBelow}`,
-    suggestion.replacement.replace(/\r\n/g, "\n").trimEnd(),
-    "```",
-  ].join("\n");
-}
-
-export function appendSuggestion(
-  body: string,
-  suggestionMarkdown: string | null,
+export function renderReviewFindingProse(
+  finding: Pick<ReviewFinding, "title" | "body">,
 ): string {
-  if (!suggestionMarkdown) {
-    return body;
-  }
-
-  return `${body.trim()}\n\n${suggestionMarkdown}`;
-}
-
-export function renderReviewFindingBody(
-  finding: Pick<ReviewFinding, "title" | "body" | "anchor" | "suggestion">,
-): string {
-  const suggestion = renderSuggestionMarkdown(
-    finding.suggestion ?? null,
-    finding.anchor ?? null,
-  );
-  return appendSuggestion(
-    `**${finding.title.trim()}**\n\n${finding.body.trim()}`,
-    suggestion,
-  );
+  return `**${finding.title.trim()}**\n\n${finding.body.trim()}`;
 }
 
 export function appendReviewDiscussionMarker(

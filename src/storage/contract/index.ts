@@ -1,4 +1,4 @@
-export const CURRENT_STORAGE_CONTRACT_REVISION = "storage-v002";
+export const CURRENT_STORAGE_CONTRACT_REVISION = "storage-v004";
 
 export type {
   StorageContractRevisionId,
@@ -43,6 +43,10 @@ export type {
   PlatformConnectionRecord,
   PlatformConnectionStatus,
   PlatformConnectionStore,
+  ProjectMemoryFilters,
+  ProjectMemoryOrderField,
+  ProjectMemoryRecord,
+  ProjectMemoryStore,
   PreviousCompletedInteractionRecord,
   PriorReviewFindingRecord,
   ReviewFindingRecord,

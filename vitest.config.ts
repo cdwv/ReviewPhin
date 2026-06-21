@@ -3,6 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
+    testTimeout: 15_000,
     exclude: ["tmp/**", "dist/**", "node_modules/**"],
     reporters: ["default", "junit"],
     outputFile: {

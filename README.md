@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="favicon.png" alt="ReviewPhin" width="120" />
+  <img src="./public/favicon.png" alt="ReviewPhin" width="120" />
 
 # ReviewPhin
 
-**Self-hosted AI code review for GitLab.**
+**Self-hosted AI code review for GitLab and GitHub.**
 Run on your own infrastructure. Bring your own model. Use your own agent subscription to pay per review, not per developer.
 
 [![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)
@@ -13,11 +13,11 @@ Run on your own infrastructure. Bring your own model. Use your own agent subscri
 
 ---
 
-ReviewPhin is a hard working dolphin that listens for GitLab code review comments, runs a multi-agent AI review, and writes findings back as GitLab discussions - while only ever touching content it created itself.
+ReviewPhin listens for GitLab and GitHub code review events, runs a multi-agent AI review, and publishes findings through each provider's native review model while only modifying content it created itself.
 
 All model calls go through a configured harness (currently Copilot CLI, but more may come) so you can plug in either a subscription model or an [OpenAI-compatible API](docs/model-providers.md).
 
-Internally, code-review operations now flow through a platform adapter layer. GitLab is still the only built-in platform today, but tenant records and webhook routing already carry platform metadata.
+Internally, code-review operations flow through a platform adapter layer with built-in GitLab and GitHub implementations.
 
 _Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWave](https://codewave.eu)_
 
@@ -26,7 +26,7 @@ _Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWa
 - [Quickstart with Docker](#quickstart-with-docker)
 - [Kubernetes / Helm](#kubernetes--helm)
 - [Adding tenants](#adding-tenants)
-- [Using ReviewPhin in GitLab](#using-reviewphin-in-gitlab)
+- [Using ReviewPhin](#using-reviewphin)
 - [How it works](#how-it-works)
 - [Review pipeline](#review-pipeline)
 - [Technologies](#technologies)
@@ -114,7 +114,7 @@ If you prefer to configure separate GitHub API tokens for different projects, yo
 
 ## Adding tenants
 
-A **tenant** is a single project on given gitlab instance. One ReviewPhin instance can serve multiple tenants, but each tenant is configured only for one project.
+A **tenant** is a single project on a connected code review platform. One ReviewPhin instance can serve multiple tenants, but each tenant is configured only for one project or repository.
 
 ### 1. Create a bot identity in GitLab
 
@@ -166,7 +166,29 @@ pnpm cli tenant add \
 
 `--platform` currently defaults to `gitlab`, so the flag is optional. To assign a specific model profile at registration time, add `--model-profile <name>`. See [Model providers](docs/model-providers.md) for profile setup.
 
-### 4. Add the webhook in GitLab
+For GitHub, register a GitHub App connection first. The command prints an expiring setup URL for the App Manifest flow:
+
+```bash
+docker compose run --rm -e PUBLIC_URL=https://reviewphin.example.com worker reviewphin platform connection add \
+  --platform github \
+  --name main-github \
+  --owner example-org
+```
+
+Open the printed setup URL, complete registration and installation on GitHub, then add a repository tenant:
+
+```bash
+docker compose run --rm worker reviewphin tenant add \
+  --platform github \
+  --connection main-github \
+  --repository example-org/example-repository
+```
+
+From a local checkout, use the same `platform connection add` and `tenant add` arguments with `pnpm cli`. See [CLI reference](docs/CLI.md#platform-connection) for the full GitHub connection lifecycle.
+
+### 4. Configure platform webhooks
+
+For GitLab, add the webhook manually.
 
 In the project's **Settings → Webhooks**:
 
@@ -179,6 +201,10 @@ In the project's **Settings → Webhooks**:
 `/webhooks/gitlab/note` is still accepted as a backward-compatible legacy alias, but `/webhooks/gitlab` is the canonical route for new setups.
 
 Save, then use the **Test** button (select _Note events_) to verify ReviewPhin receives the delivery and returns `202 Accepted`.
+
+For GitHub, the App Manifest setup configures the webhook URL as
+`https://your-host/webhooks/github`. The generated App must stay installed on
+the repositories you register as tenants.
 
 ### 5. Verify the tenant is registered
 
@@ -194,9 +220,9 @@ The JSON output includes each tenant's `id`, `key`, and `platform`. See [CLI ref
 
 ---
 
-## Using ReviewPhin in GitLab
+## Using ReviewPhin
 
-### Trigger a review
+### Trigger a GitLab review
 
 Post a merge request comment that mentions the bot:
 
@@ -207,6 +233,19 @@ Post a merge request comment that mentions the bot:
 ReviewPhin queues a job, hydrates the code review, and creates or updates bot-owned discussions for each finding plus a summary comment at the top of the discussion list.
 
 On first run this is a **full review** covering all changed files. On subsequent runs for the same code review it is an **incremental re-review** focused on files changed since the last run.
+
+### Trigger a GitHub review
+
+GitHub uses a Check Run action as the primary manual trigger. Open the pull
+request's ReviewPhin Check Run and click **Run Review**. ReviewPhin provisions
+the Check Run when a pull request is opened or reopened, when its head changes,
+and when a GitHub tenant is added for repositories that already have open pull
+requests.
+
+ReviewPhin also accepts `/reviewphin review`, `@reviewphin review`, and
+mentions of the generated App slug in pull request comments as compatibility
+triggers, but GitHub does not expose those as native slash commands or reliable
+mention autocomplete entries.
 
 ### Force a full re-scan
 
@@ -220,7 +259,7 @@ Other accepted phrasings: `full rescan`, `fresh full review`, `rescan everything
 
 ### Follow-up conversations
 
-Replies inside a bot-owned review discussion automatically queue a new pass scoped to that discussion. You do not need to mention the bot again:
+Replies inside a bot-owned review discussion automatically queue a new pass scoped to that discussion. In GitLab this is a discussion note. In GitHub this is a reply inside a ReviewPhin-owned inline review thread. You do not need to mention the bot again:
 
 ```
 # Inside a bot discussion:
@@ -229,13 +268,20 @@ Can you suggest a more readable variable name here?
 
 ### Teach the bot project conventions
 
-To store a durable note in the project memory (written to the `ReviewPhin memory` wiki page):
+To store a durable note in the project memory (written to the selected memory backend):
 
 ```
 @reviewphin for future reference, we always prefer functional React components over class components
 ```
 
 Other triggers: `remember`, `going forward`, `team policy`, `always prefer`, `please prefer`.
+
+Project memory is owned by the configured code-review platform and storage
+provider. GitHub uses the configured ReviewPhin storage provider. GitLab uses
+the project wiki when GitLab project metadata reports the wiki feature enabled;
+otherwise it uses the configured storage provider. If a GitLab project later
+enables wiki after store-backed memory exists, the wiki wins and the store row
+is deleted.
 
 ### Override the model for one code review
 
@@ -251,14 +297,14 @@ This selects a named model profile for every review run on that code review. To 
 
 ## How it works
 
-1. A developer mentions the bot in a GitLab merge request comment (`@reviewphin review this`).
-2. ReviewPhin receives the GitLab Note Hook webhook, validates the signature, and queues a job.
+1. A developer triggers a review from GitLab comments, GitHub pull request comments, or the GitHub **Run Review** Check Run action.
+2. ReviewPhin receives the platform webhook, validates the signature, resolves the tenant, and queues a job.
 3. The **Router** hydrates the code review: it checks out the exact commit, fetches diffs, notes, and any project instruction files.
 4. The **Reviewer** (a two-agent pipeline) analyses the changes and produces structured findings with severity, category, optional line anchors, and inline code suggestions.
 5. The **Chatter** handles follow-up replies, conversational questions, and durable project memory updates.
-6. Findings are reconciled back into GitLab as bot-owned discussions. Obsolete threads are resolved; the summary note is updated.
+6. Findings are reconciled back through the platform provider as bot-owned review output. Obsolete threads are resolved where the platform supports it; the summary comment is updated.
 
-All code and data stay on your infrastructure. The worker calls the configured model API and the GitLab API; nothing else leaves the network.
+All code and data stay on your infrastructure. The worker calls the configured model API and the connected code review platform API; nothing else leaves the network.
 
 ---
 
@@ -268,7 +314,7 @@ ReviewPhin uses three logical components for each triggered review:
 
 ### Router
 
-The webhook handler validates the GitLab signature, classifies the trigger (direct mention, follow-up reply, or summary note reply), deduplicates concurrent jobs, and enqueues a review task. No model calls happen here.
+The webhook handler validates the platform signature, classifies the trigger (direct mention, Check Run action, follow-up reply, or summary note reply), deduplicates concurrent jobs, and enqueues a review task. No model calls happen here.
 
 ### Reviewer
 
@@ -288,7 +334,7 @@ The reviewer selects one of three modes based on trigger context:
 A lightweight agent that runs after the reviewer (when applicable). It handles:
 
 - conversational replies to questions or wording requests
-- project memory decisions (`add_memory_entry` tool writes to the wiki page)
+- project memory decisions (`add_memory_entry` tool writes to the selected memory backend)
 - reply text for explicit follow-up targets
 
 Chatter uses the `textGenerationModel` from the active profile (falling back to the review model when unset), keeping lighter interactions cheaper.
@@ -316,24 +362,25 @@ Chatter uses the `textGenerationModel` from the active profile (falling back to 
 
 All variables are optional unless noted. For local Docker from source, put them in `.env.docker`; for local runs, use `.env`.
 
-| Variable                                             | Default                          | Description                                                                                 |
-| ---------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------- |
-| `PORT`                                               | `3000`                           | HTTP port                                                                                   |
-| `HOST`                                               | `0.0.0.0`                        | Bind address                                                                                |
-| `LOG_LEVEL`                                          | `info`                           | `fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` \| `silent`                    |
-| `STORAGE_PROVIDER_MODULE`                            | built-in SQLite                  | Module path or package name for a custom storage adapter                                    |
-| `PLATFORM_MODULES`                                   | `gitlab`                         | Comma-separated platform provider modules. Supports `gitlab`, paths, and package specifiers |
-| `SQLITE_DATABASE_PATH`                               | `./data/review-worker.sqlite`    | SQLite file path (ignored when a custom storage module is set)                              |
-| `RUN_LOG_DIR`                                        | `./data/run-logs`                | Root directory for per-review run artifacts                                                 |
-| `WORKSPACE_ROOT`                                     | `./tmp/review-workspaces`        | Scratch directory for hydrated repositories                                                 |
-| `MAX_JOB_RETRIES`                                    | `3`                              | Retry attempts for failed review jobs                                                       |
-| `RETRY_BACKOFF_MS`                                   | `5000`                           | Delay (ms) between retries                                                                  |
-| `COPILOT_TIMEOUT_MS`                                 | `180000`                         | Model session timeout in milliseconds                                                       |
-| `COPILOT_SDK_LOG_LEVEL`                              | _(none)_                         | SDK log verbosity: `none` \| `error` \| `warning` \| `info` \| `debug` \| `all`             |
-| `COPILOT_CLI_PATH`                                   | `/usr/local/bin/copilot` (image) | Path to the Copilot CLI binary                                                              |
-| `REVIEWPHIN_MEMORY_ENABLED`                          | `true`                           | Enable per-project wiki memory                                                              |
-| `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS`                 | `5000`                           | Character budget for injected project memory                                                |
-| `GH_TOKEN` / `GITHUB_TOKEN` / `COPILOT_GITHUB_TOKEN` | _(required for Copilot mode)_    | GitHub PAT with **Copilot Requests** permission                                             |
+| Variable                                             | Default                          | Description                                                                        |
+| ---------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------- |
+| `PORT`                                               | `3000`                           | HTTP port                                                                          |
+| `HOST`                                               | `0.0.0.0`                        | Bind address                                                                       |
+| `PUBLIC_URL`                                         | `http://localhost:<PORT>`        | Public app URL used to print initial provider setup links                          |
+| `LOG_LEVEL`                                          | `info`                           | `fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` \| `silent`           |
+| `STORAGE_PROVIDER_MODULE`                            | built-in SQLite                  | Module path or package name for a custom storage adapter                           |
+| `PLATFORM_MODULES`                                   | `gitlab,github`                  | Comma-separated platform provider modules. Supports built-ins, paths, and packages |
+| `SQLITE_DATABASE_PATH`                               | `./data/review-worker.sqlite`    | SQLite file path (ignored when a custom storage module is set)                     |
+| `RUN_LOG_DIR`                                        | `./data/run-logs`                | Root directory for per-review run artifacts                                        |
+| `WORKSPACE_ROOT`                                     | `./tmp/review-workspaces`        | Scratch directory for hydrated repositories                                        |
+| `MAX_JOB_RETRIES`                                    | `3`                              | Retry attempts for failed review jobs                                              |
+| `RETRY_BACKOFF_MS`                                   | `5000`                           | Delay (ms) between retries                                                         |
+| `COPILOT_TIMEOUT_MS`                                 | `180000`                         | Model session timeout in milliseconds                                              |
+| `COPILOT_SDK_LOG_LEVEL`                              | _(none)_                         | SDK log verbosity: `none` \| `error` \| `warning` \| `info` \| `debug` \| `all`    |
+| `COPILOT_CLI_PATH`                                   | `/usr/local/bin/copilot` (image) | Path to the Copilot CLI binary                                                     |
+| `REVIEWPHIN_MEMORY_ENABLED`                          | `true`                           | Enable per-project memory                                                          |
+| `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS`                 | `5000`                           | Character budget for injected project memory                                       |
+| `GH_TOKEN` / `GITHUB_TOKEN` / `COPILOT_GITHUB_TOKEN` | _(required for Copilot mode)_    | GitHub PAT with **Copilot Requests** permission                                    |
 
 For model profile setup (BYOK providers, Azure OpenAI, etc.) see [Model providers](docs/model-providers.md).
 For custom storage adapters see [Storage providers](docs/storage-providers.md).
@@ -346,7 +393,7 @@ For custom code review platform providers see [Code review platform providers](d
 | Method | Path                    | Description                                                         |
 | ------ | ----------------------- | ------------------------------------------------------------------- |
 | `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}`                           |
-| `POST` | `/webhooks/<platform>`  | Platform webhook receiver. GitLab currently uses `/webhooks/gitlab` |
+| `POST` | `/webhooks/<platform>`  | Platform webhook receiver. Built-ins use `/webhooks/gitlab` and `/webhooks/github` |
 | `*`    | `/setup/<platform>`     | Optional platform setup handler when the provider exposes one       |
 | `POST` | `/webhooks/gitlab/note` | Deprecated GitLab compatibility alias                               |
 

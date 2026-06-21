@@ -15,6 +15,37 @@ const codeReview = {
 };
 
 describe("buildScopedReviewContext", () => {
+  it("scopes manual review actions without comment metadata", () => {
+    const scoped = buildScopedReviewContext({
+      workspacePath: repoPath(),
+      codeReview,
+      changes: [
+        createChange("src/manual.ts", "@@ -1 +1 @@\n-old\n+new"),
+      ],
+      comments: [],
+      discussions: [],
+      trigger: {
+        kind: "manual-review",
+        provider: "github",
+        source: "check-run-requested-action",
+        metadata: {
+          checkRunId: 1357,
+          actionIdentifier: "run_review",
+        },
+      },
+      priorDiscussions: [],
+      previousReview: null,
+    });
+
+    expect(scoped.scope.mode).toBe("first-pass-full");
+    expect(scoped.trigger).toEqual(
+      expect.objectContaining({
+        kind: "manual-review",
+        provider: "github",
+      }),
+    );
+  });
+
   it("uses incremental re-review mode when a previous completed review exists", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
@@ -25,7 +56,6 @@ describe("buildScopedReviewContext", () => {
       ],
       comments: [createNote(1, "Looks good")],
       discussions: [],
-      instructionFiles: [],
       trigger: {
         kind: "direct-mention",
         commentId: 55,
@@ -107,7 +137,6 @@ describe("buildScopedReviewContext", () => {
       ],
       comments: [],
       discussions: [],
-      instructionFiles: [],
       trigger: {
         kind: "direct-mention",
         commentId: 57,
@@ -179,7 +208,6 @@ describe("buildScopedReviewContext", () => {
       changes: [createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new")],
       comments: [],
       discussions: [],
-      instructionFiles: [],
       trigger: {
         kind: "summary-follow-up",
         commentId: 90,
@@ -231,7 +259,6 @@ describe("buildScopedReviewContext", () => {
       ],
       comments: [createNote(1, "Looks good")],
       discussions: [],
-      instructionFiles: [],
       trigger: {
         kind: "direct-mention",
         commentId: 56,
@@ -311,7 +338,6 @@ describe("buildScopedReviewContext", () => {
           comments: [createDiscussionNote(11, "Other finding")],
         },
       ],
-      instructionFiles: [],
       trigger: {
         kind: "follow-up-comment",
         commentId: 77,
@@ -360,7 +386,6 @@ describe("buildScopedReviewContext", () => {
           comments: [createDiscussionNote(10, "Target finding")],
         },
       ],
-      instructionFiles: [],
       trigger: {
         kind: "follow-up-comment",
         commentId: 78,
@@ -401,7 +426,6 @@ describe("buildScopedReviewContext", () => {
       ),
       comments: [],
       discussions: [],
-      instructionFiles: [],
       trigger: {
         kind: "direct-mention",
         commentId: 88,
@@ -434,7 +458,6 @@ describe("buildScopedReviewContext", () => {
       changes: [createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new")],
       comments: [],
       discussions: [],
-      instructionFiles: [],
       trigger: {
         kind: "direct-mention",
         commentId: 89,

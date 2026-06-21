@@ -122,6 +122,8 @@ export interface GitLabProject {
   web_url: string;
   path_with_namespace: string;
   http_url_to_repo: string;
+  wiki_enabled?: boolean | undefined;
+  wiki_access_level?: string | undefined;
 }
 
 export interface GitLabWikiPage {
@@ -175,16 +177,10 @@ export interface GitLabNoteHookPayload {
   user?: GitLabUser | undefined;
 }
 
-export interface InstructionFile {
-  path: string;
-  content: string;
-}
-
 export interface MaterializedWorkspace {
   rootPath: string;
   cleanupRoot: string;
   strategy: "git" | "archive" | "targeted-files";
-  instructionFiles: InstructionFile[];
 }
 
 export interface MaterializedMergeRequestContext {

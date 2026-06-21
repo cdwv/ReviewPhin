@@ -62,9 +62,77 @@ Bot identity is inferred from the token unless explicitly supplied. The
 Provider options, including bot identity, can also be changed with
 `platform connection update --connection <name-or-id>`.
 
+For GitHub, registration creates an expiring setup link for the GitHub App
+manifest flow:
+
+```bash
+PUBLIC_URL=https://reviewphin.example.com reviewphin platform connection add \
+  --platform github \
+  --name main-github \
+  --owner example-org
+```
+
+Open the printed setup URL, review the generated manifest, and complete the
+registration and installation on GitHub. After registration, ReviewPhin
+redirects to the app installation page. The connection changes from
+`setup_required` to `ready` only after ReviewPhin validates the installation
+account and successfully makes an installation-authenticated repository API
+request.
+The setup page builds callback, webhook, and asset URLs from `PUBLIC_URL`, so a
+reverse-proxy path prefix such as `https://host/reviewphin` is preserved.
+
+The Check Run **Run Review** action is the primary GitHub trigger. Pull request
+comments also accept `/reviewphin review`, `@reviewphin review`, or a mention
+of the generated App slug. GitHub does not autocomplete these compatibility
+commands. Replies inside ReviewPhin-owned inline review threads automatically
+continue that finding.
+
+GitHub project memory uses the configured ReviewPhin storage provider. It does
+not require repository wiki access or repository contents write access for
+memory.
+
+Use `--recreate` to issue a fresh setup link without deleting the connection
+or its tenant assignments. Recreate prints cleanup instructions for the old
+remote app and retains only non-secret app identity metadata for reference.
+Ordinary GitHub connection updates are rejected because registration changes
+require an explicit recreate.
+
+GitHub does not support setting the app badge through an App Manifest or REST
+API. After setup succeeds, follow the success-page instructions to download
+`<PUBLIC_URL>/favicon.png`, edit the generated app under **Settings > Developer
+settings > GitHub Apps**, and upload it as the app logo. GitHub accepts PNG,
+JPG, or GIF files under 1 MB and recommends a square image around 200 by 200
+pixels.
+
+#### Removing a GitHub connection
+
+`platform connection remove` prints provider-specific cleanup instructions and
+then removes only ReviewPhin's local connection record. It does not uninstall
+or delete the generated GitHub App.
+Before removing the local connection:
+
+1. Remove all ReviewPhin tenants attached to the connection.
+2. In the target personal or organization account, open **Settings > GitHub
+   Apps**, select the installed ReviewPhin app, and click **Uninstall**.
+3. In the account that owns the generated app registration, open **Settings >
+   Developer settings > GitHub Apps**, edit the app, open **Advanced**, and
+   delete the GitHub App registration.
+4. Run:
+
+```bash
+reviewphin platform connection remove --connection main-github
+```
+
+Deleting the registration also uninstalls that app from any remaining
+accounts. The explicit uninstall step is recommended so you can confirm which
+account and repositories lose access before deleting the registration.
+
+GitLab connection recreate and removal similarly print reminders to remove
+obsolete project webhooks and revoke dedicated access tokens manually.
+
 ### `tenant add`
 
-Register a new tenant. Today GitLab is the only supported platform, so `--platform gitlab` is optional and defaults to GitLab.
+Register a new GitLab or GitHub tenant. `--platform` defaults to `gitlab`.
 
 ```bash
 reviewphin tenant add \
@@ -74,17 +142,37 @@ reviewphin tenant add \
   --webhook-secret replace-me
 ```
 
+For GitHub, the assigned connection must have completed App installation:
+
+```bash
+reviewphin tenant add \
+  --platform github \
+  --connection main-github \
+  --repository example-org/example-repository
+```
+
+During GitHub tenant registration, ReviewPhin scans existing open pull
+requests and idempotently provisions missing **Run Review** Check Runs. A
+failed scan aborts registration; rerunning the command safely retries the
+backfill.
+
 | Flag                        | Required | Description                                                                                                           |
 | --------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
 | `--platform`                | No       | Code review platform slug. Defaults to `gitlab`; custom slugs require loading their provider with `PLATFORM_MODULES`. |
 | `--connection`              | Yes      | Globally unique connection name or id. It must be ready and match the tenant platform.                                |
-| `--project-id`              | Yes      | Numeric GitLab project ID.                                                                                            |
-| `--webhook-secret`          | Yes      | Value expected in the `X-Gitlab-Token` header for this project's webhooks.                                            |
+| `--project-id`              | GitLab   | Numeric GitLab project ID.                                                                                            |
+| `--webhook-secret`          | GitLab   | Value expected in the `X-Gitlab-Token` header for this project's webhooks.                                            |
+| `--repository`              | GitHub   | Repository in `owner/repo` form, resolved through the configured GitHub App installation.                             |
 | `--model-profile`           | No       | Assign a named model profile to this tenant at registration time.                                                     |
 | `--sqlite-database-path`    | No       | Override the SQLite file path instead of reading `SQLITE_DATABASE_PATH` from `.env`.                                  |
 | `--storage-provider-module` | No       | Override the storage adapter module instead of reading `STORAGE_PROVIDER_MODULE` from `.env`.                         |
 
 For non-built-in platforms, set `PLATFORM_MODULES` in the environment before running `tenant add`; CLI platform registration uses the same comma-separated module list as the server. See [Code review platform providers](code-review-platform-providers.md#loading-platform-modules).
+
+GitLab project memory uses the project wiki when GitLab reports the wiki
+feature enabled. If the wiki feature is disabled, memory uses the configured
+storage provider. GitHub project memory always uses the configured storage
+provider.
 
 ---
 
@@ -322,7 +410,7 @@ reviewphin storage migrate \
 
 ### `mr describe`
 
-Print the hydrated code review context for a given code review. Useful for debugging review inputs without triggering a full review. The data is still GitLab-shaped today because GitLab is the only supported platform.
+Print the hydrated code review context for a given code review. Useful for debugging review inputs without triggering a full review. The command accepts the provider-neutral tenant key and code review identifier.
 
 ```bash
 reviewphin mr describe \

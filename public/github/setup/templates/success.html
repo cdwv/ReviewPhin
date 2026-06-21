@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="{{iconUrl}}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "media",
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['"Bricolage Grotesque"', "system-ui", "sans-serif"],
+            body: ['"IBM Plex Sans"', "system-ui", "sans-serif"],
+            mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
+          },
+          colors: {
+            brand: {
+              50: "#eef7fe",
+              100: "#d6ebfb",
+              200: "#b0d8f6",
+              300: "#7cbef0",
+              400: "#4ea4e6",
+              500: "#2f8bd6",
+              600: "#2270b5",
+              700: "#1f5a92",
+              800: "#1e4a76",
+              900: "#102f4d",
+              950: "#0a1f34",
+            },
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="{{assetBaseUrl}}/github-setup.css">
+  <title>{{title}}</title>
+  <script type="application/json" id="reviewphin-setup-data">{{setupDataJson}}</script>
+  <script src="{{assetBaseUrl}}/github-setup.js" defer></script>
+</head>
+<body data-page="success" class="min-h-screen bg-gradient-to-b from-brand-50 via-white to-brand-50 font-body text-brand-900 antialiased selection:bg-brand-500/20 dark:from-brand-950 dark:via-brand-950 dark:to-brand-900/60 dark:text-brand-100">
+  <div class="mx-auto flex min-h-screen max-w-2xl flex-col px-5 py-10 sm:px-8 sm:py-14">
+    <header class="flex items-center gap-3">
+      <img src="{{iconUrl}}" alt="" class="h-11 w-11 rounded-2xl shadow-sm ring-1 ring-brand-900/10 dark:ring-white/10">
+      <div class="leading-tight">
+        <p class="font-display text-lg font-bold tracking-tight">ReviewPhin</p>
+        <p class="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-brand-600 dark:text-brand-300">GitHub setup</p>
+      </div>
+    </header>
+
+    <nav aria-label="Setup progress" class="mt-9">
+      <ol class="flex items-center gap-2 sm:gap-3">
+        <li class="flex items-center gap-2.5">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white">
+            <svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0l-3.5-3.5a1 1 0 1 1 1.4-1.4l2.8 2.79 6.8-6.79a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
+          </span>
+          <span class="hidden text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-brand-600 dark:text-brand-300 sm:block">Register</span>
+        </li>
+        <li aria-hidden="true" class="h-px flex-1 bg-brand-500/40"></li>
+        <li class="flex items-center gap-2.5">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white">
+            <svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0l-3.5-3.5a1 1 0 1 1 1.4-1.4l2.8 2.79 6.8-6.79a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
+          </span>
+          <span class="hidden text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-brand-600 dark:text-brand-300 sm:block">Install</span>
+        </li>
+        <li aria-hidden="true" class="h-px flex-1 bg-brand-500/40"></li>
+        <li class="flex items-center gap-2.5">
+          <span aria-current="step" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-500 text-sm font-semibold text-white ring-4 ring-brand-500/20">3</span>
+          <span class="flex flex-col leading-tight">
+            <span class="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-brand-600 dark:text-brand-300">Ready</span>
+            <span class="hidden text-xs text-brand-700/70 dark:text-brand-200/60 sm:block">Connection live</span>
+          </span>
+        </li>
+      </ol>
+    </nav>
+
+    <main class="rp-rise mt-7 rounded-2xl border border-brand-900/10 bg-white/80 p-6 shadow-xl shadow-brand-900/5 backdrop-blur dark:border-white/10 dark:bg-brand-900/40 dark:shadow-black/30 sm:p-8">
+      <div class="flex items-start gap-4">
+        <img class="h-16 w-16 shrink-0 rounded-2xl ring-1 ring-brand-900/10 dark:ring-white/10" data-field="ownerAvatarUrl" alt="" hidden>
+        <div>
+          <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Connected
+          </span>
+          <h1 class="mt-2 font-display text-2xl font-bold tracking-tight sm:text-3xl">GitHub connection ready</h1>
+          <p class="mt-1.5 text-sm text-brand-800/80 dark:text-brand-100/70">You're all set — ReviewPhin is connected and ready to review pull requests. The optional step below adds a finishing touch.</p>
+        </div>
+      </div>
+
+      <dl class="mt-6 divide-y divide-brand-900/10 overflow-hidden rounded-xl border border-brand-900/10 dark:divide-white/10 dark:border-white/10">
+        <div class="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+          <dt class="font-semibold text-brand-700 dark:text-brand-300">Owner</dt>
+          <dd class="text-right text-brand-900 dark:text-brand-50" data-field="ownerSummary"></dd>
+        </div>
+        <div class="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+          <dt class="font-semibold text-brand-700 dark:text-brand-300">App</dt>
+          <dd class="text-right text-brand-900 dark:text-brand-50" data-field="appName"></dd>
+        </div>
+        <div class="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+          <dt class="font-semibold text-brand-700 dark:text-brand-300">Slug</dt>
+          <dd class="text-right font-mono text-xs text-brand-900 dark:text-brand-50" data-field="appSlug"></dd>
+        </div>
+        <div class="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+          <dt class="font-semibold text-brand-700 dark:text-brand-300">Installation ID</dt>
+          <dd class="text-right font-mono text-xs text-brand-900 dark:text-brand-50" data-field="installationId"></dd>
+        </div>
+        <div class="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+          <dt class="font-semibold text-brand-700 dark:text-brand-300">Repository access</dt>
+          <dd class="text-right text-brand-900 dark:text-brand-50" data-field="repositoryAccess"></dd>
+        </div>
+      </dl>
+
+      <p class="mt-4" data-section="appHtmlUrl" hidden>
+        <a class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 underline-offset-4 hover:underline dark:text-brand-300" data-field="appHtmlUrl" href="#">
+          Open the GitHub App
+          <svg viewBox="0 0 20 20" fill="currentColor" class="h-3.5 w-3.5" aria-hidden="true"><path d="M11 3a1 1 0 1 0 0 2h2.59l-6.3 6.29a1 1 0 1 0 1.42 1.42L15 6.4V9a1 1 0 1 0 2 0V4a1 1 0 0 0-1-1h-5Z"/><path d="M5 5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a1 1 0 1 0-2 0v3H5V7h3a1 1 0 0 0 0-2H5Z"/></svg>
+        </a>
+      </p>
+
+      <section class="mt-7 rounded-xl border border-brand-900/10 bg-brand-50/70 p-5 dark:border-white/10 dark:bg-brand-950/40">
+        <div class="flex items-start gap-4">
+          <img class="h-12 w-12 shrink-0 rounded-xl bg-white p-1 shadow-sm ring-1 ring-brand-900/10 dark:bg-brand-950 dark:ring-white/10" data-field="reviewphinAvatar" alt="ReviewPhin avatar">
+          <div class="min-w-0">
+            <span class="inline-flex items-center gap-1.5 rounded-full bg-brand-500/15 px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-brand-700 dark:text-brand-300">Optional polish</span>
+            <h2 class="mt-1.5 font-display text-base font-bold tracking-tight">Add the ReviewPhin avatar</h2>
+            <p class="mt-1.5 text-sm text-brand-800/80 dark:text-brand-100/70">If you'd like ReviewPhin's review comments and suggestions to show the ReviewPhin avatar instead of a default icon, upload the logo to your app once. Everything else already works.</p>
+          </div>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-2.5">
+          <a class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500" data-field="appSettingsUrl" href="#" target="_blank" rel="noopener">
+            Open app settings
+            <svg viewBox="0 0 20 20" fill="currentColor" class="h-3.5 w-3.5" aria-hidden="true"><path d="M11 3a1 1 0 1 0 0 2h2.59l-6.3 6.29a1 1 0 1 0 1.42 1.42L15 6.4V9a1 1 0 1 0 2 0V4a1 1 0 0 0-1-1h-5Z"/><path d="M5 5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a1 1 0 1 0-2 0v3H5V7h3a1 1 0 0 0 0-2H5Z"/></svg>
+          </a>
+          <a class="inline-flex items-center gap-2 rounded-lg border border-brand-900/15 bg-white px-4 py-2 text-sm font-semibold text-brand-700 shadow-sm transition hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 dark:border-white/15 dark:bg-brand-900/40 dark:text-brand-100 dark:hover:bg-brand-900/70" data-field="iconUrl" href="#" download>
+            Download avatar
+            <svg viewBox="0 0 20 20" fill="currentColor" class="h-3.5 w-3.5" aria-hidden="true"><path d="M10 3a1 1 0 0 1 1 1v6.59l1.3-1.3a1 1 0 1 1 1.4 1.42l-3 3a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.42l1.3 1.3V4a1 1 0 0 1 1-1Z"/><path d="M4 14a1 1 0 0 1 1 1v1h10v-1a1 1 0 1 1 2 0v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a1 1 0 0 1 1-1Z"/></svg>
+          </a>
+        </div>
+        <ol class="mt-5 grid gap-2.5 text-sm text-brand-800/80 dark:text-brand-100/70">
+          <li class="flex gap-2.5">
+            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-600 text-[0.7rem] font-semibold text-white">1</span>
+            <span>In <strong class="font-semibold text-brand-900 dark:text-brand-50" data-field="badgeAppName"></strong>, open <strong class="font-semibold text-brand-900 dark:text-brand-50">Display information</strong>.</span>
+          </li>
+          <li class="flex gap-2.5">
+            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-600 text-[0.7rem] font-semibold text-white">2</span>
+            <span>Upload the downloaded avatar as the app logo, then pick a badge background color.</span>
+          </li>
+          <li class="flex gap-2.5">
+            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-600 text-[0.7rem] font-semibold text-white">3</span>
+            <span>Save. New review comments will carry the ReviewPhin avatar.</span>
+          </li>
+        </ol>
+        <p class="mt-4 text-xs text-brand-700/70 dark:text-brand-200/55">PNG, JPG, or GIF under 1 MB; a square image around 200 x 200 pixels works best.</p>
+      </section>
+    </main>
+
+    <footer class="mt-auto flex items-center justify-between gap-3 pt-10 text-xs text-brand-700/60 dark:text-brand-200/50">
+      <span>ReviewPhin · automated pull request review</span>
+      <span class="inline-flex items-center gap-1.5"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Setup complete</span>
+    </footer>
+  </div>
+</body>
+</html>

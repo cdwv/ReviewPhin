@@ -2,6 +2,8 @@ import type { Logger } from "pino";
 
 import { buildDiffPosition } from "./positions.js";
 import { buildFilePosition } from "./positions.js";
+import { appendSuggestion, renderSuggestionMarkdown } from "./positions.js";
+import type { LineAnchorLike } from "./positions.js";
 import { isBotUser } from "./bot-user.js";
 import { GitLabApiError } from "./client.js";
 import type { GitLabClient } from "./client.js";
@@ -21,17 +23,24 @@ import {
   appendReviewDiscussionMarker,
   extractAnchorFromPosition,
   extractReviewDiscussionMarker,
+  renderReviewFindingProse,
   stripReviewDiscussionMarker,
 } from "../../review/discussion-format.js";
-import { isReviewSummaryNoteBody } from "../../review/summary.js";
+import {
+  findLatestReviewSummaryNote,
+  isReviewSummaryNoteBody,
+} from "../../review/summary.js";
 import type { ReviewFinding } from "../../review/types.js";
 import type {
-  PlatformDraftDiscussion,
-  PlatformPublishedDraftDiscussionMatch,
+  PlatformDiscussionMutation,
+  PlatformDiscussionMutationResult,
+  PlatformFindingPublication,
+  PlatformFindingsPublicationResult,
   PlatformReviewComment,
-  PlatformReviewDiscussionAdapter,
+  PlatformReviewPublicationAdapter,
   PlatformReviewDiscussion,
   PlatformSummaryComment,
+  PlatformSummaryPublication,
 } from "../review-adapter.js";
 
 interface GitLabReviewContext {
@@ -44,7 +53,21 @@ interface GitLabReviewContext {
   latestVersion?: GitLabMergeRequestVersion | null | undefined;
 }
 
-export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAdapter {
+interface PendingGitLabDraft {
+  id: string;
+  marker: string;
+  publication: PlatformFindingPublication;
+  body: string;
+  positionJson: string | null;
+}
+
+interface PublishedGitLabDraftMatch {
+  discussion: PlatformReviewDiscussion;
+  pending: PendingGitLabDraft;
+  rootComment: PlatformReviewComment;
+}
+
+export class GitLabReviewPublicationAdapter implements PlatformReviewPublicationAdapter {
   private readonly tenant: TenantRecord;
   private readonly botUserId: number;
   private readonly client: GitLabClient;
@@ -71,10 +94,10 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
     this.interactionRunId = input.interactionRunId;
   }
 
-  public async listDiscussions(options?: {
-    noCache?: boolean | undefined;
+  public async loadDiscussions(options?: {
+    fresh?: boolean | undefined;
   }): Promise<PlatformReviewDiscussion[]> {
-    const discussions = options?.noCache
+    const discussions = options?.fresh
       ? await this.client.listCodeReviewDiscussions(
           getGitLabTenantConfig(this.tenant).projectId,
           this.context.mergeRequest.iid,
@@ -86,82 +109,177 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
     );
   }
 
-  public async listSummaryComments(): Promise<PlatformSummaryComment[]> {
-    return this.context.notes.map((note) => ({
+  public async mutateDiscussion(
+    mutation: PlatformDiscussionMutation,
+  ): Promise<PlatformDiscussionMutationResult> {
+    const projectId = getGitLabTenantConfig(this.tenant).projectId;
+    switch (mutation.kind) {
+      case "set-resolved":
+        await this.client.resolveDiscussion(
+          projectId,
+          this.context.mergeRequest.iid,
+          mutation.discussionId,
+          mutation.resolved,
+        );
+        return {};
+      case "update-finding": {
+        const position = this.findCommentPosition(
+          mutation.discussionId,
+          mutation.commentId,
+        );
+        const note = await this.client.updateDiscussionNote(
+          projectId,
+          this.context.mergeRequest.iid,
+          mutation.discussionId,
+          Number(mutation.commentId),
+          renderGitLabFindingBody(mutation.finding, position),
+        );
+        return { comment: toPlatformReviewComment(note, this.botUserId) };
+      }
+      case "reply-finding": {
+        const position = this.findRootPosition(mutation.discussionId);
+        const note = await this.client.replyToDiscussion(
+          projectId,
+          this.context.mergeRequest.iid,
+          mutation.discussionId,
+          renderGitLabFindingBody(mutation.finding, position),
+        );
+        return { comment: toPlatformReviewComment(note, this.botUserId) };
+      }
+      case "reply-text": {
+        const note = await this.client.replyToDiscussion(
+          projectId,
+          this.context.mergeRequest.iid,
+          mutation.discussionId,
+          mutation.body,
+        );
+        return { comment: toPlatformReviewComment(note, this.botUserId) };
+      }
+    }
+  }
+
+  public async publishFindings(input: {
+    publicationKey: string;
+    findings: PlatformFindingPublication[];
+    existingDiscussionIds: ReadonlySet<string>;
+  }): Promise<PlatformFindingsPublicationResult> {
+    if (input.findings.length === 0) {
+      return { findings: [], links: [] };
+    }
+
+    const pending: PendingGitLabDraft[] = [];
+    try {
+      for (const publication of input.findings) {
+        pending.push(await this.createDraft(publication));
+      }
+      await this.client.bulkPublishCodeReviewDraftNotes(
+        getGitLabTenantConfig(this.tenant).projectId,
+        this.context.mergeRequest.iid,
+      );
+      const matches = await this.matchPublishedDrafts({
+        pending,
+        existingDiscussionIds: input.existingDiscussionIds,
+      });
+      return {
+        findings: matches.map((match) => ({
+          identityKey: match.pending.publication.identityKey,
+          discussion: match.discussion,
+          rootComment: match.rootComment,
+          url: match.rootComment.url,
+        })),
+        links: [],
+      };
+    } catch (error) {
+      try {
+        const matches = await this.matchPublishedDrafts({
+          pending,
+          existingDiscussionIds: input.existingDiscussionIds,
+          maxAttempts: 1,
+        });
+        if (matches.length === pending.length) {
+          return {
+            findings: matches.map((match) => ({
+              identityKey: match.pending.publication.identityKey,
+              discussion: match.discussion,
+              rootComment: match.rootComment,
+              url: match.rootComment.url,
+            })),
+            links: [],
+          };
+        }
+      } catch {
+        // The drafts were not fully published; clean up what remains below.
+      }
+      await this.cleanupDrafts(pending);
+      throw error;
+    }
+  }
+
+  public async upsertSummary(input: {
+    body: string;
+  }): Promise<PlatformSummaryPublication> {
+    const summaryComments: PlatformSummaryComment[] = this.context.notes.map(
+      (note) => ({
+        id: String(note.id),
+        body: note.body,
+        isBot: isBotUser(note.author, this.botUserId),
+        updatedAt: note.updated_at ?? null,
+        url: null,
+      }),
+    );
+    const existing = findLatestReviewSummaryNote(
+      summaryComments,
+      (comment) => comment.isBot,
+    );
+    const projectId = getGitLabTenantConfig(this.tenant).projectId;
+    const note = existing
+      ? await this.client.updateCodeReviewComment(
+          projectId,
+          this.context.mergeRequest.iid,
+          Number(existing.id),
+          input.body,
+        )
+      : await this.client.createCodeReviewComment(
+          projectId,
+          this.context.mergeRequest.iid,
+          input.body,
+        );
+    const comment: PlatformSummaryComment = {
       id: String(note.id),
       body: note.body,
       isBot: isBotUser(note.author, this.botUserId),
       updatedAt: note.updated_at ?? null,
-    }));
+      url: null,
+    };
+    return {
+      comment,
+      url: comment.url,
+      action: existing ? "updated" : "created",
+    };
   }
 
-  public async replyToDiscussion(
-    discussionId: string,
-    body: string,
-  ): Promise<PlatformReviewComment> {
-    const note = await this.client.replyToDiscussion(
-      getGitLabTenantConfig(this.tenant).projectId,
-      this.context.mergeRequest.iid,
-      discussionId,
-      body,
-    );
-    return toPlatformReviewComment(note, this.botUserId);
-  }
-
-  public async setDiscussionResolved(
-    discussionId: string,
-    resolved: boolean,
-  ): Promise<void> {
-    await this.client.resolveDiscussion(
-      getGitLabTenantConfig(this.tenant).projectId,
-      this.context.mergeRequest.iid,
-      discussionId,
-      resolved,
-    );
-  }
-
-  public async updateComment(
-    discussionId: string,
-    commentId: string,
-    body: string,
-  ): Promise<PlatformReviewComment> {
-    const note = await this.client.updateDiscussionNote(
-      getGitLabTenantConfig(this.tenant).projectId,
-      this.context.mergeRequest.iid,
-      discussionId,
-      Number(commentId),
-      body,
-    );
-    return toPlatformReviewComment(note, this.botUserId);
-  }
-
-  public async createDraftDiscussion(input: {
-    finding: ReviewFinding;
-    body: string;
-    draftMarker: string;
-  }): Promise<PlatformDraftDiscussion> {
+  private async createDraft(
+    publication: PlatformFindingPublication,
+  ): Promise<PendingGitLabDraft> {
     const context = this.requireHydratedContext();
-    const position = input.finding.anchor
+    const positionAnchor = getGitLabPositionAnchor(publication.finding);
+    const position = positionAnchor
       ? buildDiffPosition(
-          input.finding.anchor,
+          positionAnchor,
           context.changes as GitLabMergeRequestChange[],
           context.latestVersion as GitLabMergeRequestVersion | null,
         )
       : null;
-    const fallbackPosition = input.finding.anchor
+    const fallbackPosition = positionAnchor
       ? buildFilePosition(
-          input.finding.anchor,
+          positionAnchor,
           context.changes as GitLabMergeRequestChange[],
           context.latestVersion as GitLabMergeRequestVersion | null,
         )
       : null;
-    const noteBody = appendReviewDiscussionMarker(
-      input.body,
-      input.draftMarker,
-    );
     const draftNote = await this.createGitLabDraftDiscussion({
-      finding: input.finding,
-      noteBody,
+      finding: publication.finding,
+      marker: publication.marker,
       position,
       fallbackPosition:
         position?.position_type === "file" ? null : fallbackPosition,
@@ -169,53 +287,36 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
 
     return {
       id: String(draftNote.draftNote.id),
-      draftMarker: input.draftMarker,
-      finding: input.finding,
-      body: input.body,
+      marker: publication.marker,
+      publication,
+      body: draftNote.body,
       positionJson: draftNote.position
         ? JSON.stringify(draftNote.position)
         : null,
     };
   }
 
-  public async publishDraftDiscussions(): Promise<void> {
-    await this.client.bulkPublishCodeReviewDraftNotes(
-      getGitLabTenantConfig(this.tenant).projectId,
-      this.context.mergeRequest.iid,
-    );
-  }
-
-  public async deleteDraftDiscussion(draftDiscussionId: string): Promise<void> {
-    await this.client.deleteCodeReviewDraftNote(
-      getGitLabTenantConfig(this.tenant).projectId,
-      this.context.mergeRequest.iid,
-      Number(draftDiscussionId),
-    );
-  }
-
-  public async matchPublishedDraftDiscussions<
-    TPending extends PlatformDraftDiscussion,
-  >(input: {
-    pendingDraftDiscussions: ReadonlyArray<TPending>;
+  private async matchPublishedDrafts(input: {
+    pending: ReadonlyArray<PendingGitLabDraft>;
     existingDiscussionIds: ReadonlySet<string>;
     maxAttempts?: number | undefined;
-  }): Promise<PlatformPublishedDraftDiscussionMatch<TPending>[]> {
+  }): Promise<PublishedGitLabDraftMatch[]> {
     const maxAttempts = input.maxAttempts ?? 3;
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const liveDiscussions = await this.listDiscussions({ noCache: true });
+      const liveDiscussions = await this.loadDiscussions({ fresh: true });
       const matched = matchPublishedDraftDiscussions({
-        pendingDraftDiscussions: input.pendingDraftDiscussions,
+        pendingDraftDiscussions: input.pending,
         discussions: liveDiscussions,
         existingDiscussionIds: input.existingDiscussionIds,
       });
-      if (matched.length === input.pendingDraftDiscussions.length) {
+      if (matched.length === input.pending.length) {
         return matched;
       }
 
       lastError = new Error(
-        `Expected ${input.pendingDraftDiscussions.length} published draft discussions but matched ${matched.length}`,
+        `Expected ${input.pending.length} published draft discussions but matched ${matched.length}`,
       );
       if (attempt < maxAttempts) {
         await sleep(250 * attempt);
@@ -225,23 +326,46 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
     throw lastError ?? new Error("Failed to match published draft discussions");
   }
 
-  public async createSummaryComment(body: string): Promise<void> {
-    await this.client.createCodeReviewComment(
-      getGitLabTenantConfig(this.tenant).projectId,
-      this.context.mergeRequest.iid,
-      body,
-    );
+  private async cleanupDrafts(drafts: PendingGitLabDraft[]): Promise<void> {
+    for (const draft of drafts) {
+      try {
+        await this.client.deleteCodeReviewDraftNote(
+          getGitLabTenantConfig(this.tenant).projectId,
+          this.context.mergeRequest.iid,
+          Number(draft.id),
+        );
+      } catch (error) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "status" in error &&
+          error.status === 404
+        ) {
+          continue;
+        }
+        this.logger.warn(
+          { err: error, draftNoteId: draft.id },
+          "failed to clean up GitLab draft note",
+        );
+      }
+    }
   }
 
-  public async updateSummaryComment(
+  private findCommentPosition(
+    discussionId: string,
     commentId: string,
-    body: string,
-  ): Promise<void> {
-    await this.client.updateCodeReviewComment(
-      getGitLabTenantConfig(this.tenant).projectId,
-      this.context.mergeRequest.iid,
-      Number(commentId),
-      body,
+  ): GitLabDiffPosition | null {
+    const note = this.context.discussions
+      .find((discussion) => discussion.id === discussionId)
+      ?.notes.find((candidate) => String(candidate.id) === commentId);
+    return note?.position ?? null;
+  }
+
+  private findRootPosition(discussionId: string): GitLabDiffPosition | null {
+    return (
+      this.context.discussions.find(
+        (discussion) => discussion.id === discussionId,
+      )?.notes[0]?.position ?? null
     );
   }
 
@@ -265,39 +389,41 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
 
   private async createGitLabDraftDiscussion(input: {
     finding: ReviewFinding;
-    noteBody: string;
+    marker: string;
     position: GitLabDiffPosition | null;
     fallbackPosition: GitLabDiffPosition | null;
   }): Promise<{
     draftNote: GitLabDraftNote;
     position: GitLabDiffPosition | null;
+    body: string;
   }> {
-    const initialPosition = input.position ?? input.fallbackPosition;
-    if (!initialPosition) {
+    const createDraft = async (position: GitLabDiffPosition | null) => {
+      const body = renderGitLabFindingBody(input.finding, position);
+      const payload: { note: string; position?: GitLabDiffPosition } = {
+        note: appendReviewDiscussionMarker(body, input.marker),
+      };
+      if (position) {
+        payload.position = position;
+      }
+
       return {
         draftNote: await this.client.createCodeReviewDraftNote(
           getGitLabTenantConfig(this.tenant).projectId,
           this.context.mergeRequest.iid,
-          {
-            note: input.noteBody,
-          },
+          payload,
         ),
-        position: null,
+        position,
+        body,
       };
+    };
+
+    const initialPosition = input.position ?? input.fallbackPosition;
+    if (!initialPosition) {
+      return createDraft(null);
     }
 
     try {
-      return {
-        draftNote: await this.client.createCodeReviewDraftNote(
-          getGitLabTenantConfig(this.tenant).projectId,
-          this.context.mergeRequest.iid,
-          {
-            note: input.noteBody,
-            position: initialPosition,
-          },
-        ),
-        position: initialPosition,
-      };
+      return await createDraft(initialPosition);
     } catch (error) {
       if (!isInvalidDiffPositionError(error)) {
         throw error;
@@ -321,17 +447,7 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
           "GitLab rejected diff note position; retrying as a file-level thread",
         );
 
-        return {
-          draftNote: await this.client.createCodeReviewDraftNote(
-            getGitLabTenantConfig(this.tenant).projectId,
-            this.context.mergeRequest.iid,
-            {
-              note: input.noteBody,
-              position: input.fallbackPosition,
-            },
-          ),
-          position: input.fallbackPosition,
-        };
+        return createDraft(input.fallbackPosition);
       }
 
       this.logger.warn(
@@ -347,16 +463,7 @@ export class GitLabReviewDiscussionAdapter implements PlatformReviewDiscussionAd
         "GitLab rejected diff note position; retrying as an overview thread",
       );
 
-      return {
-        draftNote: await this.client.createCodeReviewDraftNote(
-          getGitLabTenantConfig(this.tenant).projectId,
-          this.context.mergeRequest.iid,
-          {
-            note: input.noteBody,
-          },
-        ),
-        position: null,
-      };
+      return createDraft(null);
     }
   }
 }
@@ -392,6 +499,7 @@ export function toPlatformReviewComment(
     updatedAt: note.updated_at ?? null,
     anchor: extractAnchorFromPosition(note.position ?? null),
     positionJson: note.position ? JSON.stringify(note.position) : null,
+    url: null,
   };
 }
 
@@ -435,13 +543,11 @@ function positionJsonMatches(
   return actualPositionJson === expectedPositionJson;
 }
 
-function matchPublishedDraftDiscussions<
-  TPending extends PlatformDraftDiscussion,
->(input: {
-  pendingDraftDiscussions: ReadonlyArray<TPending>;
+function matchPublishedDraftDiscussions(input: {
+  pendingDraftDiscussions: ReadonlyArray<PendingGitLabDraft>;
   discussions: ReadonlyArray<PlatformReviewDiscussion>;
   existingDiscussionIds: ReadonlySet<string>;
-}): PlatformPublishedDraftDiscussionMatch<TPending>[] {
+}): PublishedGitLabDraftMatch[] {
   const availableDiscussions = input.discussions
     .filter((discussion) => {
       if (input.existingDiscussionIds.has(discussion.id)) {
@@ -461,7 +567,7 @@ function matchPublishedDraftDiscussions<
     })
     .sort(compareDiscussionsByRecency);
   const usedDiscussionIds = new Set<string>();
-  const matched: PlatformPublishedDraftDiscussionMatch<TPending>[] = [];
+  const matched: PublishedGitLabDraftMatch[] = [];
   const sortedPendingDraftDiscussions = [...input.pendingDraftDiscussions].sort(
     (left, right) =>
       Number(right.positionJson !== null) -
@@ -481,7 +587,7 @@ function matchPublishedDraftDiscussions<
       }
 
       const rootDraftMarker = extractReviewDiscussionMarker(rootComment.body);
-      return rootDraftMarker === pending.draftMarker;
+      return rootDraftMarker === pending.marker;
     });
     const fallbackMatches = markerMatches.length
       ? []
@@ -544,4 +650,40 @@ async function sleep(durationMs: number): Promise<void> {
   await new Promise((resolve) => {
     setTimeout(resolve, durationMs);
   });
+}
+
+function getGitLabPositionAnchor(
+  finding: Pick<ReviewFinding, "anchor" | "suggestion">,
+): LineAnchorLike | null {
+  const anchor = finding.anchor ?? null;
+  const suggestion = finding.suggestion ?? null;
+  if (
+    anchor &&
+    suggestion &&
+    anchor.side === "new" &&
+    suggestion.startLine >= anchor.startLine &&
+    suggestion.endLine <= anchor.endLine
+  ) {
+    return {
+      ...anchor,
+      startLine: suggestion.startLine,
+      endLine: suggestion.endLine,
+    };
+  }
+
+  return anchor;
+}
+
+function renderGitLabFindingBody(
+  finding: Pick<ReviewFinding, "title" | "body" | "anchor" | "suggestion">,
+  position: GitLabDiffPosition | null,
+): string {
+  return appendSuggestion(
+    renderReviewFindingProse(finding),
+    renderSuggestionMarkdown(
+      finding.suggestion ?? null,
+      finding.anchor ?? null,
+      position,
+    ),
+  );
 }

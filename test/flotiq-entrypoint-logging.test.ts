@@ -1,12 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Logger } from "pino";
 
-const { ensureV002CtdsExistMock, listMigrationsMock, createMigrationMock } =
-  vi.hoisted(() => ({
-    ensureV002CtdsExistMock: vi.fn(),
-    listMigrationsMock: vi.fn(),
-    createMigrationMock: vi.fn(),
-  }));
+const {
+  ensureV002CtdsExistMock,
+  ensureV003CtdsExistMock,
+  ensureV004CtdsExistMock,
+  listMigrationsMock,
+  createMigrationMock,
+} = vi.hoisted(() => ({
+  ensureV002CtdsExistMock: vi.fn(),
+  ensureV003CtdsExistMock: vi.fn(),
+  ensureV004CtdsExistMock: vi.fn(),
+  listMigrationsMock: vi.fn(),
+  createMigrationMock: vi.fn(),
+}));
 
 vi.mock("@flotiq/flotiq-api-sdk", () => ({
   Flotiq: vi.fn().mockImplementation(() => ({
@@ -23,11 +30,21 @@ vi.mock("../src/storage/adapters/flotiq/migrations/v002.js", () => ({
   default: ensureV002CtdsExistMock,
 }));
 
+vi.mock("../src/storage/adapters/flotiq/migrations/v003.js", () => ({
+  default: ensureV003CtdsExistMock,
+}));
+
+vi.mock("../src/storage/adapters/flotiq/migrations/v004.js", () => ({
+  default: ensureV004CtdsExistMock,
+}));
+
 import { createStorageProvider } from "../src/storage/adapters/flotiq/entrypoint.js";
 
 describe("Flotiq storage provider logging", () => {
   beforeEach(() => {
     ensureV002CtdsExistMock.mockReset();
+    ensureV003CtdsExistMock.mockReset();
+    ensureV004CtdsExistMock.mockReset();
     listMigrationsMock.mockReset();
     createMigrationMock.mockReset();
   });
@@ -56,7 +73,14 @@ describe("Flotiq storage provider logging", () => {
         "test-api-key",
         logger,
       );
+      expect(ensureV003CtdsExistMock).toHaveBeenCalledWith(
+        "test-api-key",
+        expect.any(Object),
+        logger,
+      );
       expect(createMigrationMock).toHaveBeenCalledWith({ name: "v002" });
+      expect(createMigrationMock).toHaveBeenCalledWith({ name: "v003" });
+      expect(createMigrationMock).toHaveBeenCalledWith({ name: "v004" });
       expect(logger.info).toHaveBeenCalledWith(
         { migrationId: "v002" },
         "Applied Flotiq migration.",
@@ -78,7 +102,7 @@ describe("Flotiq storage provider logging", () => {
     });
 
     await expect(provider.prepare()).resolves.toMatchObject({
-      appliedMigrationIds: ["v002"],
+      appliedMigrationIds: ["v002", "v003", "v004"],
     });
   });
 });

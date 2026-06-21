@@ -110,6 +110,14 @@ describe("SqliteStorage review findings", () => {
         adapter_name: "sqlite",
         migration_id: "sqlite:0008_v2_platform_connections",
       },
+      {
+        adapter_name: "sqlite",
+        migration_id: "sqlite:0009_v3_provider_triggers",
+      },
+      {
+        adapter_name: "sqlite",
+        migration_id: "sqlite:0010_v4_project_memories",
+      },
     ]);
     expect(columnNames.has("anchor_json")).toBe(true);
     expect(columnNames.has("interaction_run_id")).toBe(true);
@@ -308,11 +316,13 @@ describe("SqliteStorage review findings", () => {
     };
     const persistedJob = verifiedDb
       .prepare(
-        "SELECT tenant_id, code_review_id FROM interaction_jobs WHERE id = ?",
+        "SELECT tenant_id, code_review_id, comment_id, trigger_json FROM interaction_jobs WHERE id = ?",
       )
       .get("job_1") as {
       tenant_id: string;
       code_review_id: number;
+      comment_id: number;
+      trigger_json: string;
     };
     const migratedAssignments = verifiedDb
       .prepare("SELECT id, platform_connection_id FROM tenants ORDER BY id")
@@ -341,6 +351,8 @@ describe("SqliteStorage review findings", () => {
     expect(persistedJob).toEqual({
       tenant_id: "tenant_1",
       code_review_id: 7,
+      comment_id: 55,
+      trigger_json: '{"kind":"comment","commentId":55}',
     });
     expect(migratedAssignments[0]?.platform_connection_id).toBe(
       migratedAssignments[1]?.platform_connection_id,
@@ -374,7 +386,7 @@ describe("SqliteStorage review findings", () => {
         "updated_at",
       ]),
     );
-    expect(migrations.count).toBe(8);
+    expect(migrations.count).toBe(10);
     await storage.close();
   });
 
@@ -655,10 +667,14 @@ describe("SqliteStorage review findings", () => {
     expect(
       verifiedDb
         .prepare(
-          "SELECT comment_id, dedupe_key FROM interaction_jobs WHERE id = ?",
+          "SELECT comment_id, trigger_json, dedupe_key FROM interaction_jobs WHERE id = ?",
         )
         .get("job_1"),
-    ).toEqual({ comment_id: 55, dedupe_key: "dedupe_1" });
+    ).toEqual({
+      comment_id: 55,
+      trigger_json: '{"kind":"comment","commentId":55}',
+      dedupe_key: "dedupe_1",
+    });
     expect(
       verifiedDb
         .prepare("SELECT comments_json FROM code_review_snapshots WHERE id = ?")
@@ -701,6 +717,8 @@ describe("SqliteStorage review findings", () => {
       { migration_id: "sqlite:0006_v1_drop_legacy_tenant_columns" },
       { migration_id: "sqlite:0007_v1_generic_storage_column_names" },
       { migration_id: "sqlite:0008_v2_platform_connections" },
+      { migration_id: "sqlite:0009_v3_provider_triggers" },
+      { migration_id: "sqlite:0010_v4_project_memories" },
     ]);
     verifiedDb.close();
   });
@@ -886,6 +904,8 @@ describe("SqliteStorage review findings", () => {
       { migration_id: "sqlite:0006_v1_drop_legacy_tenant_columns" },
       { migration_id: "sqlite:0007_v1_generic_storage_column_names" },
       { migration_id: "sqlite:0008_v2_platform_connections" },
+      { migration_id: "sqlite:0009_v3_provider_triggers" },
+      { migration_id: "sqlite:0010_v4_project_memories" },
     ]);
   });
 

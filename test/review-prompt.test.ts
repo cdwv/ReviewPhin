@@ -2,13 +2,39 @@ import { describe, expect, it } from "vitest";
 
 import { renderPrompt } from "../src/prompts/instruction-renderer.js";
 import {
+  buildCompactReviewContext,
   buildChatterPrompt,
   buildReviewPrompt,
 } from "../src/prompts/prompt-builders.js";
-import type { ReviewContext } from "../src/review/types.js";
+import type {
+  CommentReviewTriggerContext,
+  ReviewContext,
+} from "../src/review/types.js";
 import { repoPath } from "./test-paths.js";
 
 describe("buildReviewPrompt", () => {
+  it("serializes provider-owned manual triggers without fake comment fields", () => {
+    const context: ReviewContext = {
+      ...createContext(),
+      trigger: {
+        kind: "manual-review",
+        provider: "github",
+        source: "check-run-requested-action",
+        metadata: {
+          checkRunId: 1357,
+          actionIdentifier: "run_review",
+        },
+      },
+    };
+
+    const prompt = buildReviewPrompt(context);
+    const compact = buildCompactReviewContext(context, 5_000);
+
+    expect(prompt).toContain('"kind": "manual-review"');
+    expect(prompt).toContain('"checkRunId": 1357');
+    expect(compact.reviewTrigger).not.toHaveProperty("commentId");
+  });
+
   it("includes project memory in the serialized prompt context", () => {
     const prompt = buildReviewPrompt(createContext(), {
       maxPromptMemoryChars: 5_000,
@@ -257,10 +283,10 @@ function createContext(
       text: "For future reference, we generally avoid snapshot tests for API responses.",
     },
   ],
-  triggerKind: ReviewContext["trigger"]["kind"] = "direct-mention",
+  triggerKind: CommentReviewTriggerContext["kind"] = "direct-mention",
   mode: ReviewContext["scope"]["mode"] = "first-pass-full",
   attachmentIssues: ReviewContext["attachmentIssues"] = [],
-): ReviewContext {
+): ReviewContext & { trigger: CommentReviewTriggerContext } {
   return {
     attachments: [
       {
@@ -301,12 +327,6 @@ function createContext(
       },
     ],
     discussions: [],
-    instructionFiles: [
-      {
-        path: ".github/copilot-instructions.md",
-        content: "Prefer concise explanations.",
-      },
-    ],
     projectMemory: {
       enabled: true,
       page: {

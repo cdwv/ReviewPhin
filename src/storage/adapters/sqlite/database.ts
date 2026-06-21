@@ -23,6 +23,9 @@ import type {
   PlatformConnectionFilters,
   PlatformConnectionOrderField,
   PlatformConnectionRecord,
+  ProjectMemoryFilters,
+  ProjectMemoryOrderField,
+  ProjectMemoryRecord,
   ReviewFindingRecord,
   ReviewFindingFilters,
   ReviewFindingOrderField,
@@ -212,6 +215,70 @@ export class SqliteStoreDatabase {
           ),
         delete: (id) => this.deleteTenantRecord(id),
         deleteMany: (ids) => this.deleteTenantRecords(ids),
+      },
+      projectMemories: {
+        get: (id) => this.getProjectMemoryRecord(id),
+        getMany: async (ids) =>
+          selectRowsByIds(
+            this.getDb(),
+            "project_memories",
+            "id",
+            ids,
+            mapProjectMemoryRow,
+          ),
+        find: async (filters) =>
+          findRow(
+            this.getDb(),
+            "project_memories",
+            filters,
+            projectMemoryFilterColumns,
+            mapProjectMemoryRow,
+          ),
+        list: async (input) =>
+          listRows(
+            this.getDb(),
+            "project_memories",
+            input,
+            projectMemoryFilterColumns,
+            projectMemoryOrderColumns,
+            mapProjectMemoryRow,
+          ),
+        upsert: async (entity) => {
+          await this.upsertProjectMemoryRecord(entity);
+        },
+        upsertMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.upsertProjectMemoryRecord(entity),
+          ),
+        replace: async (entity) => {
+          await this.replaceProjectMemoryRecord(entity);
+        },
+        replaceMany: (entities) =>
+          this.applyMany(entities, (entity) =>
+            this.replaceProjectMemoryRecord(entity),
+          ),
+        update: async ({ value }) => {
+          await this.replaceProjectMemoryRecord(value);
+        },
+        updateMany: (inputs) =>
+          this.applyMany(inputs, ({ value }) =>
+            this.replaceProjectMemoryRecord(value),
+          ),
+        patch: async ({ id, value }) => {
+          await this.patchProjectMemoryRecord(id, value);
+        },
+        patchMany: (inputs) =>
+          this.applyMany(inputs, ({ id, value }) =>
+            this.patchProjectMemoryRecord(id, value),
+          ),
+        delete: async (id) => {
+          this.getDb()
+            .prepare("DELETE FROM project_memories WHERE id = ?")
+            .run(id);
+        },
+        deleteMany: async (ids) => {
+          deleteRowsByIds(this.getDb(), "project_memories", "id", ids);
+        },
       },
       interactionJobs: {
         get: (id) => this.getInteractionJobById(id),
@@ -1118,6 +1185,7 @@ export class SqliteStoreDatabase {
           dedupe_key,
           code_review_id,
           comment_id,
+          trigger_json,
           head_sha,
           status,
           payload_json,
@@ -1127,7 +1195,7 @@ export class SqliteStoreDatabase {
           started_at,
           finished_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(dedupe_key) DO UPDATE SET
           dedupe_key = interaction_jobs.dedupe_key
       `,
@@ -1138,6 +1206,7 @@ export class SqliteStoreDatabase {
         entity.dedupeKey,
         entity.codeReviewId,
         entity.commentId,
+        entity.triggerJson,
         entity.headSha,
         entity.status,
         entity.payloadJson,
@@ -1166,7 +1235,7 @@ export class SqliteStoreDatabase {
       .prepare(
         `
         UPDATE interaction_jobs
-        SET tenant_id = ?, dedupe_key = ?, code_review_id = ?, comment_id = ?, head_sha = ?,
+        SET tenant_id = ?, dedupe_key = ?, code_review_id = ?, comment_id = ?, trigger_json = ?, head_sha = ?,
             status = ?, payload_json = ?, retry_count = ?, last_error = ?, enqueued_at = ?, started_at = ?, finished_at = ?
         WHERE id = ?
       `,
@@ -1176,6 +1245,7 @@ export class SqliteStoreDatabase {
         entity.dedupeKey,
         entity.codeReviewId,
         entity.commentId,
+        entity.triggerJson,
         entity.headSha,
         entity.status,
         entity.payloadJson,
@@ -1745,6 +1815,73 @@ export class SqliteStoreDatabase {
     deleteRowsByIds(this.getDb(), "review_findings", "id", ids);
   }
 
+  private async getProjectMemoryRecord(
+    id: string,
+  ): Promise<ProjectMemoryRecord | null> {
+    const row = this.getDb()
+      .prepare("SELECT * FROM project_memories WHERE id = ?")
+      .get(id) as Row | undefined;
+    return row ? mapProjectMemoryRow(row) : null;
+  }
+
+  private async upsertProjectMemoryRecord(
+    entity: ProjectMemoryRecord,
+  ): Promise<ProjectMemoryRecord> {
+    this.getDb()
+      .prepare(
+        `
+        INSERT INTO project_memories (
+          id,
+          tenant_id,
+          entries_json,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          tenant_id = excluded.tenant_id,
+          entries_json = excluded.entries_json,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at
+      `,
+      )
+      .run(
+        entity.id,
+        entity.tenantId,
+        entity.entriesJson,
+        entity.createdAt,
+        entity.updatedAt,
+      );
+
+    return (await this.getProjectMemoryRecord(entity.id))!;
+  }
+
+  private async replaceProjectMemoryRecord(
+    entity: ProjectMemoryRecord,
+  ): Promise<ProjectMemoryRecord> {
+    if (!(await this.getProjectMemoryRecord(entity.id))) {
+      throw new Error(`Unknown project memory ${entity.id}`);
+    }
+
+    return this.upsertProjectMemoryRecord(entity);
+  }
+
+  private async patchProjectMemoryRecord(
+    id: string,
+    value: Partial<ProjectMemoryRecord>,
+  ): Promise<ProjectMemoryRecord> {
+    const existing = await this.getProjectMemoryRecord(id);
+    if (!existing) {
+      throw new Error(`Unknown project memory ${id}`);
+    }
+
+    return this.replaceProjectMemoryRecord({
+      ...existing,
+      ...value,
+      id: existing.id,
+    });
+  }
+
   private async getDiscussionMappingRecord(
     id: string,
   ): Promise<DiscussionMappingRecord | null> {
@@ -1915,6 +2052,19 @@ const tenantOrderColumns: Record<TenantOrderField, string> = {
   createdAt: "created_at",
   updatedAt: "updated_at",
 };
+
+const projectMemoryFilterColumns: Record<
+  keyof ProjectMemoryFilters,
+  string
+> = {
+  id: "id",
+  tenantId: "tenant_id",
+  createdAt: "created_at",
+  updatedAt: "updated_at",
+};
+
+const projectMemoryOrderColumns: Record<ProjectMemoryOrderField, string> =
+  projectMemoryFilterColumns;
 
 const interactionJobFilterColumns: Record<keyof InteractionJobFilters, string> =
   {
@@ -2356,13 +2506,24 @@ function mapPlatformConnectionRow(row: Row): PlatformConnectionRecord {
   };
 }
 
+function mapProjectMemoryRow(row: Row): ProjectMemoryRecord {
+  return {
+    id: asString(row.id),
+    tenantId: asString(row.tenant_id),
+    entriesJson: asString(row.entries_json),
+    createdAt: asString(row.created_at),
+    updatedAt: asString(row.updated_at),
+  };
+}
+
 function mapInteractionJobRow(row: Row): InteractionJobRecord {
   return {
     id: asString(row.id),
     tenantId: asString(row.tenant_id),
     dedupeKey: asString(row.dedupe_key),
     codeReviewId: asNumber(row.code_review_id),
-    commentId: asNumber(row.comment_id),
+    commentId: asNullableNumber(row.comment_id),
+    triggerJson: asString(row.trigger_json),
     headSha: asString(row.head_sha),
     status: asString(row.status) as InteractionJobRecord["status"],
     payloadJson: asString(row.payload_json),

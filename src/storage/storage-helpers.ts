@@ -470,6 +470,7 @@ export class StoreBackedStorage implements StorageHelpers {
         })
       ).map((snapshot) => snapshot.id),
     );
+    await this.stores.projectMemories.delete(tenant.id);
     await this.stores.interactionRuns.deleteMany(summary.interactionRunIds);
     await this.stores.interactionJobs.deleteMany(summary.interactionJobIds);
     await this.stores.tenants.delete(tenant.id);
@@ -489,12 +490,26 @@ export class StoreBackedStorage implements StorageHelpers {
 
     const now = new Date().toISOString();
     const expectedId = createId("job");
+    const triggerJson =
+      input.triggerJson ??
+      (input.commentId === null
+        ? null
+        : JSON.stringify({
+            kind: "comment",
+            commentId: input.commentId,
+          }));
+    if (!triggerJson) {
+      throw new Error(
+        "Interaction jobs without a commentId must provide triggerJson",
+      );
+    }
     await this.stores.interactionJobs.upsert({
       id: expectedId,
       tenantId: input.tenantId,
       dedupeKey: input.dedupeKey,
       codeReviewId: input.codeReviewId,
       commentId: input.commentId,
+      triggerJson,
       headSha: input.headSha,
       status: "queued",
       payloadJson: input.payloadJson,
@@ -996,6 +1011,7 @@ export class StoreBackedStorage implements StorageHelpers {
       codeReviewSnapshots,
       interactionRuns,
       discussionMappings,
+      projectMemory,
     ] = await Promise.all([
       listAll(this.stores.interactionJobs, {
         filters: { tenantId: { eq: tenant.id } },
@@ -1009,6 +1025,7 @@ export class StoreBackedStorage implements StorageHelpers {
       listAll(this.stores.discussionMappings, {
         filters: { tenantId: { eq: tenant.id } },
       }),
+      this.stores.projectMemories.get(tenant.id),
     ]);
 
     const interactionRunIds = interactionRuns.map((run) => run.id);
@@ -1032,6 +1049,7 @@ export class StoreBackedStorage implements StorageHelpers {
       reviewFindingCount: reviewFindings.length,
       interactionRunMetricCount: interactionRunMetrics.length,
       discussionMappingCount: discussionMappings.length,
+      projectMemoryCount: projectMemory ? 1 : 0,
       interactionJobIds: interactionJobs.map((job) => job.id),
       interactionRunIds,
     };

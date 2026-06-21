@@ -46,7 +46,13 @@ describe("provider setup routes", () => {
       createInteractionJob: async () => {
         throw new Error("unused");
       },
+      createTriggerLifecycle: () => {
+        throw new Error("unused");
+      },
       createReviewRuntime: () => {
+        throw new Error("unused");
+      },
+      createProjectMemoryBackend: () => {
         throw new Error("unused");
       },
       buildHarnessTenantContext: () => {
@@ -87,5 +93,17 @@ describe("provider setup routes", () => {
       pathSuffix: "callback/finish",
       rawBody: JSON.stringify(payload),
     });
+
+    const scriptResponse = await app.inject({
+      method: "GET",
+      url: "/github/setup/assets/github-setup.js",
+    });
+    expect(scriptResponse.statusCode).toBe(200);
+
+    const styleResponse = await app.inject({
+      method: "GET",
+      url: "/github/setup/assets/github-setup.css",
+    });
+    expect(styleResponse.statusCode).toBe(200);
   });
 });

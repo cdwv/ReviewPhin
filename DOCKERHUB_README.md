@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="./favicon.png" alt="ReviewPhin" width="120" />
+  <img src="./public/favicon.png" alt="ReviewPhin" width="120" />
 
 # ReviewPhin
 
-**Self-hosted AI code review for GitLab.**
+**Self-hosted AI code review for GitLab and GitHub.**
 Run on your own infrastructure. Bring your own model. Use your own agent subscription to pay per review, not per developer.
 
 [![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)
@@ -13,11 +13,11 @@ Run on your own infrastructure. Bring your own model. Use your own agent subscri
 
 ---
 
-ReviewPhin is a hard working dolphin that listens for GitLab code review comments, runs a multi-agent AI review, and writes findings back as GitLab discussions - while only ever touching content it created itself.
+ReviewPhin listens for GitLab and GitHub code review events, runs a multi-agent AI review, and publishes findings through each provider's native review model while only modifying content it created itself.
 
 All model calls go through a configured harness (currently Copilot CLI, but more may come) so you can plug in either a subscription model or an [OpenAI-compatible API](./docs/model-providers.md).
 
-Internally, code-review operations now flow through a platform adapter layer. GitLab is still the only built-in platform today, but tenant records and webhook routing already carry platform metadata.
+Internally, code-review operations flow through a platform adapter layer with built-in GitLab and GitHub implementations.
 
 _Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWave](https://codewave.eu)_
 
@@ -34,13 +34,14 @@ _Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWa
   - [Adding tenants](#adding-tenants)
     - [1. Create a bot identity in GitLab](#1-create-a-bot-identity-in-gitlab)
     - [2. Find the project ID and bot identity](#2-find-the-project-id-and-bot-identity)
-    - [3. Register the tenant with the CLI](#3-register-the-tenant-with-the-cli)
+    - [3. Register the platform connection and tenant](#3-register-the-platform-connection-and-tenant)
       - [In a Docker container](#in-a-docker-container)
       - [From a local checkout](#from-a-local-checkout)
     - [4. Add the webhook in GitLab](#4-add-the-webhook-in-gitlab)
     - [5. Verify the tenant is registered](#5-verify-the-tenant-is-registered)
-  - [Using ReviewPhin in GitLab](#using-reviewphin-in-gitlab)
-    - [Trigger a review](#trigger-a-review)
+  - [Using ReviewPhin](#using-reviewphin)
+    - [Trigger a GitLab review](#trigger-a-gitlab-review)
+    - [Trigger a GitHub review](#trigger-a-github-review)
     - [Follow-up conversations](#follow-up-conversations)
     - [Teach the bot project conventions](#teach-the-bot-project-conventions)
     - [Override the model for one code review](#override-the-model-for-one-code-review)
@@ -129,7 +130,7 @@ If you prefer to configure separate GitHub API tokens for different projects, yo
 
 ## Adding tenants
 
-A **tenant** is a single project on given gitlab instance. One ReviewPhin instance can serve multiple tenants, but each tenant is configured only for one project.
+A **tenant** is a single project on a connected code review platform. One ReviewPhin instance can serve multiple tenants, but each tenant is configured only for one project or repository.
 
 ### 1. Create a bot identity in GitLab
 
@@ -147,31 +148,59 @@ Required project membership: **Developer or higher** (needed to resolve code rev
 
 Use the GitLab UI or API to collect the project's `id`.
 
-### 3. Register the tenant with the CLI
+### 3. Register the platform connection and tenant
 
 #### In a Docker container
 
 ```bash
-docker compose run --rm worker reviewphin tenant add \
+docker compose run --rm worker reviewphin platform connection add \
+  --name main-gitlab \
   --platform gitlab \
   --base-url https://gitlab.example.com \
+  --api-token <your-gitlab-token>
+
+docker compose run --rm worker reviewphin tenant add \
+  --connection main-gitlab \
   --project-id 123 \
-  --api-token <your-gitlab-token> \
   --webhook-secret <your-webhook-secret>
 ```
 
 #### From a local checkout
 
 ```bash
-pnpm cli tenant add \
+pnpm cli platform connection add \
+  --name main-gitlab \
   --platform gitlab \
   --base-url https://gitlab.example.com \
+  --api-token <your-gitlab-token>
+
+pnpm cli tenant add \
+  --connection main-gitlab \
   --project-id 123 \
-  --api-token <your-gitlab-token> \
   --webhook-secret <your-webhook-secret>
 ```
 
 `--platform` currently defaults to `gitlab`, so the flag is optional. To assign a specific model profile at registration time, add `--model-profile <name>`. See [Model providers](./docs/model-providers.md) for profile setup.
+
+For GitHub, register a GitHub App connection first. The command prints an expiring setup URL for the App Manifest flow:
+
+```bash
+docker compose run --rm -e PUBLIC_URL=https://reviewphin.example.com worker reviewphin platform connection add \
+  --platform github \
+  --name main-github \
+  --owner example-org
+```
+
+Open the printed setup URL, complete registration and installation on GitHub, then add a repository tenant:
+
+```bash
+docker compose run --rm worker reviewphin tenant add \
+  --platform github \
+  --connection main-github \
+  --repository example-org/example-repository
+```
+
+From a local checkout, use the same `platform connection add` and `tenant add` arguments with `pnpm cli`. See [CLI reference](./docs/CLI.md#platform-connection) for the full GitHub connection lifecycle.
 
 ### 4. Add the webhook in GitLab
 
@@ -201,9 +230,9 @@ The JSON output includes each tenant's `id`, `key`, and `platform`. See [CLI ref
 
 ---
 
-## Using ReviewPhin in GitLab
+## Using ReviewPhin
 
-### Trigger a review
+### Trigger a GitLab review
 
 Post a merge request comment that mentions the bot:
 
@@ -215,9 +244,22 @@ ReviewPhin queues a job, hydrates the code review, and creates or updates bot-ow
 
 On first run this is a **full review** covering all changed files. On subsequent runs for the same code review it is an **incremental re-review** focused on files changed since the last run.
 
+### Trigger a GitHub review
+
+GitHub uses a Check Run action as the primary manual trigger. Open the pull
+request's ReviewPhin Check Run and click **Run Review**. ReviewPhin provisions
+the Check Run when a pull request is opened or reopened, when its head changes,
+and when a GitHub tenant is added for repositories that already have open pull
+requests.
+
+ReviewPhin also accepts `/reviewphin review`, `@reviewphin review`, and
+mentions of the generated App slug in pull request comments as compatibility
+triggers, but GitHub does not expose those as native slash commands or reliable
+mention autocomplete entries.
+
 ### Follow-up conversations
 
-Replies inside a bot-owned review discussion automatically queue a new pass scoped to that discussion. You do not need to mention the bot again:
+Replies inside a bot-owned review discussion automatically queue a new pass scoped to that discussion. In GitLab this is a discussion note. In GitHub this is a reply inside a ReviewPhin-owned inline review thread. You do not need to mention the bot again:
 
 ```
 # Inside a bot discussion:
@@ -226,13 +268,20 @@ Can you suggest a more readable variable name here?
 
 ### Teach the bot project conventions
 
-To store a durable note in the project memory (written to the `ReviewPhin memory` wiki page):
+To store a durable note in the selected project memory backend:
 
 ```
 @reviewphin for future reference, we always prefer functional React components over class components
 ```
 
 Other triggers: `remember`, `going forward`, `team policy`, `always prefer`, `please prefer`.
+
+Project memory is owned by the configured code-review platform and storage
+provider. GitHub uses the configured ReviewPhin storage provider. GitLab uses
+the project wiki only when GitLab project metadata reports the wiki feature
+enabled; if the wiki is disabled, GitLab uses the configured storage provider.
+If GitLab later enables wiki after store-backed memory exists, the wiki wins
+and the store row is deleted without copying it into the wiki.
 
 ### Override the model for one code review
 
@@ -248,14 +297,14 @@ This selects a named model profile for every review run on that code review. To 
 
 ## How it works
 
-1. A developer mentions the bot in a GitLab merge request comment (`@reviewphin review this`).
-2. ReviewPhin receives the GitLab Note Hook webhook, validates the signature, and queues a job.
+1. A developer triggers a review from GitLab comments, GitHub pull request comments, or the GitHub **Run Review** Check Run action.
+2. ReviewPhin receives the platform webhook, validates the signature, resolves the tenant, and queues a job.
 3. The **Router** hydrates the code review: it checks out the exact commit, fetches diffs, notes, and any project instruction files.
 4. The **Reviewer** (a two-agent pipeline) analyses the changes and produces structured findings with severity, category, optional line anchors, and inline code suggestions.
 5. The **Chatter** handles follow-up replies, conversational questions, and durable project memory updates.
-6. Findings are reconciled back into GitLab as bot-owned discussions. Obsolete threads are resolved; the summary note is updated.
+6. Findings are reconciled back through the platform provider as bot-owned review output. Obsolete threads are resolved where the platform supports it; the summary comment is updated.
 
-All code and data stay on your infrastructure. The worker calls the configured model API and the GitLab API; nothing else leaves the network.
+All code and data stay on your infrastructure. The worker calls the configured model API and the connected code review platform API; nothing else leaves the network.
 
 ---
 
@@ -265,7 +314,7 @@ ReviewPhin uses three logical components for each triggered review:
 
 ### Router
 
-The webhook handler validates the GitLab signature, classifies the trigger (direct mention, follow-up reply, or summary note reply), deduplicates concurrent jobs, and enqueues a review task. No model calls happen here.
+The webhook handler validates the platform signature, classifies the trigger (direct mention, Check Run action, follow-up reply, or summary note reply), deduplicates concurrent jobs, and enqueues a review task. No model calls happen here.
 
 ### Reviewer
 
@@ -307,7 +356,7 @@ The reviewer selects one of three modes based on trigger context:
 | `HOST`                                               | `0.0.0.0`                        | Bind address                                                                                |
 | `LOG_LEVEL`                                          | `info`                           | `fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` \| `silent`                    |
 | `STORAGE_PROVIDER_MODULE`                            | built-in SQLite                  | Module path or package name for a custom storage adapter                                    |
-| `PLATFORM_MODULES`                                   | `gitlab`                         | Comma-separated platform provider modules. Supports `gitlab`, paths, and package specifiers |
+| `PLATFORM_MODULES`                                   | `gitlab,github`                  | Comma-separated platform provider modules. Supports built-ins, paths, and packages          |
 | `SQLITE_DATABASE_PATH`                               | `./data/review-worker.sqlite`    | SQLite file path (ignored when a custom storage module is set)                              |
 | `RUN_LOG_DIR`                                        | `./data/run-logs`                | Root directory for per-review run artifacts                                                 |
 | `WORKSPACE_ROOT`                                     | `./tmp/review-workspaces`        | Scratch directory for hydrated repositories                                                 |
@@ -316,7 +365,7 @@ The reviewer selects one of three modes based on trigger context:
 | `COPILOT_TIMEOUT_MS`                                 | `180000`                         | Model session timeout in milliseconds                                                       |
 | `COPILOT_SDK_LOG_LEVEL`                              | _(none)_                         | SDK log verbosity: `none` \| `error` \| `warning` \| `info` \| `debug` \| `all`             |
 | `COPILOT_CLI_PATH`                                   | `/usr/local/bin/copilot` (image) | Path to the Copilot CLI binary                                                              |
-| `REVIEWPHIN_MEMORY_ENABLED`                          | `true`                           | Enable per-project wiki memory                                                              |
+| `REVIEWPHIN_MEMORY_ENABLED`                          | `true`                           | Enable per-project memory                                                                   |
 | `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS`                 | `5000`                           | Character budget for injected project memory                                                |
 | `GH_TOKEN` / `GITHUB_TOKEN` / `COPILOT_GITHUB_TOKEN` | _(required for Copilot mode)_    | GitHub PAT with **Copilot Requests** permission                                             |
 
@@ -331,6 +380,6 @@ For custom code review platform providers see [Code review platform providers](d
 | Method | Path                    | Description                                                         |
 | ------ | ----------------------- | ------------------------------------------------------------------- |
 | `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}`                           |
-| `POST` | `/webhooks/<platform>`  | Platform webhook receiver. GitLab currently uses `/webhooks/gitlab` |
+| `POST` | `/webhooks/<platform>`  | Platform webhook receiver. Built-ins use `/webhooks/gitlab` and `/webhooks/github` |
 | `*`    | `/setup/<platform>`     | Optional platform setup handler when the provider exposes one       |
 | `POST` | `/webhooks/gitlab/note` | Deprecated GitLab compatibility alias                               |

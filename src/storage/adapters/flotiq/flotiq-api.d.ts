@@ -43,6 +43,7 @@ declare module "@flotiq/flotiq-api-sdk" {
     | Migrations
     | ModelProfile
     | PlatformConnection
+    | ProjectMemory
     | ReviewFinding
     | Tenant
     | InternalGeneratedForms
@@ -60,6 +61,7 @@ declare module "@flotiq/flotiq-api-sdk" {
     | MigrationsHydrated
     | ModelProfileHydrated
     | PlatformConnectionHydrated
+    | ProjectMemoryHydrated
     | ReviewFindingHydrated
     | TenantHydrated
     | InternalGeneratedFormsHydrated
@@ -77,6 +79,7 @@ declare module "@flotiq/flotiq-api-sdk" {
     | MigrationsHydratedTwice
     | ModelProfileHydratedTwice
     | PlatformConnectionHydratedTwice
+    | ProjectMemoryHydratedTwice
     | ReviewFindingHydratedTwice
     | TenantHydratedTwice
     | InternalGeneratedFormsHydratedTwice
@@ -94,6 +97,7 @@ declare module "@flotiq/flotiq-api-sdk" {
     | MigrationsBase
     | ModelProfileBase
     | PlatformConnectionBase
+    | ProjectMemoryBase
     | ReviewFindingBase
     | TenantBase
     | InternalGeneratedFormsBase
@@ -255,7 +259,8 @@ declare module "@flotiq/flotiq-api-sdk" {
       | Array<TenantBase>;
     dedupeKey: string;
     codeReviewId: number;
-    commentId: number;
+    commentId?: number;
+    triggerJson: string;
     headSha: string;
     status: string;
     payloadJson: string;
@@ -286,6 +291,7 @@ declare module "@flotiq/flotiq-api-sdk" {
       | "dedupeKey"
       | "codeReviewId"
       | "commentId"
+      | "triggerJson"
       | "headSha"
       | "status"
       | "payloadJson"
@@ -524,6 +530,41 @@ declare module "@flotiq/flotiq-api-sdk" {
 
   // #endregion
 
+  // #region project_memory
+
+  export interface ProjectMemoryBase extends BaseObject<"project_memory"> {
+    tenantId:
+      | Array<DataLink>
+      | Array<Tenant>
+      | Array<TenantHydrated>
+      | Array<TenantHydratedTwice>
+      | Array<TenantBase>;
+    entriesJson: string;
+  }
+
+  export interface ProjectMemory extends ProjectMemoryBase {
+    tenantId: Array<DataLink>;
+  }
+
+  export interface ProjectMemoryHydrated extends ProjectMemoryBase {
+    tenantId: Array<Tenant>;
+  }
+
+  export interface ProjectMemoryHydratedTwice extends ProjectMemoryBase {
+    tenantId: Array<TenantHydrated>;
+  }
+
+  export namespace ProjectMemory {
+    export type FilterableFields = StringWithAutocomplete<
+      | "tenantId"
+      | "tenantId[*].type"
+      | "tenantId[*].dataUrl"
+      | "entriesJson"
+    >;
+  }
+
+  // #endregion
+
   // #region review_finding
 
   export interface ReviewFindingBase extends BaseObject<"review_finding"> {
@@ -682,6 +723,13 @@ declare module "@flotiq/flotiq-api-sdk" {
       PlatformConnectionHydrated,
       PlatformConnectionHydratedTwice,
       PlatformConnection.FilterableFields
+    >;
+
+    project_memory: ApiRequest<
+      ProjectMemory,
+      ProjectMemoryHydrated,
+      ProjectMemoryHydratedTwice,
+      ProjectMemory.FilterableFields
     >;
 
     review_finding: ApiRequest<

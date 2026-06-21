@@ -51,6 +51,7 @@ stages:
     HELM_PVC_SIZE: "10Gi"
     HELM_PVC_STORAGE_CLASS: "ssd-reliable"
     KUBECTL_CONTEXT: "devops/gitlab-agent-manager:cdwv-blacha-gitlab-agent-906"
+    APP_SECRET_PUBLIC_URL: $CI_ENVIRONMENT_URL
   before_script:
     - export KUBE_NAMESPACE="${KUBE_NAMESPACE:-$CI_PROJECT_NAME-$CI_PROJECT_ID}"
     - |

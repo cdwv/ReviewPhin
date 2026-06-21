@@ -1,0 +1,50 @@
+/*
+ * Tailwind Play CDN carries layout, color, and type for the GitHub setup
+ * pages. This file only holds the few things utilities cannot express
+ * cleanly: the system color hint, the card entrance, and a themed
+ * scrollbar for the manifest preview.
+ */
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.rp-rise {
+  animation: rp-rise 0.5s cubic-bezier(0.16, 0.84, 0.44, 1) both;
+}
+
+@keyframes rp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rp-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(47, 139, 214, 0.5) transparent;
+}
+
+.rp-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.rp-scroll::-webkit-scrollbar-thumb {
+  background: rgba(47, 139, 214, 0.45);
+  border-radius: 9999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rp-rise {
+    animation: none;
+  }
+}

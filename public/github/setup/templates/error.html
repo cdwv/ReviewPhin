@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="{{iconUrl}}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "media",
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['"Bricolage Grotesque"', "system-ui", "sans-serif"],
+            body: ['"IBM Plex Sans"', "system-ui", "sans-serif"],
+            mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
+          },
+          colors: {
+            brand: {
+              50: "#eef7fe",
+              100: "#d6ebfb",
+              200: "#b0d8f6",
+              300: "#7cbef0",
+              400: "#4ea4e6",
+              500: "#2f8bd6",
+              600: "#2270b5",
+              700: "#1f5a92",
+              800: "#1e4a76",
+              900: "#102f4d",
+              950: "#0a1f34",
+            },
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="{{assetBaseUrl}}/github-setup.css">
+  <title>{{title}}</title>
+  <script type="application/json" id="reviewphin-setup-data">{{setupDataJson}}</script>
+  <script src="{{assetBaseUrl}}/github-setup.js" defer></script>
+</head>
+<body data-page="error" class="min-h-screen bg-gradient-to-b from-brand-50 via-white to-brand-50 font-body text-brand-900 antialiased selection:bg-brand-500/20 dark:from-brand-950 dark:via-brand-950 dark:to-brand-900/60 dark:text-brand-100">
+  <div class="mx-auto flex min-h-screen max-w-2xl flex-col px-5 py-10 sm:px-8 sm:py-14">
+    <header class="flex items-center gap-3">
+      <img src="{{iconUrl}}" alt="" class="h-11 w-11 rounded-2xl shadow-sm ring-1 ring-brand-900/10 dark:ring-white/10">
+      <div class="leading-tight">
+        <p class="font-display text-lg font-bold tracking-tight">ReviewPhin</p>
+        <p class="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-brand-600 dark:text-brand-300">GitHub setup</p>
+      </div>
+    </header>
+
+    <main class="rp-rise mt-10 rounded-2xl border border-brand-900/10 bg-white/80 p-6 shadow-xl shadow-brand-900/5 backdrop-blur dark:border-white/10 dark:bg-brand-900/40 dark:shadow-black/30 sm:p-8">
+      <span class="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/15 text-red-600 dark:text-red-300">
+        <svg viewBox="0 0 20 20" fill="currentColor" class="h-6 w-6" aria-hidden="true"><path fill-rule="evenodd" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 4a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1Zm0 9.25a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z" clip-rule="evenodd"/></svg>
+      </span>
+      <h1 class="mt-4 font-display text-2xl font-bold tracking-tight sm:text-3xl">GitHub setup failed</h1>
+      <p class="mt-1.5 text-sm text-brand-800/80 dark:text-brand-100/70">Setup didn't complete. Review the detail below, then start the setup link again.</p>
+      <div class="mt-5 rounded-xl border border-red-500/30 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300" data-field="message"></div>
+    </main>
+
+    <footer class="mt-auto flex items-center justify-between gap-3 pt-10 text-xs text-brand-700/60 dark:text-brand-200/50">
+      <span>ReviewPhin · automated pull request review</span>
+      <span class="inline-flex items-center gap-1.5"><span class="h-1.5 w-1.5 rounded-full bg-red-500"></span> Setup interrupted</span>
+    </footer>
+  </div>
+</body>
+</html>

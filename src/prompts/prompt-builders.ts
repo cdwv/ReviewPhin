@@ -160,18 +160,7 @@ export function buildCompactReviewContext(
         })),
       deltaSincePreviousReview: context.scope.deltaSincePreviousReview,
     },
-    reviewTrigger: {
-      kind: context.trigger.kind,
-      commentId: context.trigger.commentId,
-      authorUsername: context.trigger.authorUsername,
-      body: truncate(context.trigger.body, 1_500),
-      instruction: context.trigger.instruction
-        ? truncate(context.trigger.instruction, 1_000)
-        : null,
-      targetDiscussionId: context.trigger.targetDiscussionId,
-      targetPlatformDiscussionId: context.trigger.targetPlatformDiscussionId,
-      targetDiscussionTitle: context.trigger.targetDiscussionTitle,
-    },
+    reviewTrigger: buildCompactTrigger(context.trigger),
     codeReview: {
       id: context.codeReview.id,
       title: context.codeReview.title,
@@ -185,7 +174,6 @@ export function buildCompactReviewContext(
       context.projectMemory,
       maxPromptMemoryChars,
     ),
-    instructionFiles: context.instructionFiles.map((file) => file.path),
     changedFiles: context.changes.map((change) => ({
       oldPath: change.oldPath,
       newPath: change.newPath,
@@ -361,18 +349,7 @@ function buildCompactChatterContext(
   const sharedReviewContext = context.reviewContext
     ? buildCompactReviewContext(context.reviewContext, maxPromptMemoryChars)
     : null;
-  const compactTrigger = {
-    kind: context.trigger.kind,
-    commentId: context.trigger.commentId,
-    authorUsername: context.trigger.authorUsername,
-    body: truncate(context.trigger.body, 1_500),
-    instruction: context.trigger.instruction
-      ? truncate(context.trigger.instruction, 1_000)
-      : null,
-    targetDiscussionId: context.trigger.targetDiscussionId,
-    targetPlatformDiscussionId: context.trigger.targetPlatformDiscussionId,
-    targetDiscussionTitle: context.trigger.targetDiscussionTitle,
-  };
+  const compactTrigger = buildCompactTrigger(context.trigger);
 
   return {
     phase: context.phase,
@@ -397,7 +374,6 @@ function buildCompactChatterContext(
     projectMemory:
       sharedReviewContext?.projectMemory ??
       buildPromptProjectMemory(context.projectMemory, maxPromptMemoryChars),
-    instructionFiles: sharedReviewContext?.instructionFiles ?? [],
     changedFiles: sharedReviewContext?.changedFiles ?? [],
     additionalChangedFiles: sharedReviewContext?.additionalChangedFiles ?? [],
     codeReviewComments: sharedReviewContext?.codeReviewComments ?? [],
@@ -419,6 +395,30 @@ function buildCompactChatterContext(
         }
       : null,
     reviewerReplyHandoff: context.reviewerReplyHandoff ?? null,
+  };
+}
+
+function buildCompactTrigger(trigger: ReviewContext["trigger"]) {
+  if (trigger.kind === "manual-review") {
+    return {
+      kind: trigger.kind,
+      provider: trigger.provider,
+      source: trigger.source,
+      metadata: trigger.metadata,
+    };
+  }
+
+  return {
+    kind: trigger.kind,
+    commentId: trigger.commentId,
+    authorUsername: trigger.authorUsername,
+    body: truncate(trigger.body, 1_500),
+    instruction: trigger.instruction
+      ? truncate(trigger.instruction, 1_000)
+      : null,
+    targetDiscussionId: trigger.targetDiscussionId,
+    targetPlatformDiscussionId: trigger.targetPlatformDiscussionId,
+    targetDiscussionTitle: trigger.targetDiscussionTitle,
   };
 }
 

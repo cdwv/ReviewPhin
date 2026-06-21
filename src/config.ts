@@ -18,6 +18,7 @@ export const tenantConfigSchema = z.object({
 const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().min(1).default("0.0.0.0"),
+  PUBLIC_URL: z.string().url().optional(),
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
@@ -52,6 +53,7 @@ export type TenantConfig = z.infer<typeof tenantConfigSchema>;
 export interface AppConfig {
   host: string;
   port: number;
+  publicUrl: string;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
   storageProviderModule?: string | undefined;
   platformModules: string[];
@@ -77,6 +79,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsedEnv = envSchema.parse({
     PORT: env.PORT,
     HOST: env.HOST,
+    PUBLIC_URL: env.PUBLIC_URL,
     LOG_LEVEL: env.LOG_LEVEL,
     STORAGE_PROVIDER_MODULE: env.STORAGE_PROVIDER_MODULE,
     PLATFORM_MODULES: env.PLATFORM_MODULES,
@@ -95,6 +98,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     host: parsedEnv.HOST,
     port: parsedEnv.PORT,
+    publicUrl: normalizePublicUrl(
+      parsedEnv.PUBLIC_URL ?? `http://localhost:${parsedEnv.PORT}`,
+    ),
     logLevel: parsedEnv.LOG_LEVEL,
     storageProviderModule: parsedEnv.STORAGE_PROVIDER_MODULE,
     platformModules: parseModuleList(parsedEnv.PLATFORM_MODULES),
@@ -110,6 +116,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     copilotSdkLogLevel: parsedEnv.COPILOT_SDK_LOG_LEVEL,
     copilotCliPath: parsedEnv.COPILOT_CLI_PATH,
   };
+}
+
+function normalizePublicUrl(value: string): string {
+  return value.replace(/\/+$/, "");
 }
 
 function parseModuleList(value: string | undefined): string[] {

@@ -851,3 +851,5 @@ export function generateCtdFromFieldsDescriptor(
     },
   };
 }
+
+export type CtdDefinition = ReturnType<typeof generateCtdFromFieldsDescriptor>;
