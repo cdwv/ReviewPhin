@@ -93,6 +93,8 @@ async function main(): Promise<void> {
     reviewWorker,
     queue,
     storage,
+    publicUrl: config.publicUrl,
+    enableGitHubSetupSamples: isPnpmDevServer(),
   });
 
   const close = async (): Promise<void> => {
@@ -117,10 +119,22 @@ async function main(): Promise<void> {
     { host: config.host, port: config.port },
     `Webhook base is http://${config.host}:${config.port}/webhooks/{platformSlug}`,
   );
+  if (isPnpmDevServer()) {
+    logger.info(
+      { url: `http://localhost:${config.port}/github/setup/samples` },
+      `GitHub setup samples available at http://localhost:${config.port}/github/setup/samples`,
+    );
+  }
 }
 
-main().catch((error) => {
+function isPnpmDevServer(): boolean {
+  return process.env.npm_lifecycle_event === "dev";
+}
+
+try {
+  await main();
+} catch (error) {
   const logger = createLogger(process.env.LOG_LEVEL ?? "info");
   logger.error({ err: error }, "fatal startup error");
   process.exitCode = 1;
-});
+}

@@ -186,6 +186,13 @@ docker compose run --rm worker reviewphin tenant add \
 
 From a local checkout, use the same `platform connection add` and `tenant add` arguments with `pnpm cli`. See [CLI reference](docs/CLI.md#platform-connection) for the full GitHub connection lifecycle.
 
+During local development, `pnpm dev` logs a
+`http://localhost:<PORT>/github/setup/samples` URL for previewing the GitHub
+setup screens without creating a setup token or starting the GitHub App flow.
+The sample pages use example data and are served outside `/setup/github`, so
+they do not touch storage, call GitHub, or complete any setup step. These
+sample routes are not mounted by the production server.
+
 ### 4. Configure platform webhooks
 
 For GitLab, add the webhook manually.
@@ -390,12 +397,13 @@ For custom code review platform providers see [Code review platform providers](d
 
 ## Routes
 
-| Method | Path                    | Description                                                         |
-| ------ | ----------------------- | ------------------------------------------------------------------- |
-| `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}`                           |
+| Method | Path                    | Description                                                                        |
+| ------ | ----------------------- | ---------------------------------------------------------------------------------- |
+| `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}`                                          |
 | `POST` | `/webhooks/<platform>`  | Platform webhook receiver. Built-ins use `/webhooks/gitlab` and `/webhooks/github` |
-| `*`    | `/setup/<platform>`     | Optional platform setup handler when the provider exposes one       |
-| `POST` | `/webhooks/gitlab/note` | Deprecated GitLab compatibility alias                               |
+| `*`    | `/setup/<platform>`     | Optional platform setup handler when the provider exposes one                      |
+| `GET`  | `/github/setup/samples` | Dev-server-only GitHub setup template previews with example data                   |
+| `POST` | `/webhooks/gitlab/note` | Deprecated GitLab compatibility alias                                              |
 
 ---
 
