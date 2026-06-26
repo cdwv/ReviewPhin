@@ -3,6 +3,10 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v0.7.2 - 2026-06-26
+### Fixed
+- Helm chart will no longer fail to instal with invalid container name
+
 ## v0.7.1 - 2026-06-26
 ### Changed
 - Minor helm chart rename
