@@ -2,6 +2,8 @@ node_modules
 dist
 .env
 .env.docker
+.env.local
+.env.*.local
 coverage
 data
 tmp
