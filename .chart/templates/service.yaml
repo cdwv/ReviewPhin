@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "reviewphin.fullname" . }}
+  name: {{ include "ReviewPhin.fullname" . }}
   labels:
-    {{- include "reviewphin.labels" . | nindent 4 }}
+    {{- include "ReviewPhin.labels" . | nindent 4 }}
     app.kubernetes.io/component: worker
 spec:
   type: {{ .Values.service.type }}
@@ -13,5 +13,5 @@ spec:
       targetPort: http
       protocol: TCP
   selector:
-    {{- include "reviewphin.selectorLabels" . | nindent 4 }}
+    {{- include "ReviewPhin.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: worker

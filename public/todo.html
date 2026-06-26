@@ -1,0 +1,1349 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ReviewPhin OSS launch todo</title>
+    <link rel="icon" href="./favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme {
+        --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-data: "Azeret Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        --color-paper: #f6f7f2;
+        --color-ink: #1d2525;
+        --color-muted: #64706c;
+        --color-rule: #d7ded5;
+        --color-rail: #17201d;
+        --color-copper: #b55d35;
+        --color-signal: #236a9f;
+        --color-mint: #2e7d5a;
+        --color-warn: #b7791f;
+        --color-danger: #b53b35;
+      }
+
+      @layer base {
+        html {
+          color: #1d2525;
+          background:
+            linear-gradient(90deg, rgba(23, 32, 29, 0.035) 1px, transparent 1px),
+            linear-gradient(180deg, rgba(23, 32, 29, 0.035) 1px, transparent 1px),
+            #f6f7f2;
+          background-size: 44px 44px;
+        }
+
+        body {
+          font-family: var(--font-body);
+        }
+
+        ::selection {
+          background: #b55d35;
+          color: #fffaf3;
+        }
+
+        button,
+        input,
+        select {
+          font: inherit;
+        }
+
+        button:focus-visible,
+        input:focus-visible,
+        select:focus-visible,
+        a:focus-visible {
+          outline: 2px solid #236a9f;
+          outline-offset: 2px;
+        }
+      }
+    </style>
+  </head>
+  <body class="min-h-screen text-ink">
+    <div
+      aria-hidden="true"
+      class="hidden border-danger border-warn border-mint border-l-danger border-l-warn border-l-mint bg-[#fff0ee] bg-[#fff8e8] bg-[#eef9f2] bg-danger bg-warn bg-mint bg-white/[0.06] bg-white/[0.10] opacity-60 line-through decoration-2 decoration-muted"
+    ></div>
+    <div class="min-h-screen lg:grid lg:grid-cols-[300px_1fr]">
+      <aside class="bg-rail text-white lg:min-h-screen">
+        <div class="sticky top-0 px-5 py-6 lg:px-6">
+          <div class="flex items-center gap-3">
+            <img src="./favicon.png" alt="" class="h-11 w-11 rounded-md bg-white p-1" />
+            <div>
+              <p class="font-data text-[11px] uppercase tracking-[0.24em] text-white/55">
+                ReviewPhin
+              </p>
+              <h1 class="mt-1 text-2xl font-black tracking-tight">OSS launch board</h1>
+            </div>
+          </div>
+
+          <div class="mt-8 border-l border-white/15 pl-4">
+            <p class="max-w-[22rem] text-sm leading-6 text-white/72">
+              Public release work grouped by launch gate. Each item includes a comparison
+              project or public practice to calibrate quality.
+            </p>
+          </div>
+
+          <div class="mt-8 grid gap-3" id="prioritySummary"></div>
+
+          <div class="mt-8 border-t border-white/15 pt-5">
+            <p class="font-data text-[11px] uppercase tracking-[0.22em] text-white/45">
+              Reference line
+            </p>
+            <ul class="mt-3 space-y-2 text-sm text-white/72">
+              <li>
+                <a class="hover:text-white" href="https://github.com/fastify/fastify" target="_blank" rel="noreferrer">
+                  Fastify
+                </a>
+                <span class="text-white/40"> - Node OSS hygiene</span>
+              </li>
+              <li>
+                <a class="hover:text-white" href="https://github.com/kubernetes/kubernetes" target="_blank" rel="noreferrer">
+                  Kubernetes
+                </a>
+                <span class="text-white/40"> - governance depth</span>
+              </li>
+              <li>
+                <a class="hover:text-white" href="https://github.com/docker/docs" target="_blank" rel="noreferrer">
+                  Docker docs
+                </a>
+                <span class="text-white/40"> - docs contribution model</span>
+              </li>
+              <li>
+                <a class="hover:text-white" href="https://github.com/ossf/scorecard" target="_blank" rel="noreferrer">
+                  OpenSSF Scorecard
+                </a>
+                <span class="text-white/40"> - security baseline</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </aside>
+
+      <main class="px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+        <section class="border border-rule bg-paper/90 shadow-[0_18px_60px_rgba(23,32,29,0.08)]">
+          <div class="border-b border-rule bg-white/70 px-4 py-4 sm:px-5">
+            <div class="grid gap-4 xl:grid-cols-[1fr_auto] xl:items-end">
+              <div>
+                <p class="font-data text-xs font-semibold uppercase tracking-[0.18em] text-copper">
+                  Public release readiness
+                </p>
+                <h2 class="mt-2 max-w-4xl text-3xl font-black tracking-tight sm:text-4xl">
+                  Categorized todo list for making ReviewPhin understandable,
+                  trustworthy, and usable as open source.
+                </h2>
+              </div>
+              <div class="grid grid-cols-3 gap-2 text-center font-data text-xs" id="miniStats"></div>
+            </div>
+          </div>
+
+          <div class="border-b border-rule bg-white/55 px-4 py-4 sm:px-5">
+            <div class="grid gap-3 lg:grid-cols-[minmax(220px,1.2fr)_180px_220px_150px_180px_auto]">
+              <label class="block">
+                <span class="font-data text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Search</span>
+                <input
+                  id="searchInput"
+                  type="search"
+                  class="mt-1 h-10 w-full border border-rule bg-white px-3 text-sm shadow-inner"
+                  placeholder="docs, release, security..."
+                />
+              </label>
+
+              <label class="block">
+                <span class="font-data text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Priority</span>
+                <select id="priorityFilter" class="mt-1 h-10 w-full border border-rule bg-white px-3 text-sm">
+                  <option value="All">All</option>
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
+              </label>
+
+              <label class="block">
+                <span class="font-data text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Area</span>
+                <select id="areaFilter" class="mt-1 h-10 w-full border border-rule bg-white px-3 text-sm">
+                  <option value="All">All</option>
+                </select>
+              </label>
+
+              <label class="block">
+                <span class="font-data text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Status</span>
+                <select id="statusFilter" class="mt-1 h-10 w-full border border-rule bg-white px-3 text-sm">
+                  <option value="open">Open</option>
+                  <option value="done">Done</option>
+                  <option value="all">All</option>
+                </select>
+              </label>
+
+              <label class="block">
+                <span class="font-data text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Sort</span>
+                <select id="sortSelect" class="mt-1 h-10 w-full border border-rule bg-white px-3 text-sm">
+                  <option value="priority">Priority</option>
+                  <option value="area">Area</option>
+                  <option value="effort">Effort</option>
+                  <option value="title">Title</option>
+                </select>
+              </label>
+
+              <div class="flex items-end gap-2">
+                <button id="resetFilters" class="h-10 border border-ink bg-ink px-3 text-sm font-semibold text-white">
+                  Reset
+                </button>
+                <button id="resetProgress" class="h-10 border border-rule bg-white px-3 text-sm font-semibold text-ink">
+                  Clear done
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-4 flex flex-wrap gap-2" id="quickFilters"></div>
+          </div>
+
+          <div class="grid gap-0 xl:grid-cols-[minmax(0,1fr)_310px]">
+            <div class="min-w-0">
+              <div class="overflow-x-auto">
+                <table class="min-w-[1100px] w-full border-collapse bg-white/80 text-left text-sm">
+                  <thead class="bg-rail text-white">
+                    <tr>
+                      <th class="w-14 px-3 py-3 font-data text-[11px] uppercase tracking-[0.15em] text-white/60">
+                        Done
+                      </th>
+                      <th class="px-3 py-3">
+                        <button class="sortButton font-data text-[11px] uppercase tracking-[0.15em]" data-sort="priority">
+                          Priority
+                        </button>
+                      </th>
+                      <th class="px-3 py-3">
+                        <button class="sortButton font-data text-[11px] uppercase tracking-[0.15em]" data-sort="area">
+                          Area
+                        </button>
+                      </th>
+                      <th class="px-3 py-3">
+                        <button class="sortButton font-data text-[11px] uppercase tracking-[0.15em]" data-sort="title">
+                          Improvement
+                        </button>
+                      </th>
+                      <th class="px-3 py-3">
+                        <button class="sortButton font-data text-[11px] uppercase tracking-[0.15em]" data-sort="effort">
+                          Effort
+                        </button>
+                      </th>
+                      <th class="px-3 py-3 font-data text-[11px] uppercase tracking-[0.15em]">
+                        Comparison
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody id="taskRows" class="divide-y divide-rule"></tbody>
+                </table>
+              </div>
+              <div id="emptyState" class="hidden border-t border-rule bg-white px-5 py-12 text-center">
+                <p class="text-lg font-bold">No matching items</p>
+                <p class="mt-1 text-sm text-muted">Change a filter or clear the search term.</p>
+              </div>
+            </div>
+
+            <aside class="border-t border-rule bg-[#eef3ee] xl:border-l xl:border-t-0">
+              <div class="sticky top-0 p-4">
+                <p class="font-data text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                  Priority rubric
+                </p>
+                <div class="mt-4 space-y-3 text-sm leading-6">
+                  <div class="border-l-4 border-danger bg-white px-3 py-2">
+                    <strong>High</strong>
+                    <span class="block text-muted">Needed before a public GitHub launch.</span>
+                  </div>
+                  <div class="border-l-4 border-warn bg-white px-3 py-2">
+                    <strong>Medium</strong>
+                    <span class="block text-muted">Best first steps once people can find the project.</span>
+                  </div>
+                  <div class="border-l-4 border-mint bg-white px-3 py-2">
+                    <strong>Low</strong>
+                    <span class="block text-muted">Useful polish, optional distribution, or community extras.</span>
+                  </div>
+                </div>
+
+                <div class="mt-6 border-t border-rule pt-4">
+                  <p class="font-data text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                    Current view
+                  </p>
+                  <dl class="mt-3 grid grid-cols-2 gap-2 text-sm" id="viewStats"></dl>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const tasks = [
+        {
+          id: "H01",
+          priority: "High",
+          area: "GitHub migration",
+          effort: "M",
+          title: "Replace GitLab CI with GitHub Actions CI",
+          reason: "A GitHub project needs visible, reproducible checks for pull requests and tags.",
+          example: "Fastify and Vitest expose GitHub Actions as the normal contributor feedback loop.",
+          links: [
+            ["Fastify", "https://github.com/fastify/fastify"],
+            ["Vitest", "https://github.com/vitest-dev/vitest"],
+          ],
+        },
+        {
+          id: "H02",
+          priority: "High",
+          area: "GitHub migration",
+          effort: "M",
+          title: "Add required GitHub branch protection rules",
+          reason: "Public PRs should not merge without test, lint, and typecheck status checks.",
+          example: "Kubernetes uses protected branches and explicit contributor policy around merges.",
+          links: [["Kubernetes", "https://github.com/kubernetes/kubernetes"]],
+        },
+        {
+          id: "H03",
+          priority: "High",
+          area: "Release and distribution",
+          effort: "L",
+          title: "Build tag-based release automation",
+          reason: "A public project needs repeatable GitHub Releases, Docker image publishing, and chart publishing.",
+          example: "Renovate and Fastify make releases discoverable through GitHub releases and automation.",
+          links: [
+            ["Renovate", "https://github.com/renovatebot/renovate"],
+            ["Fastify", "https://github.com/fastify/fastify/releases"],
+          ],
+        },
+        {
+          id: "H04",
+          priority: "High",
+          area: "Repository hygiene",
+          effort: "S",
+          title: "Rename package metadata from gitlab-agentic-webhooks to ReviewPhin",
+          reason: "The package name, chart name, compose image, and docs should match the public project identity.",
+          example: "Fastify keeps package, repo, docs, and release identity aligned.",
+          links: [["Fastify", "https://github.com/fastify/fastify/blob/main/package.json"]],
+        },
+        {
+          id: "H05",
+          priority: "High",
+          area: "Repository hygiene",
+          effort: "S",
+          title: "Decide whether npm publishing is supported",
+          reason: "The package is currently private; either publish the CLI properly or document Docker-first distribution.",
+          example: "Docusaurus publishes npm packages and also documents the supported distribution path clearly.",
+          links: [["Docusaurus", "https://github.com/facebook/docusaurus"]],
+        },
+        {
+          id: "H06",
+          priority: "High",
+          area: "Community health",
+          effort: "S",
+          title: "Rename or mirror CONTRIBUTORS.md as CONTRIBUTING.md",
+          reason: "GitHub surfaces CONTRIBUTING.md automatically when users open issues and pull requests.",
+          example: "GitHub community health files expect conventional names for discovery.",
+          links: [["GitHub docs", "https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions"]],
+          status: "done"
+        },
+        {
+          id: "H07",
+          priority: "High",
+          area: "Community health",
+          effort: "S",
+          title: "Add SECURITY.md",
+          reason: "This project handles tokens, webhooks, repositories, and model calls; reporters need a private path.",
+          example: "Fastify and Kubernetes both publish explicit security reporting policies.",
+          links: [
+            ["Fastify", "https://github.com/fastify/fastify/security"],
+            ["Kubernetes", "https://github.com/kubernetes/kubernetes/security"],
+          ],
+        },
+        {
+          id: "H08",
+          priority: "High",
+          area: "Community health",
+          effort: "S",
+          title: "Add SUPPORT.md",
+          reason: "Users need to know where to ask setup questions and where security issues do not belong.",
+          example: "Docker docs routes feedback and support separately from security-sensitive reports.",
+          links: [["Docker docs", "https://github.com/docker/docs"]],
+        },
+        {
+          id: "H09",
+          priority: "High",
+          area: "Community health",
+          effort: "M",
+          title: "Add issue forms and a pull request template",
+          reason: "Structured reports reduce maintainer back-and-forth for installation, platform, and model-provider issues.",
+          example: "Vitest and Docusaurus use templates to route bugs, features, and docs work.",
+          links: [
+            ["Vitest", "https://github.com/vitest-dev/vitest/tree/main/.github"],
+            ["Docusaurus", "https://github.com/facebook/docusaurus/tree/main/.github"],
+          ],
+        },
+        {
+          id: "H10",
+          priority: "High",
+          area: "Community health",
+          effort: "S",
+          title: "Add CODEOWNERS",
+          reason: "Platform, storage, docs, and release changes need predictable review ownership.",
+          example: "Kubernetes uses ownership files to route review responsibility at scale.",
+          links: [["Kubernetes", "https://github.com/kubernetes/kubernetes"]],
+        },
+        {
+          id: "H11",
+          priority: "High",
+          area: "Security",
+          effort: "M",
+          title: "Run secret scanning across the full history",
+          reason: "The repository has local config patterns and internal CI history; public launch should not expose old tokens.",
+          example: "Gitleaks and TruffleHog are common pre-publication checks for repos that handled credentials.",
+          links: [
+            ["Gitleaks", "https://github.com/gitleaks/gitleaks"],
+            ["TruffleHog", "https://github.com/trufflesecurity/trufflehog"],
+          ],
+        },
+        {
+          id: "H12",
+          priority: "High",
+          area: "Repository hygiene",
+          effort: "S",
+          title: "Audit tracked workspace metadata",
+          reason: "Decide whether .agents, .vscode, and skills-lock.json are intentional public project files.",
+          example: "Docker docs keeps contributor tooling public only when it helps contributors reproduce work.",
+          links: [["Docker docs", "https://github.com/docker/docs"]],
+        },
+        {
+          id: "H13",
+          priority: "High",
+          area: "Documentation",
+          effort: "S",
+          title: "Fix README technical inconsistencies",
+          reason: "The README says better-sqlite3 while the code uses node:sqlite; Dockerfile also sets DATABASE_PATH instead of SQLITE_DATABASE_PATH.",
+          example: "Vitest documentation keeps runtime and package assumptions explicit for contributors.",
+          links: [["Vitest", "https://github.com/vitest-dev/vitest"]],
+        },
+        {
+          id: "H14",
+          priority: "High",
+          area: "Documentation",
+          effort: "S",
+          title: "Remove unresolved TODOs from public docs",
+          reason: "The Helm ingress TODO in the README reads as unfinished launch packaging.",
+          example: "Fastify routes known future work into issues and docs rather than inline TODOs.",
+          links: [["Fastify issues", "https://github.com/fastify/fastify/issues"]],
+        },
+        {
+          id: "H15",
+          priority: "High",
+          area: "Release and distribution",
+          effort: "M",
+          title: "Update Helm chart identity and versioning",
+          reason: "The chart still uses old GitLab agentic worker naming and v0.1.0 app metadata.",
+          example: "Helm charts in mature projects keep Chart.yaml identity and appVersion aligned with releases.",
+          links: [["Helm docs", "https://helm.sh/docs/topics/charts/"]],
+        },
+        {
+          id: "H16",
+          priority: "High",
+          area: "Security",
+          effort: "M",
+          title: "Document least-privilege token scopes and threat model",
+          reason: "Users need to trust why GitLab api scope, GitHub App permissions, and Copilot tokens are required.",
+          example: "Kubernetes and Docker docs both separate security-sensitive setup from quickstart copy.",
+          links: [
+            ["Kubernetes", "https://kubernetes.io/docs/concepts/security/"],
+            ["Docker docs", "https://docs.docker.com/"],
+          ],
+        },
+        {
+          id: "H17",
+          priority: "High",
+          area: "Security",
+          effort: "M",
+          title: "Harden the Docker runtime image",
+          reason: "Run as a non-root user, add OCI labels, document supported architectures, and keep only runtime files.",
+          example: "OpenTelemetry images publish clear container metadata and security expectations.",
+          links: [["OpenTelemetry JS", "https://github.com/open-telemetry/opentelemetry-js"]],
+        },
+        {
+          id: "H18",
+          priority: "High",
+          area: "Security",
+          effort: "S",
+          title: "Add Dependabot or Renovate for dependency updates",
+          reason: "Public users expect dependency vulnerabilities to be visible and maintained.",
+          example: "Renovate is itself a strong reference for automated dependency maintenance.",
+          links: [["Renovate", "https://github.com/renovatebot/renovate"]],
+        },
+        {
+          id: "H19",
+          priority: "High",
+          area: "Documentation",
+          effort: "M",
+          title: "Write a GitHub-first quickstart",
+          reason: "The launch target is GitHub, so the first path should cover GitHub App setup before GitLab.",
+          example: "Docusaurus optimizes its first-run path around the default user journey.",
+          links: [["Docusaurus docs", "https://docusaurus.io/docs"]],
+        },
+        {
+          id: "H20",
+          priority: "High",
+          area: "Documentation",
+          effort: "M",
+          title: "Add data handling and AI review caveats",
+          reason: "Users should understand what leaves their network, model quality limitations, and human review expectations.",
+          example: "GitHub Copilot docs describe code review boundaries and user responsibility.",
+          links: [["GitHub Copilot docs", "https://docs.github.com/en/copilot"]],
+        },
+        {
+          id: "H21",
+          priority: "High",
+          area: "Repository hygiene",
+          effort: "S",
+          title: "Expand ignored local secret patterns",
+          reason: "Ignore .env.local, .env.*.local, generated logs, and other common local-only secret files.",
+          example: "Docusaurus and many Node projects include broad local env ignore patterns.",
+          links: [["Docusaurus", "https://github.com/facebook/docusaurus"]],
+        },
+        {
+          id: "H22",
+          priority: "High",
+          area: "Release and distribution",
+          effort: "M",
+          title: "Add public badges and canonical project links",
+          reason: "README badges should point to GitHub Actions, release artifacts, license, security policy, and Docker/GHCR image.",
+          example: "Fastify uses badges and top-level links to make project status obvious.",
+          links: [["Fastify", "https://github.com/fastify/fastify"]],
+        },
+        {
+          id: "M01",
+          priority: "Medium",
+          area: "Documentation",
+          effort: "L",
+          title: "Publish a documentation site",
+          reason: "The markdown docs are useful, but a public project benefits from navigation, search, and versioned pages.",
+          example: "Docusaurus, VitePress, and Docker docs show how docs sites make OSS easier to use.",
+          links: [
+            ["Docusaurus", "https://docusaurus.io/"],
+            ["VitePress", "https://vitepress.dev/"],
+            ["Docker docs", "https://docs.docker.com/"],
+          ],
+        },
+        {
+          id: "M02",
+          priority: "Medium",
+          area: "Documentation",
+          effort: "M",
+          title: "Add screenshots or GIFs of core flows",
+          reason: "GitHub App setup, GitLab webhook setup, and review output are hard to judge from text alone.",
+          example: "Docker docs and GitHub docs use visual walkthroughs for setup-heavy flows.",
+          links: [
+            ["Docker docs", "https://docs.docker.com/"],
+            ["GitHub docs", "https://docs.github.com/"],
+          ],
+        },
+        {
+          id: "M03",
+          priority: "Medium",
+          area: "Documentation",
+          effort: "M",
+          title: "Add a troubleshooting guide",
+          reason: "Webhook signatures, token permissions, Copilot auth, model timeouts, and SQLite paths will be common support cases.",
+          example: "Kubernetes troubleshooting docs set a high bar for operator-facing failure guidance.",
+          links: [["Kubernetes docs", "https://kubernetes.io/docs/tasks/debug/"]],
+        },
+        {
+          id: "M04",
+          priority: "Medium",
+          area: "Operations",
+          effort: "M",
+          title: "Write production deployment guidance",
+          reason: "Operators need TLS, reverse proxy, persistence, resource sizing, and restart behavior documented.",
+          example: "OpenTelemetry and Docker docs separate local quickstart from production operation.",
+          links: [
+            ["OpenTelemetry", "https://opentelemetry.io/docs/"],
+            ["Docker docs", "https://docs.docker.com/"],
+          ],
+        },
+        {
+          id: "M05",
+          priority: "Medium",
+          area: "Operations",
+          effort: "M",
+          title: "Document backup, restore, upgrade, and rollback",
+          reason: "ReviewPhin stores tenants, model profiles, project memory, run logs, and publication mappings.",
+          example: "Kubernetes and database-backed OSS projects publish operational upgrade procedures.",
+          links: [["Kubernetes docs", "https://kubernetes.io/docs/tasks/administer-cluster/"]],
+        },
+        {
+          id: "M06",
+          priority: "Medium",
+          area: "Documentation",
+          effort: "S",
+          title: "Add a compatibility matrix",
+          reason: "Users need a compact view of supported Node versions, platforms, storage providers, and model providers.",
+          example: "Vitest and Fastify document runtime support clearly around Node compatibility.",
+          links: [
+            ["Vitest", "https://vitest.dev/"],
+            ["Fastify", "https://fastify.dev/"],
+          ],
+        },
+        {
+          id: "M07",
+          priority: "Medium",
+          area: "Documentation",
+          effort: "S",
+          title: "Add a limitations page",
+          reason: "GitHub comment threading, file-level comments, auto triggers, and AI accuracy should be explicit.",
+          example: "GitHub docs often call out product limitations directly in feature docs.",
+          links: [["GitHub docs", "https://docs.github.com/"]],
+        },
+        {
+          id: "M08",
+          priority: "Medium",
+          area: "Architecture",
+          effort: "M",
+          title: "Add architecture diagrams",
+          reason: "A webhook-to-worker-to-platform flow diagram will make the adapter and storage model easier to understand.",
+          example: "OpenTelemetry docs rely on architecture diagrams for multi-component systems.",
+          links: [["OpenTelemetry docs", "https://opentelemetry.io/docs/"]],
+        },
+        {
+          id: "M09",
+          priority: "Medium",
+          area: "Usability",
+          effort: "L",
+          title: "Create a public demo repository or mocked playground",
+          reason: "Potential users should see review output without wiring production credentials first.",
+          example: "Docusaurus and many CLI projects provide templates or demos to lower evaluation cost.",
+          links: [["Docusaurus examples", "https://github.com/facebook/docusaurus/tree/main/examples"]],
+        },
+        {
+          id: "M10",
+          priority: "Medium",
+          area: "Community health",
+          effort: "S",
+          title: "Enable GitHub Discussions with clear categories",
+          reason: "Questions, ideas, announcements, and setup help should not all become issues.",
+          example: "Fastify uses Discussions for community support separate from bug tracking.",
+          links: [["Fastify Discussions", "https://github.com/fastify/fastify/discussions"]],
+        },
+        {
+          id: "M11",
+          priority: "Medium",
+          area: "Community health",
+          effort: "S",
+          title: "Create a public label taxonomy",
+          reason: "Labels like good first issue, docs, platform:github, platform:gitlab, storage, and model-provider make work discoverable.",
+          example: "Kubernetes uses rich labels to route issue ownership and contributor entry points.",
+          links: [["Kubernetes issues", "https://github.com/kubernetes/kubernetes/issues"]],
+        },
+        {
+          id: "M12",
+          priority: "Medium",
+          area: "Community health",
+          effort: "S",
+          title: "Publish a roadmap",
+          reason: "Users should see what is planned, what is deliberately out of scope, and where help is useful.",
+          example: "Kubernetes and OpenTelemetry maintain public planning surfaces for future work.",
+          links: [
+            ["Kubernetes", "https://github.com/kubernetes/enhancements"],
+            ["OpenTelemetry", "https://github.com/open-telemetry"],
+          ],
+        },
+        {
+          id: "M13",
+          priority: "Medium",
+          area: "Community health",
+          effort: "S",
+          title: "Add release and support policy",
+          reason: "Users need to know semver expectations, supported versions, and migration commitments.",
+          example: "Fastify publishes long-term support and release expectations.",
+          links: [["Fastify", "https://github.com/fastify/fastify"]],
+        },
+        {
+          id: "M14",
+          priority: "Medium",
+          area: "Community health",
+          effort: "M",
+          title: "Add governance and maintainer policy",
+          reason: "Even a small OSS project benefits from clear merge, release, and maintainer rules.",
+          example: "Fastify and Kubernetes both publish governance models appropriate to their scale.",
+          links: [
+            ["Fastify governance", "https://github.com/fastify/fastify/blob/main/GOVERNANCE.md"],
+            ["Kubernetes community", "https://github.com/kubernetes/community"],
+          ],
+        },
+        {
+          id: "M15",
+          priority: "Medium",
+          area: "Security",
+          effort: "M",
+          title: "Add CodeQL, dependency review, and OpenSSF Scorecard",
+          reason: "These checks build trust and catch common repository and code security issues.",
+          example: "OpenSSF Scorecard is built specifically to measure open source security posture.",
+          links: [
+            ["Scorecard", "https://github.com/ossf/scorecard"],
+            ["CodeQL", "https://codeql.github.com/"],
+          ],
+        },
+        {
+          id: "M16",
+          priority: "Medium",
+          area: "Security",
+          effort: "L",
+          title: "Publish SBOMs and artifact attestations",
+          reason: "Self-hosted operators increasingly expect supply-chain metadata for images and release assets.",
+          example: "SLSA and GitHub artifact attestations are common supply-chain references.",
+          links: [
+            ["SLSA", "https://slsa.dev/"],
+            ["GitHub attestations", "https://docs.github.com/en/actions/security-guides/using-artifact-attestations"],
+          ],
+        },
+        {
+          id: "M17",
+          priority: "Medium",
+          area: "Release and distribution",
+          effort: "M",
+          title: "Publish multi-architecture container images",
+          reason: "Users running ARM servers, Apple Silicon, and Kubernetes nodes should not build their own image.",
+          example: "Docker official images commonly publish linux/amd64 and linux/arm64 variants.",
+          links: [["Docker buildx", "https://docs.docker.com/build/building/multi-platform/"]],
+        },
+        {
+          id: "M18",
+          priority: "Medium",
+          area: "Operations",
+          effort: "M",
+          title: "Add Helm ingress and Gateway API support",
+          reason: "The current README calls this out; production Kubernetes users will need it.",
+          example: "Kubernetes ecosystem charts usually expose ingress and service customization.",
+          links: [["Gateway API", "https://gateway-api.sigs.k8s.io/"]],
+        },
+        {
+          id: "M19",
+          priority: "Medium",
+          area: "Extensibility",
+          effort: "L",
+          title: "Add a PostgreSQL storage adapter",
+          reason: "SQLite is good for a start, but production operators often standardize on Postgres.",
+          example: "Many self-hosted OSS apps support SQLite for simple installs and Postgres for production.",
+          links: [["Django", "https://github.com/django/django"]],
+        },
+        {
+          id: "M20",
+          priority: "Medium",
+          area: "Developer experience",
+          effort: "M",
+          title: "Add Dev Container or Codespaces setup",
+          reason: "Contributors can run tests and preview setup screens without manually preparing Node and pnpm.",
+          example: "GitHub Codespaces examples and many docs projects make browser-based contribution possible.",
+          links: [["Codespaces docs", "https://docs.github.com/en/codespaces"]],
+        },
+        {
+          id: "M21",
+          priority: "Medium",
+          area: "Operations",
+          effort: "M",
+          title: "Document logs, metrics, and cost controls",
+          reason: "Operators need to monitor token usage, failed jobs, model latency, and quota burn.",
+          example: "OpenTelemetry docs are a useful comparison for observability language.",
+          links: [["OpenTelemetry docs", "https://opentelemetry.io/docs/"]],
+        },
+        {
+          id: "M22",
+          priority: "Medium",
+          area: "Operations",
+          effort: "M",
+          title: "Document rate limiting and webhook abuse controls",
+          reason: "Publicly reachable webhook endpoints can trigger model spend if misconfigured.",
+          example: "GitHub Apps and API-heavy OSS tools document webhook validation and abuse limits.",
+          links: [["GitHub webhook docs", "https://docs.github.com/en/webhooks"]],
+        },
+        {
+          id: "M23",
+          priority: "Medium",
+          area: "Documentation",
+          effort: "M",
+          title: "Add reverse proxy examples",
+          reason: "Caddy, nginx, Cloudflare Tunnel, and ngrok examples would reduce setup friction.",
+          example: "Docker docs commonly include compose and proxy snippets for deployment paths.",
+          links: [["Docker docs", "https://docs.docker.com/"]],
+        },
+        {
+          id: "M24",
+          priority: "Medium",
+          area: "Extensibility",
+          effort: "M",
+          title: "Add adapter starter templates",
+          reason: "Platform and storage provider interfaces are documented, but examples make contribution practical.",
+          example: "Fastify plugin examples show how template code accelerates ecosystem contributions.",
+          links: [["Fastify plugins", "https://github.com/fastify/fastify-plugin"]],
+        },
+        {
+          id: "M25",
+          priority: "Medium",
+          area: "Testing and quality",
+          effort: "M",
+          title: "Add release smoke tests",
+          reason: "CI should verify the built Docker image starts, serves /healthz, and exposes the CLI.",
+          example: "Docker-based OSS projects commonly smoke-test images before publishing.",
+          links: [["Docker docs", "https://docs.docker.com/build/ci/"]],
+        },
+        {
+          id: "M26",
+          priority: "Medium",
+          area: "Testing and quality",
+          effort: "M",
+          title: "Publish coverage trend or coverage artifact",
+          reason: "The project has a broad test suite; public signal helps contributors understand expectations.",
+          example: "Vitest and many JS projects publish coverage artifacts or badges.",
+          links: [["Vitest", "https://github.com/vitest-dev/vitest"]],
+        },
+        {
+          id: "M27",
+          priority: "Medium",
+          area: "Documentation",
+          effort: "M",
+          title: "Split README into focused docs pages",
+          reason: "The README is already long; public users need a short landing path and deeper linked guides.",
+          example: "Fastify README is compact and sends readers to the docs site for depth.",
+          links: [["Fastify", "https://github.com/fastify/fastify"]],
+        },
+        {
+          id: "L01",
+          priority: "Low",
+          area: "Community growth",
+          effort: "S",
+          title: "Add FUNDING.yml",
+          reason: "Funding links are useful if sponsorship or paid support becomes part of the project.",
+          example: "Fastify exposes sponsorship options without making them part of basic setup.",
+          links: [["Fastify sponsors", "https://github.com/sponsors/fastify"]],
+        },
+        {
+          id: "L02",
+          priority: "Low",
+          area: "Branding",
+          effort: "M",
+          title: "Create social preview images",
+          reason: "Repository cards and shared links look more polished with a clear project visual.",
+          example: "Docusaurus and Docker have strong visual identities across docs and social surfaces.",
+          links: [
+            ["Docusaurus", "https://docusaurus.io/"],
+            ["Docker", "https://www.docker.com/"],
+          ],
+        },
+        {
+          id: "L03",
+          priority: "Low",
+          area: "Documentation",
+          effort: "M",
+          title: "Record a short setup video",
+          reason: "Video helps evaluation, but text docs should carry the project first.",
+          example: "Many developer tools use videos as secondary onboarding material after docs.",
+          links: [["Docker docs", "https://docs.docker.com/"]],
+        },
+        {
+          id: "L04",
+          priority: "Low",
+          area: "Documentation",
+          effort: "M",
+          title: "Add docs style guide",
+          reason: "A style guide is useful once external contributors regularly edit docs.",
+          example: "Docker docs maintains contribution and writing guidance for docs quality.",
+          links: [["Docker docs", "https://github.com/docker/docs"]],
+        },
+        {
+          id: "L05",
+          priority: "Low",
+          area: "Testing and quality",
+          effort: "S",
+          title: "Add markdown lint and link checking",
+          reason: "Helpful once the docs surface grows beyond a few pages.",
+          example: "Docker docs and many docs-first projects automate link and style checks.",
+          links: [["Docker docs", "https://github.com/docker/docs"]],
+        },
+        {
+          id: "L06",
+          priority: "Low",
+          area: "Documentation",
+          effort: "L",
+          title: "Add docs search",
+          reason: "Search matters after the docs site has enough pages to justify indexing.",
+          example: "Docusaurus supports search integrations for larger documentation sites.",
+          links: [["Docusaurus search", "https://docusaurus.io/docs/search"]],
+        },
+        {
+          id: "L07",
+          priority: "Low",
+          area: "Documentation",
+          effort: "XL",
+          title: "Localize documentation",
+          reason: "Translation can wait until there is stable English documentation and active demand.",
+          example: "Kubernetes localizes docs after the core documentation structure is mature.",
+          links: [["Kubernetes docs", "https://kubernetes.io/docs/"]],
+        },
+        {
+          id: "L08",
+          priority: "Low",
+          area: "Community growth",
+          effort: "S",
+          title: "Add all-contributors or contributor credits automation",
+          reason: "Useful for community recognition once external contributions start.",
+          example: "The all-contributors bot is common in community-oriented OSS projects.",
+          links: [["All Contributors", "https://allcontributors.org/"]],
+        },
+        {
+          id: "L09",
+          priority: "Low",
+          area: "Community growth",
+          effort: "S",
+          title: "Avoid or delay stale bot automation",
+          reason: "Stale bots can harm small communities if issues are closed before maintainers have capacity.",
+          example: "Large repos use automation selectively; small projects often do better with manual triage first.",
+          links: [["Kubernetes issues", "https://github.com/kubernetes/kubernetes/issues"]],
+        },
+        {
+          id: "L10",
+          priority: "Low",
+          area: "Release and distribution",
+          effort: "M",
+          title: "Package the CLI for Homebrew or Scoop",
+          reason: "Useful if the CLI becomes a common local operator workflow; unnecessary for Docker-first use.",
+          example: "Many mature CLIs add package-manager distribution after demand exists.",
+          links: [["Homebrew", "https://brew.sh/"]],
+        },
+        {
+          id: "L11",
+          priority: "Low",
+          area: "Operations",
+          effort: "L",
+          title: "Add Terraform modules",
+          reason: "Infrastructure modules are helpful only after the recommended production topology stabilizes.",
+          example: "Kubernetes ecosystem projects often add Terraform later through community demand.",
+          links: [["Terraform Registry", "https://registry.terraform.io/"]],
+        },
+        {
+          id: "L12",
+          priority: "Low",
+          area: "Documentation",
+          effort: "M",
+          title: "Create public case studies or adopter notes",
+          reason: "Real usage stories help trust, but they require users and consent.",
+          example: "Kubernetes and OpenTelemetry publish user stories once adoption is broad.",
+          links: [
+            ["Kubernetes case studies", "https://kubernetes.io/case-studies/"],
+            ["OpenTelemetry", "https://opentelemetry.io/"],
+          ],
+        },
+        {
+          id: "L13",
+          priority: "Low",
+          area: "Testing and quality",
+          effort: "M",
+          title: "Add benchmark documentation",
+          reason: "Benchmarks are only valuable once workloads and deployment recommendations are stable.",
+          example: "Fastify publishes benchmarks because performance is a core product claim.",
+          links: [["Fastify benchmarks", "https://github.com/fastify/benchmarks"]],
+        },
+        {
+          id: "L14",
+          priority: "Low",
+          area: "Documentation",
+          effort: "M",
+          title: "Publish changelog as a docs page",
+          reason: "GitHub releases and CHANGELOG.md are enough at launch; a searchable page helps later.",
+          example: "Docusaurus projects commonly expose versioned release notes in docs.",
+          links: [["Docusaurus", "https://docusaurus.io/"]],
+        },
+        {
+          id: "L15",
+          priority: "Low",
+          area: "Extensibility",
+          effort: "M",
+          title: "Add OpenAPI documentation for HTTP routes",
+          reason: "The public API is mostly webhooks and setup routes, so OpenAPI can wait unless external integrations grow.",
+          example: "API-heavy projects publish OpenAPI specs when third-party clients are expected.",
+          links: [["OpenAPI", "https://www.openapis.org/"]],
+        },
+        {
+          id: "L16",
+          priority: "Low",
+          area: "Branding",
+          effort: "M",
+          title: "Polish a lightweight public website",
+          reason: "A website can help discovery, but the working docs and README matter more first.",
+          example: "Fastify and Docusaurus have public sites once the project identity is stable.",
+          links: [
+            ["Fastify site", "https://fastify.dev/"],
+            ["Docusaurus site", "https://docusaurus.io/"],
+          ],
+        },
+        {
+          id: "L17",
+          priority: "Low",
+          area: "Security",
+          effort: "M",
+          title: "Apply for OpenSSF Best Practices badge",
+          reason: "The badge is useful after the basics are in place, not before the launch checklist is clean.",
+          example: "OpenSSF Best Practices is a maturity signal for established OSS projects.",
+          links: [["OpenSSF Best Practices", "https://www.bestpractices.dev/"]],
+        },
+      ];
+
+      const priorityRank = { High: 0, Medium: 1, Low: 2 };
+      const effortRank = { XS: 0, S: 1, M: 2, L: 3, XL: 4 };
+      const progressKey = "reviewphin-oss-launch-board-v1";
+
+      const state = {
+        query: "",
+        priority: "All",
+        area: "All",
+        status: "open",
+        sort: "priority",
+        direction: "asc",
+        done: new Set(JSON.parse(localStorage.getItem(progressKey) || "[]")),
+      };
+
+      const els = {
+        rows: document.getElementById("taskRows"),
+        empty: document.getElementById("emptyState"),
+        search: document.getElementById("searchInput"),
+        priority: document.getElementById("priorityFilter"),
+        area: document.getElementById("areaFilter"),
+        status: document.getElementById("statusFilter"),
+        sort: document.getElementById("sortSelect"),
+        resetFilters: document.getElementById("resetFilters"),
+        resetProgress: document.getElementById("resetProgress"),
+        prioritySummary: document.getElementById("prioritySummary"),
+        miniStats: document.getElementById("miniStats"),
+        viewStats: document.getElementById("viewStats"),
+        quickFilters: document.getElementById("quickFilters"),
+      };
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function priorityClasses(priority) {
+        if (priority === "High") {
+          return {
+            badge: "border-danger bg-[#fff0ee] text-danger",
+            rail: "border-l-danger",
+            dot: "bg-danger",
+          };
+        }
+        if (priority === "Medium") {
+          return {
+            badge: "border-warn bg-[#fff8e8] text-warn",
+            rail: "border-l-warn",
+            dot: "bg-warn",
+          };
+        }
+        return {
+          badge: "border-mint bg-[#eef9f2] text-mint",
+          rail: "border-l-mint",
+          dot: "bg-mint",
+        };
+      }
+
+      function saveProgress() {
+        localStorage.setItem(progressKey, JSON.stringify([...state.done]));
+      }
+
+      function isTaskDone(task) {
+        return task.status === "done" || state.done.has(task.id);
+      }
+
+      function taskMatches(task) {
+        const haystack = [
+          task.id,
+          task.priority,
+          task.area,
+          task.title,
+          task.reason,
+          task.example,
+          task.effort,
+        ]
+          .join(" ")
+          .toLowerCase();
+        const statusMatch =
+          state.status === "all" ||
+          (state.status === "done" && isTaskDone(task)) ||
+          (state.status === "open" && !isTaskDone(task));
+
+        return (
+          (state.priority === "All" || task.priority === state.priority) &&
+          (state.area === "All" || task.area === state.area) &&
+          statusMatch &&
+          haystack.includes(state.query.trim().toLowerCase())
+        );
+      }
+
+      function compareTasks(a, b) {
+        let result = 0;
+        if (state.sort === "priority") {
+          result = priorityRank[a.priority] - priorityRank[b.priority];
+        } else if (state.sort === "effort") {
+          result = effortRank[a.effort] - effortRank[b.effort];
+        } else if (state.sort === "area") {
+          result = a.area.localeCompare(b.area);
+        } else {
+          result = a.title.localeCompare(b.title);
+        }
+
+        if (result === 0) {
+          result = a.id.localeCompare(b.id, undefined, { numeric: true });
+        }
+
+        return state.direction === "asc" ? result : -result;
+      }
+
+      function renderLinks(links) {
+        return links
+          .map(
+            ([label, url]) =>
+              `<a class="font-semibold text-signal underline decoration-signal/30 underline-offset-4 hover:text-copper" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`,
+          )
+          .join("<span class=\"text-muted\">, </span>");
+      }
+
+      function renderRows() {
+        const visible = tasks.filter(taskMatches).sort(compareTasks);
+        els.rows.innerHTML = visible
+          .map((task) => {
+            const done = isTaskDone(task);
+            const classes = priorityClasses(task.priority);
+            return `
+              <tr class="border-l-4 ${classes.rail} ${done ? "bg-[#f2f4ef] opacity-60" : "bg-white/85"} hover:bg-[#f9fbf5]">
+                <td class="align-top px-3 py-4">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 accent-signal"
+                    data-task-id="${escapeHtml(task.id)}"
+                    ${done ? "checked" : ""}
+                    aria-label="Mark ${escapeHtml(task.title)} done"
+                  />
+                </td>
+                <td class="align-top px-3 py-4">
+                  <span class="inline-flex min-w-20 items-center justify-center border px-2 py-1 font-data text-[11px] font-semibold ${classes.badge}">
+                    ${escapeHtml(task.priority)}
+                  </span>
+                  <span class="mt-2 block font-data text-[11px] text-muted">${escapeHtml(task.id)}</span>
+                </td>
+                <td class="align-top px-3 py-4">
+                  <span class="font-data text-xs font-semibold text-ink">${escapeHtml(task.area)}</span>
+                </td>
+                <td class="max-w-xl align-top px-3 py-4">
+                  <p class="font-semibold leading-5 ${done ? "line-through decoration-2 decoration-muted" : ""}">
+                    ${escapeHtml(task.title)}
+                  </p>
+                  <p class="mt-1 leading-6 text-muted">${escapeHtml(task.reason)}</p>
+                </td>
+                <td class="align-top px-3 py-4">
+                  <span class="inline-flex h-8 w-10 items-center justify-center border border-rule bg-[#f5f7f4] font-data text-xs font-bold">
+                    ${escapeHtml(task.effort)}
+                  </span>
+                </td>
+                <td class="max-w-sm align-top px-3 py-4">
+                  <p class="leading-6 text-muted">${escapeHtml(task.example)}</p>
+                  <p class="mt-2">${renderLinks(task.links)}</p>
+                </td>
+              </tr>
+            `;
+          })
+          .join("");
+
+        els.empty.classList.toggle("hidden", visible.length > 0);
+        renderStats(visible);
+      }
+
+      function renderStats(visible) {
+        const doneCount = tasks.filter(isTaskDone).length;
+        const allOpen = tasks.length - doneCount;
+        const highOpen = tasks.filter((task) => task.priority === "High" && !isTaskDone(task)).length;
+        const mediumOpen = tasks.filter((task) => task.priority === "Medium" && !isTaskDone(task)).length;
+        const lowOpen = tasks.filter((task) => task.priority === "Low" && !isTaskDone(task)).length;
+
+        els.prioritySummary.innerHTML = [
+          ["High", highOpen, "Before launch"],
+          ["Medium", mediumOpen, "After launch"],
+          ["Low", lowOpen, "Optional"],
+        ]
+          .map(([priority, count, label]) => {
+            const classes = priorityClasses(priority);
+            return `
+              <button class="quickPriority border border-white/15 bg-white/[0.06] p-3 text-left hover:bg-white/[0.10]" data-priority="${priority}">
+                <span class="flex items-center justify-between gap-3">
+                  <span class="font-data text-[11px] uppercase tracking-[0.18em] text-white/45">${label}</span>
+                  <span class="h-2.5 w-2.5 ${classes.dot}"></span>
+                </span>
+                <span class="mt-2 block text-3xl font-black">${count}</span>
+                <span class="text-xs text-white/48">open ${priority.toLowerCase()} items</span>
+              </button>
+            `;
+          })
+          .join("");
+
+        els.miniStats.innerHTML = [
+          ["Total", tasks.length],
+          ["Open", allOpen],
+          ["Done", doneCount],
+        ]
+          .map(
+            ([label, count]) => `
+              <div class="border border-rule bg-white px-3 py-2">
+                <span class="block text-[11px] uppercase tracking-[0.16em] text-muted">${label}</span>
+                <strong class="text-xl">${count}</strong>
+              </div>
+            `,
+          )
+          .join("");
+
+        const visibleDone = visible.filter(isTaskDone).length;
+        els.viewStats.innerHTML = [
+          ["Showing", visible.length],
+          ["Done here", visibleDone],
+          ["High open", highOpen],
+          ["All open", allOpen],
+        ]
+          .map(
+            ([label, count]) => `
+              <div class="border border-rule bg-white px-3 py-2">
+                <dt class="font-data text-[10px] uppercase tracking-[0.14em] text-muted">${label}</dt>
+                <dd class="mt-1 text-lg font-black">${count}</dd>
+              </div>
+            `,
+          )
+          .join("");
+
+        document.querySelectorAll(".quickPriority").forEach((button) => {
+          button.addEventListener("click", () => {
+            state.priority = button.dataset.priority;
+            els.priority.value = state.priority;
+            renderRows();
+          });
+        });
+      }
+
+      function renderFilters() {
+        const areas = [...new Set(tasks.map((task) => task.area))].sort();
+        els.area.innerHTML =
+          '<option value="All">All</option>' +
+          areas.map((area) => `<option value="${escapeHtml(area)}">${escapeHtml(area)}</option>`).join("");
+
+        els.quickFilters.innerHTML = [
+          ["Before launch", "High"],
+          ["Docs", "Documentation"],
+          ["Security", "Security"],
+          ["Release", "Release and distribution"],
+          ["Community", "Community health"],
+        ]
+          .map(
+            ([label, value]) => `
+              <button
+                class="quickFilter border border-rule bg-white px-3 py-1.5 font-data text-[11px] font-semibold uppercase tracking-[0.14em] text-muted hover:border-ink hover:text-ink"
+                data-value="${escapeHtml(value)}"
+              >
+                ${escapeHtml(label)}
+              </button>
+            `,
+          )
+          .join("");
+
+        document.querySelectorAll(".quickFilter").forEach((button) => {
+          button.addEventListener("click", () => {
+            const value = button.dataset.value;
+            if (["High", "Medium", "Low"].includes(value)) {
+              state.priority = value;
+              els.priority.value = value;
+            } else {
+              state.area = value;
+              els.area.value = value;
+            }
+            renderRows();
+          });
+        });
+      }
+
+      function bindEvents() {
+        els.search.addEventListener("input", () => {
+          state.query = els.search.value;
+          renderRows();
+        });
+        els.priority.addEventListener("change", () => {
+          state.priority = els.priority.value;
+          renderRows();
+        });
+        els.area.addEventListener("change", () => {
+          state.area = els.area.value;
+          renderRows();
+        });
+        els.status.addEventListener("change", () => {
+          state.status = els.status.value;
+          renderRows();
+        });
+        els.sort.addEventListener("change", () => {
+          state.sort = els.sort.value;
+          renderRows();
+        });
+        els.resetFilters.addEventListener("click", () => {
+          state.query = "";
+          state.priority = "All";
+          state.area = "All";
+          state.status = "open";
+          state.sort = "priority";
+          state.direction = "asc";
+          els.search.value = "";
+          els.priority.value = "All";
+          els.area.value = "All";
+          els.status.value = "open";
+          els.sort.value = "priority";
+          renderRows();
+        });
+        els.resetProgress.addEventListener("click", () => {
+          state.done.clear();
+          saveProgress();
+          renderRows();
+        });
+        els.rows.addEventListener("change", (event) => {
+          if (event.target.matches("input[type='checkbox'][data-task-id]")) {
+            if (event.target.checked) {
+              state.done.add(event.target.dataset.taskId);
+            } else {
+              state.done.delete(event.target.dataset.taskId);
+            }
+            saveProgress();
+            renderRows();
+          }
+        });
+        document.querySelectorAll(".sortButton").forEach((button) => {
+          button.addEventListener("click", () => {
+            const nextSort = button.dataset.sort;
+            if (state.sort === nextSort) {
+              state.direction = state.direction === "asc" ? "desc" : "asc";
+            } else {
+              state.sort = nextSort;
+              state.direction = "asc";
+              els.sort.value = nextSort;
+            }
+            renderRows();
+          });
+        });
+      }
+
+      renderFilters();
+      bindEvents();
+      renderRows();
+    </script>
+  </body>
+</html>

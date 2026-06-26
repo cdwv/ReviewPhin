@@ -1,6 +1,6 @@
 apiVersion: v2
-name: reviewphin
-description: Helm chart for the GitLab agentic review worker
+name: ReviewPhin
+description: Helm chart for the agentic code review dolphin
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

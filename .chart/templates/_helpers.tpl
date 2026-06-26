@@ -1,8 +1,8 @@
-{{- define "reviewphin.name" -}}
+{{- define "ReviewPhin.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "reviewphin.fullname" -}}
+{{- define "ReviewPhin.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
@@ -10,30 +10,30 @@
 {{- end -}}
 {{- end -}}
 
-{{- define "reviewphin.appname" -}}
+{{- define "ReviewPhin.appname" -}}
 {{- $releaseName := default .Release.Name .Values.releaseOverride -}}
 {{- printf "%s" $releaseName | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "reviewphin.chart" -}}
+{{- define "ReviewPhin.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "reviewphin.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "reviewphin.appname" . }}
+{{- define "ReviewPhin.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "ReviewPhin.appname" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{- define "reviewphin.labels" -}}
-helm.sh/chart: {{ include "reviewphin.chart" . }}
-{{ include "reviewphin.selectorLabels" . }}
+{{- define "ReviewPhin.labels" -}}
+helm.sh/chart: {{ include "ReviewPhin.chart" . }}
+{{ include "ReviewPhin.selectorLabels" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
-{{- define "reviewphin.pvcName" -}}
+{{- define "ReviewPhin.pvcName" -}}
 {{- if .Values.persistence.existingClaim -}}
 {{- .Values.persistence.existingClaim -}}
 {{- else -}}
-{{- printf "%s-storage" (include "reviewphin.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- printf "%s-storage" (include "ReviewPhin.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 {{- end -}}

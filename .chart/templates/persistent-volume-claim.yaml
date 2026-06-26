@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "reviewphin.pvcName" . }}
+  name: {{ include "ReviewPhin.pvcName" . }}
   labels:
-    {{- include "reviewphin.labels" . | nindent 4 }}
+    {{- include "ReviewPhin.labels" . | nindent 4 }}
     app.kubernetes.io/component: worker
 spec:
   accessModes:
