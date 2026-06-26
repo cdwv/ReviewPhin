@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "gitlab-agentic-webhooks.pvcName" . }}
+  name: {{ include "reviewphin.pvcName" . }}
   labels:
-    {{- include "gitlab-agentic-webhooks.labels" . | nindent 4 }}
+    {{- include "reviewphin.labels" . | nindent 4 }}
     app.kubernetes.io/component: worker
 spec:
   accessModes:

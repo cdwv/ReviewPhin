@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: gitlab-agentic-webhooks:local
+    image: reviewphin:local
     healthcheck:
       test:
         [

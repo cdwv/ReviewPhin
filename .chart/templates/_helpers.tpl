@@ -1,8 +1,8 @@
-{{- define "gitlab-agentic-webhooks.name" -}}
+{{- define "reviewphin.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "gitlab-agentic-webhooks.fullname" -}}
+{{- define "reviewphin.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
@@ -10,30 +10,30 @@
 {{- end -}}
 {{- end -}}
 
-{{- define "gitlab-agentic-webhooks.appname" -}}
+{{- define "reviewphin.appname" -}}
 {{- $releaseName := default .Release.Name .Values.releaseOverride -}}
 {{- printf "%s" $releaseName | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "gitlab-agentic-webhooks.chart" -}}
+{{- define "reviewphin.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "gitlab-agentic-webhooks.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "gitlab-agentic-webhooks.appname" . }}
+{{- define "reviewphin.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "reviewphin.appname" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{- define "gitlab-agentic-webhooks.labels" -}}
-helm.sh/chart: {{ include "gitlab-agentic-webhooks.chart" . }}
-{{ include "gitlab-agentic-webhooks.selectorLabels" . }}
+{{- define "reviewphin.labels" -}}
+helm.sh/chart: {{ include "reviewphin.chart" . }}
+{{ include "reviewphin.selectorLabels" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
-{{- define "gitlab-agentic-webhooks.pvcName" -}}
+{{- define "reviewphin.pvcName" -}}
 {{- if .Values.persistence.existingClaim -}}
 {{- .Values.persistence.existingClaim -}}
 {{- else -}}
-{{- printf "%s-storage" (include "gitlab-agentic-webhooks.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- printf "%s-storage" (include "reviewphin.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 {{- end -}}

@@ -16,7 +16,7 @@ import { openSqliteTestStorage } from "./helpers/storage.js";
 describe("SqliteStorage review findings", () => {
   it("applies the baseline migration to an empty database", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-")),
       "storage.sqlite",
     );
     const _storage = await openSqliteTestStorage(databasePath);
@@ -173,7 +173,7 @@ describe("SqliteStorage review findings", () => {
 
   it("migrates legacy tenants in place without breaking dependent review rows", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-")),
       "storage.sqlite",
     );
     const database = new DatabaseSync(databasePath);
@@ -392,7 +392,7 @@ describe("SqliteStorage review findings", () => {
 
   it("renames legacy generic SQLite columns after earlier v1 migrations already ran", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-")),
       "storage.sqlite",
     );
     const database = new DatabaseSync(databasePath);
@@ -725,7 +725,7 @@ describe("SqliteStorage review findings", () => {
 
   it("returns latest prior finding state per identity and updates status in place", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-")),
       "storage.sqlite",
     );
     const storage = await openSqliteTestStorage(databasePath);
@@ -818,7 +818,7 @@ describe("SqliteStorage review findings", () => {
 
   it("updates status on the latest completed finding row even when a newer failed run exists", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-")),
       "storage.sqlite",
     );
     const storage = await openSqliteTestStorage(databasePath);
@@ -880,7 +880,7 @@ describe("SqliteStorage review findings", () => {
 
   it("records the baseline migration only once across repeated initialization", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-")),
       "storage.sqlite",
     );
     const first = await openSqliteTestStorage(databasePath);
@@ -911,7 +911,7 @@ describe("SqliteStorage review findings", () => {
 
   it("stores only one finding row per identity for a review run", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-")),
       "storage.sqlite",
     );
     const storage = await openSqliteTestStorage(databasePath);
@@ -966,7 +966,7 @@ describe("SqliteStorage review findings", () => {
 describe("SqliteStorage tenants", () => {
   it("stores model profiles, tenant assignments, and resolved review run config", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-")),
       "storage.sqlite",
     );
     const storage = await openSqliteTestStorage(databasePath);
@@ -1035,7 +1035,7 @@ describe("SqliteStorage tenants", () => {
 
   it("refuses to delete a model profile while a tenant still references it", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-")),
       "storage.sqlite",
     );
     const storage = await openSqliteTestStorage(databasePath);
@@ -1060,7 +1060,7 @@ describe("SqliteStorage tenants", () => {
 
   it("deletes a tenant by normalized base URL and project ID", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-")),
       "storage.sqlite",
     );
     const storage = await openSqliteTestStorage(databasePath);
@@ -1102,7 +1102,7 @@ describe("SqliteStorage tenants", () => {
 
   it("deletes dependent review data before removing a tenant", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-")),
       "storage.sqlite",
     );
     const storage = await openSqliteTestStorage(databasePath);
@@ -1453,7 +1453,7 @@ async function createCancelledRun(
 describe("SqliteStorage cancelled runs", () => {
   it("persists cancelled job and run statuses and removes run findings", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-")),
       "storage.sqlite",
     );
     const storage = await openSqliteTestStorage(databasePath);

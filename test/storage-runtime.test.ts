@@ -14,7 +14,7 @@ import {
 describe("storage runtime", () => {
   it("loads the built-in sqlite provider and prepares storage", async () => {
     const databasePath = join(
-      await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-storage-runtime-")),
+      await mkdtemp(join(tmpdir(), "reviewphin-storage-runtime-")),
       "storage.sqlite",
     );
     const runtime = await initializeStorageRuntime({

@@ -288,7 +288,7 @@ describe("WorkspaceMaterializer", () => {
   });
 
   async function createTempRoot(): Promise<string> {
-    const path = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const path = await mkdtemp(join(tmpdir(), "reviewphin-"));
     tempRoots.push(path);
     return path;
   }

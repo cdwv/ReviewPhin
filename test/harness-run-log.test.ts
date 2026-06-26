@@ -9,7 +9,7 @@ import { HarnessRunLog } from "../src/harness/run-log.js";
 describe("HarnessRunLog", () => {
   it("writes prompt, events, response, and error details to disk", async () => {
     const logDir = await mkdtemp(
-      join(tmpdir(), "gitlab-agentic-webhooks-logs-"),
+      join(tmpdir(), "reviewphin-logs-"),
     );
 
     const runLog = new HarnessRunLog({

@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "gitlab-agentic-webhooks.fullname" . }}
+  name: {{ include "reviewphin.fullname" . }}
   labels:
-    {{- include "gitlab-agentic-webhooks.labels" . | nindent 4 }}
+    {{- include "reviewphin.labels" . | nindent 4 }}
     app.kubernetes.io/component: worker
   {{- with .Values.application.additionalAnnotations }}
   annotations:
@@ -13,7 +13,7 @@ spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "gitlab-agentic-webhooks.selectorLabels" . | nindent 6 }}
+      {{- include "reviewphin.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: worker
   strategy:
     type: RollingUpdate
@@ -23,7 +23,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "gitlab-agentic-webhooks.selectorLabels" . | nindent 8 }}
+        {{- include "reviewphin.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: worker
         {{- with .Values.application.additionalLabels }}
         {{- toYaml . | nindent 8 }}
@@ -38,7 +38,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: {{ include "gitlab-agentic-webhooks.name" . }}
+        - name: {{ include "reviewphin.name" . }}
           image: "{{ required "image.repository is required" .Values.image.repository }}:{{ required "image.tag is required" .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           envFrom:
@@ -81,5 +81,5 @@ spec:
       volumes:
         - name: app-storage
           persistentVolumeClaim:
-            claimName: {{ include "gitlab-agentic-webhooks.pvcName" . }}
+            claimName: {{ include "reviewphin.pvcName" . }}
       {{- end }}

@@ -70,7 +70,7 @@ describe("discoverGitLabImageAttachmentReferences", () => {
           description: "",
           project_id: 1109,
           web_url:
-            "https://gitlab.example.com/devops/gitlab-agentic-webhooks/-/merge_requests/18",
+            "https://gitlab.example.com/devops/reviewphin/-/merge_requests/18",
         },
         triggerNote: {
           commentId: 75943,
@@ -94,7 +94,7 @@ describe("discoverGitLabImageAttachmentReferences", () => {
           description: "",
           project_id: 1109,
           web_url:
-            "https://gitlab.example.com/gitlab/devops/gitlab-agentic-webhooks/-/merge_requests/18",
+            "https://gitlab.example.com/gitlab/devops/reviewphin/-/merge_requests/18",
         },
         triggerNote: {
           commentId: 75943,

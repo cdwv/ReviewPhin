@@ -17,7 +17,7 @@ describe("storage migrate CLI", () => {
   });
 
   it("migrates all store records between sqlite providers", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const sourceDatabasePath = join(workspace, "source.sqlite");
     const targetDatabasePath = join(workspace, "target.sqlite");
 

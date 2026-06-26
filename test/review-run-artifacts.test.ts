@@ -9,7 +9,7 @@ import { InteractionRunArtifacts } from "../src/review/run-artifacts.js";
 describe("InteractionRunArtifacts", () => {
   it("writes app and platform HTTP logs into the review run directory", async () => {
     const rootDir = await mkdtemp(
-      join(tmpdir(), "gitlab-agentic-webhooks-run-logs-"),
+      join(tmpdir(), "reviewphin-run-logs-"),
     );
     const artifacts = new InteractionRunArtifacts(rootDir, "run_123");
 
@@ -59,7 +59,7 @@ describe("InteractionRunArtifacts", () => {
 
   it("writes JSON artifacts into nested directories using platform-safe paths", async () => {
     const rootDir = await mkdtemp(
-      join(tmpdir(), "gitlab-agentic-webhooks-run-logs-"),
+      join(tmpdir(), "reviewphin-run-logs-"),
     );
     const artifacts = new InteractionRunArtifacts(rootDir, "run_123");
 

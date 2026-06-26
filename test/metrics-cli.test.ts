@@ -15,7 +15,7 @@ describe("metrics CLI", () => {
 
   it("prints per-run metrics and summary percentiles for existing session logs", async () => {
     const workspace = await mkdtemp(
-      join(tmpdir(), "gitlab-agentic-webhooks-metrics-"),
+      join(tmpdir(), "reviewphin-metrics-"),
     );
     const runLogDir = join(workspace, "run-logs");
 
@@ -94,7 +94,7 @@ describe("metrics CLI", () => {
 
   it("prefers reviewer session logs and skips runs without readable metrics", async () => {
     const workspace = await mkdtemp(
-      join(tmpdir(), "gitlab-agentic-webhooks-metrics-reviewer-"),
+      join(tmpdir(), "reviewphin-metrics-reviewer-"),
     );
     const runLogDir = join(workspace, "run-logs");
 
@@ -153,7 +153,7 @@ describe("metrics CLI", () => {
 
   it("does not load platform modules for metrics-only commands", async () => {
     const workspace = await mkdtemp(
-      join(tmpdir(), "gitlab-agentic-webhooks-metrics-platform-"),
+      join(tmpdir(), "reviewphin-metrics-platform-"),
     );
     const runLogDir = join(workspace, "run-logs");
     await writeSessionLog(runLogDir, "run_001", {

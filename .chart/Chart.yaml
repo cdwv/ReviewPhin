@@ -1,5 +1,5 @@
 apiVersion: v2
-name: gitlab-agentic-webhooks
+name: reviewphin
 description: Helm chart for the GitLab agentic review worker
 type: application
 version: 0.1.0

@@ -86,7 +86,7 @@ async function addGitLabConnection(
 
 describe("tenant CLI", () => {
   it("adds a tenant to SQLite and makes it resolvable without env registration", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
     await addGitLabConnection(databasePath);
 
@@ -153,7 +153,7 @@ describe("tenant CLI", () => {
   });
 
   it("requires bot user id when adding a tenant", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
 
     await expect(
@@ -179,7 +179,7 @@ describe("tenant CLI", () => {
   });
 
   it("requires bot username when adding a tenant", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
 
     await expect(
@@ -205,7 +205,7 @@ describe("tenant CLI", () => {
   });
 
   it("adds and lists model profiles with masked auth tokens", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
 
     const addExitCode = await runCli([
@@ -259,7 +259,7 @@ describe("tenant CLI", () => {
   });
 
   it("accepts a native Copilot auth token without a custom provider base URL", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
 
     const exitCode = await runCli([
@@ -289,7 +289,7 @@ describe("tenant CLI", () => {
   });
 
   it("preserves existing model profile fields when add updates only one flag", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
 
     await runCli([
@@ -336,7 +336,7 @@ describe("tenant CLI", () => {
   });
 
   it("clears nullable model profile fields explicitly", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
 
     await runCli([
@@ -387,7 +387,7 @@ describe("tenant CLI", () => {
   });
 
   it("assigns and clears tenant model profiles through the CLI", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
     await addGitLabConnection(databasePath);
 
@@ -462,7 +462,7 @@ describe("tenant CLI", () => {
   });
 
   it("preserves an existing tenant profile when tenant add reruns without --model-profile", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
     await addGitLabConnection(databasePath);
 
@@ -541,7 +541,7 @@ describe("tenant CLI", () => {
   });
 
   it("describes trigger dedupe for non-GitLab tenants without parsing GitLab config", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
     const storage = await openSqliteTestStorage(databasePath);
     await storage.createPlatformConnection({
@@ -602,7 +602,7 @@ describe("tenant CLI", () => {
   });
 
   it("removes a tenant by base URL and project ID", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
     await addGitLabConnection(
       databasePath,
@@ -674,7 +674,7 @@ describe("tenant CLI", () => {
   });
 
   it("refuses tenant removal without confirmation in non-interactive mode", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
     await addGitLabConnection(databasePath);
 
@@ -731,7 +731,7 @@ describe("tenant CLI", () => {
   });
 
   it("removes tenant database rows and local artifacts for tenants with review history", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
     const workspaceRoot = join(workspace, "review-workspaces");
     const runLogDir = join(workspace, "run-logs");
@@ -897,7 +897,7 @@ describe("tenant CLI", () => {
   });
 
   it("removes artifacts created after the preview summary but before the final delete", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "gitlab-agentic-webhooks-"));
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");
     const workspaceRoot = join(workspace, "review-workspaces");
     const runLogDir = join(workspace, "run-logs");
