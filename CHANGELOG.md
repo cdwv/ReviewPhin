@@ -3,6 +3,10 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v0.7.0 - 2026-06-26
+### Changed
+- Package now correctly is called ReviewPhin instead of old test project name
+
 ## v0.6.2 - 2026-06-26
 ### Added
 - Added secret detection to release pipeline
