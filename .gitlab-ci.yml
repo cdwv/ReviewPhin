@@ -25,6 +25,8 @@ include:
         * New feature
       default_change_level: "patch"           # Optional: Default level if none specified
       autotag_stage: "build"
+      autotag_needs:
+      - "secret_detection"
       validate_changelog_stage: "test"
       release_stage: "deployment"
       release_needs: 
@@ -36,6 +38,8 @@ include:
 
 secret_detection:
   stage: test
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   variables:
     SECRET_DETECTION_HISTORIC_SCAN: "true"
 
