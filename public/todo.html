@@ -1002,7 +1002,7 @@
       const priorityRank = { High: 0, Medium: 1, Low: 2 };
       const effortRank = { XS: 0, S: 1, M: 2, L: 3, XL: 4 };
       const progressKey = "reviewphin-oss-launch-board-v1";
-
+      localStorage.removeItem(progressKey);
       const state = {
         query: "",
         priority: "All",
@@ -1010,7 +1010,6 @@
         status: "open",
         sort: "priority",
         direction: "asc",
-        done: new Set(JSON.parse(localStorage.getItem(progressKey) || "[]")),
       };
 
       const els = {
@@ -1060,12 +1059,8 @@
         };
       }
 
-      function saveProgress() {
-        localStorage.setItem(progressKey, JSON.stringify([...state.done]));
-      }
-
       function isTaskDone(task) {
-        return task.status === "done" || state.done.has(task.id);
+        return task.status === "done";
       }
 
       function taskMatches(task) {
@@ -1315,18 +1310,15 @@
           renderRows();
         });
         els.resetProgress.addEventListener("click", () => {
-          state.done.clear();
-          saveProgress();
           renderRows();
         });
         els.rows.addEventListener("change", (event) => {
           if (event.target.matches("input[type='checkbox'][data-task-id]")) {
-            if (event.target.checked) {
-              state.done.add(event.target.dataset.taskId);
-            } else {
-              state.done.delete(event.target.dataset.taskId);
+            const taskId = event.target.dataset.taskId;
+            const task = tasks.find((t) => t.id === taskId);
+            if (task) {
+              task.status = event.target.checked ? "done" : "open";
             }
-            saveProgress();
             renderRows();
           }
         });
