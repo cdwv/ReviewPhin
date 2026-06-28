@@ -108,7 +108,30 @@ helm upgrade --install reviewphin cdwv/reviewphin \
 
 If you prefer to configure separate GitHub API tokens for different projects, you can skip this environment variable and configure [model profiles through CLI](./docs/CLI.md#model-profile-commands).
 
-**ToDo: add ingress && gateway API support**
+Ingress and Gateway API `HTTPRoute` resources are available as opt-in chart features and are disabled by default.
+
+```bash
+helm upgrade --install reviewphin cdwv/reviewphin \
+  --namespace reviewphin --create-namespace \
+  --set image.repository=cdwv/reviewphin \
+  --set image.tag=<version> \
+  --set application.envSecret=reviewphin-env \
+  --set persistence.size=1Gi \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host=reviewphin.example.com
+```
+
+```bash
+helm upgrade --install reviewphin cdwv/reviewphin \
+  --namespace reviewphin --create-namespace \
+  --set image.repository=cdwv/reviewphin \
+  --set image.tag=<version> \
+  --set application.envSecret=reviewphin-env \
+  --set persistence.size=1Gi \
+  --set httpRoute.enabled=true \
+  --set httpRoute.parentRefs[0].name=main-gateway \
+  --set httpRoute.hostnames[0]=reviewphin.example.com
+```
 
 ---
 

@@ -1,0 +1,48 @@
+{{- if .Values.httpRoute.enabled -}}
+{{- $fullName := include "ReviewPhin.fullname" . -}}
+{{- $servicePort := .Values.service.port -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "ReviewPhin.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+  {{- with .Values.httpRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.httpRoute.parentRefs }}
+  parentRefs:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.httpRoute.hostnames }}
+  hostnames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.httpRoute.rules }}
+    {{- if .matches }}
+    - matches:
+        {{- toYaml .matches | nindent 8 }}
+    {{- else if .filters }}
+    - filters:
+        {{- toYaml .filters | nindent 8 }}
+    {{- else }}
+    - backendRefs:
+    {{- end }}
+      {{- if and .matches .filters }}
+      filters:
+        {{- toYaml .filters | nindent 8 }}
+      {{- end }}
+      {{- if or .matches .filters }}
+      backendRefs:
+      {{- end }}
+        - name: {{ $fullName }}
+          port: {{ $servicePort }}
+          {{- with .weight }}
+          weight: {{ . }}
+          {{- end }}
+    {{- end }}
+{{- end }}
