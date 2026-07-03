@@ -7,7 +7,7 @@
 Run on your own infrastructure. Bring your own model. Use your own agent subscription to pay per review, not per developer.
 
 [![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)
-[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](LICENSE)
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](./LICENSE)
 
 </div>
 
@@ -15,14 +15,17 @@ Run on your own infrastructure. Bring your own model. Use your own agent subscri
 
 ReviewPhin listens for GitLab and GitHub code review events, runs a multi-agent AI review, and publishes findings through each provider's native review model while only modifying content it created itself.
 
-All model calls go through a configured harness (currently Copilot CLI, but more may come) so you can plug in either a subscription model or an [OpenAI-compatible API](docs/model-providers.md).
+All model calls go through a configured harness (currently Copilot CLI, but more may come) so you can plug in either a subscription model or an [OpenAI-compatible API](https://reviewphin.codewave.pl/docs/management/model-profiles/).
 
 Internally, code-review operations flow through a platform adapter layer with built-in GitLab and GitHub implementations.
+
+The container image serves the documentation hub at `/docs/`. During local Docker runs, open `http://localhost:3000/docs/`. The docs source lives in `docs/`; the homepage is built only for static-site hosts when explicitly enabled.
 
 _Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWave](https://codewave.eu)_
 
 ## Table of Contents
 
+- [Official docs](https://reviewphin.codewave.pl/docs/)
 - [Quickstart with Docker](#quickstart-with-docker)
 - [Kubernetes / Helm](#kubernetes--helm)
 - [Adding tenants](#adding-tenants)
@@ -32,10 +35,10 @@ _Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWa
 - [Technologies](#technologies)
 - [Environment variables](#environment-variables)
 - [Inspiration & motivation](#inspiration--motivation)
-- [CLI reference](docs/CLI.md)
-- [Model providers](docs/model-providers.md)
-- [Code review platform providers](docs/code-review-platform-providers.md)
-- [Storage providers](docs/storage-providers.md)
+- [CLI reference](https://reviewphin.codewave.pl/docs/management/cli-reference/)
+- [Model providers](https://reviewphin.codewave.pl/docs/management/model-profiles/)
+- [Code review platform providers](https://reviewphin.codewave.pl/docs/development/providers/)
+- [Storage providers](https://reviewphin.codewave.pl/docs/deployment/storage/)
 
 ---
 
@@ -57,9 +60,9 @@ At minimum, set one GitHub token (for Copilot CLI mode):
 GH_TOKEN=<your-github-token>
 ```
 
-If you prefer to configure separate GitHub API tokens for different projects, you can skip this environment variable and configure [model profiles through CLI](./docs/CLI.md#model-profile-commands).
+If you prefer to configure separate GitHub API tokens for different projects, you can skip this environment variable and configure [model profiles](https://reviewphin.codewave.pl/docs/management/model-profiles/).
 
-See [Environment variables](#environment-variables) and [Model providers](docs/model-providers.md) for full options.
+See [Environment variables](#environment-variables) and [Model providers](https://reviewphin.codewave.pl/docs/management/model-profiles/) for full options.
 
 ### 2. Start the container
 
@@ -96,22 +99,27 @@ curl http://localhost:3000/healthz
 
 ## Kubernetes / Helm
 
-A Helm chart is published at `https://charts.cdwv.dev/reviewphin`. It deploys one `Deployment`, one `Service` on port `3000`, and one `PersistentVolumeClaim` for `/app/data` and `/app/tmp`.
+A Helm chart is included in `.chart/`. It deploys one `Deployment`, one `Service` on port `3000`, and one `PersistentVolumeClaim` for `/app/data` and `/app/tmp`.
 
 ```bash
-helm repo add cdwv https://charts.cdwv.dev
-helm repo update
-helm upgrade --install reviewphin cdwv/reviewphin \
+kubectl create namespace reviewphin
+kubectl create secret generic reviewphin-env \
+  --namespace reviewphin \
+  --from-env-file=.env.production
+helm upgrade --install reviewphin .chart/ \
   --namespace reviewphin --create-namespace \
-  --set env.GH_TOKEN=<your-token>
+  --set image.repository=cdwv/reviewphin \
+  --set image.tag=<version> \
+  --set application.envSecret=reviewphin-env \
+  --set persistence.size=1Gi
 ```
 
-If you prefer to configure separate GitHub API tokens for different projects, you can skip this environment variable and configure [model profiles through CLI](./docs/CLI.md#model-profile-commands).
+The chart requires `image.repository`, `image.tag`, and `application.envSecret`; the default values file leaves the image fields empty on purpose. Put `PUBLIC_URL`, model authentication such as `GH_TOKEN` or `COPILOT_GITHUB_TOKEN`, and any storage settings in `.env.production` before creating the secret. If you prefer to configure separate GitHub API tokens for different projects, omit the token from this secret and configure [model profiles](https://reviewphin.codewave.pl/docs/management/model-profiles/).
 
 Ingress and Gateway API `HTTPRoute` resources are available as opt-in chart features and are disabled by default.
 
 ```bash
-helm upgrade --install reviewphin cdwv/reviewphin \
+helm upgrade --install reviewphin .chart/ \
   --namespace reviewphin --create-namespace \
   --set image.repository=cdwv/reviewphin \
   --set image.tag=<version> \
@@ -122,7 +130,7 @@ helm upgrade --install reviewphin cdwv/reviewphin \
 ```
 
 ```bash
-helm upgrade --install reviewphin cdwv/reviewphin \
+helm upgrade --install reviewphin .chart/ \
   --namespace reviewphin --create-namespace \
   --set image.repository=cdwv/reviewphin \
   --set image.tag=<version> \
@@ -187,7 +195,7 @@ pnpm cli tenant add \
   --webhook-secret <your-webhook-secret>
 ```
 
-`--platform` currently defaults to `gitlab`, so the flag is optional. To assign a specific model profile at registration time, add `--model-profile <name>`. See [Model providers](docs/model-providers.md) for profile setup.
+`--platform` currently defaults to `gitlab`, so the flag is optional. To assign a specific model profile at registration time, add `--model-profile <name>`. See [Model providers](https://reviewphin.codewave.pl/docs/management/model-profiles/) for profile setup.
 
 For GitHub, register a GitHub App connection first. The command prints an expiring setup URL for the App Manifest flow:
 
@@ -207,7 +215,7 @@ docker compose run --rm worker reviewphin tenant add \
   --repository example-org/example-repository
 ```
 
-From a local checkout, use the same `platform connection add` and `tenant add` arguments with `pnpm cli`. See [CLI reference](docs/CLI.md#platform-connection) for the full GitHub connection lifecycle.
+From a local checkout, use the same `platform connection add` and `tenant add` arguments with `pnpm cli`. See [GitHub platform provider](https://reviewphin.codewave.pl/docs/management/platform-connections/) for the full GitHub connection lifecycle.
 
 During local development, `pnpm dev` logs a
 `http://localhost:<PORT>/github/setup/samples` URL for previewing the GitHub
@@ -246,7 +254,7 @@ docker compose run --rm worker reviewphin tenant list
 pnpm cli tenant list
 ```
 
-The JSON output includes each tenant's `id`, `key`, and `platform`. See [CLI reference](docs/CLI.md) for all tenant and model-profile commands.
+The JSON output includes each tenant's `id`, `key`, and `platform`. See [CLI reference](https://reviewphin.codewave.pl/docs/management/cli-reference/) for all tenant and model-profile commands.
 
 ---
 
@@ -276,6 +284,16 @@ ReviewPhin also accepts `/reviewphin review`, `@reviewphin review`, and
 mentions of the generated App slug in pull request comments as compatibility
 triggers, but GitHub does not expose those as native slash commands or reliable
 mention autocomplete entries.
+
+### Force a full re-scan
+
+To ignore the previous review and rescan everything from scratch:
+
+```
+@reviewphin full review
+```
+
+Other accepted phrasings: `full rescan`, `fresh full review`, `rescan everything`.
 
 ### Follow-up conversations
 
@@ -308,11 +326,23 @@ is deleted.
 Add a directive in the code review **description** (the merge request description in GitLab, not a comment):
 
 ```
-/reviewphin-profile byok-gpt4
+/reviewphin-profile byok-gpt5.4
 ```
 
-This selects a named model profile for every review run on that code review. To read more about named model profiles, read [about model profile management through CLI](./docs/CLI.md#model-profile-commands)
+This selects a named model profile for every review run on that code review. To read more about named model profiles, read [Model profiles](https://reviewphin.codewave.pl/docs/management/model-profiles/).
 
+---
+
+## How it works
+
+1. A developer triggers a review from GitLab comments, GitHub pull request comments, or the GitHub **Run Review** Check Run action.
+2. ReviewPhin receives the platform webhook, validates the signature, resolves the tenant, and queues a job.
+3. The **Router** hydrates the code review: it checks out the exact commit, fetches diffs, notes, and any project instruction files.
+4. The **Reviewer** (a two-agent pipeline) analyses the changes and produces structured findings with severity, category, optional line anchors, and inline code suggestions.
+5. The **Chatter** handles follow-up replies, conversational questions, and durable project memory updates.
+6. Findings are reconciled back through the platform provider as bot-owned review output. Obsolete threads are resolved where the platform supports it; the summary comment is updated.
+
+All code and data stay on your infrastructure. The worker calls the configured model API and the connected code review platform API; nothing else leaves the network.
 
 ---
 
@@ -337,6 +367,16 @@ The reviewer selects one of three modes based on trigger context:
 - **incremental-rereview** - focused on files changed since the last review
 - **follow-up-discussion** - scoped to one existing discussion
 
+### Chatter
+
+A lightweight agent that runs after the reviewer (when applicable). It handles:
+
+- conversational replies to questions or wording requests
+- project memory decisions (`add_memory_entry` tool writes to the selected memory backend)
+- reply text for explicit follow-up targets
+
+Chatter uses the `textGenerationModel` from the active profile (falling back to the review model when unset), keeping lighter interactions cheaper.
+
 ---
 
 ## Technologies
@@ -347,7 +387,7 @@ The reviewer selects one of three modes based on trigger context:
 | HTTP server        | Fastify 5                                     |
 | AI runtime         | `@github/copilot-sdk` (Copilot CLI wrapper)   |
 | Model APIs         | native Copilot, vLLM, Azure OpenAI, Anthropic |
-| Storage (default)  | SQLite via `better-sqlite3`                   |
+| Storage (default)  | SQLite via Node.js `node:sqlite`              |
 | Storage (optional) | Flotiq headless CMS                           |
 | Logging            | pino (structured JSON)                        |
 | Validation         | zod                                           |
@@ -358,11 +398,15 @@ The reviewer selects one of three modes based on trigger context:
 
 ## Environment variables
 
+All variables are optional unless noted. For local Docker from source, put them in `.env.docker`; for local runs, use `.env`.
+
 | Variable                                             | Default                          | Description                                                                        |
 | ---------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------- |
 | `PORT`                                               | `3000`                           | HTTP port                                                                          |
 | `HOST`                                               | `0.0.0.0`                        | Bind address                                                                       |
 | `PUBLIC_URL`                                         | `http://localhost:<PORT>`        | Public app URL used to print initial provider setup links                          |
+| `REVIEWPHIN_ALLOW_BOT_INDEXING`                      | `false`                          | Allow crawler indexing for docs paths only (`/docs/*`) when set to `true`         |
+| `REVIEWPHIN_BOT_INDEXING_ALLOWED_HOSTS`              | _(none)_                         | Comma-separated host allowlist for docs indexing; non-docs stay blocked always     |
 | `LOG_LEVEL`                                          | `info`                           | `fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` \| `silent`           |
 | `STORAGE_PROVIDER_MODULE`                            | built-in SQLite                  | Module path or package name for a custom storage adapter                           |
 | `PLATFORM_MODULES`                                   | `gitlab,github`                  | Comma-separated platform provider modules. Supports built-ins, paths, and packages |
@@ -378,9 +422,9 @@ The reviewer selects one of three modes based on trigger context:
 | `REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS`                 | `5000`                           | Character budget for injected project memory                                       |
 | `GH_TOKEN` / `GITHUB_TOKEN` / `COPILOT_GITHUB_TOKEN` | _(required for Copilot mode)_    | GitHub PAT with **Copilot Requests** permission                                    |
 
-For model profile setup (BYOK providers, Azure OpenAI, etc.) see [Model providers](docs/model-providers.md).
-For custom storage adapters see [Storage providers](docs/storage-providers.md).
-For custom code review platform providers see [Code review platform providers](docs/code-review-platform-providers.md).
+For model profile setup (BYOK providers, Azure OpenAI, etc.) see [Model providers](https://reviewphin.codewave.pl/docs/management/model-profiles/).
+For custom storage adapters see [Storage providers](https://reviewphin.codewave.pl/docs/deployment/storage/).
+For custom code review platform providers see [Code review platform providers](https://reviewphin.codewave.pl/docs/development/providers/).
 
 ---
 
@@ -393,3 +437,21 @@ For custom code review platform providers see [Code review platform providers](d
 | `*`    | `/setup/<platform>`     | Optional platform setup handler when the provider exposes one                      |
 | `GET`  | `/github/setup/samples` | Dev-server-only GitHub setup template previews with example data                   |
 | `POST` | `/webhooks/gitlab/note` | Deprecated GitLab compatibility alias                                              |
+
+---
+
+## Inspiration & motivation
+
+ReviewPhin exists because of the work other people have already done in this space. It is not trying to compete with them - it is trying to fill a specific gap.
+
+- **[CodeRabbit](https://www.coderabbit.ai/)** is the single biggest inspiration. The shape of the review pipeline, the way findings are reconciled as bot-owned discussions, and the overall feel of conversational follow-ups all started from "what CodeRabbit does, but self-hosted". If you can afford their per-developer pricing, they are almost certainly the better product.
+- **[Greptile](https://www.greptile.com/)** is another tool in a similar space that showed me how effective the conversational, discussion-driven review format can be. I looked into it much less deeply than CodeRabbit, but I'd be lying if I said I didn't read through their docs before starting my own project. Same caveat applies - a polished hosted product run by people who do this full time and probably with better results than what ReviewPhin can provide.
+- **[GitHub Copilot code review](https://docs.github.com/en/copilot/using-github-copilot/code-review)** showed me that copilot is capable of good reviews on some of my projects. The catch for me was that it lives inside GitHub, and the projects I work on primarily live on GitLab.
+
+The motivation, then, is the intersection of three constraints those tools did not cover for me:
+
+1. **Affordability for small teams.** Per-developer pricing scales linearly with headcount even when only a fraction of MRs need AI review. A single Copilot seat (or a self-hosted model) can drive reviews for a whole team and usually costs less than one CodeRabbit/Greptile seat. If you have spare quotas on your Copilot license, you might even be able to run ReviewPhin at no model extra cost.
+2. **Bring-your-own model, including private ones.** I wanted to point the reviewer at models hosted inside our own infrastructure - e.g. a Qwen 3 27B running on internal GPUs - to push the cost down further and keep code inside the network. ReviewPhin's harness/profile system exists primarily to make that possible.
+3. **GitLab first.** ReviewPhin starts from self-hosted GitLab in mind. Why? Because I use it as daily driver for most of my development work. (see [Code review platform providers](https://reviewphin.codewave.pl/docs/development/providers/)).
+
+So: **everything is yours.** Storage, model, subscription, hosting. You know what you pay for because it's all yours - and if any of the projects above fits your team and budget better, please use them. They are great.

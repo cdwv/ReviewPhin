@@ -31,7 +31,6 @@ const envSchema = z.object({
     z.string().optional(),
   ),
   RUN_LOG_DIR: z.string().min(1).optional(),
-  COPILOT_LOG_DIR: z.string().min(1).optional(),
   WORKSPACE_ROOT: z.string().min(1).default("./tmp/review-workspaces"),
   MAX_JOB_RETRIES: z.coerce.number().int().min(0).default(3),
   RETRY_BACKOFF_MS: z.coerce.number().int().min(0).default(5_000),
@@ -46,6 +45,14 @@ const envSchema = z.object({
     .enum(["none", "error", "warning", "info", "debug", "all"])
     .optional(),
   COPILOT_CLI_PATH: z.string().min(1).optional(),
+  REVIEWPHIN_ALLOW_BOT_INDEXING: z.enum(["true", "false"]).default("false"),
+  REVIEWPHIN_BOT_INDEXING_ALLOWED_HOSTS: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim().length === 0
+        ? undefined
+        : value,
+    z.string().optional(),
+  ),
 });
 
 export type TenantConfig = z.infer<typeof tenantConfigSchema>;
@@ -73,6 +80,8 @@ export interface AppConfig {
     | "all"
     | undefined;
   copilotCliPath?: string | undefined;
+  allowBotIndexing: boolean;
+  botIndexingAllowedHosts: string[];
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -84,7 +93,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     STORAGE_PROVIDER_MODULE: env.STORAGE_PROVIDER_MODULE,
     PLATFORM_MODULES: env.PLATFORM_MODULES,
     RUN_LOG_DIR: env.RUN_LOG_DIR,
-    COPILOT_LOG_DIR: env.COPILOT_LOG_DIR,
     WORKSPACE_ROOT: env.WORKSPACE_ROOT,
     MAX_JOB_RETRIES: env.MAX_JOB_RETRIES,
     RETRY_BACKOFF_MS: env.RETRY_BACKOFF_MS,
@@ -93,6 +101,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS: env.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,
     COPILOT_SDK_LOG_LEVEL: env.COPILOT_SDK_LOG_LEVEL,
     COPILOT_CLI_PATH: env.COPILOT_CLI_PATH,
+    REVIEWPHIN_ALLOW_BOT_INDEXING:
+      env.REVIEWPHIN_ALLOW_BOT_INDEXING?.toLowerCase(),
+    REVIEWPHIN_BOT_INDEXING_ALLOWED_HOSTS:
+      env.REVIEWPHIN_BOT_INDEXING_ALLOWED_HOSTS,
   });
 
   return {
@@ -104,9 +116,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel: parsedEnv.LOG_LEVEL,
     storageProviderModule: parsedEnv.STORAGE_PROVIDER_MODULE,
     platformModules: parseModuleList(parsedEnv.PLATFORM_MODULES),
-    runLogDir: resolve(
-      parsedEnv.RUN_LOG_DIR ?? parsedEnv.COPILOT_LOG_DIR ?? "./data/run-logs",
-    ),
+    runLogDir: resolve(parsedEnv.RUN_LOG_DIR ?? "./data/run-logs"),
     workspaceRoot: resolve(parsedEnv.WORKSPACE_ROOT),
     maxJobRetries: parsedEnv.MAX_JOB_RETRIES,
     retryBackoffMs: parsedEnv.RETRY_BACKOFF_MS,
@@ -115,6 +125,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     maxPromptMemoryChars: parsedEnv.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,
     copilotSdkLogLevel: parsedEnv.COPILOT_SDK_LOG_LEVEL,
     copilotCliPath: parsedEnv.COPILOT_CLI_PATH,
+    allowBotIndexing: parsedEnv.REVIEWPHIN_ALLOW_BOT_INDEXING === "true",
+    botIndexingAllowedHosts: parseHostList(
+      parsedEnv.REVIEWPHIN_BOT_INDEXING_ALLOWED_HOSTS,
+    ),
   };
 }
 
@@ -131,4 +145,24 @@ function parseModuleList(value: string | undefined): string[] {
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
+}
+
+function parseHostList(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(",")
+    .map((entry) => normalizeHost(entry))
+    .filter((entry) => entry.length > 0);
+}
+
+function normalizeHost(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  return trimmed.replace(/\.$/, "");
 }

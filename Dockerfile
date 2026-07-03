@@ -1,6 +1,8 @@
-# syntax=docker/dockerfile:1.7
+FROM node:24-bookworm-slim AS build
 
-FROM node:22-bookworm-slim AS build
+
+ARG REVIEWPHIN_BUILD_HOMEPAGE=false
+ENV REVIEWPHIN_BUILD_HOMEPAGE=${REVIEWPHIN_BUILD_HOMEPAGE}
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -13,19 +15,22 @@ COPY package.json pnpm-lock.yaml tsconfig.json tsconfig.build.json ./
 COPY src ./src
 COPY prompts ./prompts
 COPY public ./public
+COPY docs ./docs
+COPY scripts ./scripts
 
 RUN pnpm install --frozen-lockfile \
   && pnpm build \
+  && pnpm docs:build:container \
   && pnpm prune --prod
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:24-bookworm-slim AS runtime
 
 ARG COPILOT_CLI_VERSION=1.0.36
 
 ENV NODE_ENV=production \
   HOST=0.0.0.0 \
   PORT=3000 \
-  DATABASE_PATH=./data/review-worker.sqlite \
+  SQLITE_DATABASE_PATH=./data/review-worker.sqlite \
   RUN_LOG_DIR=./data/run-logs \
   WORKSPACE_ROOT=./tmp/review-workspaces \
   MAX_JOB_RETRIES=3 \

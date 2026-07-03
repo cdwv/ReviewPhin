@@ -95,6 +95,8 @@ async function main(): Promise<void> {
     storage,
     publicUrl: config.publicUrl,
     enableGitHubSetupSamples: isPnpmDevServer(),
+    allowBotIndexing: config.allowBotIndexing,
+    botIndexingAllowedHosts: config.botIndexingAllowedHosts,
   });
 
   const close = async (): Promise<void> => {
@@ -115,14 +117,44 @@ async function main(): Promise<void> {
   });
 
   logger.info("Interaction worker listening.");
-  logger.info(
-    { host: config.host, port: config.port },
-    `Webhook base is http://${config.host}:${config.port}/webhooks/{platformSlug}`,
-  );
+
+  if (config.allowBotIndexing) {
+    logger.info(
+      "Bot indexing is enabled for /docs only via REVIEWPHIN_ALLOW_BOT_INDEXING=true.",
+    );
+  } else if (config.botIndexingAllowedHosts.length > 0) {
+    logger.info(
+      {
+        hosts: config.botIndexingAllowedHosts,
+      },
+      "Bot indexing is blocked by default and allowed only for /docs on configured hosts.",
+    );
+  } else {
+    logger.info("Bot indexing is blocked by default for all routes, including /docs.");
+  }
+
   if (isPnpmDevServer()) {
     logger.info(
       { url: `http://localhost:${config.port}/github/setup/samples` },
       `GitHub setup samples available at http://localhost:${config.port}/github/setup/samples`,
+    );
+  } else if (config.publicUrl) {
+    logger.info(`Website is available under ${config.publicUrl}`);
+
+    logger.info(`Docs are available at ${config.publicUrl}/docs`);
+
+    logger.info(`Webhook base is ${config.publicUrl}/webhooks/{platformSlug}`);
+  } else {
+    logger.info(
+      `Website is available under http://${config.host}:${config.port}`,
+    );
+
+    logger.info(
+      `Docs are available at http://${config.host}:${config.port}/docs`,
+    );
+
+    logger.info(
+      `Webhook base is http://${config.host}:${config.port}/webhooks/{platformSlug}`,
     );
   }
 }

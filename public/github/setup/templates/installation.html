@@ -1,36 +1,37 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="{{iconUrl}}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
-      darkMode: "media",
+      darkMode: "class",
       theme: {
         extend: {
           fontFamily: {
-            display: ['"Bricolage Grotesque"', "system-ui", "sans-serif"],
-            body: ['"IBM Plex Sans"', "system-ui", "sans-serif"],
+            display: ['"Space Grotesk"', "system-ui", "sans-serif"],
+            body: ['"Inter"', "system-ui", "sans-serif"],
             mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
           },
           colors: {
+            ping: "#ffce6a",
             brand: {
-              50: "#eef7fe",
-              100: "#d6ebfb",
-              200: "#b0d8f6",
-              300: "#7cbef0",
-              400: "#4ea4e6",
-              500: "#2f8bd6",
-              600: "#2270b5",
-              700: "#1f5a92",
-              800: "#1e4a76",
-              900: "#102f4d",
-              950: "#0a1f34",
+              50: "#eefaff",
+              100: "#d4ecf3",
+              200: "#a9dbe6",
+              300: "#6fd3de",
+              400: "#3fd6e0",
+              500: "#26b6c2",
+              600: "#1d8f9c",
+              700: "#17707b",
+              800: "#0e2b42",
+              900: "#0a2236",
+              950: "#04111d",
             },
           },
         },

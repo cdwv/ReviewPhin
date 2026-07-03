@@ -5,12 +5,29 @@
  * scrollbar for the manifest preview.
  */
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
 }
 
 body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Sonar glow overlay, matching the homepage and docs background. */
+body[data-page]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1100px 620px at 84% -10%, rgba(63, 214, 224, 0.12), transparent 60%),
+    radial-gradient(900px 560px at 8% 112%, rgba(108, 99, 255, 0.1), transparent 55%);
+}
+
+body[data-page] > * {
+  position: relative;
+  z-index: 1;
 }
 
 .rp-rise {
@@ -30,7 +47,7 @@ body {
 
 .rp-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgba(47, 139, 214, 0.5) transparent;
+  scrollbar-color: rgba(63, 214, 224, 0.5) transparent;
 }
 
 .rp-scroll::-webkit-scrollbar {
@@ -39,7 +56,7 @@ body {
 }
 
 .rp-scroll::-webkit-scrollbar-thumb {
-  background: rgba(47, 139, 214, 0.45);
+  background: rgba(63, 214, 224, 0.45);
   border-radius: 9999px;
 }
 
