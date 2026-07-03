@@ -1,5 +1,7 @@
 node_modules
 dist
+dist-docs-container
+docs/.astro
 .env
 .env.docker
 .env.local
@@ -8,3 +10,6 @@ coverage
 data
 tmp
 *.log
+public/index.html
+public/docs
+public/pagefind

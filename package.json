@@ -10,6 +10,9 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "cli": "tsx src/cli.ts",
+    "docs:build": "astro build --root docs",
+    "docs:build:container": "pnpm docs:build && node scripts/publish-docs-container.mjs",
+    "docs:dev": "astro dev --root docs",
     "dev": "tsx watch src/index.ts",
     "lint:fix": "eslint . --fix",
     "start": "node dist/index.js",
@@ -30,9 +33,11 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@astrojs/starlight": "^0.41.1",
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.19.19",
     "@vitest/coverage-v8": "^3.2.4",
+    "astro": "^7.0.3",
     "eslint": "^10.3.0",
     "globals": "^17.6.0",
     "prettier": "^3.8.3",

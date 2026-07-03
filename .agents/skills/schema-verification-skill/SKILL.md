@@ -31,7 +31,7 @@ Use this skill to audit storage schema changes before finishing a task or code r
    - Treat provider-native names inside provider-specific code as acceptable when they mirror that provider API.
 
 5. Verify docs and README.
-   - Update `docs/storage-providers.md` and `src/storage/adapters/README.md` when the required contract revision changes.
+   - Update `docs/src/content/docs/configuration/storage.md`, relevant pages under `docs/src/content/docs/providers/storage/`, and `src/storage/adapters/README.md` when the required contract revision changes.
    - Update README or CLI docs if operators or adapter authors need new environment variables, migration behavior, or compatibility notes.
 
 6. Run validation.

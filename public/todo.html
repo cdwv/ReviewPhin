@@ -424,7 +424,7 @@
           area: "Documentation",
           effort: "S",
           title: "Fix README technical inconsistencies",
-          reason: "The README says better-sqlite3 while the code uses node:sqlite; Dockerfile also sets DATABASE_PATH instead of SQLITE_DATABASE_PATH.",
+          reason: "The README storage implementation and Dockerfile SQLite environment variable were corrected during docs consolidation.",
           example: "Vitest documentation keeps runtime and package assumptions explicit for contributors.",
           links: [["Vitest", "https://github.com/vitest-dev/vitest"]],
         },
@@ -537,6 +537,7 @@
             ["VitePress", "https://vitepress.dev/"],
             ["Docker docs", "https://docs.docker.com/"],
           ],
+          status: "done"
         },
         {
           id: "M02",
@@ -882,6 +883,7 @@
           reason: "Search matters after the docs site has enough pages to justify indexing.",
           example: "Docusaurus supports search integrations for larger documentation sites.",
           links: [["Docusaurus search", "https://docusaurus.io/docs/search"]],
+          status: "done"
         },
         {
           id: "L07",

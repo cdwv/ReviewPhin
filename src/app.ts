@@ -38,6 +38,8 @@ interface AppOptions {
   storage?: StorageHelpers | undefined;
   publicUrl?: string | undefined;
   enableGitHubSetupSamples?: boolean | undefined;
+  allowBotIndexing?: boolean | undefined;
+  botIndexingAllowedHosts?: readonly string[] | undefined;
 }
 
 export async function createApp(options: AppOptions): Promise<FastifyInstance> {
@@ -45,9 +47,45 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
     logger: false,
   });
 
+  const botIndexingAllowedHosts = new Set(
+    (options.botIndexingAllowedHosts ?? []).map((host) =>
+      normalizeHostForBotIndexing(host),
+    ),
+  );
+
+  app.addHook("onRequest", (request, reply, done) => {
+    const requestPath = getRequestPath(request);
+    if (
+      shouldBlockBotIndexing({
+        path: requestPath,
+        hostHeader: request.headers.host,
+        allowBotIndexing: options.allowBotIndexing ?? false,
+        allowedHosts: botIndexingAllowedHosts,
+      })
+    ) {
+      reply.header(
+        "X-Robots-Tag",
+        "noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate",
+      );
+    }
+
+    done();
+  });
+
   await app.register(fastifyStatic, {
     root: resolvePublicRoot(),
     prefix: "/",
+  });
+
+  app.get("/robots.txt", async (request, reply) => {
+    const docsIndexingEnabled = isDocsIndexingEnabled({
+      hostHeader: request.headers.host,
+      allowBotIndexing: options.allowBotIndexing ?? false,
+      allowedHosts: botIndexingAllowedHosts,
+    });
+    return reply
+      .type("text/plain; charset=utf-8")
+      .send(renderRobotsTxt({ docsIndexingEnabled }));
   });
 
   app.addHook("preParsing", (request, _reply, payload, done) => {
@@ -271,4 +309,96 @@ function getRouteSuffix(params: unknown, key: string): string {
   }
 
   return "";
+}
+
+interface BotIndexingDecisionInput {
+  path: string;
+  hostHeader: string | undefined;
+  allowBotIndexing: boolean;
+  allowedHosts: ReadonlySet<string>;
+}
+
+function shouldBlockBotIndexing(input: BotIndexingDecisionInput): boolean {
+  if (!isDocsPath(input.path)) {
+    return true;
+  }
+
+  return !isDocsIndexingEnabled(input);
+}
+
+function isDocsIndexingEnabled(input: {
+  hostHeader: string | undefined;
+  allowBotIndexing: boolean;
+  allowedHosts: ReadonlySet<string>;
+}): boolean {
+  if (input.allowBotIndexing) {
+    return true;
+  }
+
+  const normalizedRequestHost = normalizeHostForBotIndexing(input.hostHeader);
+  if (
+    normalizedRequestHost.length > 0 &&
+    input.allowedHosts.has(normalizedRequestHost)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isDocsPath(path: string): boolean {
+  return path === "/docs" || path.startsWith("/docs/");
+}
+
+function getRequestPath(request: FastifyRequest): string {
+  return request.raw.url?.split("?")[0] ?? "";
+}
+
+function normalizeHostForBotIndexing(value: string | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  const lowerCased = value.trim().toLowerCase();
+  if (lowerCased.length === 0) {
+    return "";
+  }
+
+  const withoutPort = lowerCased.replace(/:\d+$/, "");
+  return withoutPort.replace(/\.$/, "");
+}
+
+function renderRobotsTxt(options: { docsIndexingEnabled: boolean }): string {
+  if (options.docsIndexingEnabled) {
+    return [
+      "User-agent: *",
+      "Disallow: /",
+      "Allow: /docs",
+      "Allow: /docs/",
+      "Allow: /docs/*",
+    ].join("\n");
+  }
+
+  return [
+    "User-agent: *",
+    "Disallow: /",
+    "",
+    "User-agent: GPTBot",
+    "Disallow: /",
+    "",
+    "User-agent: ChatGPT-User",
+    "Disallow: /",
+    "",
+    "User-agent: ClaudeBot",
+    "Disallow: /",
+    "",
+    "User-agent: CCBot",
+    "Disallow: /",
+    "",
+    "User-agent: PerplexityBot",
+    "Disallow: /",
+    "",
+    "User-agent: Google-Extended",
+    "Disallow: /",
+  ].join("\n");
 }

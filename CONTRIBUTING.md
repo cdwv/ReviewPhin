@@ -47,7 +47,7 @@ WORKSPACE_ROOT=./tmp/review-workspaces
 GH_TOKEN=github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-For BYOK (no GitHub Copilot needed), leave `GH_TOKEN` unset and configure a model profile after startup (see [Model providers](docs/model-providers.md)).
+For BYOK (no GitHub Copilot needed), leave `GH_TOKEN` unset and configure a model profile after startup (see [Model profiles](https://reviewphin.codewave.pl/docs/management/model-profiles/)).
 
 ### 4. Start the worker in watch mode
 
@@ -89,10 +89,16 @@ Note the generated HTTPS URL, for example `https://random-name.trycloudflare.com
 You need a GitLab project with a bot token. See [Adding tenants](README.md#adding-tenants) for the full guide.
 
 ```bash
-pnpm cli tenant add \
+pnpm cli platform connection add \
+  --name local-gitlab \
+  --platform gitlab \
   --base-url https://gitlab.example.com \
+  --api-token glpat-xxxxxxxx
+
+pnpm cli tenant add \
+  --platform gitlab \
+  --connection local-gitlab \
   --project-id 123 \
-  --api-token glpat-xxxxxxxx \
   --webhook-secret my-local-secret
 ```
 
@@ -100,7 +106,7 @@ pnpm cli tenant add \
 
 In **Settings → Webhooks**:
 
-- URL: `https://random-name.trycloudflare.com/webhooks/gitlab/note`
+- URL: `https://random-name.trycloudflare.com/webhooks/gitlab`
 - Secret token: `my-local-secret`
 - Trigger: **Note events** only
 
@@ -206,7 +212,7 @@ src/
   cli.ts              CLI entrypoint (tenant, model-profile, storage, mr, metrics)
   review/             Review pipeline: trigger, scope, interaction plan, reconciler
   harness/            Copilot SDK wrapper: session, tools, subagent registry, logging
-  gitlab/             GitLab API client and webhook parsing
+  platforms/          GitLab, GitHub, and custom platform provider code
   storage/            Storage contract, provider loader, SQLite + Flotiq adapters
   prompts/            Prompt loader, registry, and builders
   memory/             Project wiki memory service
@@ -216,7 +222,7 @@ prompts/
   reply/              Markdown prompt fragments for chatter/reply modes
   memory/             Memory coalescing prompt
 test/                 vitest test suite
-docs/                 Reference documentation (CLI, model providers, storage providers)
+docs/            Official Astro/Starlight documentation source
 ```
 
 ---

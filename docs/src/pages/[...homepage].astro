@@ -1,0 +1,868 @@
+---
+export function getStaticPaths() {
+  const isDev = import.meta.env.DEV;
+  return isDev || process.env.REVIEWPHIN_BUILD_HOMEPAGE === "true"
+    ? [{ params: { homepage: undefined } }]
+    : [];
+}
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const url = (path: string) => `${base}${path}`;
+
+const dockerLines = [
+  { cls: "o", text: "# bring the worker online" },
+  { cls: "c", text: "docker compose up -d" },
+  { cls: "o", text: "# confirm it is listening" },
+  { cls: "c", text: "curl http://localhost:3000/healthz" },
+  { cls: "ok", text: '{"status":"ok"}' },
+];
+
+const helmLines = [
+  { cls: "o", text: "# create a secret from runtime env" },
+  { cls: "c", text: "kubectl create namespace reviewphin" },
+  { cls: "c", text: "kubectl create secret generic reviewphin-env \\" },
+  {
+    cls: "v",
+    text: "  --namespace reviewphin --from-env-file=.env.production",
+  },
+  { cls: "o", text: "# install onto your cluster" },
+  { cls: "c", text: "helm upgrade --install reviewphin .chart/ \\" },
+  { cls: "v", text: "  --namespace reviewphin --create-namespace \\" },
+  { cls: "v", text: "  --set image.repository=cdwv/reviewphin \\" },
+  { cls: "v", text: "  --set image.tag=<version> \\" },
+  { cls: "v", text: "  --set application.envSecret=reviewphin-env \\" },
+  { cls: "v", text: "  --set persistence.size=1Gi" },
+];
+
+const workflow = [
+  {
+    step: "01 · DEPLOY",
+    title: "Deploy the worker",
+    body: "Run the container with Docker Compose or the published Helm chart. One image serves the worker, setup flow, and docs.",
+  },
+  {
+    step: "02 · CONNECT",
+    title: "Register a platform",
+    body: "Store reusable GitLab or GitHub credentials as a platform connection, then attach projects or repositories as tenants.",
+  },
+  {
+    step: "03 · TUNE",
+    title: "Choose models",
+    body: "Use the bundled Copilot CLI path or create named model profiles for OpenAI-compatible, Azure, or Anthropic endpoints.",
+  },
+  {
+    step: "04 · PERSIST",
+    title: "Pick storage",
+    body: "Start with SQLite, switch to Flotiq when an admin panel helps, or load a custom storage adapter.",
+  },
+  {
+    step: "05 · PING",
+    title: "Publish reviews",
+    body: "Trigger a review from the code review surface and let ReviewPhin reconcile findings, replies, summaries, and state.",
+  },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="ReviewPhin is a self-hosted review worker for GitLab merge requests, GitHub pull requests, model profiles, and pluggable storage."
+    />
+    <link rel="icon" href={url("/favicon.png")} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <title>ReviewPhin</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="site-header-content">
+        <a class="brand" href={url("/")} aria-label="ReviewPhin home">
+          <img src={url("/favicon.png")} alt="" />
+          <span>ReviewPhin</span>
+        </a>
+        <nav aria-label="Primary">
+          <a href={url("/docs/")}>Docs</a>
+          <a href={url("/docs/deployment/")}>Deploy</a>
+          <a href={url("/docs/management/")}>Manage</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">
+            Echolocation for your <span class="accent">merge requests.</span>
+          </p>
+          <h1>ReviewPhin</h1>
+          <p class="lede">
+            Self-hosted, agentic code review for GitLab and GitHub. Let
+            engineers spend review time on design, risk, and intent instead of
+            hunting typos and obvious errors.
+          </p>
+          <div class="actions" aria-label="Primary actions">
+            <a class="button primary" href={url("/docs/deployment/")}
+              >Start setup</a
+            >
+            <a class="button secondary" href={url("/docs/")}>Read the docs</a>
+          </div>
+        </div>
+
+        <div class="radar" aria-hidden="true">
+          <div class="rings"></div>
+          <div class="cross"></div>
+          <div class="sweep"></div>
+          <div class="core"><img src={url("/favicon.png")} alt="" /></div>
+          <span class="blip b1"></span><span class="tag t1"
+            >PR #482 · 3 findings</span
+          >
+          <span class="blip b2"></span><span class="tag t2"
+            >MR !217 · review queued</span
+          >
+          <span class="blip b3"></span>
+        </div>
+      </section>
+
+      <section class="block" aria-label="ReviewPhin workflow">
+        <p class="kicker">Signal path</p>
+        <h2 class="section-title">Five moves from deploy to comment.</h2>
+        <p class="sub">
+          Wire the worker once; it repeats the same path on every trigger.
+        </p>
+        <div class="path">
+          {
+            workflow.map((item) => (
+              <article class="node">
+                <span class="node-step">{item.step}</span>
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </article>
+            ))
+          }
+        </div>
+      </section>
+
+      <section class="block" aria-label="Quickstart">
+        <p class="kicker">Quickstart</p>
+        <h2 class="section-title">Surface it in two environments.</h2>
+        <p class="sub">
+          The container image serves the worker, setup flow, and docs from one
+          runtime. Persist <code>/app/data</code> and <code>/app/tmp</code> in production.
+        </p>
+        <div class="qs-grid">
+          <div class="term">
+            <div class="bar">
+              <i></i><i></i><i></i><strong>docker · compose</strong>
+            </div>
+            <pre>{dockerLines.map((l) => (<span class={l.cls}>{l.text}</span>))}</pre>
+          </div>
+          <div class="term">
+            <div class="bar">
+              <i></i><i></i><i></i><strong>kubernetes · helm</strong>
+            </div>
+            <pre>{helmLines.map((l) => (<span class={l.cls}>{l.text}</span>))}</pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="block fit">
+        <div>
+          <p class="kicker">Where it fits</p>
+          <h2 class="section-title">
+            Built for operators who need review automation without giving up
+            deployment control.
+          </h2>
+        </div>
+        <ul>
+          <li>
+            <strong>GitLab first.</strong> GitLab is the primary setup path, with
+            GitHub supported through an app-based flow.
+          </li>
+          <li>
+            <strong>Provider-shaped.</strong> Platform and storage providers can be
+            replaced without changing review orchestration.
+          </li>
+          <li>
+            <strong>Container-ready.</strong> The image serves the worker, setup assets,
+            and docs from the same runtime.
+          </li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>ReviewPhin · self-hosted code review worker</span>
+      <span class="dot"
+        >Created by <a
+          href="https://github.com/rgembalik"
+          target="_blank"
+          rel="noopener noreferrer">@rgembalik</a
+        > with support from <a
+          href="https://codewave.eu"
+          target="_blank"
+          rel="noopener noreferrer">CodeWave</a
+        ></span
+      >
+    </footer>
+  </body>
+</html>
+
+<style>
+  :root {
+    color-scheme: dark;
+    --abyss: #04111d;
+    --hull: #0a2236;
+    --panel: #0e2b42;
+    --sonar: #3fd6e0;
+    --ping: #ffce6a;
+    --foam: #e7f4f8;
+    --muted: #8fb3c4;
+    --line: rgba(63, 214, 224, 0.16);
+    --display: "Space Grotesk", system-ui, sans-serif;
+    --body:
+      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      "Segoe UI", sans-serif;
+    --mono:
+      "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+    font-family: var(--body);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    color: var(--foam);
+    line-height: 1.55;
+    background:
+      radial-gradient(
+        1200px 700px at 78% -10%,
+        rgba(63, 214, 224, 0.12),
+        transparent 60%
+      ),
+      radial-gradient(
+        900px 600px at 10% 110%,
+        rgba(108, 99, 255, 0.1),
+        transparent 55%
+      ),
+      var(--abyss);
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  main,
+  .site-header-content,
+  .site-footer {
+    max-width: 1180px;
+    margin-inline: auto;
+  }
+
+  .site-header {
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(
+      180deg,
+      rgba(4, 17, 29, 0.85),
+      rgba(4, 17, 29, 0.4)
+    );
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+
+  .site-header-content {
+    min-height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 18px clamp(18px, 4vw, 56px);
+  }
+
+  .brand,
+  nav,
+  .actions {
+    display: flex;
+    align-items: center;
+  }
+
+  .brand {
+    gap: 12px;
+    font-family: var(--display);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .brand img {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 0 22px rgba(63, 214, 224, 0.35);
+  }
+
+  nav {
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  nav a {
+    padding: 8px 14px;
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  nav a:hover,
+  nav a:focus-visible {
+    color: var(--foam);
+    background: rgba(63, 214, 224, 0.12);
+    outline: none;
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: clamp(28px, 5vw, 40px);
+    align-items: center;
+    padding: clamp(48px, 7vw, 96px) clamp(18px, 4vw, 48px) 56px;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--sonar);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 22px;
+  }
+
+  .eyebrow::before {
+    content: "";
+    width: 26px;
+    height: 1px;
+    background: var(--sonar);
+  }
+
+  h1 {
+    margin: 0 0 20px;
+    font-family: var(--display);
+    font-size: clamp(2.6rem, 5.4vw, 4.1rem);
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    font-weight: 700;
+  }
+
+  h1 .accent {
+    color: var(--sonar);
+  }
+
+  .lede {
+    max-width: 46ch;
+    margin: 0 0 30px;
+    font-size: clamp(1.05rem, 1.7vw, 1.22rem);
+    color: #c4dbe6;
+  }
+
+  .actions {
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .button {
+    min-height: 46px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 13px 24px;
+    border-radius: 11px;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 0.96rem;
+    transition:
+      transform 0.15s,
+      box-shadow 0.15s,
+      border-color 0.15s;
+  }
+
+  .primary {
+    background: linear-gradient(180deg, #57e3ec, #2cb9c6);
+    color: #03161d;
+    box-shadow: 0 12px 30px -10px rgba(63, 214, 224, 0.7);
+  }
+
+  .primary:hover {
+    transform: translateY(-2px);
+  }
+
+  .secondary {
+    border: 1px solid var(--line);
+    color: var(--foam);
+    background: rgba(14, 43, 66, 0.5);
+  }
+
+  .secondary:hover {
+    border-color: var(--sonar);
+  }
+
+  /* radar signature */
+  .radar {
+    position: relative;
+    aspect-ratio: 1;
+    max-width: 440px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .radar .rings {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    box-shadow: inset 0 0 80px rgba(63, 214, 224, 0.08);
+    background: radial-gradient(
+      circle,
+      transparent 0 18%,
+      var(--line) 18% calc(18% + 1px),
+      transparent calc(18% + 1px) 36%,
+      var(--line) 36% calc(36% + 1px),
+      transparent calc(36% + 1px) 60%,
+      var(--line) 60% calc(60% + 1px),
+      transparent calc(60% + 1px) 86%,
+      var(--line) 86% calc(86% + 1px),
+      transparent calc(86% + 1px)
+    );
+  }
+
+  .radar .cross {
+    position: absolute;
+    inset: 0;
+  }
+
+  .radar .cross::before,
+  .radar .cross::after {
+    content: "";
+    position: absolute;
+    background: var(--line);
+  }
+
+  .radar .cross::before {
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    transform: translateX(-0.5px);
+  }
+
+  .radar .cross::after {
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    transform: translateY(-0.5px);
+  }
+
+  .radar .sweep {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(
+      from 0deg,
+      rgba(63, 214, 224, 0.45),
+      rgba(63, 214, 224, 0) 70deg
+    );
+    animation: spin 4.5s linear infinite;
+    mix-blend-mode: screen;
+  }
+
+  .radar .core {
+    position: absolute;
+    inset: 32%;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: radial-gradient(
+      circle,
+      rgba(14, 43, 66, 0.9),
+      rgba(4, 17, 29, 0.6)
+    );
+    box-shadow:
+      0 0 40px rgba(63, 214, 224, 0.25),
+      inset 0 0 0 1px var(--line);
+  }
+
+  .radar .core img {
+    width: 78%;
+    border-radius: 50%;
+  }
+
+  .blip {
+    position: absolute;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--ping);
+    box-shadow: 0 0 12px var(--ping);
+    animation: pulse 4.5s ease-out infinite both;
+  }
+
+  .blip.b1 {
+    top: 24%;
+    left: 64%;
+    animation-delay: 4.1s;
+  }
+
+  .blip.b2 {
+    top: 68%;
+    left: 33%;
+    animation-delay: 1.65s;
+  }
+
+  .blip.b3 {
+    top: 58%;
+    left: 72%;
+    background: var(--sonar);
+    box-shadow: 0 0 12px var(--sonar);
+    animation-delay: 3s;
+  }
+
+  .tag {
+    position: absolute;
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    color: var(--muted);
+    background: rgba(4, 17, 29, 0.8);
+    border: 1px solid var(--line);
+    padding: 3px 7px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+
+  .tag.t1 {
+    top: 18%;
+    left: 67%;
+  }
+
+  .tag.t2 {
+    top: 73%;
+    left: 6%;
+  }
+
+  /* section shell */
+  .block {
+    padding: 56px clamp(18px, 4vw, 48px);
+    border-top: 1px solid var(--line);
+  }
+
+  .kicker {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--sonar);
+    margin: 0 0 14px;
+  }
+
+  .section-title {
+    margin: 0 0 14px;
+    font-family: var(--display);
+    font-size: clamp(1.7rem, 3.2vw, 2.4rem);
+    letter-spacing: -0.02em;
+    font-weight: 600;
+    line-height: 1.1;
+  }
+
+  .sub {
+    color: var(--muted);
+    max-width: 60ch;
+    margin: 0 0 38px;
+  }
+
+  .sub code,
+  .node p code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    color: var(--foam);
+    background: rgba(63, 214, 224, 0.1);
+    padding: 1px 6px;
+    border-radius: 5px;
+  }
+
+  /* signal path */
+  .path {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 18px;
+  }
+
+  .node {
+    position: relative;
+    background: linear-gradient(
+      180deg,
+      rgba(14, 43, 66, 0.7),
+      rgba(10, 34, 54, 0.4)
+    );
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px;
+  }
+
+  .node-step {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--ping);
+    letter-spacing: 0.2em;
+  }
+
+  .node h3 {
+    font-family: var(--display);
+    font-size: 1.12rem;
+    margin: 10px 0 8px;
+    font-weight: 600;
+  }
+
+  .node p {
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin: 0;
+    line-height: 1.55;
+  }
+
+  .node:not(:last-child)::after {
+    content: "\203A";
+    position: absolute;
+    right: -13px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--sonar);
+    font-size: 1.3rem;
+    z-index: 2;
+  }
+
+  /* quickstart terminals */
+  .qs-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  .term {
+    background: #02101a;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.8);
+  }
+
+  .term .bar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 12px 15px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .term .bar i {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #244257;
+  }
+
+  .term .bar strong {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-left: 8px;
+    font-weight: 500;
+  }
+
+  .term pre {
+    margin: 0;
+    padding: 18px 18px 22px;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    line-height: 1.75;
+    overflow-x: auto;
+  }
+
+  .term pre span {
+    display: block;
+    white-space: pre;
+  }
+
+  .term .c {
+    color: var(--sonar);
+  }
+
+  .term .v {
+    color: var(--foam);
+  }
+
+  .term .o {
+    color: var(--muted);
+  }
+
+  .term .ok {
+    color: #6ee7a8;
+  }
+
+  /* fit */
+  .fit {
+    display: grid;
+    grid-template-columns: 0.9fr 1.1fr;
+    gap: 40px;
+    align-items: start;
+  }
+
+  .fit ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 16px;
+  }
+
+  .fit li {
+    padding-left: 26px;
+    position: relative;
+    color: #c4dbe6;
+    line-height: 1.55;
+  }
+
+  .fit li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--sonar);
+  }
+
+  .fit li strong {
+    color: var(--foam);
+  }
+
+  .site-footer {
+    border-top: 1px solid var(--line);
+    padding: 30px clamp(18px, 4vw, 48px);
+    color: var(--muted);
+    font-size: 0.85rem;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+
+    a {
+      text-decoration: underline;
+      color: var(--sonar);
+      &:hover,
+      &:focus-visible {
+        color: var(--foam);
+      }
+    }
+  }
+
+  .site-footer .dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .site-footer .dot::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--sonar);
+    box-shadow: 0 0 10px var(--sonar);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--sonar);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(-360deg);
+    }
+  }
+
+  @keyframes pulse {
+    0% {
+      transform: scale(0.6);
+      opacity: 0;
+    }
+    30% {
+      opacity: 1;
+    }
+    100% {
+      transform: scale(2.6);
+      opacity: 0;
+    }
+  }
+
+  @media (max-width: 980px) {
+    .path {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .node:not(:last-child)::after {
+      display: none;
+    }
+  }
+
+  @media (max-width: 880px) {
+    .hero,
+    .fit,
+    .qs-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .site-header {
+      position: static;
+    }
+  }
+
+  @media (max-width: 560px) {
+    nav {
+      justify-content: flex-start;
+    }
+
+    .path {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .radar .sweep {
+      animation: none;
+    }
+
+    .blip {
+      animation: none;
+      opacity: 0.9;
+    }
+  }
+</style>

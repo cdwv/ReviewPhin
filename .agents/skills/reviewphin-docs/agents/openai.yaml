@@ -1,0 +1,4 @@
+interface:
+  display_name: "ReviewPhin Docs"
+  short_description: "Write and verify ReviewPhin documentation"
+  default_prompt: "Use $reviewphin-docs to update a ReviewPhin docs page with accurate, plain-language guidance."

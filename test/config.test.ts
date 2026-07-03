@@ -19,4 +19,25 @@ describe("loadConfig", () => {
       loadConfig({ PUBLIC_URL: "https://review.example.com/" }).publicUrl,
     ).toBe("https://review.example.com");
   });
+
+  it("blocks bot indexing by default", () => {
+    const config = loadConfig({});
+
+    expect(config.allowBotIndexing).toBe(false);
+    expect(config.botIndexingAllowedHosts).toEqual([]);
+  });
+
+  it("parses bot indexing host allowlist and global override", () => {
+    const config = loadConfig({
+      REVIEWPHIN_ALLOW_BOT_INDEXING: "true",
+      REVIEWPHIN_BOT_INDEXING_ALLOWED_HOSTS:
+        " reviewphin.example.com, docs.reviewphin.example.com ",
+    });
+
+    expect(config.allowBotIndexing).toBe(true);
+    expect(config.botIndexingAllowedHosts).toEqual([
+      "reviewphin.example.com",
+      "docs.reviewphin.example.com",
+    ]);
+  });
 });
