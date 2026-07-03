@@ -1,0 +1,14 @@
+# .github/workflows/edit-release.yml
+name: Edit Release Notes
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    uses: happy-changelog/happy-changelog-workflow/.github/workflows/edit-release.yml@v1.6.1
+    permissions:
+      contents: write
+    with:
+      changelog-file: CHANGELOG.md

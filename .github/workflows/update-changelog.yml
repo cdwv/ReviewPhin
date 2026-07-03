@@ -1,0 +1,25 @@
+# .github/workflows/update-changelog.yml
+name: Update Changelog
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  update:
+    uses: happy-changelog/happy-changelog-workflow/.github/workflows/update-changelog.yml@v1.6.1
+    permissions:
+      contents: write
+    with:
+      changelog-file: CHANGELOG.md
+      enable-npm-version: true
+      target-branch: main
+      version-title-template: "v:{version} - {date}"
+      # Optional: Run custom script after version update
+      post-version-script: |
+        # Example: Update workflow references in documentation
+        # This script updates version references in README.md when a new version is released
+        REFERENCE_TO_UPDATE=happy-changelog/happy-changelog-workflow/.github/workflows/update-changelog.yml
+        sed -i "s|${REFERENCE_TO_UPDATE}@[a-zA-Z0-9._-]*|${REFERENCE_TO_UPDATE}@v${NEW_VERSION}|g" README.md
+        git add README.md
