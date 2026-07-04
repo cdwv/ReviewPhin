@@ -151,7 +151,7 @@ jobs:
           PR_IMAGE_STABLE_TAG: ${{ needs.publish-pr-image.outputs.stable_tag }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          mkdir -p .helm-dist
+          mkdir -p helm-dist
           cp -R .chart .chart-pr
 
           node --input-type=module <<'NODE'
@@ -193,7 +193,7 @@ jobs:
       - name: Package PR chart
         run: |
           helm package .chart-pr/ \
-            --destination .helm-dist \
+            --destination helm-dist \
             --version "${{ steps.chart.outputs.version }}" \
             --app-version "${{ needs.publish-pr-image.outputs.tag }}"
 
@@ -204,7 +204,7 @@ jobs:
             --password-stdin
 
       - name: Push PR chart
-        run: helm push .helm-dist/*.tgz "${{ steps.chart.outputs.registry }}"
+        run: helm push helm-dist/*.tgz "${{ steps.chart.outputs.registry }}"
 
   cleanup-pr-image:
     name: cleanup-pr-image

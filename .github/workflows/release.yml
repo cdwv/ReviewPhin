@@ -104,14 +104,14 @@ jobs:
 
       - name: Package chart
         run: |
-          mkdir -p .helm-dist
-          helm package .chart/ --destination .helm-dist
+          mkdir -p helm-dist
+          helm package .chart/ --destination helm-dist
 
       - name: Upload chart artifact
         uses: actions/upload-artifact@v6
         with:
           name: reviewphin-helm-chart
-          path: .helm-dist/*.tgz
+          path: helm-dist/*.tgz
           if-no-files-found: error
 
       - name: Log in to GHCR
@@ -121,11 +121,12 @@ jobs:
             --password-stdin
 
       - name: Push chart to GHCR
-        run: helm push .helm-dist/*.tgz "${{ steps.chart-registry.outputs.registry }}"
+        run: helm push helm-dist/*.tgz "${{ steps.chart-registry.outputs.registry }}"
 
   publish-docs:
     name: publish-docs
     needs: verify
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     concurrency:
       group: pages
