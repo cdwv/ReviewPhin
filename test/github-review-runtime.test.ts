@@ -213,7 +213,7 @@ describe("GitHubPlatformReviewRuntime", () => {
           endLine: 12,
           side: "new",
         },
-        resolvable: false,
+        resolvable: true,
         resolved: true,
         humanReplies: [
           {
@@ -463,12 +463,12 @@ describe("GitHubPlatformReviewRuntime", () => {
       comments: [
         {
           id: 300,
-          resolvable: false,
+          resolvable: true,
           resolved: true,
         },
         {
           id: 301,
-          resolvable: false,
+          resolvable: true,
           resolved: true,
         },
       ],
@@ -818,6 +818,8 @@ function createClient(input: {
         id: "PRRT_thread_300",
         isResolved: input.threadResolved ?? false,
         isOutdated: input.threadOutdated ?? false,
+        viewerCanResolve: !(input.threadResolved ?? false),
+        viewerCanUnresolve: input.threadResolved ?? false,
         comments: {
           nodes: [
             { id: "PRRC_300", databaseId: 300 },

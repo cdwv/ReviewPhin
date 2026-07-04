@@ -640,6 +640,8 @@ describe("GitHubClient", () => {
                       id: "PRRT_1",
                       isResolved: false,
                       isOutdated: false,
+                      viewerCanResolve: true,
+                      viewerCanUnresolve: false,
                       comments: {
                         nodes: [{ id: "PRRC_1", databaseId: 10 }],
                       },
@@ -688,6 +690,39 @@ describe("GitHubClient", () => {
       expect.objectContaining({
         variables: { input: { threadId: "PRRT_1" } },
       }),
+    );
+  });
+
+  it("rejects unresolved GraphQL review thread mutations", async () => {
+    const request = vi.fn(async () => ({
+      data: {
+        data: {
+          resolveReviewThread: {
+            thread: { id: "PRRT_1", isResolved: false },
+          },
+        },
+      },
+    }));
+    const client = createClientWithInstallationRequest(request);
+
+    await expect(client.setReviewThreadResolved("PRRT_1", true)).rejects.toThrow(
+      "GitHub review thread PRRT_1 request failed",
+    );
+  });
+
+  it("rejects GraphQL review thread mutation errors", async () => {
+    const request = vi.fn(async () => ({
+      data: {
+        data: {
+          resolveReviewThread: null,
+        },
+        errors: [{ message: "Resource not accessible by integration" }],
+      },
+    }));
+    const client = createClientWithInstallationRequest(request);
+
+    await expect(client.setReviewThreadResolved("PRRT_1", true)).rejects.toThrow(
+      "GitHub review thread PRRT_1 request failed",
     );
   });
 });

@@ -42,6 +42,7 @@ import {
   type GitHubPullRequest,
   type GitHubPullRequestFile,
   type GitHubReviewComment,
+  type GitHubReviewThread,
 } from "./client.js";
 import { readyGitHubConnectionConfigSchema } from "./config.js";
 import { GitHubRepositoryContextResolver } from "./repository-context.js";
@@ -726,14 +727,14 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
               comment,
               this.botLogin,
               thread.isResolved,
-              !thread.isOutdated,
+              canMutateReviewThreadResolution(thread),
             ),
           );
         return comments.length
           ? {
               id: thread.id,
               comments,
-              resolvable: !thread.isOutdated,
+              resolvable: canMutateReviewThreadResolution(thread),
               resolved: thread.isResolved,
             }
           : null;
@@ -900,6 +901,10 @@ function toReviewAnchor(comment: GitHubReviewComment): ReviewAnchor | null {
 
 function isGitHubBot(login: string | null, botLogin: string): boolean {
   return login?.toLowerCase() === botLogin;
+}
+
+function canMutateReviewThreadResolution(thread: GitHubReviewThread): boolean {
+  return thread.viewerCanResolve || thread.viewerCanUnresolve;
 }
 
 function parseReviewCommentDiscussionId(discussionId: string): number | null {
