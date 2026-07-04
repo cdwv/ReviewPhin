@@ -1,0 +1,120 @@
+name: PR image
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - closed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-image-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  publish-pr-image:
+    name: publish-pr-image
+    if: >
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'publish-pr-image')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare image name
+        id: image
+        run: |
+          image="${REGISTRY}/${IMAGE_NAME}"
+          echo "name=${image,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=raw,value=pr-${{ github.event.pull_request.number }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+            org.opencontainers.image.source=${{ github.event.pull_request.head.repo.html_url }}
+
+      - name: Build and push PR image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            REVIEWPHIN_BUILD_HOMEPAGE=false
+
+  cleanup-pr-image:
+    name: cleanup-pr-image
+    if: >
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Delete PR image tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_IMAGE_TAG: pr-${{ github.event.pull_request.number }}
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER}"
+          package="${GITHUB_REPOSITORY#*/}"
+          package="${package,,}"
+
+          owner_type="$(gh api "users/${owner}" --jq .type)"
+          if [ "$owner_type" = "Organization" ]; then
+            package_scope="orgs/${owner}"
+          else
+            package_scope="users/${owner}"
+          fi
+
+          version_ids="$(
+            gh api --paginate "${package_scope}/packages/container/${package}/versions" \
+              -f per_page=100 \
+              --jq ".[] | select(.metadata.container.tags[]? == \"${PR_IMAGE_TAG}\") | .id" \
+              2>/dev/null || true
+          )"
+
+          if [ -z "$version_ids" ]; then
+            echo "No GHCR versions found for ${package}:${PR_IMAGE_TAG}."
+            exit 0
+          fi
+
+          while IFS= read -r version_id; do
+            [ -n "$version_id" ] || continue
+            gh api --method DELETE "${package_scope}/packages/container/${package}/versions/${version_id}"
+            echo "Deleted GHCR version ${version_id} for ${package}:${PR_IMAGE_TAG}."
+          done <<< "$version_ids"
