@@ -7,7 +7,11 @@ ReviewPhin publishes public releases through GitHub Actions after Happy Changelo
 
 ## Workflow shape
 
-Pull requests and pushes to `main` run the public `test` and `security` jobs from `CI`. The Happy Changelog update workflow repeats those same gates on `main`, then runs the version update only after both jobs pass in the same workflow.
+Pull requests run `Quality Gates` and `Validate PR Changelog`. `Quality Gates` exposes the `test`, `CodeQL`, and `Dependency Review` checks on public pull requests; `Validate PR Changelog` calls the Happy Changelog reusable validation job.
+
+Pushes to `main` run `Update Changelog`. That workflow calls the reusable `Quality Gates` workflow as `quality-gates`, then runs the Happy Changelog `update` job only after those gates pass. On `main`, dependency review stays disabled because it is a pull-request-only check.
+
+`Scheduled Security` runs weekly and from `workflow_dispatch`. It calls `Quality Gates` as `security-analysis` with tests and dependency review disabled, and keeps CodeQL and OpenSSF Scorecard coverage on a schedule.
 
 Release tags matching `v*` run `Release`:
 
@@ -28,13 +32,16 @@ Configure these before the first public release:
 - Allow the release workflow to publish GitHub Packages with `GITHUB_TOKEN`; the chart job requests `packages: write` and publishes to GHCR.
 - Enable GitHub native secret scanning when available.
 - Run a one-time full-history secret scan from a maintainer machine before public launch.
-- Configure branch protection or repository rules for `main` after the first CI run creates check names.
+- Configure branch protection or repository rules for `main` after the first pull request run creates check names.
 
 Require these checks for protected pull requests:
 
 - `test`
-- `security`
-- `Validate PR Changelog`
+- `CodeQL`
+- `Dependency Review`
+- `validate / Validate PR description - changelog`
+
+Do not require `security-analysis / ...` checks from `Scheduled Security` or `quality-gates / ...` checks from `Update Changelog` for pull request branch protection. Those workflows run outside the pull request path.
 
 Require branches to be up to date before merging if maintainers want merge commits tested against the current `main`.
 
@@ -46,7 +53,7 @@ The tag or dispatch step must stay downstream of the Happy Changelog `update` jo
 
 ## Security automation
 
-The blocking `security` job runs dependency review on public pull requests. The separate `Security` workflow adds CodeQL, dependency review, and OpenSSF Scorecard coverage.
+Pull request security gates live in `Quality Gates`: `CodeQL` runs on public pull requests, and `Dependency Review` blocks moderate-or-higher dependency findings there. `Scheduled Security` provides scheduled and manually triggered CodeQL and OpenSSF Scorecard coverage outside the pull request path.
 
 CodeQL, dependency review, and Scorecard availability depends on repository visibility and GitHub Advanced Security. The committed workflows run those checks automatically for public repositories; private repositories with GitHub Advanced Security can remove the visibility guards.
 

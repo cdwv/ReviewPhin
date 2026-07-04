@@ -88,13 +88,18 @@ async function generateDockerReadme(
   env: NodeJS.ProcessEnv = {},
 ): Promise<string> {
   const tempDir = await mkdtemp(join(tmpdir(), "reviewphin-docker-readme-"));
+  const baseEnv = { ...process.env };
+
+  delete baseEnv.GITHUB_REF_NAME;
+  delete baseEnv.GITHUB_REPOSITORY;
+  delete baseEnv.GITHUB_SERVER_URL;
 
   try {
     await writeFile(join(tempDir, "README.md"), readme.trim(), "utf8");
     await execFileAsync(process.execPath, [scriptPath], {
       cwd: tempDir,
       env: {
-        ...process.env,
+        ...baseEnv,
         PUBLIC_SITE_URL: "https://reviewphin.com",
         ...env,
       },
