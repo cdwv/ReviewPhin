@@ -8,6 +8,7 @@ export function getStaticPaths() {
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const url = (path: string) => `${base}${path}`;
+const repositoryUrl = "https://github.com/cdwv/ReviewPhin";
 
 const dockerLines = [
   { cls: "o", text: "# bring the worker online" },
@@ -96,6 +97,9 @@ const workflow = [
           <a href={url("/docs/")}>Docs</a>
           <a href={url("/docs/deployment/")}>Deploy</a>
           <a href={url("/docs/management/")}>Manage</a>
+          <a href={repositoryUrl} target="_blank" rel="noopener noreferrer"
+            >GitHub</a
+          >
         </nav>
       </div>
     </header>
@@ -205,7 +209,9 @@ const workflow = [
     <footer class="site-footer">
       <span>ReviewPhin · self-hosted code review worker</span>
       <span class="dot"
-        >Created by <a
+        ><a href={repositoryUrl} target="_blank" rel="noopener noreferrer"
+          >GitHub repository</a
+        > · Created by <a
           href="https://github.com/rgembalik"
           target="_blank"
           rel="noopener noreferrer">@rgembalik</a

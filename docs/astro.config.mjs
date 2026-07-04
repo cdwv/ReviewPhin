@@ -5,6 +5,9 @@ const site = process.env.REVIEWPHIN_DOCS_SITE ?? "https://reviewphin.com";
 const base = process.env.REVIEWPHIN_DOCS_BASE ?? "/";
 const basePath = base.endsWith("/") ? base.slice(0, -1) : base;
 const withBase = (path) => `${basePath}${path}`;
+const repositoryUrl = "https://github.com/cdwv/ReviewPhin";
+const changelogUrl =
+  "https://rgembalik.gitlab.io/changelog-browser/?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcdwv%2FReviewPhin%2Fmain%2FCHANGELOG.md";
 
 export default defineConfig({
   site,
@@ -62,8 +65,26 @@ export default defineConfig({
       customCss: ["./src/styles/starlight.css"],
       disable404Route: true,
       credits: false,
+      social: [
+        {
+          icon: "github",
+          label: "GitHub repository",
+          href: repositoryUrl,
+        },
+      ],
+      editLink: {
+        baseUrl: `${repositoryUrl}/edit/main/docs/`,
+      },
       sidebar: [
         { label: "Docs Home", slug: "docs" },
+        {
+          label: "Changelog",
+          link: changelogUrl,
+          attrs: {
+            target: "_blank",
+            rel: "noopener noreferrer",
+          },
+        },
         {
           label: "Using ReviewPhin",
           items: [
