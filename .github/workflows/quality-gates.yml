@@ -31,7 +31,7 @@ permissions:
 jobs:
   test:
     name: test
-    if: github.event_name == 'pull_request' || inputs.run-tests
+    if: github.event_name == 'pull_request' || inputs['run-tests']
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -71,13 +71,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ inputs.coverage-artifact-name || 'coverage' }}
+          name: ${{ inputs['coverage-artifact-name'] || 'coverage' }}
           path: coverage/
           if-no-files-found: ignore
 
   codeql:
     name: CodeQL
-    if: (github.event_name == 'pull_request' || inputs.run-codeql) && github.event.repository.visibility == 'public'
+    if: (github.event_name == 'pull_request' || inputs['run-codeql']) && github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -97,7 +97,10 @@ jobs:
 
   dependency-review:
     name: Dependency Review
-    if: github.event_name == 'pull_request' && github.event.repository.visibility == 'public'
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.repository.visibility == 'public' &&
+      format('{0}', inputs['run-dependency-review']) != 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -113,7 +116,7 @@ jobs:
 
   scorecard:
     name: OpenSSF Scorecard
-    if: inputs.run-scorecard && github.event_name != 'pull_request' && github.event.repository.visibility == 'public'
+    if: inputs['run-scorecard'] && github.event_name != 'pull_request' && github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     permissions:
       contents: read
