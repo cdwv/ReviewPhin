@@ -14,13 +14,11 @@ kubectl create secret generic reviewphin-env \
   --from-env-file=.env.production
 helm upgrade --install reviewphin .chart/ \
   --namespace reviewphin --create-namespace \
-  --set image.repository=cdwv/reviewphin \
-  --set image.tag=<version> \
   --set application.envSecret=reviewphin-env \
   --set persistence.size=1Gi
 ```
 
-The chart requires `image.repository`, `image.tag`, and `application.envSecret`; the default values file leaves the image fields empty on purpose. Put `PUBLIC_URL`, model authentication such as `GH_TOKEN` or `COPILOT_GITHUB_TOKEN`, and any storage settings in `.env.production` before creating the secret. To use separate GitHub tokens per project, omit the token from this secret and configure [model profiles](../../management/model-profiles/) instead.
+The chart defaults to `cdwv/reviewphin` with a tag matching the chart `appVersion`. It requires `application.envSecret`; put `PUBLIC_URL`, model authentication such as `GH_TOKEN` or `COPILOT_GITHUB_TOKEN`, and any storage settings in `.env.production` before creating the secret. To use separate GitHub tokens per project, omit the token from this secret and configure [model profiles](../../management/model-profiles/) instead.
 
 ## 2. Expose it with an Ingress
 
@@ -31,8 +29,6 @@ The quickest form uses `--set`:
 ```bash
 helm upgrade --install reviewphin .chart/ \
   --namespace reviewphin --create-namespace \
-  --set image.repository=cdwv/reviewphin \
-  --set image.tag=<version> \
   --set application.envSecret=reviewphin-env \
   --set persistence.size=1Gi \
   --set ingress.enabled=true \
@@ -67,8 +63,6 @@ ingress:
 ```bash
 helm upgrade --install reviewphin .chart/ \
   --namespace reviewphin --create-namespace \
-  --set image.repository=cdwv/reviewphin \
-  --set image.tag=<version> \
   --values reviewphin-values.yaml
 ```
 
@@ -91,8 +85,6 @@ If your cluster uses the Gateway API, attach an `HTTPRoute` instead of an Ingres
 ```bash
 helm upgrade --install reviewphin .chart/ \
   --namespace reviewphin --create-namespace \
-  --set image.repository=cdwv/reviewphin \
-  --set image.tag=<version> \
   --set application.envSecret=reviewphin-env \
   --set persistence.size=1Gi \
   --set httpRoute.enabled=true \

@@ -28,8 +28,6 @@ const helmLines = [
   { cls: "o", text: "# install onto your cluster" },
   { cls: "c", text: "helm upgrade --install reviewphin .chart/ \\" },
   { cls: "v", text: "  --namespace reviewphin --create-namespace \\" },
-  { cls: "v", text: "  --set image.repository=cdwv/reviewphin \\" },
-  { cls: "v", text: "  --set image.tag=<version> \\" },
   { cls: "v", text: "  --set application.envSecret=reviewphin-env \\" },
   { cls: "v", text: "  --set persistence.size=1Gi" },
 ];

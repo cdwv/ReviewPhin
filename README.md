@@ -108,21 +108,17 @@ kubectl create secret generic reviewphin-env \
   --from-env-file=.env.production
 helm upgrade --install reviewphin .chart/ \
   --namespace reviewphin --create-namespace \
-  --set image.repository=cdwv/reviewphin \
-  --set image.tag=<version> \
   --set application.envSecret=reviewphin-env \
   --set persistence.size=1Gi
 ```
 
-The chart requires `image.repository`, `image.tag`, and `application.envSecret`; the default values file leaves the image fields empty on purpose. Put `PUBLIC_URL`, model authentication such as `GH_TOKEN` or `COPILOT_GITHUB_TOKEN`, and any storage settings in `.env.production` before creating the secret. If you prefer to configure separate GitHub API tokens for different projects, omit the token from this secret and configure [model profiles](https://reviewphin.com/docs/management/model-profiles/).
+The chart defaults to `cdwv/reviewphin` with a tag matching the chart `appVersion`. It requires `application.envSecret`; put `PUBLIC_URL`, model authentication such as `GH_TOKEN` or `COPILOT_GITHUB_TOKEN`, and any storage settings in `.env.production` before creating the secret. If you prefer to configure separate GitHub API tokens for different projects, omit the token from this secret and configure [model profiles](https://reviewphin.com/docs/management/model-profiles/).
 
 Ingress and Gateway API `HTTPRoute` resources are available as opt-in chart features and are disabled by default.
 
 ```bash
 helm upgrade --install reviewphin .chart/ \
   --namespace reviewphin --create-namespace \
-  --set image.repository=cdwv/reviewphin \
-  --set image.tag=<version> \
   --set application.envSecret=reviewphin-env \
   --set persistence.size=1Gi \
   --set ingress.enabled=true \
@@ -132,8 +128,6 @@ helm upgrade --install reviewphin .chart/ \
 ```bash
 helm upgrade --install reviewphin .chart/ \
   --namespace reviewphin --create-namespace \
-  --set image.repository=cdwv/reviewphin \
-  --set image.tag=<version> \
   --set application.envSecret=reviewphin-env \
   --set persistence.size=1Gi \
   --set httpRoute.enabled=true \
