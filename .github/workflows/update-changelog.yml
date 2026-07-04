@@ -51,14 +51,15 @@ jobs:
         for (const path of [
           "README.md",
           "docs/src/content/docs/deployment/kubernetes.md",
+          "docs/src/pages/[...homepage].astro",
         ]) {
           let content = fs.readFileSync(path, "utf8");
           content = content.replace(
-            /^REVIEWPHIN_VERSION=.+$/gm,
+            /REVIEWPHIN_VERSION=[0-9A-Za-z.+-]+/g,
             `REVIEWPHIN_VERSION=${version}`,
           );
           fs.writeFileSync(path, content);
         }
         NODE
 
-        git add .chart/Chart.yaml README.md docs/src/content/docs/deployment/kubernetes.md
+        git add .chart/Chart.yaml README.md docs/src/content/docs/deployment/kubernetes.md docs/src/pages/[...homepage].astro
