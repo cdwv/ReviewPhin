@@ -28,7 +28,10 @@ const helmLines = [
     text: "  --namespace reviewphin --from-env-file=.env.production",
   },
   { cls: "o", text: "# install onto your cluster" },
-  { cls: "c", text: 'helm upgrade --install reviewphin "${REVIEWPHIN_CHART}" \\' },
+  {
+    cls: "c",
+    text: 'helm upgrade --install reviewphin "${REVIEWPHIN_CHART}" \\',
+  },
   { cls: "v", text: "  --namespace reviewphin --create-namespace \\" },
   { cls: "v", text: '  --version "${REVIEWPHIN_VERSION}" \\' },
   { cls: "v", text: "  --set application.envSecret=reviewphin-env \\" },
@@ -430,6 +433,7 @@ const workflow = [
     max-width: 440px;
     width: 100%;
     margin: 0 auto;
+    overflow: hidden;
   }
 
   .radar .rings {
