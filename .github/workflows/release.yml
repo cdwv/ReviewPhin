@@ -77,6 +77,52 @@ jobs:
             dist-docs-container/
           if-no-files-found: error
 
+  publish-helm-chart:
+    name: publish-helm-chart
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Prepare chart registry
+        id: chart-registry
+        run: |
+          owner="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          echo "registry=oci://ghcr.io/${owner}/charts" >> "$GITHUB_OUTPUT"
+
+      - name: Lint chart
+        run: helm lint .chart/
+
+      - name: Package chart
+        run: |
+          mkdir -p .helm-dist
+          helm package .chart/ --destination .helm-dist
+
+      - name: Upload chart artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: reviewphin-helm-chart
+          path: .helm-dist/*.tgz
+          if-no-files-found: error
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Push chart to GHCR
+        run: helm push .helm-dist/*.tgz "${{ steps.chart-registry.outputs.registry }}"
+
   publish-docs:
     name: publish-docs
     needs: verify

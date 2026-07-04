@@ -99,15 +99,19 @@ curl http://localhost:3000/healthz
 
 ## Kubernetes / Helm
 
-A Helm chart is included in `.chart/`. It deploys one `Deployment`, one `Service` on port `3000`, and one `PersistentVolumeClaim` for `/app/data` and `/app/tmp`.
+A Helm chart is published to GHCR as `oci://ghcr.io/cdwv/charts/reviewphin`. Local checkouts can also install the chart from `.chart/`. It deploys one `Deployment`, one `Service` on port `3000`, and one `PersistentVolumeClaim` for `/app/data` and `/app/tmp`.
 
 ```bash
+REVIEWPHIN_VERSION=0.9.1
+REVIEWPHIN_CHART=oci://ghcr.io/cdwv/charts/reviewphin
+
 kubectl create namespace reviewphin
 kubectl create secret generic reviewphin-env \
   --namespace reviewphin \
   --from-env-file=.env.production
-helm upgrade --install reviewphin .chart/ \
+helm upgrade --install reviewphin "${REVIEWPHIN_CHART}" \
   --namespace reviewphin --create-namespace \
+  --version "${REVIEWPHIN_VERSION}" \
   --set application.envSecret=reviewphin-env \
   --set persistence.size=1Gi
 ```
@@ -117,8 +121,9 @@ The chart defaults to `cdwv/reviewphin` with a tag matching the chart `appVersio
 Ingress and Gateway API `HTTPRoute` resources are available as opt-in chart features and are disabled by default.
 
 ```bash
-helm upgrade --install reviewphin .chart/ \
+helm upgrade --install reviewphin "${REVIEWPHIN_CHART}" \
   --namespace reviewphin --create-namespace \
+  --version "${REVIEWPHIN_VERSION}" \
   --set application.envSecret=reviewphin-env \
   --set persistence.size=1Gi \
   --set ingress.enabled=true \
@@ -126,8 +131,9 @@ helm upgrade --install reviewphin .chart/ \
 ```
 
 ```bash
-helm upgrade --install reviewphin .chart/ \
+helm upgrade --install reviewphin "${REVIEWPHIN_CHART}" \
   --namespace reviewphin --create-namespace \
+  --version "${REVIEWPHIN_VERSION}" \
   --set application.envSecret=reviewphin-env \
   --set persistence.size=1Gi \
   --set httpRoute.enabled=true \

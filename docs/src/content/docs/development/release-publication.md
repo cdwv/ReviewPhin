@@ -3,7 +3,7 @@ title: Release publication
 description: Public release workflow and repository settings for maintainers.
 ---
 
-ReviewPhin publishes public releases through GitHub Actions after Happy Changelog updates the version and creates the release tag. Happy Changelog remains responsible for changelog and version changes; the release workflow publishes the website, Docker image, and Docker Hub README.
+ReviewPhin publishes public releases through GitHub Actions after Happy Changelog updates the version and creates the release tag. Happy Changelog remains responsible for changelog and version changes; the release workflow publishes the website, Docker image, Helm chart, and Docker Hub README.
 
 ## Workflow shape
 
@@ -12,10 +12,11 @@ Pull requests and pushes to `main` run the public `test` and `security` jobs fro
 Release tags matching `v*` run `Release`:
 
 1. `verify` runs lint, typecheck, application build, docs build, and coverage.
-2. `publish-docs` builds the static homepage and docs for `https://reviewphin.com`, writes `CNAME`, and deploys with GitHub Pages.
-3. `build-and-smoke-test-image` builds a local amd64 image, checks `/healthz`, and verifies the image-provided `reviewphin` CLI.
-4. `publish-docker` publishes `cdwv/reviewphin` to Docker Hub with the release tag, safe semver aliases, and `latest` for stable `x.y.z` releases.
-5. `update-dockerhub-readme` generates `DOCKERHUB_README.md` and pushes it to Docker Hub.
+2. `publish-helm-chart` lints and packages `.chart/`, uploads the packaged chart as a workflow artifact, and pushes the OCI chart to `ghcr.io/<owner>/charts/reviewphin`.
+3. `publish-docs` builds the static homepage and docs for `https://reviewphin.com`, writes `CNAME`, and deploys with GitHub Pages.
+4. `build-and-smoke-test-image` builds a local amd64 image, checks `/healthz`, and verifies the image-provided `reviewphin` CLI.
+5. `publish-docker` publishes `cdwv/reviewphin` to Docker Hub with the release tag, safe semver aliases, and `latest` for stable `x.y.z` releases.
+6. `update-dockerhub-readme` generates `DOCKERHUB_README.md` and pushes it to Docker Hub.
 
 ## Required repository settings
 
@@ -24,6 +25,7 @@ Configure these before the first public release:
 - Enable GitHub Pages and set the source to GitHub Actions.
 - Configure DNS and the Pages custom domain for `reviewphin.com`.
 - Add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets with write access to `cdwv/reviewphin`.
+- Allow the release workflow to publish GitHub Packages with `GITHUB_TOKEN`; the chart job requests `packages: write` and publishes to GHCR.
 - Enable GitHub native secret scanning when available.
 - Run a one-time full-history secret scan from a maintainer machine before public launch.
 - Configure branch protection or repository rules for `main` after the first CI run creates check names.

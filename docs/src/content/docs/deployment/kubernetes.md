@@ -3,22 +3,28 @@ title: Run on Kubernetes
 description: Deploy with the Helm chart, ingress, and Gateway API.
 ---
 
-For cluster deployments, use the Helm chart in `.chart/`. It deploys one `Deployment`, one `Service` on port `3000`, and one `PersistentVolumeClaim` for `/app/data` and `/app/tmp`.
+For cluster deployments, use the published Helm chart from GHCR. It deploys one `Deployment`, one `Service` on port `3000`, and one `PersistentVolumeClaim` for `/app/data` and `/app/tmp`. Local checkouts can also install the chart from `.chart/`.
 
 ## 1. Install the chart
 
 ```bash
+REVIEWPHIN_VERSION=0.9.1
+REVIEWPHIN_CHART=oci://ghcr.io/cdwv/charts/reviewphin
+
 kubectl create namespace reviewphin
 kubectl create secret generic reviewphin-env \
   --namespace reviewphin \
   --from-env-file=.env.production
-helm upgrade --install reviewphin .chart/ \
+helm upgrade --install reviewphin "${REVIEWPHIN_CHART}" \
   --namespace reviewphin --create-namespace \
+  --version "${REVIEWPHIN_VERSION}" \
   --set application.envSecret=reviewphin-env \
   --set persistence.size=1Gi
 ```
 
 The chart defaults to `cdwv/reviewphin` with a tag matching the chart `appVersion`. It requires `application.envSecret`; put `PUBLIC_URL`, model authentication such as `GH_TOKEN` or `COPILOT_GITHUB_TOKEN`, and any storage settings in `.env.production` before creating the secret. To use separate GitHub tokens per project, omit the token from this secret and configure [model profiles](../../management/model-profiles/) instead.
+
+The examples below assume `REVIEWPHIN_CHART` and `REVIEWPHIN_VERSION` are still set in your shell.
 
 ## 2. Expose it with an Ingress
 
@@ -27,8 +33,9 @@ Ingress is an opt-in chart feature and is disabled by default. Enabling it is wh
 The quickest form uses `--set`:
 
 ```bash
-helm upgrade --install reviewphin .chart/ \
+helm upgrade --install reviewphin "${REVIEWPHIN_CHART}" \
   --namespace reviewphin --create-namespace \
+  --version "${REVIEWPHIN_VERSION}" \
   --set application.envSecret=reviewphin-env \
   --set persistence.size=1Gi \
   --set ingress.enabled=true \
@@ -61,8 +68,9 @@ ingress:
 ```
 
 ```bash
-helm upgrade --install reviewphin .chart/ \
+helm upgrade --install reviewphin "${REVIEWPHIN_CHART}" \
   --namespace reviewphin --create-namespace \
+  --version "${REVIEWPHIN_VERSION}" \
   --values reviewphin-values.yaml
 ```
 
@@ -83,8 +91,9 @@ Then point the GitLab webhook or GitHub App at `https://reviewphin.example.com/w
 If your cluster uses the Gateway API, attach an `HTTPRoute` instead of an Ingress:
 
 ```bash
-helm upgrade --install reviewphin .chart/ \
+helm upgrade --install reviewphin "${REVIEWPHIN_CHART}" \
   --namespace reviewphin --create-namespace \
+  --version "${REVIEWPHIN_VERSION}" \
   --set application.envSecret=reviewphin-env \
   --set persistence.size=1Gi \
   --set httpRoute.enabled=true \

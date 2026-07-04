@@ -90,6 +90,18 @@ jobs:
         chart = chart.replace(/^version:\s*.+$/m, `version: ${version}`);
         chart = chart.replace(/^appVersion:\s*.+$/m, `appVersion: "${version}"`);
         fs.writeFileSync(chartPath, chart);
+
+        for (const path of [
+          "README.md",
+          "docs/src/content/docs/deployment/kubernetes.md",
+        ]) {
+          let content = fs.readFileSync(path, "utf8");
+          content = content.replace(
+            /^REVIEWPHIN_VERSION=.+$/gm,
+            `REVIEWPHIN_VERSION=${version}`,
+          );
+          fs.writeFileSync(path, content);
+        }
         NODE
 
-        git add .chart/Chart.yaml
+        git add .chart/Chart.yaml README.md docs/src/content/docs/deployment/kubernetes.md
