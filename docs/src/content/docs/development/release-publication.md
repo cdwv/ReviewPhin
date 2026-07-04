@@ -25,6 +25,7 @@ Configure these before the first public release:
 - Configure DNS and the Pages custom domain for `reviewphin.com`.
 - Add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets with write access to `cdwv/reviewphin`.
 - Enable GitHub native secret scanning when available.
+- Run a one-time full-history secret scan from a maintainer machine before public launch.
 - Configure branch protection or repository rules for `main` after the first CI run creates check names.
 
 Require these checks for protected pull requests:
@@ -43,8 +44,8 @@ The tag or dispatch step must stay downstream of the Happy Changelog `update` jo
 
 ## Security automation
 
-The blocking `security` job runs Gitleaks and runs dependency review on public pull requests. The separate `Security` and `Secrets` workflows add CodeQL, dependency review, OpenSSF Scorecard, and scheduled Gitleaks coverage without adding another Gitleaks run to pull requests.
+The blocking `security` job runs dependency review on public pull requests. The separate `Security` workflow adds CodeQL, dependency review, and OpenSSF Scorecard coverage.
 
 CodeQL, dependency review, and Scorecard availability depends on repository visibility and GitHub Advanced Security. The committed workflows run those checks automatically for public repositories; private repositories with GitHub Advanced Security can remove the visibility guards.
 
-Before public launch, run one full-history secret scan from a maintainer machine or a trusted workflow and rotate any exposed credentials before publishing history.
+Before public launch, run a full-history secret scan from a maintainer machine or a trusted workflow and rotate any exposed credentials before publishing history.
