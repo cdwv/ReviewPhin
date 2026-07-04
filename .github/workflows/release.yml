@@ -310,6 +310,13 @@ jobs:
           REPOSITORY_REF: ${{ env.RELEASE_TAG }}
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
 
+      - name: Upload Docker Hub README artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: dockerhub-readme
+          path: DOCKERHUB_README.md
+          if-no-files-found: error
+
       - name: Update Docker Hub description
         uses: peter-evans/dockerhub-description@v5
         with:
