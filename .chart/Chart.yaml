@@ -2,5 +2,5 @@ apiVersion: v2
 name: reviewphin
 description: Helm chart for the agentic code review dolphin
 type: application
-version: 0.10.4
-appVersion: "0.10.4"
+version: 0.11.0
+appVersion: "0.11.0"
