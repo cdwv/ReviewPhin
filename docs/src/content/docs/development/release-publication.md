@@ -14,7 +14,7 @@ Release tags matching `v*` run `Release`:
 1. `verify` runs lint, typecheck, application build, docs build, and coverage.
 2. `publish-docs` builds the static homepage and docs for `https://reviewphin.com`, writes `CNAME`, and deploys with GitHub Pages.
 3. `build-and-smoke-test-image` builds a local amd64 image, checks `/healthz`, and verifies the image-provided `reviewphin` CLI.
-4. `publish-docker` publishes `cdwv/reviewphin` to Docker Hub with the release tag, safe semver aliases, and `latest`.
+4. `publish-docker` publishes `cdwv/reviewphin` to Docker Hub with the release tag, safe semver aliases, and `latest` for stable `x.y.z` releases.
 5. `update-dockerhub-readme` generates `DOCKERHUB_README.md` and pushes it to Docker Hub.
 
 ## Required repository settings
