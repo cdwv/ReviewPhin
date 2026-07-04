@@ -2,6 +2,8 @@ const fs = require("node:fs");
 
 const CANONICAL_DOCS_URL = "https://reviewphin.com";
 const CANONICAL_REPOSITORY_URL = "https://github.com/cdwv/ReviewPhin";
+const DOCKER_IMAGE_BADGE_MARKDOWN =
+  "[![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)";
 
 const publicUrlPrefix = normalizeUrlPrefix(
   process.env.PUBLIC_SITE_URL || CANONICAL_DOCS_URL,
@@ -16,6 +18,11 @@ const repositoryRef =
   process.env.REPOSITORY_REF || process.env.GITHUB_REF_NAME || "main";
 
 let content = fs.readFileSync("README.md", "utf8");
+
+content = content.replaceAll(
+  DOCKER_IMAGE_BADGE_MARKDOWN,
+  `[![GitHub repository](https://img.shields.io/badge/github-cdwv%2FReviewPhin-blue?logo=github)](${repositoryUrl})`,
+);
 
 if (publicUrlPrefix !== normalizeUrlPrefix(CANONICAL_DOCS_URL)) {
   content = content.replaceAll(

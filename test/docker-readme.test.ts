@@ -10,6 +10,24 @@ const execFileAsync = promisify(execFile);
 const scriptPath = resolve("scripts/build-docker-readme.cjs");
 
 describe("Docker Hub README generation", () => {
+  it("keeps the source README Docker badge pointed at Docker Hub", async () => {
+    const readme = await readFile("README.md", "utf8");
+
+    expect(readme).toContain(
+      "[![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)",
+    );
+  });
+
+  it("rewrites the Docker Hub README Docker badge to a GitHub repository badge", async () => {
+    const output = await generateDockerReadme(
+      "[![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)",
+    );
+
+    expect(output).toBe(
+      "[![GitHub repository](https://img.shields.io/badge/github-cdwv%2FReviewPhin-blue?logo=github)](https://github.com/cdwv/ReviewPhin)",
+    );
+  });
+
   it("rewrites local README links and images to their public targets", async () => {
     const output = await generateDockerReadme(`
 <div align="center">
