@@ -1,4 +1,4 @@
-name: PR image
+name: PR packages
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-image-${{ github.event.pull_request.number }}
+  group: pr-packages-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:
@@ -44,7 +44,7 @@ jobs:
           echo "publish=${publish}" >> "$GITHUB_OUTPUT"
 
           {
-            echo "## PR image policy"
+            echo "## PR package policy"
             echo
             echo "| Check | Value |"
             echo "| --- | --- |"
@@ -53,7 +53,7 @@ jobs:
             echo "| Target repo | \`${BASE_REPO}\` |"
             echo "| Has \`publish-pr-image\` label | \`${HAS_LABEL}\` |"
             echo "| Labels | \`${LABELS_JSON}\` |"
-            echo "| Publish PR image | \`${publish}\` |"
+            echo "| Publish PR packages | \`${publish}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   publish-pr-image:
@@ -62,6 +62,10 @@ jobs:
     if: >
       needs.pr-image-policy.outputs.publish == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+      tag: ${{ steps.image.outputs.tag }}
+      stable_tag: ${{ steps.image.outputs.stable_tag }}
     permissions:
       contents: read
       packages: write
@@ -83,9 +87,16 @@ jobs:
 
       - name: Prepare image name
         id: image
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           image="${REGISTRY}/${IMAGE_NAME}"
+          stable_tag="pr-${PR_NUMBER}"
+          tag="${stable_tag}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}-sha${HEAD_SHA:0:12}"
           echo "name=${image,,}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "stable_tag=${stable_tag}" >> "$GITHUB_OUTPUT"
 
       - name: Docker metadata
         id: meta
@@ -93,7 +104,8 @@ jobs:
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=raw,value=pr-${{ github.event.pull_request.number }}
+            type=raw,value=${{ steps.image.outputs.stable_tag }}
+            type=raw,value=${{ steps.image.outputs.tag }}
           labels: |
             org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
             org.opencontainers.image.source=${{ github.event.pull_request.head.repo.html_url }}
@@ -108,6 +120,90 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             REVIEWPHIN_BUILD_HOMEPAGE=false
+
+  publish-pr-chart:
+    name: publish-pr-chart
+    needs:
+      - pr-image-policy
+      - publish-pr-image
+    if: >
+      needs.pr-image-policy.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Prepare PR chart package
+        id: chart
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_IMAGE_REPOSITORY: ${{ needs.publish-pr-image.outputs.image }}
+          PR_IMAGE_TAG: ${{ needs.publish-pr-image.outputs.tag }}
+          PR_IMAGE_STABLE_TAG: ${{ needs.publish-pr-image.outputs.stable_tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p .helm-dist
+          cp -R .chart .chart-pr
+
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from "node:fs";
+
+          const valuesPath = ".chart-pr/values.yaml";
+          let values = readFileSync(valuesPath, "utf8");
+          values = values
+            .replace(/^  repository: .+$/m, `  repository: ${process.env.PR_IMAGE_REPOSITORY}`)
+            .replace(/^  tag: .*$/m, `  tag: "${process.env.PR_IMAGE_TAG}"`);
+          writeFileSync(valuesPath, values);
+          NODE
+
+          owner="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          base_version="$(awk -F': ' '$1 == "version" { print $2; exit }' .chart/Chart.yaml)"
+          short_sha="${HEAD_SHA:0:12}"
+          chart_version="${base_version}-pr.${PR_NUMBER}.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}.sha${short_sha}"
+          registry="oci://${REGISTRY}/${owner}/charts"
+
+          {
+            echo "version=${chart_version}"
+            echo "registry=${registry}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## PR chart package"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Chart registry | \`${registry}/reviewphin\` |"
+            echo "| Chart version | \`${chart_version}\` |"
+            echo "| Default image | \`${PR_IMAGE_REPOSITORY}:${PR_IMAGE_TAG}\` |"
+            echo "| Stable image tag | \`${PR_IMAGE_REPOSITORY}:${PR_IMAGE_STABLE_TAG}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Lint PR chart
+        run: helm lint .chart-pr/
+
+      - name: Package PR chart
+        run: |
+          helm package .chart-pr/ \
+            --destination .helm-dist \
+            --version "${{ steps.chart.outputs.version }}" \
+            --app-version "${{ needs.publish-pr-image.outputs.tag }}"
+
+      - name: Log in to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Push PR chart
+        run: helm push .helm-dist/*.tgz "${{ steps.chart.outputs.registry }}"
 
   cleanup-pr-image:
     name: cleanup-pr-image
@@ -136,9 +232,9 @@ jobs:
           fi
 
           version_ids="$(
-            gh api --paginate "${package_scope}/packages/container/${package}/versions" \
+            gh api --method GET --paginate "${package_scope}/packages/container/${package}/versions" \
               -f per_page=100 \
-              --jq ".[] | select(.metadata.container.tags[]? == \"${PR_IMAGE_TAG}\") | .id" \
+              --jq ".[] | select(.metadata.container.tags[]? | (. == \"${PR_IMAGE_TAG}\" or startswith(\"${PR_IMAGE_TAG}-\"))) | .id" \
               2>/dev/null || true
           )"
 
@@ -151,4 +247,49 @@ jobs:
             [ -n "$version_id" ] || continue
             gh api --method DELETE "${package_scope}/packages/container/${package}/versions/${version_id}"
             echo "Deleted GHCR version ${version_id} for ${package}:${PR_IMAGE_TAG}."
+          done <<< "$version_ids"
+
+  cleanup-pr-chart:
+    name: cleanup-pr-chart
+    if: >
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Delete PR chart versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER}"
+          package="charts/reviewphin"
+          encoded_package="${package//\//%2F}"
+          version_marker="-pr.${PR_NUMBER}."
+
+          owner_type="$(gh api "users/${owner}" --jq .type)"
+          if [ "$owner_type" = "Organization" ]; then
+            package_scope="orgs/${owner}"
+          else
+            package_scope="users/${owner}"
+          fi
+
+          version_ids="$(
+            gh api --method GET --paginate "${package_scope}/packages/container/${encoded_package}/versions" \
+              -f per_page=100 \
+              --jq ".[] | select(.metadata.container.tags[]? | contains(\"${version_marker}\")) | .id" \
+              2>/dev/null || true
+          )"
+
+          if [ -z "$version_ids" ]; then
+            echo "No GHCR chart versions found for ${package} with marker ${version_marker}."
+            exit 0
+          fi
+
+          while IFS= read -r version_id; do
+            [ -n "$version_id" ] || continue
+            gh api --method DELETE "${package_scope}/packages/container/${encoded_package}/versions/${version_id}"
+            echo "Deleted GHCR chart version ${version_id} for ${package}."
           done <<< "$version_ids"
