@@ -306,6 +306,8 @@ jobs:
         run: node scripts/build-docker-readme.cjs
         env:
           PUBLIC_SITE_URL: https://reviewphin.com
+          REPOSITORY_REF: ${{ env.RELEASE_TAG }}
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
 
       - name: Update Docker Hub description
         uses: peter-evans/dockerhub-description@v5

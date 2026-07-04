@@ -7,6 +7,7 @@ on:
       - synchronize
       - reopened
       - labeled
+      - unlabeled
       - closed
 
 permissions:
@@ -37,7 +38,7 @@ jobs:
           LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
           publish=false
-          if [ "$EVENT_ACTION" != "closed" ] && [ "$HEAD_REPO" = "$BASE_REPO" ] && [ "$HAS_LABEL" = "true" ]; then
+          if [ "$EVENT_ACTION" != "closed" ] && [ "$EVENT_ACTION" != "unlabeled" ] && [ "$HEAD_REPO" = "$BASE_REPO" ] && [ "$HAS_LABEL" = "true" ]; then
             publish=true
           fi
 
@@ -208,7 +209,10 @@ jobs:
   cleanup-pr-image:
     name: cleanup-pr-image
     if: >
-      github.event.action == 'closed' &&
+      (
+        github.event.action == 'closed' ||
+        (github.event.action == 'unlabeled' && github.event.label.name == 'publish-pr-image')
+      ) &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
@@ -252,7 +256,10 @@ jobs:
   cleanup-pr-chart:
     name: cleanup-pr-chart
     if: >
-      github.event.action == 'closed' &&
+      (
+        github.event.action == 'closed' ||
+        (github.event.action == 'unlabeled' && github.event.label.name == 'publish-pr-image')
+      ) &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:

@@ -10,7 +10,7 @@ const execFileAsync = promisify(execFile);
 const scriptPath = resolve("scripts/build-docker-readme.cjs");
 
 describe("Docker Hub README generation", () => {
-  it("rewrites local README links and images to the public site", async () => {
+  it("rewrites local README links and images to their public targets", async () => {
     const output = await generateDockerReadme(`
 <div align="center">
   <img src="./public/favicon.png" alt="ReviewPhin" width="120" />
@@ -19,6 +19,9 @@ describe("Docker Hub README generation", () => {
 ![Local diagram](docs/diagram.png)
 [![Local badge](public/badge.png)](LICENSE)
 [License](LICENSE)
+[Example env](.env.example)
+[Local docs](docs/deployment/storage/)
+[Public asset](public/favicon.png)
 [Docs](https://reviewphin.com/docs/)
 [Section](#quickstart)
 [Email](mailto:hello@example.com)
@@ -33,9 +36,20 @@ describe("Docker Hub README generation", () => {
       "![Local diagram](https://reviewphin.com/docs/diagram.png)",
     );
     expect(output).toContain(
-      "[![Local badge](https://reviewphin.com/badge.png)](https://reviewphin.com/LICENSE)",
+      "[![Local badge](https://reviewphin.com/badge.png)](https://github.com/cdwv/ReviewPhin/blob/main/LICENSE)",
     );
-    expect(output).toContain("[License](https://reviewphin.com/LICENSE)");
+    expect(output).toContain(
+      "[License](https://github.com/cdwv/ReviewPhin/blob/main/LICENSE)",
+    );
+    expect(output).toContain(
+      "[Example env](https://github.com/cdwv/ReviewPhin/blob/main/.env.example)",
+    );
+    expect(output).toContain(
+      "[Local docs](https://reviewphin.com/docs/deployment/storage/)",
+    );
+    expect(output).toContain(
+      "[Public asset](https://reviewphin.com/favicon.png)",
+    );
     expect(output).toContain("[Docs](https://reviewphin.com/docs/)");
     expect(output).toContain("[Section](#quickstart)");
     expect(output).toContain("[Email](mailto:hello@example.com)");
@@ -43,7 +57,7 @@ describe("Docker Hub README generation", () => {
       "![External badge](https://img.shields.io/badge/example-ok-blue)",
     );
     expect(output).toContain("![Inline image](data:image/png;base64,abc)");
-    expect(output).not.toContain("github.com/cdwv/reviewphin/blob");
+    expect(output).not.toContain("https://reviewphin.com/LICENSE");
   });
 
   it("can target a different public site URL", async () => {
@@ -55,6 +69,17 @@ describe("Docker Hub README generation", () => {
     );
 
     expect(output).toBe("[Docs](https://docs.example.test/base/docs/)");
+  });
+
+  it("can target a different repository URL and ref", async () => {
+    const output = await generateDockerReadme("[License](LICENSE)", {
+      REPOSITORY_REF: "v1.2.3",
+      REPOSITORY_URL: "https://github.example.test/acme/reviewphin/",
+    });
+
+    expect(output).toBe(
+      "[License](https://github.example.test/acme/reviewphin/blob/v1.2.3/LICENSE)",
+    );
   });
 });
 
