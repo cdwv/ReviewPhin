@@ -39,7 +39,7 @@ Require these checks for protected pull requests:
 - `test`
 - `CodeQL`
 - `Dependency Review`
-- `validate / Validate PR description - changelog`
+- `Validate PR Changelog / validate`
 
 Do not require `security-analysis / ...` checks from `Scheduled Security` or `quality-gates / ...` checks from `Update Changelog` for pull request branch protection. Those workflows run outside the pull request path.
 
