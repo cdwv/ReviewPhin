@@ -1,6 +1,7 @@
 name: Quality Gates
 
 on:
+  pull_request:
   workflow_call:
     inputs:
       coverage-artifact-name:
@@ -30,7 +31,7 @@ permissions:
 jobs:
   test:
     name: test
-    if: inputs.run-tests
+    if: github.event_name == 'pull_request' || inputs.run-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -76,7 +77,7 @@ jobs:
 
   codeql:
     name: CodeQL
-    if: inputs.run-codeql && github.event.repository.visibility == 'public'
+    if: (github.event_name == 'pull_request' || inputs.run-codeql) && github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -96,7 +97,7 @@ jobs:
 
   dependency-review:
     name: Dependency Review
-    if: inputs.run-dependency-review && github.event_name == 'pull_request' && github.event.repository.visibility == 'public'
+    if: github.event_name == 'pull_request' && github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     permissions:
       contents: read
