@@ -47,7 +47,7 @@ WORKSPACE_ROOT=./tmp/review-workspaces
 GH_TOKEN=github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-For BYOK (no GitHub Copilot needed), leave `GH_TOKEN` unset and configure a model profile after startup (see [Model profiles](https://reviewphin.codewave.pl/docs/management/model-profiles/)).
+For BYOK (no GitHub Copilot needed), leave `GH_TOKEN` unset and configure a model profile after startup (see [Model profiles](https://reviewphin.com/docs/management/model-profiles/)).
 
 ### 4. Start the worker in watch mode
 

@@ -1,25 +1,41 @@
 const fs = require("node:fs");
-const path = require("node:path");
+
+const CANONICAL_DOCS_URL = "https://reviewphin.com";
+const DEFAULT_REPO_URL_PREFIX = "https://github.com/cdwv/reviewphin/blob/main/";
+
+const repoUrlPrefix = normalizeUrlPrefix(
+  process.env.PUBLIC_REPO_URL_PREFIX || DEFAULT_REPO_URL_PREFIX,
+);
 
 let content = fs.readFileSync("README.md", "utf8");
 
-// Helper function to convert image to data URI
+if (CANONICAL_DOCS_URL !== "https://reviewphin.com") {
+  content = content.replaceAll("https://reviewphin.com", CANONICAL_DOCS_URL);
+}
 
-// Replace local image links in markdown with data: URIs
+function normalizeUrlPrefix(prefix) {
+  return prefix.endsWith("/") ? prefix : `${prefix}/`;
+}
+
+function repositoryHref(href) {
+  return `${repoUrlPrefix}${href.replace(/^\.\//, "")}`;
+}
+
+// Replace local image links in markdown with repository blob URLs.
 content = content.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src) => {
   if (
     !src.startsWith("http://") &&
     !src.startsWith("https://") &&
     !src.startsWith("data:")
   ) {
-    const href = `${process.env.PUBLIC_REPO_URL_PREFIX || "./"}${src.replace(/^\.\//, "")}`;
+    const href = repositoryHref(src);
     return href !== src ? `![${alt}](${href})` : match;
   } else {
     return match;
   }
 });
 
-// Replace local image links in img tags with data: URIs
+// Replace local image links in img tags with repository blob URLs.
 content = content.replace(
   /<img\s+([^>]*\s+)?src=["']([^"']+)["']([^>]*)?>/g,
   (match, before, src, after) => {
@@ -28,7 +44,7 @@ content = content.replace(
       !src.startsWith("https://") &&
       !src.startsWith("data:")
     ) {
-      const href = `${process.env.PUBLIC_REPO_URL_PREFIX || "./"}${src.replace(/^\.\//, "")}`;
+      const href = repositoryHref(src);
       return href !== src
         ? `<img ${before || ""}src="${href}"${after || ""}>`
         : match;
@@ -43,14 +59,13 @@ content = content.replace(
 content = content.replace(
   /(\[!\[[^\]]*\]\([^)]+\)\])\(([^)]+)\)/g,
   (match, imgPart, href) => {
-    console.log(`Processing image link: ${match}`);
     if (
       !href.startsWith("http://") &&
       !href.startsWith("https://") &&
       !href.startsWith("#") &&
       !href.startsWith("data:")
     ) {
-      return `${imgPart}(${process.env.PUBLIC_REPO_URL_PREFIX || "./"}${href.replace(/^\.\//, "")})`;
+      return `${imgPart}(${repositoryHref(href)})`;
     }
     return match;
   },
@@ -58,14 +73,13 @@ content = content.replace(
 
 // Replace local file links with PUBLIC_REPO_URL_PREFIX
 content = content.replace(/\[([^\]]*)\]\(([^)]+)\)/g, (match, text, href) => {
-  console.log(`Processing link: [${text}](${href})`);
   if (
     !href.startsWith("http://") &&
     !href.startsWith("https://") &&
     !href.startsWith("#") &&
     !href.startsWith("data:")
   ) {
-    return `[${text}](${process.env.PUBLIC_REPO_URL_PREFIX || "./"}${href.replace(/^\.\//, "")})`;
+    return `[${text}](${repositoryHref(href)})`;
   }
   return match;
 });

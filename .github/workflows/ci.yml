@@ -1,7 +1,7 @@
-# .github/workflows/update-changelog.yml
-name: Update Changelog
+name: CI
 
 on:
+  pull_request:
   push:
     branches:
       - main
@@ -51,7 +51,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: changelog-gate-coverage
+          name: coverage
           path: coverage/
           if-no-files-found: ignore
 
@@ -60,6 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -73,20 +74,8 @@ jobs:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
           GITLEAKS_ENABLE_COMMENTS: "false"
 
-  update:
-    needs: [test, security]
-    uses: happy-changelog/happy-changelog-workflow/.github/workflows/update-changelog.yml@v1.6.1
-    permissions:
-      contents: write
-    with:
-      changelog-file: CHANGELOG.md
-      enable-npm-version: true
-      target-branch: main
-      version-title-template: "v:{version} - {date}"
-      # Optional: Run custom script after version update
-      post-version-script: |
-        # Example: Update workflow references in documentation
-        # This script updates version references in README.md when a new version is released
-        REFERENCE_TO_UPDATE=happy-changelog/happy-changelog-workflow/.github/workflows/update-changelog.yml
-        sed -i "s|${REFERENCE_TO_UPDATE}@[a-zA-Z0-9._-]*|${REFERENCE_TO_UPDATE}@v${NEW_VERSION}|g" README.md
-        git add README.md
+      - name: Dependency review
+        if: github.event_name == 'pull_request' && github.event.repository.visibility == 'public'
+        uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: moderate

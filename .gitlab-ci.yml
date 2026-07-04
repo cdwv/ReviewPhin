@@ -197,7 +197,7 @@ deploy_production:
     - secret_detection
   environment:
     name: production
-    url: https://reviewphin.codewave.pl
+    url: https://reviewphin.com
     action: start
   rules:
     - if: $CI_MERGE_REQUEST_IID
