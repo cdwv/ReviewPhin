@@ -21,12 +21,46 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  pr-image-policy:
+    name: pr-image-policy
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.policy.outputs.publish }}
+    steps:
+      - name: Check PR image policy
+        id: policy
+        env:
+          EVENT_ACTION: ${{ github.event.action }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+          HAS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'publish-pr-image') }}
+          LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          publish=false
+          if [ "$EVENT_ACTION" != "closed" ] && [ "$HEAD_REPO" = "$BASE_REPO" ] && [ "$HAS_LABEL" = "true" ]; then
+            publish=true
+          fi
+
+          echo "publish=${publish}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## PR image policy"
+            echo
+            echo "| Check | Value |"
+            echo "| --- | --- |"
+            echo "| Event action | \`${EVENT_ACTION}\` |"
+            echo "| PR source repo | \`${HEAD_REPO}\` |"
+            echo "| Target repo | \`${BASE_REPO}\` |"
+            echo "| Has \`publish-pr-image\` label | \`${HAS_LABEL}\` |"
+            echo "| Labels | \`${LABELS_JSON}\` |"
+            echo "| Publish PR image | \`${publish}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   publish-pr-image:
     name: publish-pr-image
+    needs: pr-image-policy
     if: >
-      github.event.action != 'closed' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'publish-pr-image')
+      needs.pr-image-policy.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
