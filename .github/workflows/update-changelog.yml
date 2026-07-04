@@ -10,64 +10,21 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Build
-        run: pnpm build
-
-      - name: Build docs
-        run: pnpm docs:build
-        env:
-          REVIEWPHIN_BUILD_HOMEPAGE: "true"
-          REVIEWPHIN_DOCS_SITE: https://reviewphin.com
-          REVIEWPHIN_DOCS_BASE: /
-
-      - name: Test with coverage
-        run: pnpm test --coverage
-
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: changelog-gate-coverage
-          path: coverage/
-          if-no-files-found: ignore
-
-  security:
-    name: security
-    runs-on: ubuntu-latest
+  quality-gates:
+    name: quality-gates
+    uses: ./.github/workflows/quality-gates.yml
     permissions:
+      actions: read
       contents: read
-    steps:
-      - name: Security gate
-        run: |
-          echo "Secret scanning is handled outside this workflow."
-          echo "Keep this check required so Happy Changelog remains gated."
+      pull-requests: read
+      security-events: write
+      id-token: write
+    with:
+      coverage-artifact-name: changelog-gate-coverage
+      run-scorecard: true
 
   update:
-    needs: [test, security]
+    needs: quality-gates
     uses: happy-changelog/happy-changelog-workflow/.github/workflows/update-changelog.yml@v1.6.1
     permissions:
       contents: write
