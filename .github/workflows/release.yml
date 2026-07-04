@@ -62,14 +62,14 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: release-coverage
           path: coverage/
           if-no-files-found: ignore
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: release-build-artifacts
           path: |
@@ -91,7 +91,7 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
 
       - name: Prepare chart registry
         id: chart-registry
@@ -108,7 +108,7 @@ jobs:
           helm package .chart/ --destination helm-dist
 
       - name: Upload chart artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: reviewphin-helm-chart
           path: helm-dist/*.tgz
@@ -311,7 +311,7 @@ jobs:
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
 
       - name: Upload Docker Hub README artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dockerhub-readme
           path: DOCKERHUB_README.md
