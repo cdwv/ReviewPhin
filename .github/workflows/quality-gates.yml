@@ -71,7 +71,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ inputs.coverage-artifact-name }}
+          name: ${{ inputs.coverage-artifact-name || 'coverage' }}
           path: coverage/
           if-no-files-found: ignore
 
