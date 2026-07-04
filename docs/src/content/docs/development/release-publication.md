@@ -24,7 +24,6 @@ Configure these before the first public release:
 - Enable GitHub Pages and set the source to GitHub Actions.
 - Configure DNS and the Pages custom domain for `reviewphin.com`.
 - Add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets with write access to `cdwv/reviewphin`.
-- Add `GITLEAKS_LICENSE` if the repository belongs to an organization that requires the Gitleaks action license.
 - Enable GitHub native secret scanning when available.
 - Configure branch protection or repository rules for `main` after the first CI run creates check names.
 
@@ -44,7 +43,7 @@ The tag or dispatch step must stay downstream of the Happy Changelog `update` jo
 
 ## Security automation
 
-The blocking `security` job runs Gitleaks and runs dependency review on public pull requests. The separate `Security` and `Secrets` workflows add CodeQL, dependency review, OpenSSF Scorecard, and scheduled Gitleaks coverage.
+The blocking `security` job runs Gitleaks and runs dependency review on public pull requests. The separate `Security` and `Secrets` workflows add CodeQL, dependency review, OpenSSF Scorecard, and scheduled Gitleaks coverage without adding another Gitleaks run to pull requests.
 
 CodeQL, dependency review, and Scorecard availability depends on repository visibility and GitHub Advanced Security. The committed workflows run those checks automatically for public repositories; private repositories with GitHub Advanced Security can remove the visibility guards.
 
