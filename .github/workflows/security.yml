@@ -1,0 +1,24 @@
+name: Scheduled Security
+
+on:
+  schedule:
+    - cron: "24 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  security-analysis:
+    name: security-analysis
+    uses: ./.github/workflows/quality-gates.yml
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      security-events: write
+      id-token: write
+    with:
+      run-tests: false
+      run-dependency-review: false
+      run-scorecard: true

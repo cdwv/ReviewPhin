@@ -6,8 +6,25 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
+  quality-gates:
+    name: quality-gates
+    uses: ./.github/workflows/quality-gates.yml
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      security-events: write
+      id-token: write
+    with:
+      coverage-artifact-name: changelog-gate-coverage
+      run-scorecard: true
+
   update:
+    needs: quality-gates
     uses: happy-changelog/happy-changelog-workflow/.github/workflows/update-changelog.yml@v1.6.1
     permissions:
       contents: write
@@ -16,10 +33,32 @@ jobs:
       enable-npm-version: true
       target-branch: main
       version-title-template: "v:{version} - {date}"
-      # Optional: Run custom script after version update
       post-version-script: |
-        # Example: Update workflow references in documentation
-        # This script updates version references in README.md when a new version is released
-        REFERENCE_TO_UPDATE=happy-changelog/happy-changelog-workflow/.github/workflows/update-changelog.yml
-        sed -i "s|${REFERENCE_TO_UPDATE}@[a-zA-Z0-9._-]*|${REFERENCE_TO_UPDATE}@v${NEW_VERSION}|g" README.md
-        git add README.md
+        node <<'NODE'
+        const fs = require("node:fs");
+
+        const version = process.env.NEW_VERSION;
+        if (!version) {
+          throw new Error("NEW_VERSION is required");
+        }
+
+        const chartPath = ".chart/Chart.yaml";
+        let chart = fs.readFileSync(chartPath, "utf8");
+        chart = chart.replace(/^version:\s*.+$/m, `version: ${version}`);
+        chart = chart.replace(/^appVersion:\s*.+$/m, `appVersion: "${version}"`);
+        fs.writeFileSync(chartPath, chart);
+
+        for (const path of [
+          "README.md",
+          "docs/src/content/docs/deployment/kubernetes.md",
+        ]) {
+          let content = fs.readFileSync(path, "utf8");
+          content = content.replace(
+            /^REVIEWPHIN_VERSION=.+$/gm,
+            `REVIEWPHIN_VERSION=${version}`,
+          );
+          fs.writeFileSync(path, content);
+        }
+        NODE
+
+        git add .chart/Chart.yaml README.md docs/src/content/docs/deployment/kubernetes.md

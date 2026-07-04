@@ -1,34 +1,94 @@
 const fs = require("node:fs");
-const path = require("node:path");
+
+const CANONICAL_DOCS_URL = "https://reviewphin.com";
+const CANONICAL_REPOSITORY_URL = "https://github.com/cdwv/ReviewPhin";
+
+const publicUrlPrefix = normalizeUrlPrefix(
+  process.env.PUBLIC_SITE_URL || CANONICAL_DOCS_URL,
+);
+const repositoryUrl = normalizeRepositoryUrl(
+  process.env.REPOSITORY_URL ||
+    (process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY
+      ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`
+      : CANONICAL_REPOSITORY_URL),
+);
+const repositoryRef =
+  process.env.REPOSITORY_REF || process.env.GITHUB_REF_NAME || "main";
 
 let content = fs.readFileSync("README.md", "utf8");
 
-// Helper function to convert image to data URI
+if (publicUrlPrefix !== normalizeUrlPrefix(CANONICAL_DOCS_URL)) {
+  content = content.replaceAll(
+    CANONICAL_DOCS_URL,
+    publicUrlPrefix.replace(/\/$/, ""),
+  );
+}
 
-// Replace local image links in markdown with data: URIs
+function normalizeUrlPrefix(prefix) {
+  return prefix.endsWith("/") ? prefix : `${prefix}/`;
+}
+
+function normalizeRepositoryUrl(url) {
+  return url.replace(/\/$/, "");
+}
+
+function splitHref(href) {
+  const match = href.match(/^([^?#]*)([?#].*)?$/);
+  return {
+    path: match?.[1] || "",
+    suffix: match?.[2] || "",
+  };
+}
+
+function normalizeLocalPath(path) {
+  return path.replace(/^\.\//, "").replace(/^\//, "");
+}
+
+function publicHref(href) {
+  const parsed = splitHref(href);
+  const path = normalizeLocalPath(parsed.path).replace(/^public\//, "");
+  return `${publicUrlPrefix}${path}${parsed.suffix}`;
+}
+
+function repositoryHref(href) {
+  const parsed = splitHref(href);
+  const path = normalizeLocalPath(parsed.path);
+  return `${repositoryUrl}/blob/${repositoryRef}/${path}${parsed.suffix}`;
+}
+
+function markdownLinkHref(href) {
+  const path = normalizeLocalPath(splitHref(href).path);
+  if (path.startsWith("docs/") || path.startsWith("public/")) {
+    return publicHref(href);
+  }
+
+  return repositoryHref(href);
+}
+
+function isRemoteOrSpecialHref(href) {
+  return (
+    href.startsWith("//") ||
+    href.startsWith("#") ||
+    /^[a-z][a-z0-9+.-]*:/i.test(href)
+  );
+}
+
+// Replace local image links in markdown with public image URLs.
 content = content.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src) => {
-  if (
-    !src.startsWith("http://") &&
-    !src.startsWith("https://") &&
-    !src.startsWith("data:")
-  ) {
-    const href = `${process.env.PUBLIC_REPO_URL_PREFIX || "./"}${src.replace(/^\.\//, "")}`;
+  if (!isRemoteOrSpecialHref(src)) {
+    const href = publicHref(src);
     return href !== src ? `![${alt}](${href})` : match;
   } else {
     return match;
   }
 });
 
-// Replace local image links in img tags with data: URIs
+// Replace local image links in img tags with public image URLs.
 content = content.replace(
   /<img\s+([^>]*\s+)?src=["']([^"']+)["']([^>]*)?>/g,
   (match, before, src, after) => {
-    if (
-      !src.startsWith("http://") &&
-      !src.startsWith("https://") &&
-      !src.startsWith("data:")
-    ) {
-      const href = `${process.env.PUBLIC_REPO_URL_PREFIX || "./"}${src.replace(/^\.\//, "")}`;
+    if (!isRemoteOrSpecialHref(src)) {
+      const href = publicHref(src);
       return href !== src
         ? `<img ${before || ""}src="${href}"${after || ""}>`
         : match;
@@ -43,29 +103,17 @@ content = content.replace(
 content = content.replace(
   /(\[!\[[^\]]*\]\([^)]+\)\])\(([^)]+)\)/g,
   (match, imgPart, href) => {
-    console.log(`Processing image link: ${match}`);
-    if (
-      !href.startsWith("http://") &&
-      !href.startsWith("https://") &&
-      !href.startsWith("#") &&
-      !href.startsWith("data:")
-    ) {
-      return `${imgPart}(${process.env.PUBLIC_REPO_URL_PREFIX || "./"}${href.replace(/^\.\//, "")})`;
+    if (!isRemoteOrSpecialHref(href)) {
+      return `${imgPart}(${markdownLinkHref(href)})`;
     }
     return match;
   },
 );
 
-// Replace local file links with PUBLIC_REPO_URL_PREFIX
+// Replace local links with the public site for docs/assets and GitHub for repository files.
 content = content.replace(/\[([^\]]*)\]\(([^)]+)\)/g, (match, text, href) => {
-  console.log(`Processing link: [${text}](${href})`);
-  if (
-    !href.startsWith("http://") &&
-    !href.startsWith("https://") &&
-    !href.startsWith("#") &&
-    !href.startsWith("data:")
-  ) {
-    return `[${text}](${process.env.PUBLIC_REPO_URL_PREFIX || "./"}${href.replace(/^\.\//, "")})`;
+  if (!isRemoteOrSpecialHref(href)) {
+    return `[${text}](${markdownLinkHref(href)})`;
   }
   return match;
 });

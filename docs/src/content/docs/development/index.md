@@ -52,3 +52,4 @@ Storage keeps tenants, platform connections, jobs, runs, findings, discussion ma
 - [Custom platform providers](custom-platforms/) — add a code review platform.
 - [Custom storage adapters](custom-storage/) — add a persistence backend.
 - [Contributing to docs](contributing-docs/) — build, preview, and style rules.
+- [Release publication](release-publication/) — public release workflows and repository prerequisites.

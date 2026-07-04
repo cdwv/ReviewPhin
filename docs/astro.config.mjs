@@ -1,8 +1,7 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 
-const site =
-  process.env.REVIEWPHIN_DOCS_SITE ?? "https://reviewphin.codewave.pl";
+const site = process.env.REVIEWPHIN_DOCS_SITE ?? "https://reviewphin.com";
 const base = process.env.REVIEWPHIN_DOCS_BASE ?? "/";
 const basePath = base.endsWith("/") ? base.slice(0, -1) : base;
 const withBase = (path) => `${basePath}${path}`;
@@ -131,6 +130,10 @@ export default defineConfig({
             {
               label: "Contributing to docs",
               slug: "docs/development/contributing-docs",
+            },
+            {
+              label: "Release publication",
+              slug: "docs/development/release-publication",
             },
           ],
         },

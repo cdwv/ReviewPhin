@@ -513,7 +513,7 @@ export class GitHubReviewPublicationAdapter implements PlatformReviewPublication
               comment,
               this.input.botLogin,
               thread.isResolved,
-              !thread.isOutdated,
+              canMutateReviewThreadResolution(thread),
             ),
           );
         if (comments.length === 0) {
@@ -522,7 +522,7 @@ export class GitHubReviewPublicationAdapter implements PlatformReviewPublication
         return {
           id: thread.id,
           comments,
-          resolvable: !thread.isOutdated,
+          resolvable: canMutateReviewThreadResolution(thread),
           resolved: thread.isResolved,
         };
       })
@@ -797,6 +797,10 @@ function parseIssueDiscussionId(value: string): number | null {
 
 function isGitHubBot(login: string | null, botLogin: string): boolean {
   return login?.toLowerCase() === botLogin;
+}
+
+function canMutateReviewThreadResolution(thread: GitHubReviewThread): boolean {
+  return thread.viewerCanResolve || thread.viewerCanUnresolve;
 }
 
 async function sleep(durationMs: number): Promise<void> {

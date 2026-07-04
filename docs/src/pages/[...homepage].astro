@@ -18,6 +18,8 @@ const dockerLines = [
 ];
 
 const helmLines = [
+  { cls: "c", text: "REVIEWPHIN_VERSION=0.9.1" },
+  { cls: "c", text: "REVIEWPHIN_CHART=oci://ghcr.io/cdwv/charts/reviewphin" },
   { cls: "o", text: "# create a secret from runtime env" },
   { cls: "c", text: "kubectl create namespace reviewphin" },
   { cls: "c", text: "kubectl create secret generic reviewphin-env \\" },
@@ -26,10 +28,9 @@ const helmLines = [
     text: "  --namespace reviewphin --from-env-file=.env.production",
   },
   { cls: "o", text: "# install onto your cluster" },
-  { cls: "c", text: "helm upgrade --install reviewphin .chart/ \\" },
+  { cls: "c", text: 'helm upgrade --install reviewphin "${REVIEWPHIN_CHART}" \\' },
   { cls: "v", text: "  --namespace reviewphin --create-namespace \\" },
-  { cls: "v", text: "  --set image.repository=cdwv/reviewphin \\" },
-  { cls: "v", text: "  --set image.tag=<version> \\" },
+  { cls: "v", text: '  --version "${REVIEWPHIN_VERSION}" \\' },
   { cls: "v", text: "  --set application.envSecret=reviewphin-env \\" },
   { cls: "v", text: "  --set persistence.size=1Gi" },
 ];

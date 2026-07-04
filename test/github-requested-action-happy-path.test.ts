@@ -515,6 +515,8 @@ function createGitHubApiState() {
           id: "PRRT_600",
           isResolved: false,
           isOutdated: false,
+          viewerCanResolve: true,
+          viewerCanUnresolve: false,
           comments: {
             nodes: [{ id: "PRRC_600", databaseId: 600 }],
           },

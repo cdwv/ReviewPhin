@@ -217,6 +217,8 @@ const reviewThreadSchema = z.object({
   id: z.string().min(1),
   isResolved: z.boolean(),
   isOutdated: z.boolean(),
+  viewerCanResolve: z.boolean(),
+  viewerCanUnresolve: z.boolean(),
   comments: z.object({
     nodes: z.array(reviewThreadCommentSchema),
   }),
@@ -238,8 +240,24 @@ const reviewThreadsResponseSchema = z.object({
   }),
 });
 
-const reviewThreadMutationResponseSchema = z.object({
-  data: z.record(z.unknown()),
+const graphQLErrorSchema = z
+  .object({
+    message: z.string(),
+  })
+  .passthrough();
+
+const graphQLMutationResponseSchema = z
+  .object({
+    data: z.record(z.unknown()).optional(),
+    errors: z.array(graphQLErrorSchema).optional(),
+  })
+  .passthrough();
+
+const reviewThreadMutationPayloadSchema = z.object({
+  thread: z.object({
+    id: z.string().min(1),
+    isResolved: z.boolean(),
+  }),
 });
 
 const reactionSchema = z.object({
@@ -500,6 +518,8 @@ export class GitHubClient {
                       id
                       isResolved
                       isOutdated
+                      viewerCanResolve
+                      viewerCanUnresolve
                       comments(first: 100) {
                         nodes {
                           id
@@ -564,7 +584,25 @@ export class GitHubClient {
         `,
         variables: { input: { threadId } },
       });
-      reviewThreadMutationResponseSchema.parse(response.data);
+      const parsed = graphQLMutationResponseSchema.parse(response.data);
+      if (parsed.errors?.length) {
+        throw new Error(
+          parsed.errors.map((entry) => entry.message).join("; "),
+        );
+      }
+      const payload = reviewThreadMutationPayloadSchema.parse(
+        parsed.data?.[mutationName],
+      );
+      if (payload.thread.id !== threadId) {
+        throw new Error(
+          `GitHub returned review thread ${payload.thread.id}, expected ${threadId}`,
+        );
+      }
+      if (payload.thread.isResolved !== resolved) {
+        throw new Error(
+          `GitHub review thread ${threadId} isResolved=${payload.thread.isResolved}, expected ${resolved}`,
+        );
+      }
     } catch (error) {
       throw translateGitHubApiError(`GitHub review thread ${threadId}`, error);
     }
