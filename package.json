@@ -23,30 +23,30 @@
   },
   "dependencies": {
     "@fastify/static": "^9.1.3",
-    "@github/copilot-sdk": "^0.3.0",
-    "fastify": "^5.2.1",
-    "glob": "^11.0.1",
+    "@github/copilot-sdk": "^1.0.5",
+    "fastify": "^5.9.0",
+    "glob": "^13.0.6",
     "octokit": "^5.0.5",
-    "pino": "^9.6.0",
-    "tar": "^7.4.3",
+    "pino": "^10.3.1",
+    "tar": "^7.5.19",
     "ulidx": "^2.4.1",
-    "zod": "^3.24.2"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@astrojs/starlight": "^0.41.1",
+    "@astrojs/starlight": "^0.41.3",
     "@eslint/js": "^10.0.1",
-    "@types/node": "^22.19.19",
-    "@vitest/coverage-v8": "^3.2.4",
-    "astro": "^7.0.3",
-    "eslint": "^10.3.0",
-    "globals": "^17.6.0",
-    "prettier": "^3.8.3",
-    "tsx": "^4.19.3",
-    "typescript": "^5.8.2",
-    "typescript-eslint": "^8.59.2",
-    "vitest": "^3.2.4"
+    "@types/node": "^26.1.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "astro": "^7.0.6",
+    "eslint": "^10.6.0",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.4",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.1",
+    "vitest": "^4.1.9"
   },
   "optionalDependencies": {
-    "@flotiq/flotiq-api-sdk": "1.0.0-alpha.12"
+    "@flotiq/flotiq-api-sdk": "1.1.0"
   }
 }
