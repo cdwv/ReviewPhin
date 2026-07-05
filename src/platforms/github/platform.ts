@@ -81,7 +81,7 @@ const manifestConversionSchema = z.object({
   webhook_secret: z.string().min(1),
   pem: z.string().min(1),
   html_url: z.string().url().optional(),
-  permissions: z.record(z.string()),
+  permissions: z.record(z.string(), z.string()),
   events: z.array(z.string()),
   owner: z
     .union([
@@ -118,8 +118,7 @@ export default class GitHubPlatform implements IPlatform {
       publicUrl: string;
       octokit?: Octokit | undefined;
       createApp?:
-        | ((config: GitHubAppFactoryConfig) => GitHubAppApi)
-        | undefined;
+        ((config: GitHubAppFactoryConfig) => GitHubAppApi) | undefined;
       now?: (() => Date) | undefined;
     },
   ) {}

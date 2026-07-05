@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../src/cli.js";
 import { createLogger } from "../src/logger.js";
+import type { GitHubApi } from "../src/platforms/github/client.js";
 import { readyGitHubConnectionConfigSchema } from "../src/platforms/github/config.js";
 import GitHubPlatform from "../src/platforms/github/platform.js";
 import {
@@ -196,7 +197,7 @@ describe("GitHub tenant registration", () => {
   });
 });
 
-function createPlatform(request: ReturnType<typeof vi.fn>): GitHubPlatform {
+function createPlatform(request: GitHubApi["request"]): GitHubPlatform {
   return new GitHubPlatform({
     logger,
     publicUrl: "https://review.example.com",

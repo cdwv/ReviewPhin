@@ -71,7 +71,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs['coverage-artifact-name'] || 'coverage' }}
           path: coverage/
@@ -132,7 +132,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Scorecard
-        uses: ossf/scorecard-action@v2.4.2
+        uses: ossf/scorecard-action@v2.4.3
         with:
           results_file: scorecard-results.sarif
           results_format: sarif

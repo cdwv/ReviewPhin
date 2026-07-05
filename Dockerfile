@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 
 
 ARG REVIEWPHIN_BUILD_HOMEPAGE=false
@@ -11,7 +11,8 @@ ENV REVIEWPHIN_BUILD_HOMEPAGE=${REVIEWPHIN_BUILD_HOMEPAGE} \
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 
-RUN corepack enable
+RUN npm install --global corepack@latest \
+  && corepack enable
 
 WORKDIR /app
 
@@ -27,7 +28,7 @@ RUN pnpm install --frozen-lockfile \
   && pnpm docs:build:container \
   && pnpm prune --prod
 
-FROM node:24-bookworm-slim AS runtime
+FROM node:26-bookworm-slim AS runtime
 
 ARG COPILOT_CLI_VERSION=1.0.36
 

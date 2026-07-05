@@ -364,18 +364,18 @@ Chatter uses the `textGenerationModel` from the active profile (falling back to 
 
 ## Technologies
 
-| Layer              | Technology                                    |
-| ------------------ | --------------------------------------------- |
-| Runtime            | Node.js 22, TypeScript 5                      |
-| HTTP server        | Fastify 5                                     |
-| AI runtime         | `@github/copilot-sdk` (Copilot CLI wrapper)   |
-| Model APIs         | native Copilot, vLLM, Azure OpenAI, Anthropic |
-| Storage (default)  | SQLite via Node.js `node:sqlite`              |
-| Storage (optional) | Flotiq headless CMS                           |
-| Logging            | pino (structured JSON)                        |
-| Validation         | zod                                           |
-| Packaging          | Docker, multi-stage build                     |
-| Orchestration      | Helm (Kubernetes)                             |
+| Layer              | Technology                                                        |
+| ------------------ | ----------------------------------------------------------------- |
+| Runtime            | Node.js 22+ source runtime, Node.js 26 Docker image, TypeScript 6 |
+| HTTP server        | Fastify 5                                                         |
+| AI runtime         | `@github/copilot-sdk` (Copilot CLI wrapper)                       |
+| Model APIs         | native Copilot, vLLM, Azure OpenAI, Anthropic                     |
+| Storage (default)  | SQLite via Node.js `node:sqlite`                                  |
+| Storage (optional) | Flotiq headless CMS                                               |
+| Logging            | pino (structured JSON)                                            |
+| Validation         | zod                                                               |
+| Packaging          | Docker, multi-stage build                                         |
+| Orchestration      | Helm (Kubernetes)                                                 |
 
 ---
 

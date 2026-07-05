@@ -248,7 +248,7 @@ const graphQLErrorSchema = z
 
 const graphQLMutationResponseSchema = z
   .object({
-    data: z.record(z.unknown()).optional(),
+    data: z.record(z.string(), z.unknown()).optional(),
     errors: z.array(graphQLErrorSchema).optional(),
   })
   .passthrough();
@@ -586,9 +586,7 @@ export class GitHubClient {
       });
       const parsed = graphQLMutationResponseSchema.parse(response.data);
       if (parsed.errors?.length) {
-        throw new Error(
-          parsed.errors.map((entry) => entry.message).join("; "),
-        );
+        throw new Error(parsed.errors.map((entry) => entry.message).join("; "));
       }
       const payload = reviewThreadMutationPayloadSchema.parse(
         parsed.data?.[mutationName],
@@ -827,12 +825,10 @@ export class GitHubClient {
         repo: repository,
         ref,
       });
-      if (
-        !(
-          response.data instanceof ArrayBuffer ||
-          ArrayBuffer.isView(response.data)
-        )
-      ) {
+      if (!(
+        response.data instanceof ArrayBuffer ||
+        ArrayBuffer.isView(response.data)
+      )) {
         throw new Error("GitHub archive response was not binary");
       }
       return Buffer.from(

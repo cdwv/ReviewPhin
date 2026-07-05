@@ -439,10 +439,7 @@ export async function runCli(
       );
     }
     const platformSchema = platform.getTenantRegistrationSchema();
-    const parsedPlatformConfig = platformSchema.parse(rawData) as Record<
-      string,
-      unknown
-    >;
+    const parsedPlatformConfig = platformSchema.parse(rawData);
 
     return withStorage(options, config, async (storage) => {
       const connection = await storage.resolvePlatformConnection(
@@ -505,7 +502,7 @@ export async function runCli(
       }
       const connectionConfig = platform
         .getConnectionRegistrationSchema()
-        .parse(rawData) as Record<string, unknown>;
+        .parse(rawData);
       const recreate = options.recreate === true || options.recreate === "true";
 
       return withStorage(options, config, async (storage) => {
@@ -629,7 +626,7 @@ export async function runCli(
       );
       const combined = platform
         .getConnectionRegistrationSchema()
-        .parse({ ...currentConfig, ...patch }) as Record<string, unknown>;
+        .parse({ ...currentConfig, ...patch });
       const status =
         (await platform.onBeforeUpdateConnection?.(existing, combined)) ??
         existing.status;
@@ -1278,7 +1275,9 @@ function getSchemaCliParams(
       .split(/(?=[A-Z])/)
       .join("-")
       .toLowerCase();
-    const isOptional = propertySchema.isOptional();
+    const isOptional = (propertySchema as z.ZodType).safeParse(
+      undefined,
+    ).success;
 
     return {
       paramString: `--${optionName} <value>`,
