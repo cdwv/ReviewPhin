@@ -13,7 +13,7 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         versions:
-          - ">=26"
+          - ">=23"
 
   - package-ecosystem: github-actions
     directory: /
