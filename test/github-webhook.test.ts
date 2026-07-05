@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app.js";
 import { createLogger } from "../src/logger.js";
+import type { GitHubApi } from "../src/platforms/github/client.js";
 import { readyGitHubConnectionConfigSchema } from "../src/platforms/github/config.js";
 import GitHubPlatform from "../src/platforms/github/platform.js";
 import type {
@@ -528,7 +529,10 @@ describe("GitHub webhook resolution", () => {
         ],
       };
     });
-    const platform = createPlatform(vi.fn(async () => true), request);
+    const platform = createPlatform(
+      vi.fn(async () => true),
+      request,
+    );
     const resolvedTenant = {
       tenant: createTenant(),
       connection: createConnection(),
@@ -680,7 +684,9 @@ describe("GitHub webhook resolution", () => {
   it("persists the root review comment target for GitHub follow-up jobs", async () => {
     const request = vi.fn(
       async (route: string, _parameters: Record<string, unknown>) => {
-        if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/comments") {
+        if (
+          route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/comments"
+        ) {
           return {
             data: [
               createReviewComment(444, {
@@ -726,7 +732,10 @@ describe("GitHub webhook resolution", () => {
         };
       },
     );
-    const platform = createPlatform(vi.fn(async () => true), request);
+    const platform = createPlatform(
+      vi.fn(async () => true),
+      request,
+    );
     const storage = {
       stores: { tenants: { patch: vi.fn(async () => undefined) } },
     } as unknown as StorageHelpers;
@@ -861,8 +870,8 @@ describe("GitHub webhook resolution", () => {
 });
 
 function createPlatform(
-  verify: ReturnType<typeof vi.fn>,
-  request: ReturnType<typeof vi.fn> = vi.fn(),
+  verify: (payload: string, signature: string) => Promise<boolean>,
+  request: GitHubApi["request"] = vi.fn(),
 ): GitHubPlatform {
   return new GitHubPlatform({
     logger,
@@ -1005,9 +1014,7 @@ function createReviewComment(
     path: "src/index.ts",
     diff_hunk: "@@ -1 +1 @@",
     pull_request_review_id: 99,
-    ...(options.inReplyToId
-      ? { in_reply_to_id: options.inReplyToId }
-      : {}),
+    ...(options.inReplyToId ? { in_reply_to_id: options.inReplyToId } : {}),
     line: 1,
     original_line: 1,
     side: "RIGHT",

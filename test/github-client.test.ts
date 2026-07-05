@@ -6,6 +6,7 @@ import {
   GitHubApiError,
   GitHubClient,
 } from "../src/platforms/github/client.js";
+import type { GitHubApi } from "../src/platforms/github/client.js";
 import {
   githubConnectionRegistrationSchema,
   readyGitHubConnectionConfigSchema,
@@ -705,9 +706,9 @@ describe("GitHubClient", () => {
     }));
     const client = createClientWithInstallationRequest(request);
 
-    await expect(client.setReviewThreadResolved("PRRT_1", true)).rejects.toThrow(
-      "GitHub review thread PRRT_1 request failed",
-    );
+    await expect(
+      client.setReviewThreadResolved("PRRT_1", true),
+    ).rejects.toThrow("GitHub review thread PRRT_1 request failed");
   });
 
   it("rejects GraphQL review thread mutation errors", async () => {
@@ -721,9 +722,9 @@ describe("GitHubClient", () => {
     }));
     const client = createClientWithInstallationRequest(request);
 
-    await expect(client.setReviewThreadResolved("PRRT_1", true)).rejects.toThrow(
-      "GitHub review thread PRRT_1 request failed",
-    );
+    await expect(
+      client.setReviewThreadResolved("PRRT_1", true),
+    ).rejects.toThrow("GitHub review thread PRRT_1 request failed");
   });
 });
 
@@ -871,9 +872,7 @@ function createReaction(content: "eyes" | "hooray") {
   };
 }
 
-function createClientWithInstallationRequest(
-  request: ReturnType<typeof vi.fn>,
-) {
+function createClientWithInstallationRequest(request: GitHubApi["request"]) {
   return new GitHubClient({
     config: createReadyConfig(),
     createApp: () => ({

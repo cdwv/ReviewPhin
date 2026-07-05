@@ -46,7 +46,7 @@ const registeredGitHubAppFields = {
   ownerAvatarUrl: z.string().url().optional(),
   ownerHtmlUrl: z.string().url().optional(),
   appHtmlUrl: z.string().url().optional(),
-  permissions: z.record(z.string()),
+  permissions: z.record(z.string(), z.string()),
   events: z.array(z.string()),
 };
 

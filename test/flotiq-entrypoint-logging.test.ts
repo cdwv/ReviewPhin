@@ -16,14 +16,16 @@ const {
 }));
 
 vi.mock("@flotiq/flotiq-api-sdk", () => ({
-  Flotiq: vi.fn().mockImplementation(() => ({
-    content: {
-      migrations: {
-        list: listMigrationsMock,
-        create: createMigrationMock,
+  Flotiq: vi.fn(function FlotiqMock() {
+    return {
+      content: {
+        migrations: {
+          list: listMigrationsMock,
+          create: createMigrationMock,
+        },
       },
-    },
-  })),
+    };
+  }),
 }));
 
 vi.mock("../src/storage/adapters/flotiq/migrations/v002.js", () => ({

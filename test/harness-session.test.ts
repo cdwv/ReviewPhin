@@ -11,12 +11,14 @@ const { createSessionMock, listModelsMock, startMock, stopMock } = vi.hoisted(
 );
 
 vi.mock("@github/copilot-sdk", () => ({
-  CopilotClient: vi.fn().mockImplementation(() => ({
-    createSession: createSessionMock,
-    listModels: listModelsMock,
-    start: startMock,
-    stop: stopMock,
-  })),
+  CopilotClient: vi.fn(function CopilotClientMock() {
+    return {
+      createSession: createSessionMock,
+      listModels: listModelsMock,
+      start: startMock,
+      stop: stopMock,
+    };
+  }),
   defineTool: (name: string, definition: object) => ({
     name,
     ...definition,
