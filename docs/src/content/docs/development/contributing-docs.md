@@ -17,7 +17,7 @@ pnpm docs:dev
 pnpm docs:build:container
 ```
 
-The container build does not include the homepage by default. Build the homepage only for a static site host, such as future GitHub Pages, by setting:
+The container build does not include the homepage by default. Build the homepage only for the public static site, such as the GitHub Pages release workflow, by setting:
 
 ```bash
 REVIEWPHIN_BUILD_HOMEPAGE=true pnpm docs:build

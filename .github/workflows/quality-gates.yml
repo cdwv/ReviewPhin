@@ -63,6 +63,8 @@ jobs:
           REVIEWPHIN_BUILD_HOMEPAGE: "true"
           REVIEWPHIN_DOCS_SITE: https://reviewphin.com
           REVIEWPHIN_DOCS_BASE: /
+          REVIEWPHIN_POSTHOG_KEY: phc_ci_fixture
+          REVIEWPHIN_POSTHOG_HOST: https://us.i.posthog.com
 
       - name: Test with coverage
         run: pnpm test --coverage
