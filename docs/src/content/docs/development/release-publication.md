@@ -28,6 +28,7 @@ Configure these before the first public release:
 
 - Enable GitHub Pages and set the source to GitHub Actions.
 - Configure DNS and the Pages custom domain for `reviewphin.com`.
+- Add `REVIEWPHIN_POSTHOG_KEY` as a GitHub repository or Pages environment variable for the public site. Add `REVIEWPHIN_POSTHOG_HOST` only when the project does not use the default US Cloud host.
 - Add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets with write access to `cdwv/reviewphin`.
 - Allow the release workflow to publish GitHub Packages with `GITHUB_TOKEN`; the chart job requests `packages: write` and publishes to GHCR.
 - Enable GitHub native secret scanning when available.

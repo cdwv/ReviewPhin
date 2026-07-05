@@ -893,6 +893,7 @@ function createWorker(input: {
         updated: 0,
         replied: 0,
         resolved: 0,
+        skippedResolution: 0,
         kept: 0,
         summaryNoteAction: "created" as const,
       })),

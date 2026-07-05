@@ -61,6 +61,8 @@ export type PlatformDiscussionMutation =
 export interface PlatformDiscussionMutationResult {
   discussion?: PlatformReviewDiscussion | undefined;
   comment?: PlatformReviewComment | undefined;
+  skipped?: boolean | undefined;
+  skipReason?: string | undefined;
 }
 
 export interface PlatformFindingPublication {

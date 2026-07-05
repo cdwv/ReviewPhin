@@ -17,11 +17,13 @@ pnpm docs:dev
 pnpm docs:build:container
 ```
 
-The container build does not include the homepage by default. Build the homepage only for a static site host, such as future GitHub Pages, by setting:
+The container build does not include the homepage by default. Build the homepage only for the public static site, such as the GitHub Pages release workflow, by setting:
 
 ```bash
 REVIEWPHIN_BUILD_HOMEPAGE=true pnpm docs:build
 ```
+
+PostHog analytics are also disabled by default. To build a tracked static site, set `REVIEWPHIN_POSTHOG_KEY` at build time. `REVIEWPHIN_POSTHOG_HOST` is optional and defaults to `https://us.i.posthog.com`.
 
 ## How the container serves docs
 

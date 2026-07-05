@@ -904,7 +904,11 @@ function isGitHubBot(login: string | null, botLogin: string): boolean {
 }
 
 function canMutateReviewThreadResolution(thread: GitHubReviewThread): boolean {
-  return thread.viewerCanResolve || thread.viewerCanUnresolve;
+  return isNativeReviewThreadId(thread.id);
+}
+
+function isNativeReviewThreadId(threadId: string): boolean {
+  return threadId.startsWith("PRRT_");
 }
 
 function parseReviewCommentDiscussionId(discussionId: string): number | null {

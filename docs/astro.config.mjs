@@ -1,5 +1,6 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import { getPostHogHead } from "./src/analytics/posthog.mjs";
 
 const site = process.env.REVIEWPHIN_DOCS_SITE ?? "https://reviewphin.com";
 const base = process.env.REVIEWPHIN_DOCS_BASE ?? "/";
@@ -63,6 +64,7 @@ export default defineConfig({
         "Set up, operate, and extend ReviewPhin for merge request and pull request review workflows.",
       favicon: withBase("/favicon.png"),
       customCss: ["./src/styles/starlight.css"],
+      head: getPostHogHead(),
       disable404Route: true,
       credits: false,
       social: [
