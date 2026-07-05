@@ -11,7 +11,8 @@ ENV REVIEWPHIN_BUILD_HOMEPAGE=${REVIEWPHIN_BUILD_HOMEPAGE} \
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 
-RUN corepack enable
+RUN npm install --global corepack@latest \
+  && corepack enable
 
 WORKDIR /app
 
