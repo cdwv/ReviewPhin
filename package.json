@@ -35,7 +35,7 @@
   "devDependencies": {
     "@astrojs/starlight": "^0.41.3",
     "@eslint/js": "^10.0.1",
-    "@types/node": "^22.19.19",
+    "@types/node": "^25.9.4",
     "@vitest/coverage-v8": "^4.1.9",
     "astro": "^7.0.6",
     "eslint": "^10.6.0",
