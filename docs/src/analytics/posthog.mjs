@@ -27,6 +27,7 @@ export function getPostHogScriptContent(env = process.env) {
 posthog.init(${serializeForScript(config.token)}, {
   api_host: ${serializeForScript(config.host)},
   defaults: ${serializeForScript(POSTHOG_DEFAULTS)},
+  capture_pageview: true,
   person_profiles: "identified_only",
 });`;
 }
