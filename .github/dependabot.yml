@@ -4,15 +4,23 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       npm-dependencies:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "@types/node"
+        versions:
+          - ">=26"
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns:
@@ -22,3 +30,5 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
