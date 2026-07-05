@@ -23,6 +23,8 @@ The container build does not include the homepage by default. Build the homepage
 REVIEWPHIN_BUILD_HOMEPAGE=true pnpm docs:build
 ```
 
+PostHog analytics are also disabled by default. To build a tracked static site, set `REVIEWPHIN_POSTHOG_KEY` at build time. `REVIEWPHIN_POSTHOG_HOST` is optional and defaults to `https://us.i.posthog.com`.
+
 ## How the container serves docs
 
 The docs site is authored in `docs/` and built into the runtime static directory. The container docs build writes:

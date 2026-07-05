@@ -161,6 +161,8 @@ jobs:
           REVIEWPHIN_BUILD_HOMEPAGE: "true"
           REVIEWPHIN_DOCS_SITE: https://reviewphin.com
           REVIEWPHIN_DOCS_BASE: /
+          REVIEWPHIN_POSTHOG_KEY: ${{ vars.REVIEWPHIN_POSTHOG_KEY || secrets.REVIEWPHIN_POSTHOG_KEY }}
+          REVIEWPHIN_POSTHOG_HOST: ${{ vars.REVIEWPHIN_POSTHOG_HOST || secrets.REVIEWPHIN_POSTHOG_HOST }}
 
       - name: Add custom domain
         run: printf 'reviewphin.com\n' > dist-docs-container/CNAME
