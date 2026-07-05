@@ -61,6 +61,7 @@ export interface ReconcileSummary {
   updated: number;
   replied: number;
   resolved: number;
+  skippedResolution: number;
   kept: number;
   summaryCommentAction: "created" | "updated" | null;
   links: PlatformPublicationLink[];
@@ -126,6 +127,7 @@ export class DiscussionReconciler {
       updated: 0,
       replied: 0,
       resolved: 0,
+      skippedResolution: 0,
       kept: 0,
       summaryCommentAction: null,
       links: [],
@@ -202,13 +204,26 @@ export class DiscussionReconciler {
       }
 
       if (disposition.action === "resolve") {
+        let platformResolved = knownDiscussion.resolved;
         if (!knownDiscussion.resolved) {
           if (knownDiscussion.resolvable) {
-            await input.publicationAdapter.mutateDiscussion({
+            const mutation = await input.publicationAdapter.mutateDiscussion({
               kind: "set-resolved",
               discussionId: knownDiscussion.platformDiscussionId,
               resolved: true,
             });
+            if (mutation.skipped) {
+              this.logSkippedDiscussionResolutionMutation({
+                tenant: input.tenant,
+                codeReviewId: input.context.codeReview.id,
+                interactionRunId: input.interactionRunId,
+                knownDiscussion,
+                reason: mutation.skipReason ?? "platform skipped resolution",
+              });
+              summary.skippedResolution += 1;
+            } else {
+              platformResolved = true;
+            }
           } else {
             this.logSkippedDiscussionResolutionChange({
               tenant: input.tenant,
@@ -217,6 +232,7 @@ export class DiscussionReconciler {
               knownDiscussion,
               resolved: true,
             });
+            summary.skippedResolution += 1;
           }
         }
 
@@ -260,13 +276,12 @@ export class DiscussionReconciler {
           category: knownDiscussion.mapping?.category ?? "correctness",
           positionJson:
             knownDiscussion.discussion.comments[0]?.positionJson ?? null,
-          discussionStatus:
-            knownDiscussion.resolved || knownDiscussion.resolvable
-              ? "resolved"
-              : "open",
+          discussionStatus: platformResolved ? "resolved" : "open",
           findingStatus: disposition.resolution ?? "resolved",
         });
-        summary.resolved += 1;
+        if (platformResolved) {
+          summary.resolved += 1;
+        }
       } else if (disposition.action === "reply" && disposition.replyBody) {
         const mutation = await input.publicationAdapter.mutateDiscussion({
           kind: "reply-text",
@@ -707,6 +722,26 @@ export class DiscussionReconciler {
         requestedResolved: input.resolved,
       },
       "skipping discussion resolution change because the discussion is not resolvable",
+    );
+  }
+
+  private logSkippedDiscussionResolutionMutation(input: {
+    tenant: TenantRecord;
+    codeReviewId: number;
+    interactionRunId: string;
+    knownDiscussion: KnownDiscussion;
+    reason: string;
+  }): void {
+    this.logger.warn(
+      {
+        tenantId: input.tenant.id,
+        codeReviewId: input.codeReviewId,
+        interactionRunId: input.interactionRunId,
+        discussionId: input.knownDiscussion.discussionId,
+        platformDiscussionId: input.knownDiscussion.platformDiscussionId,
+        reason: input.reason,
+      },
+      "platform did not apply discussion resolution change",
     );
   }
 

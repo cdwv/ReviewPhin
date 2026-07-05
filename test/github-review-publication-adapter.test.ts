@@ -619,7 +619,7 @@ describe("GitHubReviewPublicationAdapter", () => {
     );
   });
 
-  it("does not mark GraphQL threads resolvable when GitHub denies resolution changes", async () => {
+  it("keeps bot-owned GraphQL review threads resolvable even when capability flags are false", async () => {
     const state = createState();
     const adapter = createAdapter(state);
     await adapter.publishFindings({
@@ -651,9 +651,66 @@ describe("GitHubReviewPublicationAdapter", () => {
     await expect(adapter.loadDiscussions({ fresh: true })).resolves.toEqual([
       expect.objectContaining({
         id: "PRRT_600",
-        resolvable: false,
+        resolvable: true,
       }),
     ]);
+
+    await adapter.mutateDiscussion({
+      kind: "set-resolved",
+      discussionId: "PRRT_600",
+      resolved: true,
+    });
+
+    expect(state.client.setReviewThreadResolved).toHaveBeenCalledWith(
+      "PRRT_600",
+      true,
+    );
+  });
+
+  it("reports skipped resolution when GitHub rejects a native review thread mutation", async () => {
+    const state = createState();
+    const adapter = createAdapter(state);
+    await adapter.publishFindings({
+      publicationKey: "job-1",
+      existingDiscussionIds: new Set(),
+      findings: [
+        {
+          identityKey: "inline",
+          fingerprint: "inline-fingerprint",
+          marker: "github:job-1:inline",
+          finding: {
+            title: "Return the computed value",
+            body: "The current branch drops the result.",
+            severity: "high",
+            category: "bug",
+            anchor: {
+              path: "src/index.ts",
+              startLine: 2,
+              endLine: 2,
+              side: "new",
+            },
+          },
+        },
+      ],
+    });
+    state.client.setReviewThreadResolved.mockRejectedValueOnce(
+      new Error("Resource not accessible by integration"),
+    );
+
+    await expect(
+      adapter.mutateDiscussion({
+        kind: "set-resolved",
+        discussionId: "PRRT_600",
+        resolved: true,
+      }),
+    ).resolves.toEqual({
+      skipped: true,
+      skipReason: "Resource not accessible by integration",
+    });
+    expect(state.client.setReviewThreadResolved).toHaveBeenCalledWith(
+      "PRRT_600",
+      true,
+    );
   });
 
   it("creates then updates the marked summary issue comment", async () => {

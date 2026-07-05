@@ -146,11 +146,19 @@ export class GitHubReviewPublicationAdapter implements PlatformReviewPublication
     switch (mutation.kind) {
       case "set-resolved":
         await this.assertDiscussionBotOwned(mutation.discussionId);
-        await this.input.client.setReviewThreadResolved(
-          mutation.discussionId,
-          mutation.resolved,
-        );
-        return {};
+        try {
+          await this.input.client.setReviewThreadResolved(
+            mutation.discussionId,
+            mutation.resolved,
+          );
+          return {};
+        } catch (error) {
+          return {
+            skipped: true,
+            skipReason:
+              error instanceof Error ? error.message : String(error),
+          };
+        }
       case "update-finding": {
         const existing = this.findReviewComment(Number(mutation.commentId));
         this.assertBotOwned(existing);
@@ -800,7 +808,11 @@ function isGitHubBot(login: string | null, botLogin: string): boolean {
 }
 
 function canMutateReviewThreadResolution(thread: GitHubReviewThread): boolean {
-  return thread.viewerCanResolve || thread.viewerCanUnresolve;
+  return isNativeReviewThreadId(thread.id);
+}
+
+function isNativeReviewThreadId(threadId: string): boolean {
+  return threadId.startsWith("PRRT_");
 }
 
 async function sleep(durationMs: number): Promise<void> {

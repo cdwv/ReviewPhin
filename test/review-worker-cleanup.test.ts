@@ -327,6 +327,7 @@ describe("ReviewWorker cleanup", () => {
           updated: 0,
           replied: 0,
           resolved: 0,
+          skippedResolution: 0,
           kept: 0,
           summaryCommentAction: "created" as const,
         })),
