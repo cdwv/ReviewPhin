@@ -1410,6 +1410,129 @@ describe("Discussion reconciler", () => {
     );
   });
 
+  it("keeps a resolved discussion resolved when platform reopen is skipped", async () => {
+    const storage = {
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_1",
+        ...input,
+      })),
+      updateReviewFindingStatus: vi.fn(async () => true),
+      listLatestReviewFindings: vi.fn(async () => []),
+    };
+    const reconciler = new DiscussionReconciler({
+      storage: storage as never,
+      logger,
+    });
+    const rootComment = {
+      id: "10",
+      body: "**Old finding**\n\nOld body",
+      authorId: "999",
+      authorUsername: "review-bot",
+      isBot: true,
+      resolvable: true,
+      resolved: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      anchor: null,
+      positionJson: null,
+      url: null,
+    };
+    const replyComment = {
+      ...rootComment,
+      id: "11",
+      body: "**Old finding**\n\nStill applies after the follow-up.",
+    };
+    const mutateDiscussion = vi
+      .fn()
+      .mockResolvedValueOnce({
+        skipped: true,
+        skipReason: "Resource not accessible by integration",
+      })
+      .mockResolvedValueOnce({ comment: replyComment });
+
+    const summary = await reconciler.reconcile({
+      platform,
+      tenant,
+      context: createHydratedContext({ discussions: [] }),
+      mappings: [
+        {
+          id: "map_1",
+          tenantId: tenant.id,
+          codeReviewId: 7,
+          identityKey: "identity",
+          findingFingerprint: "old",
+          title: "Old finding",
+          severity: "medium",
+          category: "bug",
+          body: "**Old finding**\n\nOld body",
+          platformDiscussionId: "PRRT_1",
+          platformCommentId: 10,
+          anchorJson: null,
+          positionJson: null,
+          botDiscussion: true,
+          botComment: true,
+          commentAuthorId: 999,
+          commentAuthorUsername: "review-bot",
+          status: "resolved" as const,
+          lastInteractionRunId: "run_old",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      interactionRunId: "run_1",
+      interactionJobId: "job-publication",
+      reviewResult: {
+        overview: {
+          summary: "Finding still applies",
+          overallSeverity: "medium",
+        },
+        findings: [
+          {
+            priorDiscussionId: "map_1",
+            title: "Old finding",
+            body: "Still applies after the follow-up.",
+            severity: "medium",
+            category: "bug",
+          },
+        ],
+        priorDispositions: [],
+      },
+      publicationAdapter: {
+        loadDiscussions: vi.fn(async () => [
+          {
+            id: "PRRT_1",
+            resolvable: true,
+            resolved: true,
+            comments: [rootComment],
+          },
+        ]),
+        mutateDiscussion,
+        publishFindings: vi.fn(),
+        upsertSummary: vi.fn(async ({ body }) => ({
+          action: "updated" as const,
+          url: null,
+          comment: {
+            id: "summary",
+            body,
+            isBot: true,
+            updatedAt: new Date().toISOString(),
+            url: null,
+          },
+        })),
+      },
+    });
+
+    expect(summary.replied).toBe(1);
+    expect(mutateDiscussion).toHaveBeenNthCalledWith(1, {
+      kind: "set-resolved",
+      discussionId: "PRRT_1",
+      resolved: false,
+    });
+    expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "resolved" }),
+    );
+  });
+
   it("updates the existing merge request review summary comment instead of creating a new one", async () => {
     const storage = {
       upsertDiscussionMapping: vi.fn(async (input) => ({

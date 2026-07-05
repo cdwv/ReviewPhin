@@ -415,11 +415,23 @@ export class DiscussionReconciler {
       let discussionStatus: "open" | "resolved" = "open";
       if (input.knownDiscussion.resolved) {
         if (input.knownDiscussion.resolvable) {
-          await input.publicationAdapter.mutateDiscussion({
+          const reopenMutation = await input.publicationAdapter.mutateDiscussion({
             kind: "set-resolved",
             discussionId: input.knownDiscussion.platformDiscussionId,
             resolved: false,
           });
+          if (reopenMutation.skipped) {
+            discussionStatus = "resolved";
+            this.logSkippedDiscussionResolutionMutation({
+              tenant: input.tenant,
+              codeReviewId: input.context.codeReview.id,
+              interactionRunId: input.interactionRunId,
+              knownDiscussion: input.knownDiscussion,
+              reason:
+                reopenMutation.skipReason ??
+                "platform skipped discussion reopen",
+            });
+          }
         } else {
           discussionStatus = "resolved";
           this.logSkippedDiscussionResolutionChange({
