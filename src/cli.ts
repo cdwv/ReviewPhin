@@ -116,6 +116,12 @@ const modelProfileSchema = z.object({
   authToken: z.string().min(1).optional(),
   reviewModel: z.string().min(1).optional(),
   textGenerationModel: z.string().min(1).optional(),
+  reviewReasoningEffort: z
+    .enum(["low", "medium", "high", "xhigh"])
+    .optional(),
+  textGenerationReasoningEffort: z
+    .enum(["low", "medium", "high", "xhigh"])
+    .optional(),
   isDefault: z.boolean().optional(),
   databasePath: z.string().min(1).optional(),
 });
@@ -127,6 +133,8 @@ const clearableModelProfileFields = [
   "auth-token",
   "review-model",
   "text-generation-model",
+  "review-reasoning-effort",
+  "text-generation-reasoning-effort",
 ] as const;
 
 const modelProfileLookupSchema = z.object({
@@ -830,6 +838,9 @@ export async function runCli(
       authToken: options["auth-token"],
       reviewModel: options["review-model"],
       textGenerationModel: options["text-generation-model"],
+      reviewReasoningEffort: options["review-reasoning-effort"],
+      textGenerationReasoningEffort:
+        options["text-generation-reasoning-effort"],
       isDefault:
         "default" in options
           ? options.default === true || options.default === "true"
@@ -896,6 +907,31 @@ export async function runCli(
         )
           ? { textGenerationModel: profile.textGenerationModel ?? null }
           : {}),
+        ...(options["clear-review-reasoning-effort"] === true ||
+        options["clear-review-reasoning-effort"] === "true"
+          ? { reviewReasoningEffort: null }
+          : {}),
+        ...("review-reasoning-effort" in options &&
+        !(
+          options["clear-review-reasoning-effort"] === true ||
+          options["clear-review-reasoning-effort"] === "true"
+        )
+          ? { reviewReasoningEffort: profile.reviewReasoningEffort ?? null }
+          : {}),
+        ...(options["clear-text-generation-reasoning-effort"] === true ||
+        options["clear-text-generation-reasoning-effort"] === "true"
+          ? { textGenerationReasoningEffort: null }
+          : {}),
+        ...("text-generation-reasoning-effort" in options &&
+        !(
+          options["clear-text-generation-reasoning-effort"] === true ||
+          options["clear-text-generation-reasoning-effort"] === "true"
+        )
+          ? {
+              textGenerationReasoningEffort:
+                profile.textGenerationReasoningEffort ?? null,
+            }
+          : {}),
         ...("default" in options
           ? { isDefault: profile.isDefault ?? false }
           : {}),
@@ -929,6 +965,9 @@ export async function runCli(
             wireApi: profile.wireApi,
             reviewModel: profile.reviewModel,
             textGenerationModel: profile.textGenerationModel,
+            reviewReasoningEffort: profile.reviewReasoningEffort,
+            textGenerationReasoningEffort:
+              profile.textGenerationReasoningEffort,
             isDefault: profile.isDefault,
             authToken: maskSecret(profile.authToken),
           })),
@@ -1229,7 +1268,7 @@ function printHelp(
     "tenant set-profile (--tenant-id <id> | --key <key>) --model-profile <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "tenant clear-profile (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "tenant remove (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
-    "model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--default] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--review-reasoning-effort <low|medium|high|xhigh>] [--clear-review-reasoning-effort] [--text-generation-reasoning-effort <low|medium|high|xhigh>] [--clear-text-generation-reasoning-effort] [--default] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile remove --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile set-default --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
@@ -2270,6 +2309,8 @@ function formatModelProfileSummary(
     wireApi: string | null;
     reviewModel: string | null;
     textGenerationModel: string | null;
+    reviewReasoningEffort: string | null;
+    textGenerationReasoningEffort: string | null;
     isDefault: boolean;
     authToken: string | null;
   },
@@ -2283,6 +2324,8 @@ function formatModelProfileSummary(
       `wireApi: ${profile.providerBaseUrl ? (profile.wireApi ?? "responses") : "(native)"}`,
       `reviewModel: ${profile.reviewModel ?? "(default)"}`,
       `textGenerationModel: ${profile.textGenerationModel ?? "(default)"}`,
+      `reviewReasoningEffort: ${profile.reviewReasoningEffort ?? "(default)"}`,
+      `textGenerationReasoningEffort: ${profile.textGenerationReasoningEffort ?? "(default)"}`,
       `default: ${profile.isDefault ? "yes" : "no"}`,
       `authToken: ${maskSecret(profile.authToken) ?? "(none)"}`,
     ].join("\n") + "\n"

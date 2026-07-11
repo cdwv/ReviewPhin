@@ -10,8 +10,8 @@ Platform event
   -> /webhooks/<platform>      Router: parse + validate signature
   -> tenant resolution          map event to a configured tenant
   -> trigger classification     review? follow-up? lifecycle? ignore?
-  -> interaction job            deduplicated, enqueued
-  -> review worker
+  -> interaction job            deduplicated, persisted
+  -> review worker              runner claims a leased job
   -> model harness              Reviewer (context-analyst -> review-author)
   -> finding reconciliation     Chatter: replies + memory
   -> platform publication       create/update/resolve/reply
@@ -24,6 +24,28 @@ The app captures raw request bodies for `/webhooks/*` and `/setup/*`, then asks 
 ## 2. Resolve
 
 The tenant registry maps the platform event to a configured tenant.
+
+## Interaction jobs and the runner
+
+Webhooks and other trigger sources write persisted interaction jobs; they never enqueue process-local work. The persisted queue is the source of truth.
+
+Each enabled runner process polls for work, while storage permits only one active review:
+
+- It polls storage every `REVIEWPHIN_JOB_POLL_INTERVAL_MS` (default `2000`) and claims one job at a time.
+- A claim holds a lease of `REVIEWPHIN_JOB_LEASE_MS` (default `120000`). The runner renews it on a heartbeat derived internally as one third of the lease.
+- If a heartbeat cannot renew before the lease deadline, the claim context is aborted so another runner can recover the work.
+- On startup and every poll, the runner first reconciles already-orphaned runs. Claiming then recovers expired job leases; any run orphaned by that recovery is reconciled on a later poll.
+- Worker-failure retries preserve backoff across restarts: a retried job stays queued with a future `availableAt` (`RETRY_BACKOFF_MS` scaled by attempt), and the runner — not an in-memory timer — decides when it becomes eligible. Lease recovery requeues immediately while retries remain.
+- Jobs that stay queued past `REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS` (default `21600000`, 6 hours from the original enqueue time) are expired rather than run. A previously retried job can therefore expire after earlier attempts.
+- `REVIEWPHIN_JOB_RUNNER_ENABLED=false` starts an HTTP-only replica that accepts webhooks but never claims jobs.
+
+On shutdown, ReviewPhin first stops accepting and drains HTTP requests. It then stops the runner from taking new claims, keeps the active attempt's heartbeat alive until it settles, and finally closes storage. A second signal terminates the process and leaves the unfinished lease for another runner to recover.
+
+Whether one review runs globally at a time depends on the storage claim mode — see [storage](../../deployment/storage/).
+
+:::note[Architecture: project-memory fencing]
+Project-memory consolidation writes are intentionally outside the v005 claim fencing. The session checks ownership before and after, but an in-flight memory write may still finish after lease loss. Review findings, run state, and job transitions are fenced; project memory is the one accepted exception.
+:::
 
 ## 3. Classify
 
@@ -46,4 +68,4 @@ It selects one of three modes from the trigger context:
 
 Chatter handles conversational replies and project memory decisions, using the profile's text-generation model to keep light interactions cheap. The publication adapter then creates, updates, resolves, reopens, or replies to bot-owned discussions and summaries. Retries recover bot-owned publications by stable markers instead of duplicating comments.
 
-All code and data stay on your infrastructure. The worker calls only the configured model API and the connected platform API.
+ReviewPhin calls the configured model API, the connected platform API, and any configured external storage provider such as Flotiq. SQLite keeps persisted review data on the ReviewPhin host; hosted adapters store it with that provider.

@@ -3,12 +3,14 @@ import { join } from "node:path";
 
 import type { AssistantMessageEvent, SessionEvent } from "@github/copilot-sdk";
 
+import type { ModelReasoningEffort } from "../storage/contract/index.js";
 import type { HarnessRunLoggingContext, HarnessRunMetadata } from "./types.js";
 
 interface HarnessRunLogOptions {
   logDir: string;
   prompt: string;
   model?: string | undefined;
+  reasoningEffort?: ModelReasoningEffort | undefined;
   logging?: HarnessRunLoggingContext | undefined;
   metadata?: HarnessRunMetadata | undefined;
 }
@@ -31,6 +33,7 @@ export interface HarnessRunLogRecord {
     codeReviewId: number | null;
     workspacePath: string | null;
     requestedModel: string | null;
+    requestedReasoningEffort: string | null;
     sessionKind: string | null;
   };
   prompt: string;
@@ -61,6 +64,7 @@ export class HarnessRunLog {
         codeReviewId: options.metadata?.codeReviewId ?? null,
         workspacePath: options.metadata?.workspacePath ?? null,
         requestedModel: options.model ?? null,
+        requestedReasoningEffort: options.reasoningEffort ?? null,
         sessionKind: options.logging?.sessionKind ?? null,
       },
       prompt: options.prompt,

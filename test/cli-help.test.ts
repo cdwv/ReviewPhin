@@ -75,6 +75,23 @@ describe("CLI help", () => {
     expect(help).toContain("pnpm cli model-profile add ");
   });
 
+  it("documents the reasoning-effort flags in model-profile add usage", async () => {
+    vi.stubEnv("REVIEWPHIN_CLI_COMMAND", "pnpm cli");
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    await expect(runCli(["model-profile", "add", "--help"])).resolves.toBe(0);
+
+    const help = output.mock.calls.join("");
+    expect(help).toContain(
+      "[--review-reasoning-effort <low|medium|high|xhigh>]",
+    );
+    expect(help).toContain("[--clear-review-reasoning-effort]");
+    expect(help).toContain(
+      "[--text-generation-reasoning-effort <low|medium|high|xhigh>]",
+    );
+    expect(help).toContain("[--clear-text-generation-reasoning-effort]");
+  });
+
   it("includes --help in every displayed usage entry", async () => {
     vi.stubEnv("REVIEWPHIN_CLI_COMMAND", "pnpm cli");
     const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);

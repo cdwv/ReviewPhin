@@ -386,6 +386,210 @@ describe("tenant CLI", () => {
     });
   });
 
+  it("accepts, persists, reports, and lists both reasoning-effort fields", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+
+    let addStdout = "";
+    const addSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk: string | Uint8Array) => {
+        addStdout +=
+          typeof chunk === "string"
+            ? chunk
+            : Buffer.from(chunk).toString("utf8");
+        return true;
+      });
+
+    const addExitCode = await runCli([
+      "model-profile",
+      "add",
+      "--sqlite-database-path",
+      databasePath,
+      "--name",
+      "effort",
+      "--review-model",
+      "gpt-5.6",
+      "--review-reasoning-effort",
+      "high",
+      "--text-generation-reasoning-effort",
+      "low",
+    ]);
+
+    addSpy.mockRestore();
+    expect(addExitCode).toBe(0);
+    expect(addStdout).toContain("reviewReasoningEffort: high");
+    expect(addStdout).toContain("textGenerationReasoningEffort: low");
+
+    const storage = await openSqliteTestStorage(databasePath);
+    expect(await storage.stores.modelProfiles.get("effort")).toMatchObject({
+      name: "effort",
+      reviewReasoningEffort: "high",
+      textGenerationReasoningEffort: "low",
+    });
+
+    let listStdout = "";
+    const listSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk: string | Uint8Array) => {
+        listStdout +=
+          typeof chunk === "string"
+            ? chunk
+            : Buffer.from(chunk).toString("utf8");
+        return true;
+      });
+
+    const listExitCode = await runCli([
+      "model-profile",
+      "list",
+      "--sqlite-database-path",
+      databasePath,
+    ]);
+
+    listSpy.mockRestore();
+    expect(listExitCode).toBe(0);
+    expect(listStdout).toContain('"reviewReasoningEffort": "high"');
+    expect(listStdout).toContain('"textGenerationReasoningEffort": "low"');
+  });
+
+  it("updates only present reasoning-effort fields and clears them explicitly", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+
+    await runCli([
+      "model-profile",
+      "add",
+      "--sqlite-database-path",
+      databasePath,
+      "--name",
+      "effort",
+      "--review-model",
+      "gpt-5.6",
+      "--review-reasoning-effort",
+      "high",
+      "--text-generation-reasoning-effort",
+      "medium",
+    ]);
+
+    await runCli([
+      "model-profile",
+      "add",
+      "--sqlite-database-path",
+      databasePath,
+      "--name",
+      "effort",
+      "--text-generation-reasoning-effort",
+      "xhigh",
+    ]);
+
+    const afterUpdate = await openSqliteTestStorage(databasePath);
+    expect(await afterUpdate.stores.modelProfiles.get("effort")).toMatchObject({
+      reviewReasoningEffort: "high",
+      textGenerationReasoningEffort: "xhigh",
+    });
+
+    await runCli([
+      "model-profile",
+      "add",
+      "--sqlite-database-path",
+      databasePath,
+      "--name",
+      "effort",
+      "--clear-review-reasoning-effort",
+    ]);
+
+    const afterClear = await openSqliteTestStorage(databasePath);
+    expect(await afterClear.stores.modelProfiles.get("effort")).toMatchObject({
+      reviewReasoningEffort: null,
+      textGenerationReasoningEffort: "xhigh",
+    });
+  });
+
+  it("rejects invalid reasoning-effort values", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+
+    await expect(
+      runCli([
+        "model-profile",
+        "add",
+        "--sqlite-database-path",
+        databasePath,
+        "--name",
+        "effort",
+        "--review-reasoning-effort",
+        "extreme",
+      ]),
+    ).rejects.toThrow();
+  });
+
+  it("rejects combining a reasoning-effort flag with its clear flag", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+
+    await expect(
+      runCli([
+        "model-profile",
+        "add",
+        "--sqlite-database-path",
+        databasePath,
+        "--name",
+        "effort",
+        "--review-reasoning-effort",
+        "high",
+        "--clear-review-reasoning-effort",
+      ]),
+    ).rejects.toThrow(
+      "Cannot use --review-reasoning-effort and --clear-review-reasoning-effort together",
+    );
+  });
+
+  it("reports both reasoning-effort fields in removed-profile summaries", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
+    const databasePath = join(workspace, "tenants.sqlite");
+
+    await runCli([
+      "model-profile",
+      "add",
+      "--sqlite-database-path",
+      databasePath,
+      "--name",
+      "effort",
+      "--review-model",
+      "gpt-5.6",
+      "--review-reasoning-effort",
+      "high",
+      "--text-generation-reasoning-effort",
+      "low",
+    ]);
+
+    let removeStdout = "";
+    const removeSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk: string | Uint8Array) => {
+        removeStdout +=
+          typeof chunk === "string"
+            ? chunk
+            : Buffer.from(chunk).toString("utf8");
+        return true;
+      });
+
+    const removeExitCode = await runCli([
+      "model-profile",
+      "remove",
+      "--sqlite-database-path",
+      databasePath,
+      "--name",
+      "effort",
+    ]);
+
+    removeSpy.mockRestore();
+    expect(removeExitCode).toBe(0);
+    expect(removeStdout).toContain("Model profile removed.");
+    expect(removeStdout).toContain("reviewReasoningEffort: high");
+    expect(removeStdout).toContain("textGenerationReasoningEffort: low");
+  });
+
   it("assigns and clears tenant model profiles through the CLI", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "reviewphin-"));
     const databasePath = join(workspace, "tenants.sqlite");

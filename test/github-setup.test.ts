@@ -800,9 +800,6 @@ async function createTestApp(
         throw new Error("unused");
       },
     } as never,
-    queue: {
-      enqueue: () => undefined,
-    } as never,
     platforms: [platform],
   });
 }

@@ -10,6 +10,7 @@ import type {
 import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
 import { createGitLabConnectionRecord } from "./helpers/gitlab-tenant.js";
+import { createClaimContext } from "./helpers/claim.js";
 import { wrapGitLabPlatformContext } from "./helpers/platform-context.js";
 import { overridePlatformRuntime } from "./helpers/platform-runtime.js";
 
@@ -235,7 +236,7 @@ describe("GitLab reactions", () => {
     );
     globalThis.fetch = fetchMock;
 
-    const worker = createWorker({
+    const { worker, job } = createWorker({
       payload: directMentionPayload,
       discussions: [],
     });
@@ -251,7 +252,7 @@ describe("GitLab reactions", () => {
         },
       },
     );
-    await worker.processJob("job_1");
+    await worker.processClaimedJob(job as never, createClaimContext(job.id));
 
     const postedUrls = fetchMock.mock.calls
       .filter(
@@ -324,13 +325,13 @@ describe("GitLab reactions", () => {
     );
     globalThis.fetch = fetchMock;
 
-    const worker = createWorker({
+    const { worker, job } = createWorker({
       payload: directMentionPayload,
       discussions: [],
       triggerJson: '{"kind":"comment","commentId":55}',
     });
 
-    await worker.processJob("job_1");
+    await worker.processClaimedJob(job as never, createClaimContext(job.id));
 
     const postedBodies = fetchMock.mock.calls
       .filter(
@@ -399,7 +400,7 @@ describe("GitLab reactions", () => {
     );
     globalThis.fetch = fetchMock;
 
-    const worker = createWorker({
+    const { worker, job, transitionClaim } = createWorker({
       payload: directMentionPayload,
       discussions: [],
       jobRetryCount: 3,
@@ -418,7 +419,17 @@ describe("GitLab reactions", () => {
       },
     );
 
-    await expect(worker.processJob("job_1")).rejects.toThrow("final failure");
+    await expect(
+      worker.processClaimedJob(job as never, createClaimContext(job.id)),
+    ).resolves.toBeUndefined();
+    expect(transitionClaim).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: job.id,
+        status: "failed",
+        retryCount: 4,
+        lastError: "final failure",
+      }),
+    );
 
     const postedBodies = fetchMock.mock.calls
       .filter(
@@ -487,7 +498,7 @@ describe("GitLab reactions", () => {
     );
     globalThis.fetch = fetchMock;
 
-    const worker = createWorker({
+    const { worker, job, transitionClaim } = createWorker({
       payload: directMentionPayload,
       discussions: [],
       jobRetryCount: 0,
@@ -506,9 +517,18 @@ describe("GitLab reactions", () => {
       },
     );
 
-    await expect(worker.processJob("job_1")).resolves.toEqual({
-      requeueAfterMs: 5000,
-    });
+    await expect(
+      worker.processClaimedJob(job as never, createClaimContext(job.id)),
+    ).resolves.toBeUndefined();
+    expect(transitionClaim).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: job.id,
+        status: "queued",
+        retryCount: 1,
+        lastError: "retryable failure",
+        finishedAt: null,
+      }),
+    );
 
     const postedBodies = fetchMock.mock.calls
       .filter(
@@ -596,7 +616,7 @@ describe("GitLab reactions", () => {
     );
     globalThis.fetch = fetchMock;
 
-    const worker = createWorker({
+    const { worker, job } = createWorker({
       payload: followUpPayload,
       discussions,
     });
@@ -613,7 +633,7 @@ describe("GitLab reactions", () => {
         },
       },
     );
-    await worker.processJob("job_1");
+    await worker.processClaimedJob(job as never, createClaimContext(job.id));
 
     const awardEmojiRequests = fetchMock.mock.calls.filter(([input]) =>
       String(input).includes("/award_emoji"),
@@ -626,7 +646,7 @@ describe("GitLab reactions", () => {
     globalThis.fetch = vi.fn(async () => {
       throw new Error("GitLab unavailable");
     });
-    const worker = createWorker({
+    const { worker } = createWorker({
       payload: directMentionPayload,
       discussions: [],
     });
@@ -656,7 +676,7 @@ function createWorker(input: {
   triggerJson?: string;
   jobRetryCount?: number;
   reviewError?: Error;
-}): ReviewWorker {
+}) {
   const job = {
     id: "job_1",
     tenantId: tenant.id,
@@ -702,6 +722,7 @@ function createWorker(input: {
     finishedAt: null,
   };
 
+  const transitionClaim = vi.fn(async () => true);
   const storage = {
     stores: {
       platformConnections: {
@@ -709,6 +730,26 @@ function createWorker(input: {
       },
       interactionJobs: {
         get: vi.fn(async () => job),
+        createInteractionRunForClaim: vi.fn(async () => ({
+          id: "run_1",
+          interactionJobId: "job_1",
+          tenantId: tenant.id,
+          provider: "copilot-sdk",
+          model: null,
+          modelProfileName: null,
+          providerBaseUrl: null,
+          providerType: null,
+          textGenerationModel: null,
+          status: "in_progress" as const,
+          resultJson: null,
+          error: null,
+          startedAt: new Date().toISOString(),
+          finishedAt: null,
+        })),
+        replaceReviewFindingsForClaim: vi.fn(async () => true),
+        transitionInteractionRunForClaim: vi.fn(async () => true),
+        upsertInteractionRunMetricsForClaim: vi.fn(async () => true),
+        transitionClaim,
       },
       discussionMappings: {
         list: vi.fn(async () => []),
@@ -723,36 +764,11 @@ function createWorker(input: {
       created: true,
     })),
     getInteractionJobById: vi.fn(async () => job),
-    markJobInProgress: vi.fn(async () => {}),
     listDiscussionMappings: vi.fn(async () => []),
-    createInteractionRun: vi.fn(async () => ({
-      id: "run_1",
-      interactionJobId: "job_1",
-      tenantId: tenant.id,
-      provider: "copilot-sdk",
-      model: null,
-      modelProfileName: null,
-      providerBaseUrl: null,
-      providerType: null,
-      textGenerationModel: null,
-      status: "in_progress",
-      resultJson: null,
-      error: null,
-      startedAt: new Date().toISOString(),
-      finishedAt: null,
-    })),
     getModelProfileByName: vi.fn(async () => null),
     getDefaultModelProfile: vi.fn(async () => null),
     getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
     listPriorReviewFindings: vi.fn(async () => []),
-    completeInteractionRun: vi.fn(async () => {}),
-    replaceReviewFindings: vi.fn(async () => {}),
-    markJobCompleted: vi.fn(async () => {}),
-    cancelInteractionRun: vi.fn(async () => {}),
-    failInteractionRun: vi.fn(async () => {}),
-    markJobCancelled: vi.fn(async () => {}),
-    markJobQueued: vi.fn(async () => {}),
-    markJobFailed: vi.fn(async () => {}),
   };
   const loadRoutingContext = vi.fn(async () =>
     wrapGitLabPlatformContext({
@@ -842,7 +858,7 @@ function createWorker(input: {
   );
   const cleanupWorkspace = vi.fn(async () => {});
 
-  return new ReviewWorker({
+  const worker = new ReviewWorker({
     storage: storage as never,
     tenantRegistry: {
       getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
@@ -903,4 +919,5 @@ function createWorker(input: {
     maxJobRetries: 3,
     retryBackoffMs: 5000,
   });
+  return { worker, job, transitionClaim };
 }

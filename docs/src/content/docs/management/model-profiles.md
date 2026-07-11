@@ -112,6 +112,37 @@ reviewphin model-profile add \
 
 When `--text-generation-model` is omitted, ReviewPhin uses the review model for all model-backed tasks. The text-generation model is used for lighter work such as memory coalescing and reply text.
 
+## Reasoning effort
+
+Set reasoning effort independently for each role with `--review-reasoning-effort` and `--text-generation-reasoning-effort`. Accepted values are `low`, `medium`, `high`, and `xhigh`.
+
+```bash
+reviewphin model-profile add \
+  --name gpt56-review \
+  --review-model gpt-5.6 \
+  --review-reasoning-effort high \
+  --text-generation-model gpt-5.6-mini \
+  --text-generation-reasoning-effort low \
+  --default
+```
+
+The two roles are independent — the text-generation effort does not inherit the review effort, even when the text-generation model falls back to the review model.
+
+When an effort is left unset (or cleared), ReviewPhin omits `reasoningEffort` from the model session entirely and the underlying harness keeps its own default. It does not substitute another value.
+
+Clear a previously set effort with the matching clear flag:
+
+```bash
+reviewphin model-profile add --name gpt56-review --clear-review-reasoning-effort
+reviewphin model-profile add --name gpt56-review --clear-text-generation-reasoning-effort
+```
+
+If a model and effort combination is not supported by the provider, ReviewPhin passes it through and surfaces the provider/CLI error unchanged rather than hiding it.
+
+:::note[Model availability]
+GPT-5.6 models are shown as examples. Availability depends on the account or organization entitlement of the token or key backing the profile — not every account can use every model or effort.
+:::
+
 ## Updating profiles
 
 Re-run `model-profile add` with the same `--name` to update fields. Nullable fields can be cleared:

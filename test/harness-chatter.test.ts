@@ -163,6 +163,76 @@ describe("HarnessChatterRunner", () => {
     );
   });
 
+  it("passes the text-generation reasoning effort for reply passes", async () => {
+    const run = vi.fn(async () => ({
+      response: { data: { content: JSON.stringify({ memory: null, replies: [] }) } },
+      parsed: { memory: null, replies: [] },
+      events: [],
+    }));
+
+    const runner = new HarnessChatterRunner({
+      modelConfig: {
+        ...createModelConfig(),
+        reviewReasoningEffort: "high",
+        textGenerationReasoningEffort: "low",
+      },
+      harnessRuntime: { run } as never,
+    });
+
+    await runner.run(
+      {
+        phase: "reply",
+        replyStyle: "direct-answer",
+        trigger: createTrigger(),
+        responseTargets: [createTrigger().responseTarget],
+        reviewContext: createReviewContext(),
+        projectMemory: { enabled: true, page: null, entries: [] },
+      },
+      { tenant: createTenantRuntimeContext() },
+    );
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoningEffort: "low" }),
+    );
+  });
+
+  it("omits reasoningEffort from the chatter run spec when text-generation effort is null", async () => {
+    const run = vi.fn(async () => ({
+      response: { data: { content: JSON.stringify({ memory: null, replies: [] }) } },
+      parsed: { memory: null, replies: [] },
+      events: [],
+    }));
+
+    const runner = new HarnessChatterRunner({
+      modelConfig: {
+        ...createModelConfig(),
+        reviewReasoningEffort: "high",
+        textGenerationReasoningEffort: null,
+      },
+      harnessRuntime: { run } as never,
+    });
+
+    await runner.run(
+      {
+        phase: "reply",
+        replyStyle: "direct-answer",
+        trigger: createTrigger(),
+        responseTargets: [createTrigger().responseTarget],
+        reviewContext: createReviewContext(),
+        projectMemory: { enabled: true, page: null, entries: [] },
+      },
+      { tenant: createTenantRuntimeContext() },
+    );
+
+    const spec = (run.mock.calls[0] as unknown[])[0] as Record<
+      string,
+      unknown
+    >;
+    expect(
+      Object.prototype.hasOwnProperty.call(spec, "reasoningEffort"),
+    ).toBe(false);
+  });
+
   it("uses the parsed shared-harness response payload for replies", async () => {
     const runner = new HarnessChatterRunner({
       modelConfig: createModelConfig(),
@@ -350,6 +420,8 @@ function createModelConfig(): HarnessModelConfig {
     selectionSource: "default",
     reviewModel: "gpt-5.4",
     textGenerationModel: "gpt-5.4-mini",
+    reviewReasoningEffort: null,
+    textGenerationReasoningEffort: null,
     authToken: null,
     provider: undefined,
     providerBaseUrl: null,

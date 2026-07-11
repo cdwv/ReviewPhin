@@ -26,9 +26,6 @@ describe("bot indexing policy", () => {
           throw new Error("unused");
         },
       } as never,
-      queue: {
-        enqueue: () => undefined,
-      } as never,
       platforms: [],
     });
 
@@ -61,9 +58,6 @@ describe("bot indexing policy", () => {
         createInteractionJobFromWebhook: async () => {
           throw new Error("unused");
         },
-      } as never,
-      queue: {
-        enqueue: () => undefined,
       } as never,
       platforms: [],
       allowBotIndexing: true,
@@ -102,9 +96,6 @@ describe("bot indexing policy", () => {
         createInteractionJobFromWebhook: async () => {
           throw new Error("unused");
         },
-      } as never,
-      queue: {
-        enqueue: () => undefined,
       } as never,
       platforms: [],
       botIndexingAllowedHosts: ["reviewphin.example.com"],

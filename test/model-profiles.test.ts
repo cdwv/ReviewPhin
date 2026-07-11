@@ -42,6 +42,8 @@ function createProfile(
     authToken: null,
     reviewModel: "gpt-5.4",
     textGenerationModel: null,
+    reviewReasoningEffort: null,
+    textGenerationReasoningEffort: null,
     isDefault: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -218,5 +220,83 @@ describe("model profile resolution", () => {
       provider: undefined,
       providerBaseUrl: null,
     });
+  });
+
+  it("preserves both reasoning-effort values independently without cross-role fallback", async () => {
+    const resolved = await resolveReviewProviderConfig({
+      storage: {
+        stores: {
+          modelProfiles: {
+            get: vi.fn(async () =>
+              createProfile("effort-profile", {
+                reviewModel: "gpt-5.6",
+                textGenerationModel: null,
+                reviewReasoningEffort: "high",
+                textGenerationReasoningEffort: null,
+              }),
+            ),
+            find: vi.fn(async () => null),
+          },
+        },
+      },
+      tenant,
+      codeReview: {
+        description: "No override here",
+      },
+    });
+
+    expect(resolved.reviewReasoningEffort).toBe("high");
+    expect(resolved.textGenerationReasoningEffort).toBeNull();
+    // text generation falls back to the review model but never to the review effort
+    expect(resolved.textGenerationModel).toBe("gpt-5.6");
+  });
+
+  it("keeps distinct reasoning-effort values for each role", async () => {
+    const resolved = await resolveReviewProviderConfig({
+      storage: {
+        stores: {
+          modelProfiles: {
+            get: vi.fn(async () =>
+              createProfile("dual-effort", {
+                reviewReasoningEffort: "xhigh",
+                textGenerationReasoningEffort: "low",
+              }),
+            ),
+            find: vi.fn(async () => null),
+          },
+        },
+      },
+      tenant,
+      codeReview: {
+        description: "No override here",
+      },
+    });
+
+    expect(resolved.reviewReasoningEffort).toBe("xhigh");
+    expect(resolved.textGenerationReasoningEffort).toBe("low");
+  });
+
+  it("sets both reasoning-effort values to null for the fallback configuration", async () => {
+    const resolved = await resolveReviewProviderConfig({
+      storage: {
+        stores: {
+          modelProfiles: {
+            get: vi.fn(async () => null),
+            find: vi.fn(async () => null),
+          },
+        },
+      },
+      tenant: {
+        ...tenant,
+        modelProfileName: null,
+      },
+      codeReview: {
+        description: "No override here",
+      },
+    });
+
+    expect(resolved.selectionSource).toBe("fallback");
+    expect(resolved.reviewReasoningEffort).toBeNull();
+    expect(resolved.textGenerationReasoningEffort).toBeNull();
   });
 });

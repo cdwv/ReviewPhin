@@ -30,9 +30,15 @@ import type {
 import type {
   CreateReviewFindingInput,
   InteractionJobRecord,
+  InteractionRunRecord,
   TenantRecord,
 } from "../storage/contract/index.js";
 import { listAll, type StorageHelpers } from "../storage/storage-helpers.js";
+import {
+  ClaimScopedStorage,
+  type JobClaimContext,
+  LeaseLostError,
+} from "../storage/storage-helpers.js";
 import type { TenantRegistry } from "../tenants/tenant-registry.js";
 import { createFindingIdentityKey } from "../utils/ids.js";
 
@@ -163,17 +169,79 @@ export class ReviewWorker {
     return platform.classifyWebhookTrigger(resolvedTenant, payload);
   }
 
-  public async processJob(
-    jobId: string,
-  ): Promise<{ requeueAfterMs?: number } | void> {
-    const job = await this.storage.stores.interactionJobs.get(jobId);
-    if (!job) {
-      this.logger.warn(
-        { interactionJobId: jobId },
-        "interaction job not found",
+  /**
+   * Best-effort trigger-lifecycle reconciliation for an orphaned interaction run
+   * that a runner has just marked failed. Maps the owning job's current state to
+   * a provider-side lifecycle action per the storage-v005 contract:
+   *
+   * - a queued job, or an in-progress job now owned by a different claim, maps to
+   *   `retry`;
+   * - a `failed`, `cancelled`, or `expired` job maps to `failed`;
+   * - a `completed` job performs no action because the winning attempt already
+   *   completed its lifecycle.
+   */
+  public async reconcileOrphanLifecycle(
+    run: InteractionRunRecord,
+  ): Promise<void> {
+    try {
+      const job = await this.storage.stores.interactionJobs.get(
+        run.interactionJobId,
       );
-      return;
+      if (!job) {
+        return;
+      }
+
+      const resolvedTenant = await this.tenantRegistry.getResolvedTenantById(
+        job.tenantId,
+      );
+      if (!resolvedTenant) {
+        return;
+      }
+
+      const platform = this.platformResolver(resolvedTenant.tenant.platform);
+      if (!platform) {
+        return;
+      }
+      const lifecycle = platform.createTriggerLifecycle({
+        resolvedTenant,
+        job,
+        logger: this.logger,
+      });
+
+      const message =
+        job.lastError ??
+        "Interaction run abandoned after its owning claim was lost.";
+      if (
+        job.status === "queued" ||
+        (job.status === "in_progress" &&
+          job.claimToken !== run.interactionJobClaimToken)
+      ) {
+        await lifecycle.retry(message);
+      } else if (
+        job.status === "failed" ||
+        job.status === "cancelled" ||
+        job.status === "expired"
+      ) {
+        await lifecycle.failed(message);
+      }
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          interactionRunId: run.id,
+          interactionJobId: run.interactionJobId,
+        },
+        "failed to reconcile orphaned run trigger lifecycle",
+      );
     }
+  }
+
+  public async processClaimedJob(
+    job: InteractionJobRecord,
+    context: JobClaimContext,
+  ): Promise<void> {
+    const jobStore = this.storage.stores.interactionJobs;
+    const scoped = new ClaimScopedStorage(this.storage.stores, context);
 
     const resolvedTenant = await this.tenantRegistry.getResolvedTenantById(
       job.tenantId,
@@ -189,10 +257,11 @@ export class ReviewWorker {
       logger: this.logger,
     });
 
-    await this.storage.markJobInProgress(job.id);
+    context.assertOwned();
     await this.syncTriggerLifecycle(job, "in_progress", () =>
       triggerLifecycle.inProgress(),
     );
+    context.assertOwned();
 
     let interactionRunId: string | null = null;
     let runArtifacts: InteractionRunArtifacts | null = null;
@@ -212,7 +281,7 @@ export class ReviewWorker {
     try {
       const runtime = this.reviewRuntimeFactory({
         platform,
-        storage: this.storage,
+        storage: scoped,
         logger: this.logger,
         tenant,
         connection,
@@ -222,10 +291,12 @@ export class ReviewWorker {
       });
       cleanupWorkspace = (workspace) => runtime.cleanupWorkspace(workspace);
       const parsedPayload = JSON.parse(job.payloadJson) as unknown;
+      context.assertOwned();
       let routingContext = await this.loadRoutingContext({
         runtime,
         job,
       });
+      context.assertOwned();
       workspacesToCleanup.push(routingContext.workspace);
       if (job.commentId !== null) {
         runtime.locateTriggerCommentReference({
@@ -245,17 +316,29 @@ export class ReviewWorker {
       const chatterRunner = this.chatterRunnerFactory.createRunner(
         resolvedProviderConfig,
       );
-      const interactionRun = await this.storage.createInteractionRun({
-        interactionJobId: job.id,
-        tenantId: tenant.id,
-        provider: reviewProvider.name,
-        model: resolvedProviderConfig.reviewModel,
-        modelProfileName: resolvedProviderConfig.modelProfileName,
-        providerBaseUrl: resolvedProviderConfig.providerBaseUrl,
-        providerType: resolvedProviderConfig.providerType,
-        textGenerationModel: resolvedProviderConfig.textGenerationModel,
+      context.assertOwned();
+      const interactionRun = await jobStore.createInteractionRunForClaim({
+        jobId: context.jobId,
+        claimToken: context.claimToken,
+        run: {
+          interactionJobId: job.id,
+          tenantId: tenant.id,
+          provider: reviewProvider.name,
+          model: resolvedProviderConfig.reviewModel,
+          modelProfileName: resolvedProviderConfig.modelProfileName,
+          providerBaseUrl: resolvedProviderConfig.providerBaseUrl,
+          providerType: resolvedProviderConfig.providerType,
+          textGenerationModel: resolvedProviderConfig.textGenerationModel,
+          reviewReasoningEffort: resolvedProviderConfig.reviewReasoningEffort,
+          textGenerationReasoningEffort:
+            resolvedProviderConfig.textGenerationReasoningEffort,
+        },
       });
+      if (!interactionRun) {
+        throw new LeaseLostError();
+      }
       interactionRunId = interactionRun.id;
+      context.interactionRunId = interactionRun.id;
       runArtifacts = new InteractionRunArtifacts(
         this.runLogDir,
         interactionRun.id,
@@ -263,7 +346,7 @@ export class ReviewWorker {
       await runArtifacts.initialize();
       const runRuntime = this.reviewRuntimeFactory({
         platform,
-        storage: this.storage,
+        storage: scoped,
         logger: this.logger,
         tenant,
         connection,
@@ -274,6 +357,7 @@ export class ReviewWorker {
         memoryEnabled: this.memoryEnabled,
       });
       if (job.commentId !== null) {
+        context.assertOwned();
         await runRuntime
           .resolveTriggerCommentReference({
             codeReviewId: job.codeReviewId,
@@ -283,10 +367,16 @@ export class ReviewWorker {
           .catch((error: unknown) => {
             throw new AbandonedReviewError(getErrorMessage(error));
           });
+        context.assertOwned();
       }
 
       await this.logRunEvent(runArtifacts, "info", "interaction run started", {
         interactionJobId: job.id,
+        interactionRunId: interactionRun.id,
+        interactionJobClaimToken: context.claimToken,
+        reviewReasoningEffort: interactionRun.reviewReasoningEffort,
+        textGenerationReasoningEffort:
+          interactionRun.textGenerationReasoningEffort,
         tenantId: tenant.id,
         codeReviewId: job.codeReviewId,
         modelProfileName: resolvedProviderConfig.modelProfileName,
@@ -318,12 +408,14 @@ export class ReviewWorker {
         },
         order: [{ field: "updatedAt", direction: "desc" }],
       });
+      context.assertOwned();
       mappings = await runtime.syncDiscussionFindingStatuses({
         tenant,
         codeReviewId: routingContext.codeReviewId,
         context: routingContext,
         mappings,
       });
+      context.assertOwned();
       const priorDiscussions = runtime.buildProviderDiscussions({
         context: routingContext,
         mappings,
@@ -366,11 +458,13 @@ export class ReviewWorker {
         rerunReason: interactionPlan.rerunReason,
       });
 
+      context.assertOwned();
       const imageAttachments = await runRuntime.materializeAttachments({
         context: routingContext,
         runArtifacts,
         trigger,
       });
+      context.assertOwned();
       let chatterContext = runtime.buildPromptContext({
         attachments: imageAttachments.breadcrumbs,
         attachmentIssues: imageAttachments.issues,
@@ -386,6 +480,7 @@ export class ReviewWorker {
       });
 
       if (interactionPlan.memoryCandidate && trigger.kind !== "manual-review") {
+        context.assertOwned();
         const memoryResult = await chatterRunner.run(
           {
             attachments: imageAttachments.attachments,
@@ -418,6 +513,7 @@ export class ReviewWorker {
           join("orchestration", "memory-result.json"),
           memoryResult,
         );
+        context.assertOwned();
         metricsContext = {
           sessionLogPath: runArtifacts.getCopilotSessionLogPath(
             chatterRunner.sessionPaths.memory,
@@ -429,10 +525,12 @@ export class ReviewWorker {
           promptContextComments: chatterContext.comments.length,
         };
 
+        context.assertOwned();
         routingContext = await this.loadRoutingContext({
           runtime: runRuntime,
           job,
         });
+        context.assertOwned();
         workspacesToCleanup.push(routingContext.workspace);
         chatterContext = runtime.buildPromptContext({
           attachments: imageAttachments.breadcrumbs,
@@ -454,18 +552,22 @@ export class ReviewWorker {
       let reconcileSummary: ReconcileSummary | null = null;
 
       if (interactionPlan.reviewNeeded) {
+        context.assertOwned();
         const hydratedContext = await this.hydrateContext({
           runtime: runRuntime,
           job,
           context: routingContext,
         });
+        context.assertOwned();
         workspacesToCleanup.push(hydratedContext.workspace);
+        context.assertOwned();
         mappings = await runRuntime.syncDiscussionFindingStatuses({
           tenant,
           codeReviewId: hydratedContext.codeReviewId,
           context: hydratedContext,
           mappings,
         });
+        context.assertOwned();
         priorFindings = await this.storage.listPriorReviewFindings(
           tenant.id,
           hydratedContext.codeReviewId,
@@ -499,6 +601,7 @@ export class ReviewWorker {
           },
         );
 
+        context.assertOwned();
         reviewResult = await reviewProvider.review(reviewContext, {
           attachments: imageAttachments.attachments,
           tenant: this.buildHarnessTenantContext({
@@ -516,35 +619,44 @@ export class ReviewWorker {
           reviewResult,
         );
 
-        await this.storage.replaceReviewFindings(
-          interactionRun.id,
-          reviewResult.findings.map((finding): CreateReviewFindingInput => {
-            const identityKey = createFindingIdentityKey({
-              title: finding.title,
-              category: finding.category,
-              path: finding.anchor?.path,
-              startLine: finding.anchor?.startLine,
-              endLine: finding.anchor?.endLine,
-              side: finding.anchor?.side,
-            });
-            return {
-              interactionRunId: interactionRun.id,
-              identityKey,
-              severity: finding.severity,
-              category: finding.category,
-              title: finding.title,
-              body: finding.body,
-              anchorJson: finding.anchor
-                ? JSON.stringify(finding.anchor)
-                : null,
-              suggestionJson: finding.suggestion
-                ? JSON.stringify(finding.suggestion)
-                : null,
-              status: "open",
-            };
-          }),
-        );
+        context.assertOwned();
+        const findingsPersisted = await jobStore.replaceReviewFindingsForClaim({
+          jobId: context.jobId,
+          claimToken: context.claimToken,
+          interactionRunId: interactionRun.id,
+          findings: reviewResult.findings.map(
+            (finding): CreateReviewFindingInput => {
+              const identityKey = createFindingIdentityKey({
+                title: finding.title,
+                category: finding.category,
+                path: finding.anchor?.path,
+                startLine: finding.anchor?.startLine,
+                endLine: finding.anchor?.endLine,
+                side: finding.anchor?.side,
+              });
+              return {
+                interactionRunId: interactionRun.id,
+                identityKey,
+                severity: finding.severity,
+                category: finding.category,
+                title: finding.title,
+                body: finding.body,
+                anchorJson: finding.anchor
+                  ? JSON.stringify(finding.anchor)
+                  : null,
+                suggestionJson: finding.suggestion
+                  ? JSON.stringify(finding.suggestion)
+                  : null,
+                status: "open",
+              };
+            },
+          ),
+        });
+        if (!findingsPersisted) {
+          throw new LeaseLostError();
+        }
 
+        context.assertOwned();
         reconcileSummary = await this.reconciler.reconcile({
           platform,
           tenant,
@@ -554,11 +666,14 @@ export class ReviewWorker {
           interactionJobId: job.id,
           interactionRunId: interactionRun.id,
           reviewResult,
+          storage: scoped,
+          guard: context,
           publicationAdapter: runRuntime.createReviewPublicationAdapter({
             context: hydratedContext,
             interactionRunId: interactionRun.id,
           }),
         });
+        context.assertOwned();
 
         metricsContext = {
           sessionLogPath: runArtifacts.getCopilotSessionLogPath([
@@ -584,6 +699,7 @@ export class ReviewWorker {
       }
 
       if (interactionPlan.replyNeeded && trigger.kind !== "manual-review") {
+        context.assertOwned();
         const replyResult = await chatterRunner.run(
           {
             attachments: imageAttachments.attachments,
@@ -622,11 +738,13 @@ export class ReviewWorker {
           replyResult,
         );
 
+        context.assertOwned();
         const publishOutcomes = await runRuntime.publishChatterReplies({
           codeReviewId: routingContext.codeReviewId,
           result: replyResult,
           plannedTargets: interactionPlan.responseTargets,
         });
+        context.assertOwned();
         await runArtifacts.writeJsonArtifact(
           join("orchestration", "reply-publish-outcomes.json"),
           publishOutcomes,
@@ -665,11 +783,36 @@ export class ReviewWorker {
         };
       }
 
-      await this.storage.completeInteractionRun(
-        interactionRun.id,
-        reviewResult ? JSON.stringify(reviewResult) : null,
-      );
-      await this.storage.markJobCompleted(job.id);
+      // Commit order: findings/metrics, run terminal transition, then job
+      // transition. Never transition the job first because clearing its claim
+      // would make the run transition unverifiable.
+      if (interactionRunId && runArtifacts && metricsContext) {
+        await this.persistInteractionRunMetrics(jobStore, context, {
+          interactionRunId,
+          ...metricsContext,
+        });
+      }
+
+      context.assertOwned();
+      const runCompleted = await jobStore.transitionInteractionRunForClaim({
+        jobId: context.jobId,
+        claimToken: context.claimToken,
+        interactionRunId: interactionRun.id,
+        status: "completed",
+        resultJson: reviewResult ? JSON.stringify(reviewResult) : null,
+        error: null,
+        finishedAt: new Date().toISOString(),
+      });
+      if (!runCompleted) {
+        throw new LeaseLostError();
+      }
+      // Publish the completed lifecycle while the claim is still active (the job
+      // has not yet been transitioned, so ownership is intact), then re-check
+      // ownership before releasing the claim. Never publish lifecycle mutations
+      // after the job transition clears ownership.
+      if (!this.claimIsOwned(context, job, "completed", interactionRunId)) {
+        return;
+      }
       await this.syncTriggerLifecycle(job, "completed", () =>
         triggerLifecycle.completed(
           runRuntime.buildTriggerOutcome({
@@ -678,6 +821,22 @@ export class ReviewWorker {
           }),
         ),
       );
+      if (!this.claimIsOwned(context, job, "completed", interactionRunId)) {
+        return;
+      }
+      const jobCompleted = await jobStore.transitionClaim({
+        jobId: context.jobId,
+        claimToken: context.claimToken,
+        status: "completed",
+        retryCount: job.retryCount,
+        lastError: null,
+        availableAt: job.availableAt,
+        finishedAt: new Date().toISOString(),
+      });
+      if (!jobCompleted) {
+        this.logJobLeaseLost(job, "completed", interactionRunId);
+        return;
+      }
       this.logger.info(
         {
           interactionJobId: job.id,
@@ -687,54 +846,84 @@ export class ReviewWorker {
         "interaction job completed",
       );
     } catch (error) {
+      if (error instanceof LeaseLostError) {
+        this.logJobLeaseLost(job, "processing", interactionRunId);
+        return;
+      }
+
       const errorMessage = getErrorMessage(error);
       const isAbandonedReview = error instanceof AbandonedReviewError;
 
+      if (runArtifacts) {
+        await this.logRunEvent(runArtifacts, "error", "interaction job failed", {
+          interactionJobId: job.id,
+          interactionRunId,
+          error: serializeError(error),
+        });
+      }
+
       if (interactionRunId) {
-        if (isAbandonedReview) {
-          await this.storage.cancelInteractionRun(
+        if (metricsContext) {
+          await this.persistInteractionRunMetrics(jobStore, context, {
             interactionRunId,
-            errorMessage,
-          );
-        } else {
-          await this.storage.failInteractionRun(interactionRunId, errorMessage);
+            ...metricsContext,
+          });
+        }
+        await jobStore.replaceReviewFindingsForClaim({
+          jobId: context.jobId,
+          claimToken: context.claimToken,
+          interactionRunId,
+          findings: [],
+        });
+        const runTransitioned = await jobStore.transitionInteractionRunForClaim({
+          jobId: context.jobId,
+          claimToken: context.claimToken,
+          interactionRunId,
+          status: isAbandonedReview ? "cancelled" : "failed",
+          resultJson: null,
+          error: errorMessage,
+          finishedAt: new Date().toISOString(),
+        });
+        if (!runTransitioned) {
+          this.logJobLeaseLost(job, "run-failure", interactionRunId);
+          return;
         }
       }
 
-      if (runArtifacts) {
-        await this.logRunEvent(
-          runArtifacts,
-          "error",
-          "interaction job failed",
-          {
-            interactionJobId: job.id,
-            interactionRunId,
-            error: serializeError(error),
-          },
-        );
-      }
-
       const nextRetryCount = job.retryCount + 1;
+      const now = new Date().toISOString();
+      let phase: "failed" | "retry";
+      let transition: {
+        status: "queued" | "failed" | "cancelled";
+        retryCount: number;
+        lastError: string | null;
+        availableAt: string;
+        finishedAt: string | null;
+      };
       if (isAbandonedReview) {
-        await this.storage.markJobCancelled(
-          job.id,
-          nextRetryCount,
-          errorMessage,
-        );
-        await this.syncTriggerLifecycle(job, "failed", () =>
-          triggerLifecycle.failed(errorMessage),
-        );
-        throw error;
-      }
-
-      if (
+        phase = "failed";
+        transition = {
+          status: "cancelled",
+          retryCount: nextRetryCount,
+          lastError: errorMessage,
+          availableAt: job.availableAt,
+          finishedAt: now,
+        };
+      } else if (
         !isNonRetryableReviewError(error) &&
         nextRetryCount <= this.maxJobRetries
       ) {
-        await this.storage.markJobQueued(job.id, nextRetryCount, errorMessage);
-        await this.syncTriggerLifecycle(job, "retry", () =>
-          triggerLifecycle.retry(errorMessage),
-        );
+        phase = "retry";
+        const availableAt = new Date(
+          Date.now() + this.retryBackoffMs * nextRetryCount,
+        ).toISOString();
+        transition = {
+          status: "queued",
+          retryCount: nextRetryCount,
+          lastError: errorMessage,
+          availableAt,
+          finishedAt: null,
+        };
         this.logger.warn(
           {
             err: error,
@@ -743,22 +932,43 @@ export class ReviewWorker {
           },
           "interaction job failed and will be retried",
         );
-        return { requeueAfterMs: this.retryBackoffMs * nextRetryCount };
+      } else {
+        phase = "failed";
+        transition = {
+          status: "failed",
+          retryCount: nextRetryCount,
+          lastError: errorMessage,
+          availableAt: job.availableAt,
+          finishedAt: now,
+        };
       }
 
-      await this.storage.markJobFailed(job.id, nextRetryCount, errorMessage);
-      await this.syncTriggerLifecycle(job, "failed", () =>
-        triggerLifecycle.failed(errorMessage),
+      // Publish the lifecycle mutation while the claim is still active (the job
+      // transition below is what releases ownership), then re-check ownership
+      // before transitioning the job. Never publish lifecycle mutations after
+      // ownership is released.
+      if (!this.claimIsOwned(context, job, phase, interactionRunId)) {
+        return;
+      }
+      await this.syncTriggerLifecycle(job, phase, () =>
+        phase === "retry"
+          ? triggerLifecycle.retry(errorMessage)
+          : triggerLifecycle.failed(errorMessage),
       );
-      throw error;
-    } finally {
-      if (interactionRunId && runArtifacts && metricsContext) {
-        await this.persistInteractionRunMetrics({
-          interactionRunId,
-          ...metricsContext,
-        });
-      }
 
+      if (!this.claimIsOwned(context, job, phase, interactionRunId)) {
+        return;
+      }
+      const jobTransitioned = await jobStore.transitionClaim({
+        jobId: context.jobId,
+        claimToken: context.claimToken,
+        ...transition,
+      });
+      if (!jobTransitioned) {
+        this.logJobLeaseLost(job, phase, interactionRunId);
+        return;
+      }
+    } finally {
       for (const workspace of Array.from(
         new Map(
           workspacesToCleanup.map((entry) => [entry.cleanupRoot, entry]),
@@ -817,43 +1027,85 @@ export class ReviewWorker {
     }
   }
 
-  private async persistInteractionRunMetrics(input: {
-    interactionRunId: string;
-    sessionLogPath: string;
-    triggerKind: string | null;
-    promptMode: string | null;
-    promptContextChangedFiles: number;
-    promptContextPriorDiscussions: number;
-    promptContextComments: number;
-  }): Promise<void> {
+  private logJobLeaseLost(
+    job: InteractionJobRecord,
+    phase: string,
+    interactionRunId?: string | null,
+  ): void {
+    this.logger.warn(
+      {
+        interactionJobId: job.id,
+        interactionRunId: interactionRunId ?? null,
+        phase,
+      },
+      "interaction job lease lost; stopping without further state updates",
+    );
+  }
+
+  private claimIsOwned(
+    context: JobClaimContext,
+    job: InteractionJobRecord,
+    phase: string,
+    interactionRunId?: string | null,
+  ): boolean {
+    try {
+      context.assertOwned();
+      return true;
+    } catch (error) {
+      if (!(error instanceof LeaseLostError)) {
+        throw error;
+      }
+      this.logJobLeaseLost(job, phase, interactionRunId);
+      return false;
+    }
+  }
+
+  private async persistInteractionRunMetrics(
+    jobStore: StorageHelpers["stores"]["interactionJobs"],
+    context: JobClaimContext,
+    input: {
+      interactionRunId: string;
+      sessionLogPath: string;
+      triggerKind: string | null;
+      promptMode: string | null;
+      promptContextChangedFiles: number;
+      promptContextPriorDiscussions: number;
+      promptContextComments: number;
+    },
+  ): Promise<void> {
     try {
       const metrics = await readHarnessRunMetrics(input.sessionLogPath);
       if (!metrics) {
         return;
       }
 
-      await this.storage.upsertInteractionRunMetrics({
+      await jobStore.upsertInteractionRunMetricsForClaim({
+        jobId: context.jobId,
+        claimToken: context.claimToken,
         interactionRunId: input.interactionRunId,
-        triggerKind: input.triggerKind,
-        promptMode: input.promptMode,
-        promptChars: metrics.promptChars,
-        promptContextChangedFiles: input.promptContextChangedFiles,
-        promptContextPriorDiscussions: input.promptContextPriorDiscussions,
-        promptContextComments: input.promptContextComments,
-        assistantTurns: metrics.assistantTurns,
-        assistantCalls: metrics.assistantCalls,
-        toolExecutions: metrics.toolExecutions,
-        viewToolCalls: metrics.viewToolCalls,
-        globToolCalls: metrics.globToolCalls,
-        inputTokens: metrics.inputTokens,
-        outputTokens: metrics.outputTokens,
-        cacheReadTokens: metrics.cacheReadTokens,
-        cacheWriteTokens: metrics.cacheWriteTokens,
-        reasoningTokens: metrics.reasoningTokens,
-        apiDurationMs: metrics.apiDurationMs,
-        premiumRequests: metrics.premiumRequests,
-        repeatedViewReads: metrics.repeatedViewReads,
-        repeatedViewPathsJson: JSON.stringify(metrics.repeatedViewPaths),
+        metrics: {
+          interactionRunId: input.interactionRunId,
+          triggerKind: input.triggerKind,
+          promptMode: input.promptMode,
+          promptChars: metrics.promptChars,
+          promptContextChangedFiles: input.promptContextChangedFiles,
+          promptContextPriorDiscussions: input.promptContextPriorDiscussions,
+          promptContextComments: input.promptContextComments,
+          assistantTurns: metrics.assistantTurns,
+          assistantCalls: metrics.assistantCalls,
+          toolExecutions: metrics.toolExecutions,
+          viewToolCalls: metrics.viewToolCalls,
+          globToolCalls: metrics.globToolCalls,
+          inputTokens: metrics.inputTokens,
+          outputTokens: metrics.outputTokens,
+          cacheReadTokens: metrics.cacheReadTokens,
+          cacheWriteTokens: metrics.cacheWriteTokens,
+          reasoningTokens: metrics.reasoningTokens,
+          apiDurationMs: metrics.apiDurationMs,
+          premiumRequests: metrics.premiumRequests,
+          repeatedViewReads: metrics.repeatedViewReads,
+          repeatedViewPathsJson: JSON.stringify(metrics.repeatedViewPaths),
+        },
       });
     } catch (error) {
       this.logger.warn(
@@ -904,6 +1156,9 @@ export class ReviewWorker {
         tenant: input.tenant,
         connection: input.connection,
       },
+      // Project-memory writes are intentionally outside v005 claim fencing.
+      // The surrounding session is checked before and after, but an in-flight
+      // memory update may finish after lease loss.
       storage: this.storage,
       logger: this.logger,
       memoryEnabled: input.memoryEnabled,

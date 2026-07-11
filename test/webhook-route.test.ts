@@ -91,15 +91,11 @@ describe("GitLab webhook route", () => {
       created: true,
     })),
   };
-  const queue = {
-    enqueue: vi.fn(),
-  };
 
   let appPromise = createApp({
     logger,
     tenantRegistry: tenantRegistry as never,
     reviewWorker: reviewWorker as never,
-    queue: queue as never,
     platforms: [
       new GitLabPlatform(logger.child({ component: "GitLabPlatform" })),
     ],
@@ -111,12 +107,10 @@ describe("GitLab webhook route", () => {
     tenantRegistry.resolveWebhookTenant.mockClear();
     reviewWorker.classifyWebhookTrigger.mockClear();
     reviewWorker.createInteractionJobFromWebhook.mockClear();
-    queue.enqueue.mockClear();
     appPromise = createApp({
       logger,
       tenantRegistry: tenantRegistry as never,
       reviewWorker: reviewWorker as never,
-      queue: queue as never,
       platforms: [
         new GitLabPlatform(logger.child({ component: "GitLabPlatform" })),
       ],
@@ -146,7 +140,6 @@ describe("GitLab webhook route", () => {
     expect(reviewWorker.createInteractionJobFromWebhook).toHaveBeenCalledTimes(
       1,
     );
-    expect(queue.enqueue).toHaveBeenCalledWith("job_1");
     const webhookRequestCalls = tenantRegistry.resolveWebhookTenant.mock
       .calls as unknown[][];
     const webhookRequest = webhookRequestCalls
@@ -205,7 +198,6 @@ describe("GitLab webhook route", () => {
     expect(reviewWorker.createInteractionJobFromWebhook).toHaveBeenCalledTimes(
       1,
     );
-    expect(queue.enqueue).toHaveBeenCalledWith("job_1");
   });
 
   it("ignores non-review comments", async () => {
@@ -227,6 +219,5 @@ describe("GitLab webhook route", () => {
     });
     expect(reviewWorker.classifyWebhookTrigger).toHaveBeenCalledTimes(1);
     expect(reviewWorker.createInteractionJobFromWebhook).not.toHaveBeenCalled();
-    expect(queue.enqueue).not.toHaveBeenCalled();
   });
 });

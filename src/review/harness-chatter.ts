@@ -72,6 +72,9 @@ export class HarnessChatterRunner {
         this.modelConfig.textGenerationModel ??
         this.modelConfig.reviewModel ??
         undefined,
+      ...(this.modelConfig.textGenerationReasoningEffort
+        ? { reasoningEffort: this.modelConfig.textGenerationReasoningEffort }
+        : {}),
       workingDirectory: context.reviewContext?.workspacePath,
       tenant: runtime.tenant,
       tools: [...tools],

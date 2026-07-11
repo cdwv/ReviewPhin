@@ -42,6 +42,7 @@ describe("storage runtime", () => {
         "sqlite:0008_v2_platform_connections",
         "sqlite:0009_v3_provider_triggers",
         "sqlite:0010_v4_project_memories",
+        "sqlite:0011_v5_job_claims_and_reasoning_effort",
       ]);
     } finally {
       await runtime.provider.close();

@@ -94,7 +94,6 @@ describe("GitHub webhook resolution", () => {
         classifyWebhookTrigger: vi.fn(),
         createInteractionJobFromWebhook: vi.fn(),
       } as never,
-      queue: { enqueue: vi.fn() } as never,
       platforms: [platform],
     });
 
@@ -265,7 +264,6 @@ describe("GitHub webhook resolution", () => {
         classifyWebhookTrigger: vi.fn(async () => null),
         createInteractionJobFromWebhook,
       } as never,
-      queue: { enqueue: vi.fn() } as never,
       platforms: [platform],
     });
 
@@ -318,7 +316,6 @@ describe("GitHub webhook resolution", () => {
         classifyWebhookTrigger: vi.fn(async () => null),
         createInteractionJobFromWebhook,
       } as never,
-      queue: { enqueue: vi.fn() } as never,
       platforms: [platform],
     });
     const payload = createPullRequestPayload("opened", "new-head");

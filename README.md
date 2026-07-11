@@ -366,7 +366,7 @@ Chatter uses the `textGenerationModel` from the active profile (falling back to 
 
 | Layer              | Technology                                                        |
 | ------------------ | ----------------------------------------------------------------- |
-| Runtime            | Node.js 22+ source runtime, Node.js 26 Docker image, TypeScript 6 |
+| Runtime            | Node.js 22.12+ source runtime, Node.js 26 Docker image, TypeScript 6 |
 | HTTP server        | Fastify 5                                                         |
 | AI runtime         | `@github/copilot-sdk` (Copilot CLI wrapper)                       |
 | Model APIs         | native Copilot, vLLM, Azure OpenAI, Anthropic                     |
@@ -397,7 +397,11 @@ All variables are optional unless noted. For local Docker from source, put them 
 | `RUN_LOG_DIR`                                        | `./data/run-logs`                | Root directory for per-review run artifacts                                        |
 | `WORKSPACE_ROOT`                                     | `./tmp/review-workspaces`        | Scratch directory for hydrated repositories                                        |
 | `MAX_JOB_RETRIES`                                    | `3`                              | Retry attempts for failed review jobs                                              |
-| `RETRY_BACKOFF_MS`                                   | `5000`                           | Delay (ms) between retries                                                         |
+| `RETRY_BACKOFF_MS`                                   | `5000`                           | Delay (ms) between retries; preserved across restarts by the persisted queue       |
+| `REVIEWPHIN_JOB_POLL_INTERVAL_MS`                    | `2000`                           | How often the runner polls storage for a claimable job (positive integer)          |
+| `REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS`                   | `21600000`                       | Max age from original enqueue before a queued job is expired (positive integer)    |
+| `REVIEWPHIN_JOB_LEASE_MS`                            | `120000`                         | Claim lease; heartbeat renews at one third of it (minimum `1000`)                  |
+| `REVIEWPHIN_JOB_RUNNER_ENABLED`                      | `true`                           | Set `false` for HTTP-only replicas that never claim or execute jobs                 |
 | `COPILOT_TIMEOUT_MS`                                 | `180000`                         | Model session timeout in milliseconds                                              |
 | `COPILOT_SDK_LOG_LEVEL`                              | _(none)_                         | SDK log verbosity: `none` \| `error` \| `warning` \| `info` \| `debug` \| `all`    |
 | `COPILOT_CLI_PATH`                                   | `/usr/local/bin/copilot` (image) | Path to the Copilot CLI binary                                                     |

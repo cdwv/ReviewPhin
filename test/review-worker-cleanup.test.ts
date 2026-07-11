@@ -6,6 +6,7 @@ import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
 import type { GitLabNoteHookPayload } from "../src/platforms/gitlab/types.js";
 import { createGitLabConnectionRecord } from "./helpers/gitlab-tenant.js";
+import { createClaimContext } from "./helpers/claim.js";
 import { wrapGitLabPlatformContext } from "./helpers/platform-context.js";
 import { overridePlatformRuntime } from "./helpers/platform-runtime.js";
 
@@ -145,10 +146,32 @@ describe("ReviewWorker cleanup", () => {
       finishedAt: null,
     };
 
+    const transitionInteractionRunForClaim = vi.fn(async () => true);
+    const transitionClaim = vi.fn(async () => true);
     const storage = {
       stores: {
         interactionJobs: {
           get: vi.fn(async () => job),
+          createInteractionRunForClaim: vi.fn(async () => ({
+            id: "run_1",
+            interactionJobId: job.id,
+            tenantId: tenant.id,
+            provider: "copilot-sdk",
+            model: null,
+            modelProfileName: null,
+            providerBaseUrl: null,
+            providerType: null,
+            textGenerationModel: null,
+            status: "in_progress",
+            resultJson: null,
+            error: null,
+            startedAt: new Date().toISOString(),
+            finishedAt: null,
+          })),
+          replaceReviewFindingsForClaim: vi.fn(async () => true),
+          transitionInteractionRunForClaim,
+          upsertInteractionRunMetricsForClaim: vi.fn(async () => true),
+          transitionClaim,
         },
         discussionMappings: {
           list: vi.fn(async () => []),
@@ -159,36 +182,11 @@ describe("ReviewWorker cleanup", () => {
         },
       },
       getInteractionJobById: vi.fn(async () => job),
-      markJobInProgress: vi.fn(async () => {}),
       listDiscussionMappings: vi.fn(async () => []),
-      createInteractionRun: vi.fn(async () => ({
-        id: "run_1",
-        interactionJobId: job.id,
-        tenantId: tenant.id,
-        provider: "copilot-sdk",
-        model: null,
-        modelProfileName: null,
-        providerBaseUrl: null,
-        providerType: null,
-        textGenerationModel: null,
-        status: "in_progress",
-        resultJson: null,
-        error: null,
-        startedAt: new Date().toISOString(),
-        finishedAt: null,
-      })),
       getModelProfileByName: vi.fn(async () => null),
       getDefaultModelProfile: vi.fn(async () => null),
       getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
       listPriorReviewFindings: vi.fn(async () => []),
-      completeInteractionRun: vi.fn(async () => {}),
-      replaceReviewFindings: vi.fn(async () => {}),
-      markJobCompleted: vi.fn(async () => {}),
-      cancelInteractionRun: vi.fn(async () => {}),
-      failInteractionRun: vi.fn(async () => {}),
-      markJobCancelled: vi.fn(async () => {}),
-      markJobQueued: vi.fn(async () => {}),
-      markJobFailed: vi.fn(async () => {}),
     };
     const loadRoutingContext = vi.fn(async () =>
       wrapGitLabPlatformContext({
@@ -338,10 +336,18 @@ describe("ReviewWorker cleanup", () => {
       retryBackoffMs: 5000,
     });
 
-    await expect(worker.processJob("job_1")).resolves.toBeUndefined();
-    expect(storage.markJobCompleted).toHaveBeenCalledTimes(1);
-    expect(storage.failInteractionRun).not.toHaveBeenCalled();
-    expect(storage.markJobFailed).not.toHaveBeenCalled();
+    await expect(
+      worker.processClaimedJob(job as never, createClaimContext(job.id)),
+    ).resolves.toBeUndefined();
+    expect(transitionInteractionRunForClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ interactionRunId: "run_1", status: "completed" }),
+    );
+    expect(transitionClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: job.id, status: "completed" }),
+    );
+    expect(transitionInteractionRunForClaim).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed" }),
+    );
 
     globalThis.fetch = originalFetch;
   });
@@ -424,10 +430,32 @@ describe("ReviewWorker cleanup", () => {
       finishedAt: null,
     };
 
+    const transitionInteractionRunForClaim = vi.fn(async () => true);
+    const transitionClaim = vi.fn(async () => true);
     const storage = {
       stores: {
         interactionJobs: {
           get: vi.fn(async () => job),
+          createInteractionRunForClaim: vi.fn(async () => ({
+            id: "run_1",
+            interactionJobId: job.id,
+            tenantId: tenant.id,
+            provider: "copilot-sdk",
+            model: null,
+            modelProfileName: null,
+            providerBaseUrl: null,
+            providerType: null,
+            textGenerationModel: null,
+            status: "in_progress",
+            resultJson: null,
+            error: null,
+            startedAt: new Date().toISOString(),
+            finishedAt: null,
+          })),
+          replaceReviewFindingsForClaim: vi.fn(async () => true),
+          transitionInteractionRunForClaim,
+          upsertInteractionRunMetricsForClaim: vi.fn(async () => true),
+          transitionClaim,
         },
         discussionMappings: {
           list: vi.fn(async () => []),
@@ -438,36 +466,11 @@ describe("ReviewWorker cleanup", () => {
         },
       },
       getInteractionJobById: vi.fn(async () => job),
-      markJobInProgress: vi.fn(async () => {}),
       listDiscussionMappings: vi.fn(async () => []),
-      createInteractionRun: vi.fn(async () => ({
-        id: "run_1",
-        interactionJobId: job.id,
-        tenantId: tenant.id,
-        provider: "copilot-sdk",
-        model: null,
-        modelProfileName: null,
-        providerBaseUrl: null,
-        providerType: null,
-        textGenerationModel: null,
-        status: "in_progress",
-        resultJson: null,
-        error: null,
-        startedAt: new Date().toISOString(),
-        finishedAt: null,
-      })),
       getModelProfileByName: vi.fn(async () => null),
       getDefaultModelProfile: vi.fn(async () => null),
       getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
       listPriorReviewFindings: vi.fn(async () => []),
-      completeInteractionRun: vi.fn(async () => {}),
-      replaceReviewFindings: vi.fn(async () => {}),
-      markJobCompleted: vi.fn(async () => {}),
-      cancelInteractionRun: vi.fn(async () => {}),
-      failInteractionRun: vi.fn(async () => {}),
-      markJobCancelled: vi.fn(async () => {}),
-      markJobQueued: vi.fn(async () => {}),
-      markJobFailed: vi.fn(async () => {}),
     };
     const cleanup = vi.fn(async () => {});
     const loadRoutingContext = vi.fn(async () =>
@@ -591,16 +594,24 @@ describe("ReviewWorker cleanup", () => {
       retryBackoffMs: 5000,
     });
 
-    await expect(worker.processJob("job_1")).rejects.toThrow(
-      'unknown model profile "missing-profile"',
+    await expect(
+      worker.processClaimedJob(job as never, createClaimContext(job.id)),
+    ).resolves.toBeUndefined();
+    expect(transitionClaim).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "queued" }),
     );
-    expect(storage.markJobQueued).not.toHaveBeenCalled();
-    expect(storage.markJobFailed).toHaveBeenCalledWith(
-      "job_1",
-      1,
-      'Tenant https://gitlab.example.com::123 references unknown model profile "missing-profile"',
+    expect(transitionClaim).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: job.id,
+        status: "failed",
+        retryCount: 1,
+        lastError:
+          'Tenant https://gitlab.example.com::123 references unknown model profile "missing-profile"',
+      }),
     );
-    expect(storage.failInteractionRun).not.toHaveBeenCalled();
+    expect(transitionInteractionRunForClaim).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed" }),
+    );
     expect(cleanup).toHaveBeenCalledWith(
       expect.objectContaining({
         cleanupRoot: join("tmp", "cleanup-routing"),

@@ -74,9 +74,6 @@ describe("provider setup routes", () => {
           throw new Error("unused");
         },
       } as never,
-      queue: {
-        enqueue: () => undefined,
-      } as never,
       platforms: [platform],
     });
 
@@ -154,9 +151,6 @@ describe("provider setup routes", () => {
           throw new Error("unused");
         },
       } as never,
-      queue: {
-        enqueue: () => undefined,
-      } as never,
       platforms: [platform],
       publicUrl: "https://review.example.com/reviewphin/",
       enableGitHubSetupSamples: true,
@@ -229,9 +223,6 @@ describe("provider setup routes", () => {
         createInteractionJobFromWebhook: async () => {
           throw new Error("unused");
         },
-      } as never,
-      queue: {
-        enqueue: () => undefined,
       } as never,
       platforms: [],
     });

@@ -131,6 +131,7 @@ declare module "@flotiq/flotiq-api-sdk" {
     instructionsJson: string;
     projectMemoryJson?: string;
     workspaceStrategy: string;
+    interactionRunId?: string;
   }
 
   export interface CodeReviewSnapshot extends CodeReviewSnapshotBase {
@@ -166,6 +167,7 @@ declare module "@flotiq/flotiq-api-sdk" {
       | "instructionsJson"
       | "projectMemoryJson"
       | "workspaceStrategy"
+      | "interactionRunId"
     >;
   }
 
@@ -267,8 +269,13 @@ declare module "@flotiq/flotiq-api-sdk" {
     retryCount: number;
     lastError?: string;
     enqueuedAt: string;
+    availableAt: string;
     startedAt?: string;
     finishedAt?: string;
+    claimToken?: string;
+    claimedBy?: string;
+    claimExpiresAt?: string;
+    latestInteractionRunId?: string;
   }
 
   export interface InteractionJob extends InteractionJobBase {
@@ -298,8 +305,13 @@ declare module "@flotiq/flotiq-api-sdk" {
       | "retryCount"
       | "lastError"
       | "enqueuedAt"
+      | "availableAt"
       | "startedAt"
       | "finishedAt"
+      | "claimToken"
+      | "claimedBy"
+      | "claimExpiresAt"
+      | "latestInteractionRunId"
     >;
   }
 
@@ -336,6 +348,9 @@ declare module "@flotiq/flotiq-api-sdk" {
     error?: string;
     startedAt: string;
     finishedAt?: string;
+    interactionJobClaimToken?: string;
+    reviewReasoningEffort?: "low" | "medium" | "high" | "xhigh";
+    textGenerationReasoningEffort?: "low" | "medium" | "high" | "xhigh";
   }
 
   export interface InteractionRun extends InteractionRunBase {
@@ -377,6 +392,9 @@ declare module "@flotiq/flotiq-api-sdk" {
       | "error"
       | "startedAt"
       | "finishedAt"
+      | "interactionJobClaimToken"
+      | "reviewReasoningEffort"
+      | "textGenerationReasoningEffort"
     >;
   }
 
@@ -482,6 +500,8 @@ declare module "@flotiq/flotiq-api-sdk" {
     authToken?: string;
     reviewModel?: string;
     textGenerationModel?: string;
+    reviewReasoningEffort?: "low" | "medium" | "high" | "xhigh";
+    textGenerationReasoningEffort?: "low" | "medium" | "high" | "xhigh";
     wireApi?: "completions" | "responses";
     isDefault: boolean;
   }
@@ -500,6 +520,8 @@ declare module "@flotiq/flotiq-api-sdk" {
       | "authToken"
       | "reviewModel"
       | "textGenerationModel"
+      | "reviewReasoningEffort"
+      | "textGenerationReasoningEffort"
       | "wireApi"
       | "isDefault"
     >;

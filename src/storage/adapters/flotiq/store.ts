@@ -14,6 +14,7 @@ import type {
 } from "../../contract/index.js";
 
 type JsonRecord = Record<string, unknown>;
+const GET_MANY_PAGE_SIZE = 100;
 
 interface FlotiqEntityStoreOptions<
   TEntity extends object,
@@ -204,7 +205,16 @@ export function createFlotiqEntityStore<
       return [];
     }
 
-    const remoteObjects = await fetchRemoteObjects({ ids: [...ids] });
+    const remoteObjects: TObject[] = [];
+    for (let offset = 0; offset < ids.length; offset += GET_MANY_PAGE_SIZE) {
+      const pageIds = ids.slice(offset, offset + GET_MANY_PAGE_SIZE);
+      remoteObjects.push(
+        ...(await fetchRemoteObjects({
+          ids: pageIds,
+          pageSize: pageIds.length,
+        })),
+      );
+    }
     const recordsById = new Map(
       remoteObjects.map((object) => [object.id, options.toRecord(object)]),
     );

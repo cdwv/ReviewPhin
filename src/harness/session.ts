@@ -74,6 +74,7 @@ export class HarnessSessionRuntime {
       logDir: resolveLogDir(this.runLogDir, spec),
       prompt: spec.prompt,
       model: spec.model,
+      reasoningEffort: spec.reasoningEffort,
       logging: spec.logging,
       metadata: spec.metadata,
     });
@@ -104,6 +105,9 @@ export class HarnessSessionRuntime {
           ? { workingDirectory: spec.workingDirectory }
           : {}),
         ...(spec.model ? { model: spec.model } : {}),
+        ...(spec.reasoningEffort
+          ? { reasoningEffort: spec.reasoningEffort }
+          : {}),
         ...(spec.modelConfig.provider
           ? { provider: spec.modelConfig.provider }
           : {}),

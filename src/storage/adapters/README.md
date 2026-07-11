@@ -17,7 +17,7 @@ The app loads the module from `STORAGE_PROVIDER_MODULE` when set, otherwise it u
 ## Compatibility rules
 
 - Your adapter must report an exact storage contract revision match.
-- The current required revision is `storage-v004`.
+- The current required revision is `storage-v005`.
 - Adapters must expose `platformConnections`; every tenant requires
   `platformConnectionId`.
 - Connection names are globally unique. SQLite migration
@@ -32,6 +32,22 @@ The app loads the module from `STORAGE_PROVIDER_MODULE` when set, otherwise it u
 - Project memory is a first-class `projectMemories` store. Each record is
   tenant-scoped, uses the tenant id as its record id, and stores serialized
   memory entries in `entriesJson`.
+- `storage-v005` (breaking) makes the interaction-job store claim-aware. It must
+  expose a `claimMode` (`"atomic"` or `"single-worker"`) and implement the
+  claim-scoped operations (`claimNext`, `renewClaim`, `transitionClaim`,
+  `expireQueued`, `reconcileOrphanedInteractionRuns`, and the `*ForClaim`
+  run/finding/metric/snapshot/mapping methods). Claim-scoped methods return
+  `false`/`null` on lease loss, and ordinary `EntityStore` mutations of an
+  existing `in_progress` job must be rejected so fencing cannot be bypassed.
+  `"atomic"` adapters (SQLite, via `BEGIN IMMEDIATE`) guarantee global
+  single-review execution; `"single-worker"` adapters (Flotiq) require a single
+  runner process while other replicas run with `REVIEWPHIN_JOB_RUNNER_ENABLED=false`.
+  A reusable single-worker queue helper is available for adapters that declare
+  that topology. The v005 migration adds `availableAt` (backfilled from
+  `enqueuedAt`), claim fields, `latestInteractionRunId`, the `"expired"` status,
+  nullable reasoning-effort fields on model profiles and runs, the run claim-token
+  snapshot, and nullable `interactionRunId` on code-review snapshots; stop all
+  v004 processes before migrating.
 - The app validates compatibility in two phases:
   1. `getSupportedStorageContract()` is checked before `prepare()` is called.
   2. `prepare()` must return a `StoragePreparationResult` whose `storageContractRevision` is also checked after `prepare()` returns.
@@ -59,7 +75,7 @@ The core app owns:
 
 - Keep stores CRUD/store-shaped around one persisted entity at a time.
 - Keep provider-specific transport and schema details out of the app.
-- Expose only the standard store contract (`get`, `getMany`, `find`, `list`, `upsert`, `upsertMany`, `replace`, `replaceMany`, `update`, `updateMany`, `patch`, `patchMany`, `delete`, `deleteMany`).
+- Expose only the standard store contract (`get`, `getMany`, `find`, `list`, `upsert`, `upsertMany`, `replace`, `replaceMany`, `update`, `updateMany`, `patch`, `patchMany`, `delete`, `deleteMany`). The interaction-job store additionally extends this contract with the `storage-v005` claim-aware operations described above.
 - If the app needs a query the filters/order contract cannot express efficiently, extend the shared filter/order types explicitly rather than adding provider-specific methods.
 
 ## Migrations

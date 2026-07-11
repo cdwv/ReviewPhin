@@ -34,6 +34,18 @@ const envSchema = z.object({
   WORKSPACE_ROOT: z.string().min(1).default("./tmp/review-workspaces"),
   MAX_JOB_RETRIES: z.coerce.number().int().min(0).default(3),
   RETRY_BACKOFF_MS: z.coerce.number().int().min(0).default(5_000),
+  REVIEWPHIN_JOB_POLL_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(2_000),
+  REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(21_600_000),
+  REVIEWPHIN_JOB_LEASE_MS: z.coerce.number().int().min(1_000).default(120_000),
+  REVIEWPHIN_JOB_RUNNER_ENABLED: z.enum(["true", "false"]).default("true"),
   COPILOT_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
   REVIEWPHIN_MEMORY_ENABLED: z.enum(["true", "false"]).default("true"),
   REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS: z.coerce
@@ -68,6 +80,10 @@ export interface AppConfig {
   workspaceRoot: string;
   maxJobRetries: number;
   retryBackoffMs: number;
+  jobPollIntervalMs: number;
+  maxQueuedJobAgeMs: number;
+  jobLeaseMs: number;
+  jobRunnerEnabled: boolean;
   copilotTimeoutMs: number;
   memoryEnabled: boolean;
   maxPromptMemoryChars: number;
@@ -96,6 +112,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     WORKSPACE_ROOT: env.WORKSPACE_ROOT,
     MAX_JOB_RETRIES: env.MAX_JOB_RETRIES,
     RETRY_BACKOFF_MS: env.RETRY_BACKOFF_MS,
+    REVIEWPHIN_JOB_POLL_INTERVAL_MS: env.REVIEWPHIN_JOB_POLL_INTERVAL_MS,
+    REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS: env.REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS,
+    REVIEWPHIN_JOB_LEASE_MS: env.REVIEWPHIN_JOB_LEASE_MS,
+    REVIEWPHIN_JOB_RUNNER_ENABLED: env.REVIEWPHIN_JOB_RUNNER_ENABLED?.toLowerCase(),
     COPILOT_TIMEOUT_MS: env.COPILOT_TIMEOUT_MS,
     REVIEWPHIN_MEMORY_ENABLED: env.REVIEWPHIN_MEMORY_ENABLED?.toLowerCase(),
     REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS: env.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,
@@ -120,6 +140,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     workspaceRoot: resolve(parsedEnv.WORKSPACE_ROOT),
     maxJobRetries: parsedEnv.MAX_JOB_RETRIES,
     retryBackoffMs: parsedEnv.RETRY_BACKOFF_MS,
+    jobPollIntervalMs: parsedEnv.REVIEWPHIN_JOB_POLL_INTERVAL_MS,
+    maxQueuedJobAgeMs: parsedEnv.REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS,
+    jobLeaseMs: parsedEnv.REVIEWPHIN_JOB_LEASE_MS,
+    jobRunnerEnabled: parsedEnv.REVIEWPHIN_JOB_RUNNER_ENABLED === "true",
     copilotTimeoutMs: parsedEnv.COPILOT_TIMEOUT_MS,
     memoryEnabled: parsedEnv.REVIEWPHIN_MEMORY_ENABLED === "true",
     maxPromptMemoryChars: parsedEnv.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,

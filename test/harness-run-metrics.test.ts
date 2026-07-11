@@ -17,6 +17,7 @@ describe("Copilot run metrics", () => {
         codeReviewId: 7,
         workspacePath,
         requestedModel: "gpt-5.4",
+        requestedReasoningEffort: null,
         sessionKind: "review",
       },
       prompt: "Review this merge request.",

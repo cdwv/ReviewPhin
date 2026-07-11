@@ -946,6 +946,11 @@ function createConnection(): PlatformConnectionRecord {
 function createJob(): InteractionJobRecord {
   return {
     id: "job-github",
+    availableAt: "2026-06-11T00:00:00.000Z",
+    claimToken: null,
+    claimedBy: null,
+    claimExpiresAt: null,
+    latestInteractionRunId: null,
     tenantId: "tenant-github",
     dedupeKey: "dedupe",
     codeReviewId: 42,
