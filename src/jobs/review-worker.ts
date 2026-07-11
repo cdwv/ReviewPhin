@@ -317,28 +317,20 @@ export class ReviewWorker {
         resolvedProviderConfig,
       );
       context.assertOwned();
-      const interactionRun = await jobStore.createInteractionRunForClaim({
-        jobId: context.jobId,
-        claimToken: context.claimToken,
-        run: {
-          interactionJobId: job.id,
-          tenantId: tenant.id,
-          provider: reviewProvider.name,
-          model: resolvedProviderConfig.reviewModel,
-          modelProfileName: resolvedProviderConfig.modelProfileName,
-          providerBaseUrl: resolvedProviderConfig.providerBaseUrl,
-          providerType: resolvedProviderConfig.providerType,
-          textGenerationModel: resolvedProviderConfig.textGenerationModel,
-          reviewReasoningEffort: resolvedProviderConfig.reviewReasoningEffort,
-          textGenerationReasoningEffort:
-            resolvedProviderConfig.textGenerationReasoningEffort,
-        },
+      const interactionRun = await scoped.createInteractionRun({
+        interactionJobId: job.id,
+        tenantId: tenant.id,
+        provider: reviewProvider.name,
+        model: resolvedProviderConfig.reviewModel,
+        modelProfileName: resolvedProviderConfig.modelProfileName,
+        providerBaseUrl: resolvedProviderConfig.providerBaseUrl,
+        providerType: resolvedProviderConfig.providerType,
+        textGenerationModel: resolvedProviderConfig.textGenerationModel,
+        reviewReasoningEffort: resolvedProviderConfig.reviewReasoningEffort,
+        textGenerationReasoningEffort:
+          resolvedProviderConfig.textGenerationReasoningEffort,
       });
-      if (!interactionRun) {
-        throw new LeaseLostError();
-      }
       interactionRunId = interactionRun.id;
-      context.interactionRunId = interactionRun.id;
       runArtifacts = new InteractionRunArtifacts(
         this.runLogDir,
         interactionRun.id,
@@ -796,18 +788,10 @@ export class ReviewWorker {
       }
 
       context.assertOwned();
-      const runCompleted = await jobStore.transitionInteractionRunForClaim({
-        jobId: context.jobId,
-        claimToken: context.claimToken,
-        interactionRunId: interactionRun.id,
-        status: "completed",
-        resultJson: reviewResult ? JSON.stringify(reviewResult) : null,
-        error: null,
-        finishedAt: new Date().toISOString(),
-      });
-      if (!runCompleted) {
-        throw new LeaseLostError();
-      }
+      await scoped.completeInteractionRun(
+        interactionRun.id,
+        reviewResult ? JSON.stringify(reviewResult) : null,
+      );
       // Publish the completed lifecycle while the claim is still active (the job
       // has not yet been transitioned, so ownership is intact), then re-check
       // ownership before releasing the claim. Never publish lifecycle mutations
@@ -877,16 +861,16 @@ export class ReviewWorker {
           interactionRunId,
           findings: [],
         });
-        const runTransitioned = await jobStore.transitionInteractionRunForClaim({
-          jobId: context.jobId,
-          claimToken: context.claimToken,
-          interactionRunId,
-          status: isAbandonedReview ? "cancelled" : "failed",
-          resultJson: null,
-          error: errorMessage,
-          finishedAt: new Date().toISOString(),
-        });
-        if (!runTransitioned) {
+        try {
+          if (isAbandonedReview) {
+            await scoped.cancelInteractionRun(interactionRunId, errorMessage);
+          } else {
+            await scoped.failInteractionRun(interactionRunId, errorMessage);
+          }
+        } catch (transitionError) {
+          if (!(transitionError instanceof LeaseLostError)) {
+            throw transitionError;
+          }
           this.logJobLeaseLost(job, "run-failure", interactionRunId);
           return;
         }
