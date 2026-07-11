@@ -266,6 +266,8 @@ describe("Flotiq entity store adapter", () => {
           authToken: null,
           reviewModel: null,
           textGenerationModel: null,
+          reviewReasoningEffort: null,
+          textGenerationReasoningEffort: null,
           isDefault: Boolean(readPath(item, "isDefault")),
           createdAt: readPath(item, "internal.createdAt") as string,
           updatedAt: readPath(item, "internal.updatedAt") as string,
@@ -299,6 +301,55 @@ describe("Flotiq entity store adapter", () => {
     } finally {
       consoleDebugSpy.mockRestore();
     }
+  });
+
+  it("chunks getMany requests and preserves the requested id order", async () => {
+    const remoteItems = Array.from({ length: 105 }, (_, index) => {
+      const id = `profile-${index.toString().padStart(3, "0")}`;
+      return {
+        id,
+        name: id,
+        internal: {
+          contentType: "model_profile" as const,
+          createdAt: "2026-05-07T09:00:00.000Z",
+          updatedAt: "2026-05-07T09:00:00.000Z",
+          deletedAt: "",
+          objectTitle: id,
+          latestVersion: 1,
+          status: "public",
+          publishedAt: "2026-05-07T09:00:00.000Z",
+          publicVersion: 1,
+        },
+      };
+    });
+    const api = new InMemoryFlotiqCollection<RemoteModelProfile>(remoteItems);
+    const requestedIds = remoteItems.map(({ id }) => id).reverse();
+    const store = createFlotiqEntityStore<
+      { id: string },
+      Record<string, never>,
+      never,
+      RemoteModelProfile,
+      string
+    >({
+      ctdName: "model_profile",
+      api: api as unknown as TestFlotiqApi<RemoteModelProfile>,
+      toRecord: ({ id }) => ({ id }),
+      toRemote: ({ id }) => ({ id }),
+    });
+
+    expect(await store.getMany(requestedIds)).toEqual(
+      requestedIds.map((id) => ({ id })),
+    );
+    expect(api.listCalls).toEqual([
+      {
+        ids: requestedIds.slice(0, 100),
+        limit: 100,
+      },
+      {
+        ids: requestedIds.slice(100),
+        limit: 5,
+      },
+    ]);
   });
 
   it("uses Flotiq ids and maps supported server filters", async () => {
@@ -365,6 +416,8 @@ describe("Flotiq entity store adapter", () => {
         authToken: null,
         reviewModel: null,
         textGenerationModel: null,
+        reviewReasoningEffort: null,
+        textGenerationReasoningEffort: null,
         isDefault: Boolean(readPath(item, "isDefault")),
         createdAt: readPath(item, "internal.createdAt") as string,
         updatedAt: readPath(item, "internal.updatedAt") as string,
@@ -457,6 +510,8 @@ describe("Flotiq entity store adapter", () => {
       authToken: null,
       reviewModel: null,
       textGenerationModel: null,
+      reviewReasoningEffort: null,
+      textGenerationReasoningEffort: null,
       isDefault: false,
       createdAt: "2026-05-07T11:00:00.000Z",
       updatedAt: "2026-05-07T11:00:00.000Z",
@@ -488,6 +543,8 @@ describe("Flotiq entity store adapter", () => {
         authToken: null,
         reviewModel: null,
         textGenerationModel: null,
+        reviewReasoningEffort: null,
+        textGenerationReasoningEffort: null,
         isDefault: true,
         createdAt: "2026-05-07T09:00:00.000Z",
         updatedAt: "2026-05-07T12:00:00.000Z",
@@ -500,6 +557,8 @@ describe("Flotiq entity store adapter", () => {
         authToken: null,
         reviewModel: null,
         textGenerationModel: null,
+        reviewReasoningEffort: null,
+        textGenerationReasoningEffort: null,
         isDefault: false,
         createdAt: "2026-05-07T13:00:00.000Z",
         updatedAt: "2026-05-07T13:00:00.000Z",
@@ -519,6 +578,10 @@ describe("Flotiq entity store adapter", () => {
         wireApi: null,
       },
     ]);
+    expect(api.listCalls.at(-1)).toMatchObject({
+      ids: ["alpha", "delta"],
+      limit: 2,
+    });
     expect(api.batchUpdateCalls.at(-1)).toEqual([
       {
         id: "alpha",
@@ -574,6 +637,8 @@ describe("Flotiq entity store adapter", () => {
           authToken: null,
           reviewModel: null,
           textGenerationModel: null,
+          reviewReasoningEffort: null,
+          textGenerationReasoningEffort: null,
           isDefault: true,
           createdAt: "2026-05-07T09:00:00.000Z",
           updatedAt: "2026-05-07T14:00:00.000Z",

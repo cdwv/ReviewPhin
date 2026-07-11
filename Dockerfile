@@ -30,7 +30,7 @@ RUN pnpm install --frozen-lockfile \
 
 FROM node:26-bookworm-slim AS runtime
 
-ARG COPILOT_CLI_VERSION=1.0.36
+ARG COPILOT_CLI_VERSION=1.0.70
 
 ENV NODE_ENV=production \
   HOST=0.0.0.0 \

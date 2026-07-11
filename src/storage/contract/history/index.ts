@@ -81,6 +81,23 @@ export const STORAGE_CONTRACT_HISTORY = [
       "Tenant deletion removes the tenant project memory record and reports its count.",
     ],
   },
+  {
+    id: "storage-v005",
+    summary:
+      "Claim-aware interaction-job queue with leases and optional reasoning effort.",
+    changeKind: "breaking",
+    affectedSurfaces: [
+      "interaction-jobs",
+      "interaction-runs",
+      "code-review-snapshots",
+      "model-profiles",
+    ],
+    providerNotes: [
+      "Adapters implement a claim-aware interaction-job store with atomic or single-worker claim semantics.",
+      "Interaction jobs add availableAt, claim fields, latestInteractionRunId, and the terminal expired status.",
+      "Runs snapshot the owning claim token and both reasoning-effort values; profiles and snapshots add matching fields.",
+    ],
+  },
 ] as const satisfies readonly StorageContractRevisionMetadata[];
 
 export type StorageContractRevisionId =

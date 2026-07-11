@@ -20,11 +20,11 @@ This page covers **operating** storage: choosing a provider, configuring it, bac
 
 </details>
 
-| Provider | Status | Best for |
-| --- | --- | --- |
-| SQLite | Built in, default | Single-container and simple production deployments |
-| Flotiq | Built in | Hosted storage with an admin panel |
-| Custom | Module loading | Teams needing PostgreSQL, MySQL, cloud KV, or internal storage |
+| Provider | Status            | Best for                                                       |
+| -------- | ----------------- | -------------------------------------------------------------- |
+| SQLite   | Built in, default | Single-container and simple production deployments             |
+| Flotiq   | Built in          | Hosted storage with an admin panel                             |
+| Custom   | Module loading    | Teams needing PostgreSQL, MySQL, cloud KV, or internal storage |
 
 ## SQLite
 
@@ -35,6 +35,8 @@ SQLITE_DATABASE_PATH=./data/review-worker.sqlite
 ```
 
 In Docker and Kubernetes, keep the database directory on persistent storage so it survives container replacement. The adapter runs idempotent schema migrations on startup; history is tracked in the database and in source under `src/storage/adapters/sqlite/migrations/`.
+
+SQLite claims jobs atomically inside adapter-local transactions (`claimMode: "atomic"`). This guarantees one active review globally even when several ReviewPhin processes share the database, so every replica may run the job runner.
 
 ### Backup
 
@@ -62,6 +64,8 @@ STORAGE_PROVIDER_MODULE=flotiq
 
 The API key must be able to manage content type definitions. On first startup the adapter creates or updates the required content type definitions.
 
+Flotiq has no compare-and-set transaction spanning job selection and update, so it reports `claimMode: "single-worker"`. Only **one** ReviewPhin process may run the job runner. Any additional HTTP replicas must set `REVIEWPHIN_JOB_RUNNER_ENABLED=false`. Every process using a single-worker adapter logs a warning that restates this topology. Global single-review execution across competing runner processes is guaranteed only by `atomic` adapters like SQLite. CLI processes may administer and observe storage under either claim mode because they never claim or execute jobs.
+
 ## Custom adapters
 
 Set the module path or package name:
@@ -70,7 +74,11 @@ Set the module path or package name:
 STORAGE_PROVIDER_MODULE=@my-org/reviewphin-postgres
 ```
 
-A custom adapter must report the current storage contract revision, `storage-v004`. Implementation details are in [custom storage adapters](../../development/custom-storage/).
+A custom adapter must report the current storage contract revision, `storage-v005`, and implement claim-aware interaction-job operations. Implementation details are in [custom storage adapters](../../development/custom-storage/).
+
+### Upgrading to storage-v005
+
+`storage-v005` is a breaking revision that adds job leases and claim fields. Before applying its migration, **stop all older (v004) processes** so an old worker cannot keep running after its job row is recovered. Built-in migrations preserve existing rows and backfill each job's `availableAt` from its `enqueuedAt`; a legacy in-progress job with no claim fields is treated as an expired lease and recovered on the first claim pass.
 
 ## Migrating between adapters
 

@@ -11,7 +11,6 @@ import Fastify, {
 } from "fastify";
 import type { Logger } from "pino";
 
-import type { JobQueue } from "./jobs/job-queue.js";
 import type { ReviewWorker } from "./jobs/review-worker.js";
 import type { IPlatform } from "./platforms/IPlatform.js";
 import {
@@ -33,7 +32,6 @@ interface AppOptions {
   logger: Logger;
   tenantRegistry: TenantRegistry;
   reviewWorker: ReviewWorker;
-  queue: JobQueue;
   platforms?: readonly IPlatform[] | undefined;
   storage?: StorageHelpers | undefined;
   publicUrl?: string | undefined;
@@ -250,9 +248,6 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
           resolvedTenant,
           trigger,
         );
-      if (created) {
-        options.queue.enqueue(job.id);
-      }
 
       return reply.code(202).send({
         accepted: true,

@@ -9,8 +9,10 @@ import type { HydratedMergeRequestContext } from "../src/platforms/gitlab/types.
 import { createLogger } from "../src/logger.js";
 import {
   buildProviderDiscussions,
+  ClaimGuardedReviewPublicationAdapter,
   DiscussionReconciler,
 } from "../src/reconcile/discussion-reconciler.js";
+import { LeaseLostError } from "../src/storage/storage-helpers.js";
 import { REVIEW_SUMMARY_NOTE_MARKER } from "../src/review/summary.js";
 import type { ReviewSummaryContext } from "../src/review/types.js";
 import { createFindingIdentityKey } from "../src/utils/ids.js";
@@ -3052,13 +3054,107 @@ describe("Discussion reconciler", () => {
         commentId: "600",
       }),
     );
-    expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "mapping-github",
-        platformDiscussionId: "review-comment:600",
-        platformCommentId: 600,
+  });
+
+  it("fences provider publication when the claim guard reports lease loss", async () => {
+    const storage = {
+      upsertDiscussionMapping: vi.fn(async (input) => ({
+        id: "map_new",
+        ...input,
+      })),
+      updateReviewFindingStatus: vi.fn(async () => true),
+      listLatestReviewFindings: vi.fn(async () => []),
+    };
+    const reconciler = new DiscussionReconciler({
+      storage: storage as never,
+      logger,
+    });
+
+    const loadDiscussions = vi.fn(async () => []);
+    const publishFindings = vi.fn();
+    const mutateDiscussion = vi.fn();
+    const upsertSummary = vi.fn();
+
+    const guard = {
+      assertOwned: vi.fn(() => {
+        throw new LeaseLostError();
       }),
+    };
+
+    await expect(
+      reconciler.reconcile({
+        platform,
+        tenant,
+        context: createHydratedContext({ discussions: [] }),
+        mappings: [],
+        interactionRunId: "run_1",
+        interactionJobId: "job-lease",
+        reviewResult: {
+          overview: {
+            summary: "Found one issue",
+            overallSeverity: "medium",
+          },
+          findings: [
+            {
+              title: "New finding",
+              body: "Body",
+              severity: "medium",
+              category: "bug",
+            },
+          ],
+          priorDispositions: [],
+        },
+        publicationAdapter: {
+          loadDiscussions,
+          mutateDiscussion,
+          publishFindings,
+          upsertSummary,
+        },
+        guard,
+      }),
+    ).rejects.toBeInstanceOf(LeaseLostError);
+
+    expect(loadDiscussions).not.toHaveBeenCalled();
+    expect(publishFindings).not.toHaveBeenCalled();
+    expect(mutateDiscussion).not.toHaveBeenCalled();
+    expect(upsertSummary).not.toHaveBeenCalled();
+  });
+
+  it("ClaimGuardedReviewPublicationAdapter asserts ownership before and after each call", async () => {
+    const delegate = {
+      loadDiscussions: vi.fn(async () => []),
+      mutateDiscussion: vi.fn(async () => ({}) as never),
+      publishFindings: vi.fn(async () => ({ findings: [], links: [] })),
+      upsertSummary: vi.fn(async () => ({
+        action: "created" as const,
+        url: null,
+        comment: {
+          id: "summary",
+          body: "x",
+          isBot: true,
+          updatedAt: null,
+          url: null,
+        },
+      })),
+    };
+    const guard = { assertOwned: vi.fn(() => {}) };
+    const adapter = new ClaimGuardedReviewPublicationAdapter(delegate, guard);
+
+    await adapter.loadDiscussions();
+    // One assertion before and one after the delegated call.
+    expect(guard.assertOwned).toHaveBeenCalledTimes(2);
+    expect(delegate.loadDiscussions).toHaveBeenCalledTimes(1);
+
+    const failing = {
+      assertOwned: vi.fn(() => {
+        throw new LeaseLostError();
+      }),
+    };
+    const fenced = new ClaimGuardedReviewPublicationAdapter(delegate, failing);
+    await expect(fenced.upsertSummary({ body: "x" })).rejects.toBeInstanceOf(
+      LeaseLostError,
     );
+    expect(delegate.upsertSummary).not.toHaveBeenCalled();
   });
 });
 

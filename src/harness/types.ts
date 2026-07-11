@@ -6,6 +6,7 @@ import type {
 } from "@github/copilot-sdk";
 import type { ZodIssue, ZodType } from "zod";
 import type { ProjectMemoryBackend } from "../memory/backend.js";
+import type { ModelReasoningEffort } from "../storage/contract/index.js";
 
 export type HarnessSelectionSource =
   | "code-review-override"
@@ -25,6 +26,8 @@ export interface HarnessModelConfig {
   selectionSource: HarnessSelectionSource;
   reviewModel: string | null;
   textGenerationModel: string | null;
+  reviewReasoningEffort: ModelReasoningEffort | null;
+  textGenerationReasoningEffort: ModelReasoningEffort | null;
   authToken: string | null;
   provider: ProviderConfig | undefined;
   providerBaseUrl: string | null;
@@ -68,6 +71,7 @@ export interface HarnessRunSpec<TParsed = unknown> {
   attachments?: HarnessRunAttachments | undefined;
   modelConfig: HarnessModelConfig;
   model?: string | undefined;
+  reasoningEffort?: ModelReasoningEffort | undefined;
   workingDirectory?: string | undefined;
   tenant?: HarnessTenantContext | undefined;
   tools: HarnessToolId[];

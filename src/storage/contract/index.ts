@@ -1,4 +1,4 @@
-export const CURRENT_STORAGE_CONTRACT_REVISION = "storage-v004";
+export const CURRENT_STORAGE_CONTRACT_REVISION = "storage-v005";
 
 export type {
   StorageContractRevisionId,
@@ -18,6 +18,7 @@ export type {
   EntityStore,
   InteractionJobRecord,
   InteractionJobStatus,
+  InteractionJobClaimMode,
   InteractionJobFilters,
   InteractionJobOrderField,
   InteractionJobStore,
@@ -38,6 +39,7 @@ export type {
   ModelProfileFilters,
   ModelProfileOrderField,
   ModelProfileStore,
+  ModelReasoningEffort,
   PlatformConnectionFilters,
   PlatformConnectionOrderField,
   PlatformConnectionRecord,

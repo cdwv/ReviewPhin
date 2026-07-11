@@ -11,8 +11,14 @@ export type TestStorage = StorageHelpers & {
 
 export async function openSqliteTestStorage(
   databasePath: string,
+  options?: {
+    now?: () => string;
+  },
 ): Promise<TestStorage> {
-  const database = new SqliteStoreDatabase({ databasePath });
+  const database = new SqliteStoreDatabase({
+    databasePath,
+    ...(options?.now ? { now: options.now } : {}),
+  });
   await database.open();
   await database.prepare();
 

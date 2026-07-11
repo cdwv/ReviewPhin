@@ -50,6 +50,7 @@ import {
   type ModelProfileFilters,
   type ModelProfileOrderField,
   type ModelProfileRecord,
+  type ModelReasoningEffort,
   type PlatformConnectionFilters,
   type PlatformConnectionOrderField,
   type PlatformConnectionRecord,
@@ -71,7 +72,9 @@ import type {
 import ensureV002CtdsExist from "./migrations/v002.js";
 import ensureV003CtdsExist from "./migrations/v003.js";
 import ensureV004CtdsExist from "./migrations/v004.js";
+import ensureV005CtdsExist from "./migrations/v005.js";
 import { createFlotiqEntityStore } from "./store.js";
+import { createSingleWorkerInteractionJobStore } from "../single-worker-interaction-job-store.js";
 import type { Logger } from "pino";
 
 const flotiqProviderEnvSchema = z.object({
@@ -132,7 +135,7 @@ export function createStorageProvider(
       return "flotiq";
     },
     getSupportedStorageContract() {
-      return "storage-v004";
+      return "storage-v005";
     },
     async open() {
       // Flotiq is accessed over HTTP, so there is no persistent connection.
@@ -153,6 +156,12 @@ export function createStorageProvider(
         v004: () =>
           ensureV004CtdsExist(
             parsedEnv.FLOTIQ_API_KEY,
+            logger?.child({ component: "migrations" }),
+          ),
+        v005: () =>
+          ensureV005CtdsExist(
+            parsedEnv.FLOTIQ_API_KEY,
+            flotiqClient,
             logger?.child({ component: "migrations" }),
           ),
       };
@@ -207,189 +216,221 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
   const createStoreLogger = (store: string): Logger | undefined =>
     logger?.child({ store });
 
+  const modelProfiles = createFlotiqEntityStore<
+    ModelProfileRecord,
+    ModelProfileFilters,
+    ModelProfileOrderField,
+    ModelProfile,
+    ModelProfile.FilterableFields
+  >({
+    logger: createStoreLogger("modelProfiles"),
+    api: flotiqClient.content.model_profile,
+    ctdName: "model_profile",
+    toRecord: mapModelProfileRecord,
+    toRemote: mapModelProfileEntity,
+    emptyStringNullFields: [
+      "providerBaseUrl",
+      "providerType",
+      "wireApi",
+      "authToken",
+      "reviewModel",
+      "textGenerationModel",
+      "reviewReasoningEffort",
+      "textGenerationReasoningEffort",
+    ],
+  });
+  const platformConnections = createFlotiqEntityStore<
+    PlatformConnectionRecord,
+    PlatformConnectionFilters,
+    PlatformConnectionOrderField,
+    PlatformConnection,
+    PlatformConnection.FilterableFields,
+    PlatformConnectionHydrated,
+    PlatformConnectionHydratedTwice
+  >({
+    logger: createStoreLogger("platformConnections"),
+    api: flotiqClient.content.platform_connection,
+    ctdName: "platform_connection",
+    toRecord: mapPlatformConnectionRecord,
+    toRemote: mapIdentityEntity,
+  });
+  const tenants = createFlotiqEntityStore<
+    TenantRecord,
+    TenantFilters,
+    TenantOrderField,
+    Tenant,
+    Tenant.FilterableFields,
+    TenantHydrated,
+    TenantHydratedTwice
+  >({
+    logger: createStoreLogger("tenants"),
+    api: flotiqClient.content.tenant,
+    ctdName: "tenant",
+    toRecord: mapTenantRecord,
+    toRemote: mapTenantEntity,
+    relationFields: tenantRelationFields,
+  });
+  const projectMemories = createFlotiqEntityStore<
+    ProjectMemoryRecord,
+    ProjectMemoryFilters,
+    ProjectMemoryOrderField,
+    ProjectMemory,
+    ProjectMemory.FilterableFields,
+    ProjectMemoryHydrated,
+    ProjectMemoryHydratedTwice
+  >({
+    logger: createStoreLogger("projectMemories"),
+    api: flotiqClient.content.project_memory,
+    ctdName: "project_memory",
+    toRecord: mapProjectMemoryRecord,
+    toRemote: mapIdentityEntity,
+    relationFields: projectMemoryRelationFields,
+  });
+  const rawInteractionJobs = createFlotiqEntityStore<
+    InteractionJobRecord,
+    InteractionJobFilters,
+    InteractionJobOrderField,
+    InteractionJob,
+    InteractionJob.FilterableFields,
+    InteractionJobHydrated,
+    InteractionJobHydratedTwice
+  >({
+    logger: createStoreLogger("interactionJobs"),
+    api: flotiqClient.content.interaction_job,
+    ctdName: "interaction_job",
+    toRecord: mapInteractionJobRecord,
+    toRemote: mapIdentityEntity,
+    emptyStringNullFields: [
+      "lastError",
+      "startedAt",
+      "finishedAt",
+      "claimToken",
+      "claimedBy",
+      "claimExpiresAt",
+      "latestInteractionRunId",
+    ],
+    relationFields: interactionJobRelationFields,
+  });
+  const codeReviewSnapshots = createFlotiqEntityStore<
+    CodeReviewSnapshotRecord,
+    CodeReviewSnapshotFilters,
+    CodeReviewSnapshotOrderField,
+    CodeReviewSnapshot,
+    CodeReviewSnapshot.FilterableFields,
+    CodeReviewSnapshotHydrated,
+    CodeReviewSnapshotHydratedTwice
+  >({
+    logger: createStoreLogger("codeReviewSnapshots"),
+    api: flotiqClient.content.code_review_snapshot,
+    ctdName: "code_review_snapshot",
+    toRecord: mapCodeReviewSnapshotRecord,
+    toRemote: mapIdentityEntity,
+    emptyStringNullFields: ["projectMemoryJson", "interactionRunId"],
+    relationFields: mergeRequestSnapshotRelationFields,
+  });
+  const interactionRuns = createFlotiqEntityStore<
+    InteractionRunRecord,
+    InteractionRunFilters,
+    InteractionRunOrderField,
+    InteractionRun,
+    InteractionRun.FilterableFields,
+    InteractionRunHydrated,
+    InteractionRunHydratedTwice
+  >({
+    logger: createStoreLogger("interactionRuns"),
+    api: flotiqClient.content.interaction_run,
+    ctdName: "interaction_run",
+    toRecord: mapInteractionRunRecord,
+    toRemote: mapIdentityEntity,
+    emptyStringNullFields: [
+      "model",
+      "providerBaseUrl",
+      "providerType",
+      "textGenerationModel",
+      "resultJson",
+      "error",
+      "finishedAt",
+      "interactionJobClaimToken",
+      "reviewReasoningEffort",
+      "textGenerationReasoningEffort",
+    ],
+    relationFields: interactionRunRelationFields,
+  });
+  const interactionRunMetrics = createFlotiqEntityStore<
+    InteractionRunMetricsRecord,
+    InteractionRunMetricsFilters,
+    InteractionRunMetricsOrderField,
+    InteractionRunMetrics,
+    InteractionRunMetrics.FilterableFields,
+    InteractionRunMetricsHydrated,
+    InteractionRunMetricsHydratedTwice
+  >({
+    logger: createStoreLogger("interactionRunMetrics"),
+    api: flotiqClient.content.interaction_run_metrics,
+    ctdName: "interaction_run_metrics",
+    toRecord: mapInteractionRunMetricsRecord,
+    toRemote: mapIdentityEntity,
+    emptyStringNullFields: ["triggerKind", "promptMode"],
+    relationFields: interactionRunMetricsRelationFields,
+  });
+  const reviewFindings = createFlotiqEntityStore<
+    ReviewFindingRecord,
+    ReviewFindingFilters,
+    ReviewFindingOrderField,
+    ReviewFinding,
+    ReviewFinding.FilterableFields,
+    ReviewFindingHydrated,
+    ReviewFindingHydratedTwice
+  >({
+    logger: createStoreLogger("reviewFindings"),
+    api: flotiqClient.content.review_finding,
+    ctdName: "review_finding",
+    toRecord: mapReviewFindingRecord,
+    toRemote: mapReviewFindingEntity,
+    emptyStringNullFields: ["anchorJson", "suggestionJson"],
+    relationFields: reviewFindingRelationFields,
+  });
+  const discussionMappings = createFlotiqEntityStore<
+    DiscussionMappingRecord,
+    DiscussionMappingFilters,
+    DiscussionMappingOrderField,
+    DiscussionMapping,
+    DiscussionMapping.FilterableFields,
+    DiscussionMappingHydrated,
+    DiscussionMappingHydratedTwice
+  >({
+    logger: createStoreLogger("discussionMappings"),
+    api: flotiqClient.content.discussion_mapping,
+    ctdName: "discussion_mapping",
+    toRecord: mapDiscussionMappingRecord,
+    toRemote: mapDiscussionMappingEntity,
+    emptyStringNullFields: [
+      "anchorJson",
+      "positionJson",
+      "commentAuthorUsername",
+    ],
+    relationFields: discussionMappingRelationFields,
+  });
+  const interactionJobs = createSingleWorkerInteractionJobStore({
+    jobs: rawInteractionJobs,
+    runs: interactionRuns,
+    reviewFindings,
+    interactionRunMetrics,
+    codeReviewSnapshots,
+    discussionMappings,
+  });
+
   return {
-    modelProfiles: createFlotiqEntityStore<
-      ModelProfileRecord,
-      ModelProfileFilters,
-      ModelProfileOrderField,
-      ModelProfile,
-      ModelProfile.FilterableFields
-    >({
-      logger: createStoreLogger("modelProfiles"),
-      api: flotiqClient.content.model_profile,
-      ctdName: "model_profile",
-      toRecord: mapModelProfileRecord,
-      toRemote: mapModelProfileEntity,
-      emptyStringNullFields: [
-        "providerBaseUrl",
-        "providerType",
-        "wireApi",
-        "authToken",
-        "reviewModel",
-        "textGenerationModel",
-      ],
-    }),
-    platformConnections: createFlotiqEntityStore<
-      PlatformConnectionRecord,
-      PlatformConnectionFilters,
-      PlatformConnectionOrderField,
-      PlatformConnection,
-      PlatformConnection.FilterableFields,
-      PlatformConnectionHydrated,
-      PlatformConnectionHydratedTwice
-    >({
-      logger: createStoreLogger("platformConnections"),
-      api: flotiqClient.content.platform_connection,
-      ctdName: "platform_connection",
-      toRecord: mapPlatformConnectionRecord,
-      toRemote: mapIdentityEntity,
-    }),
-    tenants: createFlotiqEntityStore<
-      TenantRecord,
-      TenantFilters,
-      TenantOrderField,
-      Tenant,
-      Tenant.FilterableFields,
-      TenantHydrated,
-      TenantHydratedTwice
-    >({
-      logger: createStoreLogger("tenants"),
-      api: flotiqClient.content.tenant,
-      ctdName: "tenant",
-      toRecord: mapTenantRecord,
-      toRemote: mapTenantEntity,
-      relationFields: tenantRelationFields,
-    }),
-    projectMemories: createFlotiqEntityStore<
-      ProjectMemoryRecord,
-      ProjectMemoryFilters,
-      ProjectMemoryOrderField,
-      ProjectMemory,
-      ProjectMemory.FilterableFields,
-      ProjectMemoryHydrated,
-      ProjectMemoryHydratedTwice
-    >({
-      logger: createStoreLogger("projectMemories"),
-      api: flotiqClient.content.project_memory,
-      ctdName: "project_memory",
-      toRecord: mapProjectMemoryRecord,
-      toRemote: mapIdentityEntity,
-      relationFields: projectMemoryRelationFields,
-    }),
-    interactionJobs: createFlotiqEntityStore<
-      InteractionJobRecord,
-      InteractionJobFilters,
-      InteractionJobOrderField,
-      InteractionJob,
-      InteractionJob.FilterableFields,
-      InteractionJobHydrated,
-      InteractionJobHydratedTwice
-    >({
-      logger: createStoreLogger("interactionJobs"),
-      api: flotiqClient.content.interaction_job,
-      ctdName: "interaction_job",
-      toRecord: mapInteractionJobRecord,
-      toRemote: mapIdentityEntity,
-      emptyStringNullFields: ["lastError", "startedAt", "finishedAt"],
-      relationFields: interactionJobRelationFields,
-    }),
-    codeReviewSnapshots: createFlotiqEntityStore<
-      CodeReviewSnapshotRecord,
-      CodeReviewSnapshotFilters,
-      CodeReviewSnapshotOrderField,
-      CodeReviewSnapshot,
-      CodeReviewSnapshot.FilterableFields,
-      CodeReviewSnapshotHydrated,
-      CodeReviewSnapshotHydratedTwice
-    >({
-      logger: createStoreLogger("codeReviewSnapshots"),
-      api: flotiqClient.content.code_review_snapshot,
-      ctdName: "code_review_snapshot",
-      toRecord: mapCodeReviewSnapshotRecord,
-      toRemote: mapIdentityEntity,
-      emptyStringNullFields: ["projectMemoryJson"],
-      relationFields: mergeRequestSnapshotRelationFields,
-    }),
-    interactionRuns: createFlotiqEntityStore<
-      InteractionRunRecord,
-      InteractionRunFilters,
-      InteractionRunOrderField,
-      InteractionRun,
-      InteractionRun.FilterableFields,
-      InteractionRunHydrated,
-      InteractionRunHydratedTwice
-    >({
-      logger: createStoreLogger("interactionRuns"),
-      api: flotiqClient.content.interaction_run,
-      ctdName: "interaction_run",
-      toRecord: mapInteractionRunRecord,
-      toRemote: mapIdentityEntity,
-      emptyStringNullFields: [
-        "model",
-        "providerBaseUrl",
-        "providerType",
-        "textGenerationModel",
-        "resultJson",
-        "error",
-        "finishedAt",
-      ],
-      relationFields: interactionRunRelationFields,
-    }),
-    interactionRunMetrics: createFlotiqEntityStore<
-      InteractionRunMetricsRecord,
-      InteractionRunMetricsFilters,
-      InteractionRunMetricsOrderField,
-      InteractionRunMetrics,
-      InteractionRunMetrics.FilterableFields,
-      InteractionRunMetricsHydrated,
-      InteractionRunMetricsHydratedTwice
-    >({
-      logger: createStoreLogger("interactionRunMetrics"),
-      api: flotiqClient.content.interaction_run_metrics,
-      ctdName: "interaction_run_metrics",
-      toRecord: mapInteractionRunMetricsRecord,
-      toRemote: mapIdentityEntity,
-      emptyStringNullFields: ["triggerKind", "promptMode"],
-      relationFields: interactionRunMetricsRelationFields,
-    }),
-    reviewFindings: createFlotiqEntityStore<
-      ReviewFindingRecord,
-      ReviewFindingFilters,
-      ReviewFindingOrderField,
-      ReviewFinding,
-      ReviewFinding.FilterableFields,
-      ReviewFindingHydrated,
-      ReviewFindingHydratedTwice
-    >({
-      logger: createStoreLogger("reviewFindings"),
-      api: flotiqClient.content.review_finding,
-      ctdName: "review_finding",
-      toRecord: mapReviewFindingRecord,
-      toRemote: mapReviewFindingEntity,
-      emptyStringNullFields: ["anchorJson", "suggestionJson"],
-      relationFields: reviewFindingRelationFields,
-    }),
-    discussionMappings: createFlotiqEntityStore<
-      DiscussionMappingRecord,
-      DiscussionMappingFilters,
-      DiscussionMappingOrderField,
-      DiscussionMapping,
-      DiscussionMapping.FilterableFields,
-      DiscussionMappingHydrated,
-      DiscussionMappingHydratedTwice
-    >({
-      logger: createStoreLogger("discussionMappings"),
-      api: flotiqClient.content.discussion_mapping,
-      ctdName: "discussion_mapping",
-      toRecord: mapDiscussionMappingRecord,
-      toRemote: mapDiscussionMappingEntity,
-      emptyStringNullFields: [
-        "anchorJson",
-        "positionJson",
-        "commentAuthorUsername",
-      ],
-      relationFields: discussionMappingRelationFields,
-    }),
+    modelProfiles,
+    platformConnections,
+    tenants,
+    projectMemories,
+    interactionJobs,
+    codeReviewSnapshots,
+    interactionRuns,
+    interactionRunMetrics,
+    reviewFindings,
+    discussionMappings,
   };
 }
 
@@ -402,6 +443,14 @@ function mapModelProfileRecord(entity: ModelProfile): ModelProfileRecord {
     authToken: readNullableString(entity, "authToken"),
     reviewModel: readNullableString(entity, "reviewModel"),
     textGenerationModel: readNullableString(entity, "textGenerationModel"),
+    reviewReasoningEffort: readNullableReasoningEffort(
+      entity,
+      "reviewReasoningEffort",
+    ),
+    textGenerationReasoningEffort: readNullableReasoningEffort(
+      entity,
+      "textGenerationReasoningEffort",
+    ),
     isDefault: readBoolean(entity, "isDefault") ?? false,
     createdAt: readInternalTimestamp(entity, "createdAt"),
     updatedAt: readInternalTimestamp(entity, "updatedAt"),
@@ -420,6 +469,8 @@ function mapModelProfileEntity(
     authToken: entity.authToken,
     reviewModel: entity.reviewModel,
     textGenerationModel: entity.textGenerationModel,
+    reviewReasoningEffort: entity.reviewReasoningEffort,
+    textGenerationReasoningEffort: entity.textGenerationReasoningEffort,
     isDefault: entity.isDefault,
   };
 }
@@ -503,8 +554,18 @@ function mapInteractionJobRecord(entity: InteractionJob): InteractionJobRecord {
     retryCount: readRequiredNumber(entity, "retryCount"),
     lastError: readNullableString(entity, "lastError"),
     enqueuedAt: readRequiredString(entity, "enqueuedAt"),
+    availableAt:
+      readNullableString(entity, "availableAt") ??
+      readRequiredString(entity, "enqueuedAt"),
     startedAt: readNullableString(entity, "startedAt"),
     finishedAt: readNullableString(entity, "finishedAt"),
+    claimToken: readNullableString(entity, "claimToken"),
+    claimedBy: readNullableString(entity, "claimedBy"),
+    claimExpiresAt: readNullableString(entity, "claimExpiresAt"),
+    latestInteractionRunId: readNullableString(
+      entity,
+      "latestInteractionRunId",
+    ),
   };
 }
 
@@ -530,6 +591,7 @@ function mapCodeReviewSnapshotRecord(
     projectMemoryJson: readNullableString(entity, "projectMemoryJson"),
     workspaceStrategy: readRequiredString(entity, "workspaceStrategy"),
     createdAt: readInternalTimestamp(entity, "createdAt"),
+    interactionRunId: readNullableString(entity, "interactionRunId"),
   };
 }
 
@@ -552,6 +614,18 @@ function mapInteractionRunRecord(entity: InteractionRun): InteractionRunRecord {
     error: readNullableString(entity, "error"),
     startedAt: readRequiredString(entity, "startedAt"),
     finishedAt: readNullableString(entity, "finishedAt"),
+    interactionJobClaimToken: readNullableString(
+      entity,
+      "interactionJobClaimToken",
+    ),
+    reviewReasoningEffort: readNullableReasoningEffort(
+      entity,
+      "reviewReasoningEffort",
+    ),
+    textGenerationReasoningEffort: readNullableReasoningEffort(
+      entity,
+      "textGenerationReasoningEffort",
+    ),
   };
 }
 
@@ -827,6 +901,27 @@ function readNullableWireApi(
   }
 
   throw new Error(`Unsupported wire api ${value}`);
+}
+
+function readNullableReasoningEffort(
+  entity: object,
+  key: string,
+): ModelReasoningEffort | null {
+  const value = readNullableString(entity, key);
+  if (value === null) {
+    return null;
+  }
+
+  if (
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh"
+  ) {
+    return value;
+  }
+
+  throw new Error(`Unsupported reasoning effort ${value}`);
 }
 
 function extractRelationId(value: unknown, key: string): string | null {

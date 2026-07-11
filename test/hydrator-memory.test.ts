@@ -47,6 +47,11 @@ describe("CodeReviewContextHydrator project memory", () => {
       },
       job: {
         id: "job_1",
+        availableAt: new Date().toISOString(),
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+        latestInteractionRunId: null,
         tenantId: "tenant_1",
         dedupeKey: "dedupe",
         codeReviewId: 7,

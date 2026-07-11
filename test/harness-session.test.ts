@@ -150,6 +150,84 @@ describe("HarnessSessionRuntime", () => {
     expect(sessionOptions).not.toHaveProperty("workingDirectory");
   });
 
+  it("omits reasoningEffort from createSession when no effort is requested", async () => {
+    createSessionMock.mockResolvedValue(createSession());
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    await runtime.run({
+      prompt: "Review this.",
+      modelConfig: createModelConfig(),
+      model: "gpt-5.6",
+      tools: ["glob", "rg", "view"],
+      subagents: [],
+    });
+
+    const sessionOptions = createSessionMock.mock.calls[0]?.[0];
+    expect(
+      Object.prototype.hasOwnProperty.call(sessionOptions, "reasoningEffort"),
+    ).toBe(false);
+  });
+
+  it("passes an explicit reasoningEffort through to createSession unchanged", async () => {
+    createSessionMock.mockResolvedValue(createSession());
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    await runtime.run({
+      prompt: "Review this.",
+      modelConfig: createModelConfig(),
+      model: "gpt-5.6",
+      reasoningEffort: "xhigh",
+      tools: ["glob", "rg", "view"],
+      subagents: [],
+    });
+
+    const sessionOptions = createSessionMock.mock.calls[0]?.[0];
+    expect(sessionOptions.reasoningEffort).toBe("xhigh");
+  });
+
+  it("does not swallow SDK errors surfaced by createSession", async () => {
+    const sdkError = new Error(
+      'model "gpt-5.6" does not support reasoning effort "xhigh"',
+    );
+    createSessionMock.mockRejectedValue(sdkError);
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    await expect(
+      runtime.run({
+        prompt: "Review this.",
+        modelConfig: createModelConfig(),
+        model: "gpt-5.6",
+        reasoningEffort: "xhigh",
+        tools: ["glob", "rg", "view"],
+        subagents: [],
+      }),
+    ).rejects.toThrow('does not support reasoning effort "xhigh"');
+  });
+
   it("passes a native auth token only when no custom provider is configured", async () => {
     createSessionMock.mockResolvedValue(createSession());
     startMock.mockResolvedValue(undefined);
@@ -578,6 +656,8 @@ function createModelConfig(): HarnessModelConfig {
     selectionSource: "default",
     reviewModel: "gpt-5.4",
     textGenerationModel: "gpt-5.4-mini",
+    reviewReasoningEffort: null,
+    textGenerationReasoningEffort: null,
     authToken: null,
     provider: undefined,
     providerBaseUrl: null,
@@ -591,6 +671,8 @@ function createFallbackModelConfig(): HarnessModelConfig {
     selectionSource: "fallback",
     reviewModel: null,
     textGenerationModel: null,
+    reviewReasoningEffort: null,
+    textGenerationReasoningEffort: null,
     authToken: null,
     provider: undefined,
     providerBaseUrl: null,

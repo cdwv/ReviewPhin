@@ -118,6 +118,10 @@ describe("SqliteStorage review findings", () => {
         adapter_name: "sqlite",
         migration_id: "sqlite:0010_v4_project_memories",
       },
+      {
+        adapter_name: "sqlite",
+        migration_id: "sqlite:0011_v5_job_claims_and_reasoning_effort",
+      },
     ]);
     expect(columnNames.has("anchor_json")).toBe(true);
     expect(columnNames.has("interaction_run_id")).toBe(true);
@@ -386,7 +390,7 @@ describe("SqliteStorage review findings", () => {
         "updated_at",
       ]),
     );
-    expect(migrations.count).toBe(10);
+    expect(migrations.count).toBe(11);
     await storage.close();
   });
 
@@ -719,6 +723,7 @@ describe("SqliteStorage review findings", () => {
       { migration_id: "sqlite:0008_v2_platform_connections" },
       { migration_id: "sqlite:0009_v3_provider_triggers" },
       { migration_id: "sqlite:0010_v4_project_memories" },
+      { migration_id: "sqlite:0011_v5_job_claims_and_reasoning_effort" },
     ]);
     verifiedDb.close();
   });
@@ -906,6 +911,7 @@ describe("SqliteStorage review findings", () => {
       { migration_id: "sqlite:0008_v2_platform_connections" },
       { migration_id: "sqlite:0009_v3_provider_triggers" },
       { migration_id: "sqlite:0010_v4_project_memories" },
+      { migration_id: "sqlite:0011_v5_job_claims_and_reasoning_effort" },
     ]);
   });
 
@@ -1212,6 +1218,53 @@ describe("SqliteStorage tenants", () => {
       discussionMappingCount: 1,
       interactionJobIds: [reviewJob.job.id],
       interactionRunIds: [reviewRun.id],
+    });
+
+    const claimed = await storage.stores.interactionJobs.claimNext({
+      workerId: "tenant-delete-test",
+      claimToken: "tenant-delete-claim",
+      now: new Date().toISOString(),
+      claimExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      queuedAfter: "2020-01-01T00:00:00.000Z",
+      maxJobRetries: 3,
+    });
+    expect(claimed?.id).toBe(reviewJob.job.id);
+    await expect(storage.deleteTenantWithSummary(tenant.key)).rejects.toThrow(
+      /in progress/,
+    );
+    const queuedJob = await storage.createOrGetInteractionJob({
+      tenantId: tenant.id,
+      dedupeKey: "tenant-delete-queued-job",
+      codeReviewId: 8,
+      commentId: 56,
+      headSha: "def456",
+      payloadJson: "{}",
+    });
+    await expect(storage.deleteTenantWithSummary(tenant.key)).rejects.toThrow(
+      /in progress/,
+    );
+    expect(
+      await storage.stores.interactionJobs.get(queuedJob.job.id),
+    ).toMatchObject({
+      status: "queued",
+      finishedAt: null,
+      lastError: null,
+    });
+    await storage.stores.interactionJobs.delete(queuedJob.job.id);
+    expect(countRows(databasePath, "interaction_jobs")).toBe(1);
+    expect(countRows(databasePath, "code_review_snapshots")).toBe(1);
+    expect(countRows(databasePath, "interaction_runs")).toBe(1);
+    expect(countRows(databasePath, "review_findings")).toBe(1);
+    expect(countRows(databasePath, "interaction_run_metrics")).toBe(1);
+    expect(countRows(databasePath, "discussion_mappings")).toBe(1);
+    await storage.stores.interactionJobs.transitionClaim({
+      jobId: reviewJob.job.id,
+      claimToken: "tenant-delete-claim",
+      status: "queued",
+      retryCount: 0,
+      lastError: null,
+      availableAt: reviewJob.job.availableAt,
+      finishedAt: null,
     });
 
     const deletedSummary = await storage.deleteTenantWithSummary(tenant.key);

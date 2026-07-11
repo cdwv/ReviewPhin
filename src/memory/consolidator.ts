@@ -40,6 +40,11 @@ export class ProjectMemoryConsolidator {
       prompt: buildProjectMemoryCoalescePrompt(input.coalesceInput),
       modelConfig: input.modelConfig,
       model: selectConsolidationModel(input.modelConfig),
+      ...(input.modelConfig.textGenerationReasoningEffort
+        ? {
+            reasoningEffort: input.modelConfig.textGenerationReasoningEffort,
+          }
+        : {}),
       tenant: input.tenant,
       tools: [],
       subagents: [],

@@ -17,6 +17,11 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
     const interactionJobs: InteractionJobRecord[] = [
       {
         id: "job-previous",
+        availableAt: "2026-05-08T09:00:00.000Z",
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+        latestInteractionRunId: null,
         tenantId: tenant.id,
         dedupeKey: "previous",
         codeReviewId: 18,
@@ -33,6 +38,11 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
       },
       {
         id: "job-current",
+        availableAt: "2026-05-08T10:00:00.000Z",
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+        latestInteractionRunId: null,
         tenantId: tenant.id,
         dedupeKey: "current",
         codeReviewId: 18,
@@ -49,6 +59,11 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
       },
       {
         id: "job-other-tenant",
+        availableAt: "2026-05-08T08:00:00.000Z",
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+        latestInteractionRunId: null,
         tenantId: "tenant-2",
         dedupeKey: "other-tenant",
         codeReviewId: 18,
@@ -67,6 +82,9 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
     const interactionRuns: InteractionRunRecord[] = [
       {
         id: "run-previous",
+        interactionJobClaimToken: null,
+        reviewReasoningEffort: null,
+        textGenerationReasoningEffort: null,
         interactionJobId: "job-previous",
         tenantId: tenant.id,
         provider: "copilot-sdk",
@@ -83,6 +101,9 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
       },
       {
         id: "run-other-tenant",
+        interactionJobClaimToken: null,
+        reviewReasoningEffort: null,
+        textGenerationReasoningEffort: null,
         interactionJobId: "job-other-tenant",
         tenantId: "tenant-2",
         provider: "copilot-sdk",
@@ -101,6 +122,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
     const snapshots: CodeReviewSnapshotRecord[] = [
       {
         id: "snapshot-previous",
+        interactionRunId: "run-previous",
         interactionJobId: "job-previous",
         tenantId: tenant.id,
         codeReviewId: 18,
@@ -117,6 +139,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
       },
       {
         id: "snapshot-other-tenant",
+        interactionRunId: "run-other-tenant",
         interactionJobId: "job-other-tenant",
         tenantId: "tenant-2",
         codeReviewId: 18,
@@ -254,6 +277,11 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
     const interactionJobs: InteractionJobRecord[] = [
       {
         id: "job-tenant-1",
+        availableAt: "2026-05-08T09:00:00.000Z",
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+        latestInteractionRunId: null,
         tenantId: tenant.id,
         dedupeKey: "job-tenant-1",
         codeReviewId: 18,
@@ -270,6 +298,11 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
       },
       {
         id: "job-tenant-2",
+        availableAt: "2026-05-08T10:00:00.000Z",
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+        latestInteractionRunId: null,
         tenantId: "tenant-2",
         dedupeKey: "job-tenant-2",
         codeReviewId: 18,

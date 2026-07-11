@@ -15,6 +15,7 @@ import type {
   TenantRecord,
 } from "../src/storage/contract/current.js";
 import type { StorageHelpers } from "../src/storage/storage-helpers.js";
+import { createClaimContext } from "./helpers/claim.js";
 import { overridePlatformRuntime } from "./helpers/platform-runtime.js";
 
 const tempRoots: string[] = [];
@@ -172,7 +173,12 @@ describe("GitHub requested-action happy path", () => {
       },
     });
 
-    await expect(worker.processJob(created.job.id)).resolves.toBeUndefined();
+    await expect(
+      worker.processClaimedJob(
+        created.job as never,
+        createClaimContext(created.job.id),
+      ),
+    ).resolves.toBeUndefined();
 
     expect(review).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -237,6 +243,37 @@ function createStorage(job: InteractionJobRecord): StorageHelpers {
     stores: {
       interactionJobs: {
         get: vi.fn(async () => job),
+        createInteractionRunForClaim: vi.fn(async () => ({
+          id: "run-github",
+          interactionJobId: job.id,
+          tenantId: job.tenantId,
+          provider: "copilot-sdk",
+          model: null,
+          modelProfileName: null,
+          providerBaseUrl: null,
+          providerType: null,
+          textGenerationModel: null,
+          status: "in_progress" as const,
+          resultJson: null,
+          error: null,
+          startedAt: "2026-06-14T00:00:00.000Z",
+          finishedAt: null,
+        })),
+        replaceReviewFindingsForClaim: vi.fn(async () => true),
+        transitionInteractionRunForClaim: vi.fn(async () => true),
+        upsertInteractionRunMetricsForClaim: vi.fn(async () => true),
+        updateReviewFindingStatusForClaim: vi.fn(async () => true),
+        upsertDiscussionMappingForClaim: vi.fn(async ({ mapping }) => {
+          const record = {
+            id: "mapping-github",
+            ...mapping,
+            createdAt: "2026-06-14T00:00:00.000Z",
+            updatedAt: "2026-06-14T00:00:00.000Z",
+          };
+          mappings.push(record);
+          return record;
+        }),
+        transitionClaim: vi.fn(async () => true),
       },
       discussionMappings: {
         list: vi.fn(async () => mappings),
@@ -253,45 +290,11 @@ function createStorage(job: InteractionJobRecord): StorageHelpers {
         ...input,
       },
     })),
-    markJobInProgress: vi.fn(async () => {}),
-    createInteractionRun: vi.fn(async () => ({
-      id: "run-github",
-      interactionJobId: job.id,
-      tenantId: job.tenantId,
-      provider: "copilot-sdk",
-      model: null,
-      modelProfileName: null,
-      providerBaseUrl: null,
-      providerType: null,
-      textGenerationModel: null,
-      status: "in_progress" as const,
-      resultJson: null,
-      error: null,
-      startedAt: "2026-06-14T00:00:00.000Z",
-      finishedAt: null,
-    })),
     getModelProfileByName: vi.fn(async () => null),
     getDefaultModelProfile: vi.fn(async () => null),
     getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
     listPriorReviewFindings: vi.fn(async () => []),
     listLatestReviewFindings: vi.fn(async () => []),
-    replaceReviewFindings: vi.fn(async () => {}),
-    upsertDiscussionMapping: vi.fn(async (input) => {
-      const mapping = {
-        id: "mapping-github",
-        ...input,
-        createdAt: "2026-06-14T00:00:00.000Z",
-        updatedAt: "2026-06-14T00:00:00.000Z",
-      };
-      mappings.push(mapping);
-      return mapping;
-    }),
-    updateReviewFindingStatus: vi.fn(async () => true),
-    completeInteractionRun: vi.fn(async () => {}),
-    markJobCompleted: vi.fn(async () => {}),
-    failInteractionRun: vi.fn(async () => {}),
-    markJobQueued: vi.fn(async () => {}),
-    markJobFailed: vi.fn(async () => {}),
   } as unknown as StorageHelpers;
 }
 
@@ -626,6 +629,11 @@ function createConnection(): PlatformConnectionRecord {
 function createJob(): InteractionJobRecord {
   return {
     id: "job-github",
+    availableAt: "2026-06-14T00:00:00.000Z",
+    claimToken: null,
+    claimedBy: null,
+    claimExpiresAt: null,
+    latestInteractionRunId: null,
     tenantId: "tenant-github",
     dedupeKey: "delivery-1",
     codeReviewId: 42,

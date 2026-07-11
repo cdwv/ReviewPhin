@@ -8,6 +8,7 @@ import genericStorageColumnNamesMigration from "./0007-v1-generic-storage-column
 import platformConnectionsMigration from "./0008-v2-platform-connections.js";
 import providerTriggersMigration from "./0009-v3-provider-triggers.js";
 import projectMemoriesMigration from "./0010-v4-project-memories.js";
+import jobClaimsAndReasoningEffortMigration from "./0011-v5-job-claims-and-reasoning-effort.js";
 import type { SqliteMigration } from "./types.js";
 
 export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
@@ -21,4 +22,5 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
   platformConnectionsMigration,
   providerTriggersMigration,
   projectMemoriesMigration,
+  jobClaimsAndReasoningEffortMigration,
 ];

@@ -52,6 +52,9 @@ export class HarnessReviewProvider implements ReviewProvider {
       ...(runtime.attachments ? { attachments: runtime.attachments } : {}),
       modelConfig: this.modelConfig,
       model: this.modelConfig.reviewModel ?? undefined,
+      ...(this.modelConfig.reviewReasoningEffort
+        ? { reasoningEffort: this.modelConfig.reviewReasoningEffort }
+        : {}),
       workingDirectory: effectiveContext.workspacePath,
       tenant: runtime.tenant,
       tools: ["glob", "rg", "view"],

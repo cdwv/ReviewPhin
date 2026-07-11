@@ -1,0 +1,4 @@
+interface:
+  display_name: "Babysit PR"
+  short_description: "Publish and iterate on a ReviewPhin-reviewed PR"
+  default_prompt: "Use $babysit-pr to publish the current work as a pull request and address ReviewPhin findings until no fixes remain."

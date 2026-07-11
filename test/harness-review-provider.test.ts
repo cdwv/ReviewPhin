@@ -124,6 +124,94 @@ describe("HarnessReviewProvider", () => {
     );
   });
 
+  it("passes the review reasoning effort and never the text-generation effort", async () => {
+    const run = vi.fn(async () => ({
+      response: {
+        data: {
+          content: JSON.stringify({
+            overview: { summary: "Looks good", overallSeverity: "low" },
+            findings: [],
+            priorDispositions: [],
+          }),
+        },
+      },
+      parsed: {
+        overview: { summary: "Looks good", overallSeverity: "low" },
+        findings: [],
+        priorDispositions: [],
+      },
+      events: [],
+    }));
+
+    const provider = new HarnessReviewProvider({
+      logger: createLogger(),
+      modelConfig: {
+        ...createModelConfig(),
+        reviewReasoningEffort: "high",
+        textGenerationReasoningEffort: "low",
+      },
+      harnessRuntime: { run } as never,
+      memoryConsolidator: {
+        coalesce: vi.fn(async (input) => input.coalesceInput.entries),
+      } as never,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    await provider.review(createReviewContext(), {
+      tenant: createTenantRuntimeContext(),
+    });
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoningEffort: "high" }),
+    );
+  });
+
+  it("omits reasoningEffort from the review run spec when the review effort is null", async () => {
+    const run = vi.fn(async () => ({
+      response: {
+        data: {
+          content: JSON.stringify({
+            overview: { summary: "Looks good", overallSeverity: "low" },
+            findings: [],
+            priorDispositions: [],
+          }),
+        },
+      },
+      parsed: {
+        overview: { summary: "Looks good", overallSeverity: "low" },
+        findings: [],
+        priorDispositions: [],
+      },
+      events: [],
+    }));
+
+    const provider = new HarnessReviewProvider({
+      logger: createLogger(),
+      modelConfig: {
+        ...createModelConfig(),
+        reviewReasoningEffort: null,
+        textGenerationReasoningEffort: "low",
+      },
+      harnessRuntime: { run } as never,
+      memoryConsolidator: {
+        coalesce: vi.fn(async (input) => input.coalesceInput.entries),
+      } as never,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    await provider.review(createReviewContext(), {
+      tenant: createTenantRuntimeContext(),
+    });
+
+    const spec = (run.mock.calls[0] as unknown[])[0] as Record<
+      string,
+      unknown
+    >;
+    expect(
+      Object.prototype.hasOwnProperty.call(spec, "reasoningEffort"),
+    ).toBe(false);
+  });
+
   it("synthesizes a reply handoff summary when the model returns it blank", async () => {
     const run = vi.fn(async () => ({
       response: {
@@ -345,6 +433,8 @@ function createModelConfig(): HarnessModelConfig {
     selectionSource: "default",
     reviewModel: "gpt-5.4",
     textGenerationModel: "gpt-5.4-mini",
+    reviewReasoningEffort: null,
+    textGenerationReasoningEffort: null,
     authToken: null,
     provider: undefined,
     providerBaseUrl: null,

@@ -252,24 +252,30 @@ reviewphin model-profile add \
   --text-generation-model my-gpt5.4mini-deployment
 ```
 
-| Flag                            | Required | Description                                                                                                 |
-| ------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
-| `--name`                        | Yes      | Stable profile name. Used in `--model-profile` flags and `/reviewphin-profile` MR directives.               |
-| `--base-url`                    | No       | BYOK provider base URL. Leave unset for native Copilot CLI profiles.                                        |
-| `--provider-type`               | No       | `openai`, `azure`, or `anthropic`. Required when `--base-url` is set.                                       |
-| `--wire-api`                    | No       | `responses` or `completions`. Defaults to `responses` for BYOK profiles.                                    |
-| `--auth-token`                  | No       | API key for the BYOK provider, or an override GitHub PAT for Copilot profiles. Always masked in CLI output. |
-| `--review-model`                | No       | Model identifier for review runs. Required when `--base-url` is set.                                        |
-| `--text-generation-model`       | No       | Model for memory coalescing and lightweight generation. Defaults to `--review-model` when omitted.          |
-| `--default`                     | No       | Mark this profile as the database default.                                                                  |
-| `--clear-base-url`              | No       | Clear the stored base URL. Also clears provider type and wire API; cannot be combined with new values for either. |
-| `--clear-provider-type`         | No       | Clear the stored provider type.                                                                             |
-| `--clear-wire-api`              | No       | Clear the stored wire API setting.                                                                          |
-| `--clear-auth-token`            | No       | Clear the stored auth token.                                                                                |
-| `--clear-review-model`          | No       | Clear the stored review model.                                                                              |
-| `--clear-text-generation-model` | No       | Clear the stored text-generation model.                                                                     |
-| `--sqlite-database-path`        | No       | Override the SQLite path.                                                                                   |
-| `--storage-provider-module`     | No       | Override the storage module.                                                                                |
+| Flag                                       | Required | Description                                                                                                       |
+| ------------------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------- |
+| `--name`                                   | Yes      | Stable profile name. Used in `--model-profile` flags and `/reviewphin-profile` MR directives.                     |
+| `--base-url`                               | No       | BYOK provider base URL. Leave unset for native Copilot CLI profiles.                                              |
+| `--provider-type`                          | No       | `openai`, `azure`, or `anthropic`. Required when `--base-url` is set.                                             |
+| `--wire-api`                               | No       | `responses` or `completions`. Defaults to `responses` for BYOK profiles.                                          |
+| `--auth-token`                             | No       | API key for the BYOK provider, or an override GitHub PAT for Copilot profiles. Always masked in CLI output.       |
+| `--review-model`                           | No       | Model identifier for review runs. Required when `--base-url` is set.                                              |
+| `--text-generation-model`                  | No       | Model for memory coalescing and lightweight generation. Defaults to `--review-model` when omitted.                |
+| `--review-reasoning-effort`                | No       | Reasoning effort for review runs: `low`, `medium`, `high`, or `xhigh`. Omitted from the session when unset.       |
+| `--text-generation-reasoning-effort`       | No       | Reasoning effort for text-generation runs. Independent of the review effort; omitted from the session when unset. |
+| `--default`                                | No       | Mark this profile as the database default.                                                                        |
+| `--clear-base-url`                         | No       | Clear the stored base URL. Also clears provider type and wire API; cannot be combined with new values for either. |
+| `--clear-provider-type`                    | No       | Clear the stored provider type.                                                                                   |
+| `--clear-wire-api`                         | No       | Clear the stored wire API setting.                                                                                |
+| `--clear-auth-token`                       | No       | Clear the stored auth token.                                                                                      |
+| `--clear-review-model`                     | No       | Clear the stored review model.                                                                                    |
+| `--clear-text-generation-model`            | No       | Clear the stored text-generation model.                                                                           |
+| `--clear-review-reasoning-effort`          | No       | Clear the stored review reasoning effort (revert to the harness default).                                         |
+| `--clear-text-generation-reasoning-effort` | No       | Clear the stored text-generation reasoning effort (revert to the harness default).                                |
+| `--sqlite-database-path`                   | No       | Override the SQLite path.                                                                                         |
+| `--storage-provider-module`                | No       | Override the storage module.                                                                                      |
+
+A field flag and its matching `--clear-*` flag cannot be used together. Re-running `add` updates only the fields present on the command line.
 
 ---
 
@@ -280,6 +286,8 @@ Print all model profiles.
 ```bash
 reviewphin model-profile list
 ```
+
+Output is a JSON array. Each entry includes `name`, provider settings, `reviewModel`, `textGenerationModel`, `reviewReasoningEffort`, `textGenerationReasoningEffort` (each `null` when unset), `isDefault`, and a masked `authToken`.
 
 | Flag                        | Required | Description                  |
 | --------------------------- | -------- | ---------------------------- |

@@ -362,6 +362,8 @@ function createService(input?: {
       selectionSource: "default",
       reviewModel: "gpt-5.4",
       textGenerationModel: "gpt-5.4-mini",
+      reviewReasoningEffort: null,
+      textGenerationReasoningEffort: null,
       authToken: null,
       provider: undefined,
       providerBaseUrl: null,

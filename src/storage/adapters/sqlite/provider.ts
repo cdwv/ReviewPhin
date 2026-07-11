@@ -25,7 +25,7 @@ export class SqliteStorageProvider implements StorageProvider {
   }
 
   public getSupportedStorageContract(): string {
-    return "storage-v004";
+    return "storage-v005";
   }
 
   public open(): Promise<void> {

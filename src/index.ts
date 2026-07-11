@@ -1,6 +1,6 @@
 import { loadConfig } from "./config.js";
 import { HarnessSessionRuntime } from "./harness/session.js";
-import { JobQueue } from "./jobs/job-queue.js";
+import { StorageBackedJobRunner } from "./jobs/storage-backed-job-runner.js";
 import { ReviewWorker } from "./jobs/review-worker.js";
 import { createLogger } from "./logger.js";
 import { initializePlatformRegistry } from "./platforms/platform-registry.js";
@@ -8,7 +8,6 @@ import { DiscussionReconciler } from "./reconcile/discussion-reconciler.js";
 import { HarnessChatterRunnerFactory } from "./review/harness-chatter.js";
 import { HarnessReviewProviderFactory } from "./review/harness-review-provider.js";
 import { initializeStorageRuntime } from "./storage/runtime.js";
-import { listAll } from "./storage/storage-helpers.js";
 import { TenantRegistry } from "./tenants/tenant-registry.js";
 import { createApp } from "./app.js";
 import { loadLocalEnvFile } from "./env.js";
@@ -71,27 +70,28 @@ async function main(): Promise<void> {
     retryBackoffMs: config.retryBackoffMs,
   });
 
-  const queue = new JobQueue({
-    logger,
-    processor: {
-      processJob: (jobId) => reviewWorker.processJob(jobId),
-    },
+  const runner = new StorageBackedJobRunner({
+    storage,
+    worker: reviewWorker,
+    logger: logger.child({ component: "job-runner" }),
+    pollIntervalMs: config.jobPollIntervalMs,
+    maxQueuedJobAgeMs: config.maxQueuedJobAgeMs,
+    leaseMs: config.jobLeaseMs,
+    maxJobRetries: config.maxJobRetries,
   });
 
-  const queuedJobs = await listAll(storage.stores.interactionJobs, {
-    filters: { status: { eq: "queued" } },
-    order: [
-      { field: "enqueuedAt", direction: "asc" },
-      { field: "id", direction: "asc" },
-    ],
-  });
-  queue.enqueueMany(queuedJobs.map((job) => job.id));
+  if (storage.stores.interactionJobs.claimMode === "single-worker") {
+    logger.warn(
+      "Storage adapter reports single-worker claim mode: exactly one ReviewPhin " +
+        "process may run the job runner. Additional HTTP replicas must set " +
+        "REVIEWPHIN_JOB_RUNNER_ENABLED=false to disable job execution.",
+    );
+  }
 
   const app = await createApp({
     logger,
     tenantRegistry,
     reviewWorker,
-    queue,
     storage,
     publicUrl: config.publicUrl,
     enableGitHubSetupSamples: isPnpmDevServer(),
@@ -99,22 +99,52 @@ async function main(): Promise<void> {
     botIndexingAllowedHosts: config.botIndexingAllowedHosts,
   });
 
-  const close = async (): Promise<void> => {
-    await app.close();
-    await storageProvider.close();
+  let shuttingDown = false;
+  const shutdown = async (): Promise<void> => {
+    if (shuttingDown) {
+      // A second signal terminates the process immediately, leaving the
+      // unfinished lease for another runner to recover rather than closing
+      // storage beneath live worker code.
+      logger.warn("received second shutdown signal; terminating immediately");
+      process.exit(1);
+    }
+    shuttingDown = true;
+    try {
+      // Phase 1: stop accepting and drain in-flight HTTP requests.
+      await app.close();
+      // Phase 2: stop the runner and drain the active attempt.
+      await runner.stop();
+      // Phase 3: close the storage provider once no worker code is running.
+      await storageProvider.close();
+    } catch (error) {
+      logger.error({ err: error }, "error during graceful shutdown");
+      process.exitCode = 1;
+    }
   };
 
   process.once("SIGINT", () => {
-    void close();
+    void shutdown();
   });
   process.once("SIGTERM", () => {
-    void close();
+    void shutdown();
   });
 
   await app.listen({
     host: config.host,
     port: config.port,
   });
+
+  if (config.jobRunnerEnabled) {
+    runner.start();
+    logger.info(
+      { workerId: runner.workerId },
+      "Storage-backed job runner started.",
+    );
+  } else {
+    logger.info(
+      "Job runner disabled via REVIEWPHIN_JOB_RUNNER_ENABLED=false; this process serves HTTP only.",
+    );
+  }
 
   logger.info("Interaction worker listening.");
 

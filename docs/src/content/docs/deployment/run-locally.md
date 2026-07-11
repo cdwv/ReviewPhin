@@ -7,7 +7,7 @@ Running from a source checkout is the fastest way to develop or evaluate ReviewP
 
 ## Prerequisites
 
-- Node.js 22 or newer.
+- Node.js 22.12 or newer.
 - pnpm (the repo pins a version through `packageManager`; `corepack enable` picks it up).
 - The GitHub Copilot CLI on your `PATH` if you plan to use the default Copilot model path, or a [model profile](../../management/model-profiles/) pointing at another provider.
 

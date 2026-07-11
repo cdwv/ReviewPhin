@@ -8,6 +8,10 @@ export function createId(prefix: string): string {
   return `${prefix}_${ulid()}`;
 }
 
+export function createUlid(): string {
+  return ulid();
+}
+
 export function createTenantKey(baseUrl: string, projectId: number): string {
   return `${normalizeBaseUrl(baseUrl)}::${projectId}`;
 }

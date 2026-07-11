@@ -3,7 +3,10 @@ import type { Logger } from "pino";
 import type { StorageHelpers } from "../storage/storage-helpers.js";
 import type { IPlatform } from "../platforms/IPlatform.js";
 import type {
+  PlatformDiscussionMutation,
+  PlatformDiscussionMutationResult,
   PlatformFindingPublication,
+  PlatformFindingsPublicationResult,
   PlatformPublicationLink,
   PlatformReviewComment,
   PlatformReviewPublicationAdapter,
@@ -76,6 +79,68 @@ interface PendingFindingPublication extends PlatformFindingPublication {
   body: string;
 }
 
+/**
+ * Minimal ownership guard passed to the reconciler so provider publication can be
+ * fenced against lease loss independently of the claim-scoped storage. Satisfied
+ * by the runner's `JobClaimContext`.
+ */
+export interface ReconcileClaimGuard {
+  assertOwned(): void;
+}
+
+/**
+ * Wraps a {@link PlatformReviewPublicationAdapter} so every provider-facing call
+ * asserts claim ownership immediately before and after it runs. If the lease is
+ * lost mid-reconcile the wrapper throws before issuing (or after completing) an
+ * adapter mutation, preventing a stale attempt from publishing platform changes.
+ */
+export class ClaimGuardedReviewPublicationAdapter
+  implements PlatformReviewPublicationAdapter
+{
+  public constructor(
+    private readonly delegate: PlatformReviewPublicationAdapter,
+    private readonly guard: ReconcileClaimGuard,
+  ) {}
+
+  public async loadDiscussions(options?: {
+    fresh?: boolean | undefined;
+  }): Promise<PlatformReviewDiscussion[]> {
+    this.guard.assertOwned();
+    const result = await this.delegate.loadDiscussions(options);
+    this.guard.assertOwned();
+    return result;
+  }
+
+  public async mutateDiscussion(
+    mutation: PlatformDiscussionMutation,
+  ): Promise<PlatformDiscussionMutationResult> {
+    this.guard.assertOwned();
+    const result = await this.delegate.mutateDiscussion(mutation);
+    this.guard.assertOwned();
+    return result;
+  }
+
+  public async publishFindings(input: {
+    publicationKey: string;
+    findings: PlatformFindingPublication[];
+    existingDiscussionIds: ReadonlySet<string>;
+  }): Promise<PlatformFindingsPublicationResult> {
+    this.guard.assertOwned();
+    const result = await this.delegate.publishFindings(input);
+    this.guard.assertOwned();
+    return result;
+  }
+
+  public async upsertSummary(input: {
+    body: string;
+  }): Promise<PlatformSummaryPublication> {
+    this.guard.assertOwned();
+    const result = await this.delegate.upsertSummary(input);
+    this.guard.assertOwned();
+    return result;
+  }
+}
+
 type DiscussionReconcileAction =
   | "created"
   | "updated"
@@ -85,14 +150,43 @@ type DiscussionReconcileAction =
 
 export class DiscussionReconciler {
   private readonly storage: StorageHelpers;
+  private activeStorage: StorageHelpers;
   private readonly logger: Logger;
 
   public constructor(options: DiscussionReconcilerOptions) {
     this.storage = options.storage;
+    this.activeStorage = options.storage;
     this.logger = options.logger;
   }
 
   public async reconcile(input: {
+    platform: IPlatform;
+    tenant: TenantRecord;
+    connection?: PlatformConnectionRecord;
+    context: ReviewSummaryContext;
+    mappings: DiscussionMappingRecord[];
+    interactionJobId: string;
+    interactionRunId: string;
+    reviewResult: ReviewResult;
+    publicationAdapter: PlatformReviewPublicationAdapter;
+    storage?: StorageHelpers;
+    guard?: ReconcileClaimGuard;
+  }): Promise<ReconcileSummary> {
+    this.activeStorage = input.storage ?? this.storage;
+    const publicationAdapter = input.guard
+      ? new ClaimGuardedReviewPublicationAdapter(
+          input.publicationAdapter,
+          input.guard,
+        )
+      : input.publicationAdapter;
+    try {
+      return await this.runReconcile({ ...input, publicationAdapter });
+    } finally {
+      this.activeStorage = this.storage;
+    }
+  }
+
+  private async runReconcile(input: {
     platform: IPlatform;
     tenant: TenantRecord;
     connection?: PlatformConnectionRecord;
@@ -609,7 +703,7 @@ export class DiscussionReconciler {
     discussion: PlatformReviewDiscussion;
     note: PlatformReviewComment;
   }): Promise<void> {
-    await this.storage.upsertDiscussionMapping({
+    await this.activeStorage.upsertDiscussionMapping({
       tenantId: input.tenant.id,
       codeReviewId: input.context.codeReview.id,
       identityKey: input.identityKey,
@@ -633,7 +727,7 @@ export class DiscussionReconciler {
         : "open",
       lastInteractionRunId: input.interactionRunId,
     });
-    await this.storage.updateReviewFindingStatus(
+    await this.activeStorage.updateReviewFindingStatus(
       input.tenant.id,
       input.context.codeReview.id,
       input.identityKey,
@@ -662,7 +756,7 @@ export class DiscussionReconciler {
       return;
     }
 
-    await this.storage.upsertDiscussionMapping({
+    await this.activeStorage.upsertDiscussionMapping({
       ...(input.knownDiscussion.mapping
         ? { id: input.knownDiscussion.mapping.id }
         : {}),
@@ -688,7 +782,7 @@ export class DiscussionReconciler {
       lastInteractionRunId: input.interactionRunId,
     });
 
-    const updatedFinding = await this.storage.updateReviewFindingStatus(
+    const updatedFinding = await this.activeStorage.updateReviewFindingStatus(
       input.tenant.id,
       input.context.codeReview.id,
       input.identityKey,
@@ -798,7 +892,7 @@ export class DiscussionReconciler {
       return;
     }
 
-    const retiredFinding = await this.storage.updateReviewFindingStatus(
+    const retiredFinding = await this.activeStorage.updateReviewFindingStatus(
       input.tenantId,
       input.codeReviewId,
       input.previousIdentityKey,

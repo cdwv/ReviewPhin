@@ -11,6 +11,7 @@ import type {
   InteractionRunRecord,
   CodeReviewSnapshotRecord,
   ModelProfileRecord,
+  ModelReasoningEffort,
   PlatformConnectionRecord,
   PlatformConnectionStatus,
   PreviousCompletedInteractionRecord,
@@ -27,6 +28,7 @@ import type {
   UpsertDiscussionMappingInput,
   UpsertInteractionRunMetricsInput,
   UpsertModelProfileInput,
+  InteractionJobStore,
 } from "./contract/index.js";
 
 const DEFAULT_PAGE_SIZE = 200;
@@ -177,6 +179,8 @@ export class StoreBackedStorage implements StorageHelpers {
       authToken: resolved.authToken,
       reviewModel: resolved.reviewModel,
       textGenerationModel: resolved.textGenerationModel,
+      reviewReasoningEffort: resolved.reviewReasoningEffort,
+      textGenerationReasoningEffort: resolved.textGenerationReasoningEffort,
       isDefault: resolved.isDefault,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
@@ -435,6 +439,37 @@ export class StoreBackedStorage implements StorageHelpers {
       return null;
     }
 
+    const activeJob = await this.stores.interactionJobs.find({
+      tenantId: { eq: tenant.id },
+      status: { eq: "in_progress" },
+    });
+    if (activeJob) {
+      throw new Error(
+        `Cannot delete tenant ${tenant.key} while interaction job ${activeJob.id} is in progress`,
+      );
+    }
+
+    const tenantJobs = await listAll(this.stores.interactionJobs, {
+      filters: { tenantId: { eq: tenant.id } },
+    });
+    const queuedJobs = tenantJobs.filter((job) => job.status === "queued");
+    if (queuedJobs.length > 0) {
+      const now = new Date().toISOString();
+      await this.stores.interactionJobs.patchMany(
+        queuedJobs.map((job) => ({
+          id: job.id,
+          value: {
+            status: "cancelled",
+            lastError: "Tenant deletion requested.",
+            finishedAt: now,
+            claimToken: null,
+            claimedBy: null,
+            claimExpiresAt: null,
+          },
+        })),
+      );
+    }
+
     const summary = await this.buildTenantDeletionSummary(tenant);
 
     await this.stores.discussionMappings.deleteMany(
@@ -516,8 +551,13 @@ export class StoreBackedStorage implements StorageHelpers {
       retryCount: 0,
       lastError: null,
       enqueuedAt: now,
+      availableAt: now,
       startedAt: null,
       finishedAt: null,
+      claimToken: null,
+      claimedBy: null,
+      claimExpiresAt: null,
+      latestInteractionRunId: null,
     });
 
     const job = await this.stores.interactionJobs.get(expectedId);
@@ -623,6 +663,7 @@ export class StoreBackedStorage implements StorageHelpers {
       projectMemoryJson: input.projectMemoryJson,
       workspaceStrategy: input.workspaceStrategy,
       createdAt: now,
+      interactionRunId: input.interactionRunId ?? null,
     });
 
     return getRequiredRecord(
@@ -652,6 +693,9 @@ export class StoreBackedStorage implements StorageHelpers {
       error: null,
       startedAt: now,
       finishedAt: null,
+      interactionJobClaimToken: input.interactionJobClaimToken ?? null,
+      reviewReasoningEffort: input.reviewReasoningEffort ?? null,
+      textGenerationReasoningEffort: input.textGenerationReasoningEffort ?? null,
     });
 
     return getRequiredRecord(
@@ -698,20 +742,34 @@ export class StoreBackedStorage implements StorageHelpers {
       }),
     ]);
 
-    const latestSnapshotByJobId = new Map<string, CodeReviewSnapshotRecord>();
+    const latestSnapshotByRunId = new Map<string, CodeReviewSnapshotRecord>();
+    const latestLegacySnapshotByJobId = new Map<
+      string,
+      CodeReviewSnapshotRecord
+    >();
     for (const snapshot of snapshots) {
-      const existing = latestSnapshotByJobId.get(snapshot.interactionJobId);
+      const target =
+        snapshot.interactionRunId === null
+          ? latestLegacySnapshotByJobId
+          : latestSnapshotByRunId;
+      const key = snapshot.interactionRunId ?? snapshot.interactionJobId;
+      const existing = target.get(key);
       if (
         !existing ||
-        compareIsoDesc(existing.createdAt, snapshot.createdAt) < 0
+        compareIsoDesc(existing.createdAt, snapshot.createdAt) > 0
       ) {
-        latestSnapshotByJobId.set(snapshot.interactionJobId, snapshot);
+        target.set(key, snapshot);
       }
     }
 
     const jobById = new Map(interactionJobs.map((job) => [job.id, job]));
+    const snapshotForRun = (
+      run: InteractionRunRecord,
+    ): CodeReviewSnapshotRecord | undefined =>
+      latestSnapshotByRunId.get(run.id) ??
+      latestLegacySnapshotByJobId.get(run.interactionJobId);
     const bestRun = interactionRuns
-      .filter((run) => latestSnapshotByJobId.has(run.interactionJobId))
+      .filter((run) => snapshotForRun(run) !== undefined)
       .toSorted((left, right) => {
         const timestampComparison = compareIsoDesc(
           left.finishedAt ?? left.startedAt,
@@ -721,10 +779,8 @@ export class StoreBackedStorage implements StorageHelpers {
           return timestampComparison;
         }
 
-        const leftSnapshot = latestSnapshotByJobId.get(left.interactionJobId)!;
-        const rightSnapshot = latestSnapshotByJobId.get(
-          right.interactionJobId,
-        )!;
+        const leftSnapshot = snapshotForRun(left)!;
+        const rightSnapshot = snapshotForRun(right)!;
         return compareIsoDesc(leftSnapshot.createdAt, rightSnapshot.createdAt);
       })[0];
 
@@ -733,7 +789,7 @@ export class StoreBackedStorage implements StorageHelpers {
     }
 
     const interactionJob = jobById.get(bestRun.interactionJobId);
-    const snapshot = latestSnapshotByJobId.get(bestRun.interactionJobId);
+    const snapshot = snapshotForRun(bestRun);
     if (!interactionJob || !snapshot) {
       return null;
     }
@@ -1161,6 +1217,228 @@ export class StoreBackedStorage implements StorageHelpers {
   }
 }
 
+/**
+ * Raised when a claim-aware storage operation reports that the current claim
+ * token no longer owns the interaction job or its run. The worker treats this as
+ * lease loss and stops issuing further state updates for the attempt.
+ */
+export class LeaseLostError extends Error {
+  public constructor(
+    message = "Interaction job lease was lost before the write could commit.",
+  ) {
+    super(message);
+    this.name = "LeaseLostError";
+  }
+}
+
+/**
+ * Ambient context describing the active interaction-job claim. The runner
+ * creates one per attempt and passes it to the worker. `interactionRunId` is set
+ * once the attempt's run has been created so later claim-aware writes can verify
+ * run ownership.
+ */
+export interface JobClaimContext {
+  readonly jobId: string;
+  readonly claimToken: string;
+  readonly signal: AbortSignal;
+  interactionRunId: string | null;
+  assertOwned(): void;
+}
+
+/**
+ * A {@link StorageHelpers} implementation scoped to a single interaction-job
+ * claim. It routes every attempt-owned mutation (run creation, terminal run
+ * transitions, findings, metrics, snapshots, finding-status reconciliation, and
+ * discussion-mapping persistence) through the claim-aware store methods so a
+ * stale attempt can never write shared storage after losing its lease. All read
+ * helpers are inherited unchanged from {@link StoreBackedStorage}.
+ */
+export class ClaimScopedStorage extends StoreBackedStorage {
+  public constructor(
+    stores: StorageStores,
+    private readonly claim: JobClaimContext,
+  ) {
+    super(stores);
+  }
+
+  private get jobs(): InteractionJobStore {
+    return this.stores.interactionJobs;
+  }
+
+  public override async createInteractionRun(
+    input: CreateInteractionRunInput,
+  ): Promise<InteractionRunRecord> {
+    this.claim.assertOwned();
+    const run = await this.jobs.createInteractionRunForClaim({
+      jobId: this.claim.jobId,
+      claimToken: this.claim.claimToken,
+      run: { ...input, interactionJobClaimToken: this.claim.claimToken },
+    });
+    if (!run) {
+      throw new LeaseLostError();
+    }
+    this.claim.interactionRunId = run.id;
+    return run;
+  }
+
+  public override async completeInteractionRun(
+    interactionRunId: string,
+    resultJson: string | null,
+  ): Promise<void> {
+    await this.transitionRun(interactionRunId, "completed", resultJson, null);
+  }
+
+  public override async failInteractionRun(
+    interactionRunId: string,
+    error: string,
+  ): Promise<void> {
+    await this.transitionRun(interactionRunId, "failed", null, error);
+  }
+
+  public override async cancelInteractionRun(
+    interactionRunId: string,
+    reason: string,
+  ): Promise<void> {
+    await this.transitionRun(interactionRunId, "cancelled", null, reason);
+  }
+
+  private async transitionRun(
+    interactionRunId: string,
+    status: "completed" | "failed" | "cancelled",
+    resultJson: string | null,
+    error: string | null,
+  ): Promise<void> {
+    this.claim.assertOwned();
+    const ok = await this.jobs.transitionInteractionRunForClaim({
+      jobId: this.claim.jobId,
+      claimToken: this.claim.claimToken,
+      interactionRunId,
+      status,
+      resultJson,
+      error,
+      finishedAt: new Date().toISOString(),
+    });
+    if (!ok) {
+      throw new LeaseLostError();
+    }
+  }
+
+  public override async replaceReviewFindings(
+    interactionRunId: string,
+    findings: CreateReviewFindingInput[],
+  ): Promise<void> {
+    this.claim.assertOwned();
+    const ok = await this.jobs.replaceReviewFindingsForClaim({
+      jobId: this.claim.jobId,
+      claimToken: this.claim.claimToken,
+      interactionRunId,
+      findings,
+    });
+    if (!ok) {
+      throw new LeaseLostError();
+    }
+  }
+
+  public override async upsertInteractionRunMetrics(
+    input: UpsertInteractionRunMetricsInput,
+  ): Promise<InteractionRunMetricsRecord> {
+    this.claim.assertOwned();
+    const ok = await this.jobs.upsertInteractionRunMetricsForClaim({
+      jobId: this.claim.jobId,
+      claimToken: this.claim.claimToken,
+      interactionRunId: input.interactionRunId,
+      metrics: input,
+    });
+    if (!ok) {
+      throw new LeaseLostError();
+    }
+    const metrics = await this.stores.interactionRunMetrics.find({
+      interactionRunId: { eq: input.interactionRunId },
+    });
+    if (!metrics) {
+      throw new Error(
+        `Failed to persist interaction run metrics for run ${input.interactionRunId}`,
+      );
+    }
+    return metrics;
+  }
+
+  public override async createCodeReviewSnapshot(
+    input: CreateCodeReviewSnapshotInput,
+  ): Promise<CodeReviewSnapshotRecord> {
+    this.claim.assertOwned();
+    const interactionRunId =
+      input.interactionRunId ?? this.claim.interactionRunId;
+    if (!interactionRunId) {
+      throw new Error(
+        "storage-v005 code-review snapshots require an interaction run id",
+      );
+    }
+    const snapshot = await this.jobs.createCodeReviewSnapshotForClaim({
+      jobId: this.claim.jobId,
+      claimToken: this.claim.claimToken,
+      interactionRunId,
+      snapshot: { ...input, interactionRunId },
+    });
+    if (!snapshot) {
+      throw new LeaseLostError();
+    }
+    return snapshot;
+  }
+
+  public override async updateReviewFindingStatus(
+    tenantId: string,
+    codeReviewId: number,
+    identityKey: string,
+    status: ReviewFindingStatus,
+    options?: {
+      currentStatuses?: readonly ReviewFindingStatus[] | undefined;
+    },
+  ): Promise<boolean> {
+    this.claim.assertOwned();
+    const interactionRunId = this.claim.interactionRunId;
+    if (!interactionRunId) {
+      // Without an owned run there is no way to verify the claim still holds the
+      // lease, so treat this the same as lease loss.
+      throw new LeaseLostError();
+    }
+    const owned = await this.jobs.updateReviewFindingStatusForClaim({
+      jobId: this.claim.jobId,
+      claimToken: this.claim.claimToken,
+      interactionRunId,
+      tenantId,
+      codeReviewId,
+      identityKey,
+      status,
+      ...(options?.currentStatuses
+        ? { currentStatuses: options.currentStatuses }
+        : {}),
+    });
+    // The claim-aware store returns false only when the claim/run ownership
+    // predicate fails; a no-op (no historical finding matched) returns true.
+    // A false result therefore means the lease was lost.
+    if (!owned) {
+      throw new LeaseLostError();
+    }
+    return true;
+  }
+
+  public override async upsertDiscussionMapping(
+    input: UpsertDiscussionMappingInput,
+  ): Promise<DiscussionMappingRecord> {
+    this.claim.assertOwned();
+    const mapping = await this.jobs.upsertDiscussionMappingForClaim({
+      jobId: this.claim.jobId,
+      claimToken: this.claim.claimToken,
+      mapping: input,
+    });
+    if (!mapping) {
+      throw new LeaseLostError();
+    }
+    return mapping;
+  }
+}
+
 export async function listAll<TEntity, TFilters, TOrder extends string>(
   store: EntityStore<TEntity, TFilters, TOrder>,
   input?: {
@@ -1287,6 +1565,8 @@ function resolveModelProfileUpsertInput(
   authToken: string | null;
   reviewModel: string | null;
   textGenerationModel: string | null;
+  reviewReasoningEffort: ModelReasoningEffort | null;
+  textGenerationReasoningEffort: ModelReasoningEffort | null;
   isDefault: boolean;
 } {
   const providerBaseUrl = resolveDefined(
@@ -1315,6 +1595,14 @@ function resolveModelProfileUpsertInput(
     textGenerationModel: resolveDefined(
       input.textGenerationModel,
       existing?.textGenerationModel ?? null,
+    ),
+    reviewReasoningEffort: resolveDefined(
+      input.reviewReasoningEffort,
+      existing?.reviewReasoningEffort ?? null,
+    ),
+    textGenerationReasoningEffort: resolveDefined(
+      input.textGenerationReasoningEffort,
+      existing?.textGenerationReasoningEffort ?? null,
     ),
     isDefault: resolveDefined(input.isDefault, existing?.isDefault ?? false),
   };

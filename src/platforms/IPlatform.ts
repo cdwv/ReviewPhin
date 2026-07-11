@@ -162,6 +162,9 @@ export interface PlatformReviewRuntime {
     codeReviewId: number;
     result: ChatterBatchResult;
     plannedTargets: ResponseTarget[];
+    guard: {
+      assertOwned(): void;
+    };
   }): Promise<
     Array<{
       target: ResponseTarget;
@@ -234,6 +237,7 @@ export interface IPlatform {
     tenant?: TenantRecord;
     connection?: PlatformConnectionRecord;
     interactionJobId: string;
+    workspaceAttemptId?: string | undefined;
     workspaceRoot: string;
     memoryEnabled: boolean;
     interactionRunId?: string | undefined;
