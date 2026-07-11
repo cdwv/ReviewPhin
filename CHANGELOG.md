@@ -3,6 +3,22 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v1.0.0 - 2026-07-11
+### Added
+- Review jobs remain queued across worker restarts and automatically
+recover after an interrupted attempt.
+- Administrators can configure job polling, lease duration, maximum
+queue age, and whether a process runs jobs.
+- Model profiles can set reasoning effort separately for reviews and
+text generation.
+
+### Changed
+- Custom storage adapters must implement the storage-v005 claim
+operations, and administrators must stop all v004 ReviewPhin processes
+before starting upgraded workers.
+- Flotiq deployments may run only one job-runner process, while
+additional replicas must disable their job runner.
+
 ## v0.13.3 - 2026-07-06
 ### Changed
 - Make official page discoverable by bots
