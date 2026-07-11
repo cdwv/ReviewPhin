@@ -484,7 +484,8 @@ export function createSingleWorkerInteractionJobStore(
       });
     },
 
-    async transitionInteractionRunForClaim(input) {
+    transitionInteractionRunForClaim(input) {
+      return serializeJobMutation(async () => {
       const job = await isJobOwned(input.jobId, input.claimToken);
       if (!job) {
         return false;
@@ -504,9 +505,11 @@ export function createSingleWorkerInteractionJobStore(
         finishedAt: input.finishedAt,
       });
       return true;
+      });
     },
 
-    async replaceReviewFindingsForClaim(input) {
+    replaceReviewFindingsForClaim(input) {
+      return serializeJobMutation(async () => {
       const job = await isJobOwned(input.jobId, input.claimToken);
       if (!job) {
         return false;
@@ -545,9 +548,11 @@ export function createSingleWorkerInteractionJobStore(
         });
       }
       return true;
+      });
     },
 
-    async upsertInteractionRunMetricsForClaim(input) {
+    upsertInteractionRunMetricsForClaim(input) {
+      return serializeJobMutation(async () => {
       const job = await isJobOwned(input.jobId, input.claimToken);
       if (!job) {
         return false;
@@ -565,9 +570,11 @@ export function createSingleWorkerInteractionJobStore(
       }
       await upsertMetrics(input.metrics);
       return true;
+      });
     },
 
-    async createCodeReviewSnapshotForClaim(input) {
+    createCodeReviewSnapshotForClaim(input) {
+      return serializeJobMutation(async () => {
       const job = await isJobOwned(input.jobId, input.claimToken);
       if (!job) {
         return null;
@@ -606,9 +613,11 @@ export function createSingleWorkerInteractionJobStore(
       await options.codeReviewSnapshots.upsert(snapshot);
       const created = await options.codeReviewSnapshots.get(snapshotId);
       return created ?? snapshot;
+      });
     },
 
-    async updateReviewFindingStatusForClaim(input) {
+    updateReviewFindingStatusForClaim(input) {
+      return serializeJobMutation(async () => {
       const job = await isJobOwned(input.jobId, input.claimToken);
       if (!job) {
         return false;
@@ -668,14 +677,17 @@ export function createSingleWorkerInteractionJobStore(
         });
       }
       return true;
+      });
     },
 
-    async upsertDiscussionMappingForClaim(input) {
+    upsertDiscussionMappingForClaim(input) {
+      return serializeJobMutation(async () => {
       const job = await isJobOwned(input.jobId, input.claimToken);
       if (!job) {
         return null;
       }
       return upsertDiscussionMapping(input.mapping);
+      });
     },
 
     async reconcileOrphanedInteractionRuns(input) {

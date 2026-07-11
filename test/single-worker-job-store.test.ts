@@ -387,6 +387,88 @@ describe("single-worker interaction job store", () => {
     });
   });
 
+  it("serializes claim-scoped writes with lease-loss transitions", async () => {
+    const { jobs, runs, store } = makeStores();
+    await jobs.upsert(makeJob({ id: "job-write-race" }));
+    await store.claimNext({
+      workerId: "worker-1",
+      claimToken: "token-1",
+      now: "2026-06-01T01:00:00.000Z",
+      claimExpiresAt: "2026-06-01T01:02:00.000Z",
+      queuedAfter: QUEUED_AFTER,
+      maxJobRetries: 3,
+    });
+    const run = await store.createInteractionRunForClaim({
+      jobId: "job-write-race",
+      claimToken: "token-1",
+      run: {
+        interactionJobId: "job-write-race",
+        tenantId: "tenant-1",
+        provider: "copilot-sdk",
+        model: "gpt-5.6",
+        modelProfileName: null,
+        providerBaseUrl: null,
+        providerType: null,
+        textGenerationModel: null,
+      },
+    });
+    expect(run).not.toBeNull();
+
+    const originalUpsert = runs.upsert.bind(runs);
+    let releaseRunWrite!: () => void;
+    const runWriteReleased = new Promise<void>((resolve) => {
+      releaseRunWrite = resolve;
+    });
+    let notifyRunWriteStarted!: () => void;
+    const runWriteStarted = new Promise<void>((resolve) => {
+      notifyRunWriteStarted = resolve;
+    });
+    runs.upsert = async (entity) => {
+      if (entity.id === run!.id && entity.status === "completed") {
+        notifyRunWriteStarted();
+        await runWriteReleased;
+      }
+      await originalUpsert(entity);
+    };
+
+    const runTransition = store.transitionInteractionRunForClaim({
+      jobId: "job-write-race",
+      claimToken: "token-1",
+      interactionRunId: run!.id,
+      status: "completed",
+      resultJson: "{}",
+      error: null,
+      finishedAt: "2026-06-01T01:01:00.000Z",
+    });
+    await runWriteStarted;
+
+    const claimTransition = store.transitionClaim({
+      jobId: "job-write-race",
+      claimToken: "token-1",
+      status: "queued",
+      retryCount: 1,
+      lastError: "lease lost",
+      availableAt: "2026-06-01T01:02:00.000Z",
+      finishedAt: null,
+    });
+    const claimStateBeforeRunWrite = await Promise.race([
+      claimTransition.then(() => "settled" as const),
+      new Promise<"pending">((resolve) =>
+        setImmediate(() => resolve("pending")),
+      ),
+    ]);
+
+    expect(claimStateBeforeRunWrite).toBe("pending");
+    releaseRunWrite();
+    await expect(runTransition).resolves.toBe(true);
+    await expect(claimTransition).resolves.toBe(true);
+    expect(await runs.get(run!.id)).toMatchObject({ status: "completed" });
+    expect(await jobs.get("job-write-race")).toMatchObject({
+      status: "queued",
+      claimToken: null,
+    });
+  });
+
   it("does not renew a claim at or after its persisted lease deadline", async () => {
     const { jobs, store } = makeStores(
       5,
