@@ -146,6 +146,13 @@ gh api --method POST \
 Each review cycle must use a new trigger comment. Never reuse an earlier comment
 or its reactions unless it was created for the latest changes.
 
+Before posting the trigger, fetch all current pull request issue comments and
+record each ReviewPhin comment's ID, body, and `updated_at` value. In particular,
+identify the bot-owned summary comment by the
+`<!-- reviewphin-review-summary -->` marker and retain its current body and
+`updated_at` value. ReviewPhin normally edits this existing comment instead of
+posting a new summary.
+
 ## 6. Wait For ReviewPhin
 
 Poll reactions on the trigger comment:
@@ -179,17 +186,27 @@ review succeeded.
 
 ## 7. Review The Findings
 
-After `hooray`, collect new ReviewPhin output created for this review cycle:
+After `hooray`, refetch all ReviewPhin output, including existing comments that
+may have been edited during this review cycle:
 
 - inline pull request review comments
 - pull request reviews and their bodies
 - issue comments, including the ReviewPhin summary
 
-Use timestamps and comment or review IDs captured before the trigger to avoid
-reprocessing older findings. Filter by the same ReviewPhin bot identity when
-possible.
+Compare IDs, bodies, and update timestamps captured before the trigger to find
+new or edited output. Do not filter only for new comment IDs or creation
+timestamps: the ReviewPhin summary keeps the same ID and is updated in place.
+Filter by the same ReviewPhin bot identity when possible.
 
-Evaluate every new finding against the current branch:
+Always read the complete latest bot-owned summary comment after the review,
+identified by the `<!-- reviewphin-review-summary -->` marker. Treat its
+`### Merge readiness` status as the authoritative aggregate result, including
+persisted findings from earlier cycles. A status other than `Ready` means the
+pull request is not merge-ready and the watching loop cannot finish, even when
+the latest cycle produced no new findings.
+
+Evaluate every new or still-active finding represented by the refreshed output
+and latest summary against the current branch:
 
 1. Read the referenced code and surrounding behavior.
 2. Reproduce or prove the issue when practical.
@@ -215,16 +232,20 @@ When one or more code or documentation fixes were made:
 1. Run the relevant validation again.
 2. Commit the fixes with a focused message.
 3. Push the branch normally.
-4. Capture the current ReviewPhin comment and review IDs.
+4. Snapshot the current ReviewPhin output, including comment IDs, bodies, and
+   update timestamps.
 5. Post a new `@ReviewPhin review` trigger comment.
 6. Wait for that new comment's `eyes` plus `hooray` or `confused` reactions.
-7. Evaluate only the findings from the new incremental review.
+7. Evaluate new or edited findings from the incremental review and refetch the
+   updated ReviewPhin summary.
 
 Repeat for as many cycles as necessary. Do not impose an arbitrary review-cycle
 limit.
 
-If a successful cycle produces no actionable findings, or all new findings were
-correctly rebutted and no branch changes remain, stop the watching loop.
+Stop the watching loop only when the latest successful cycle has no unresolved
+actionable findings, all findings that required an answer were correctly
+rebutted, no branch changes remain, and the latest ReviewPhin summary reports
+`- **Status:** Ready`. No new findings by itself is not a stopping condition.
 
 ## 9. Finish
 
@@ -234,6 +255,8 @@ Before finishing, confirm:
 - the working tree is clean for the files handled by this task
 - the pull request body still follows the repository conventions
 - the latest trigger completed with ReviewPhin's `hooray` reaction
+- the latest bot-owned ReviewPhin summary was refetched after that trigger and
+  its merge readiness status is `Ready`
 - every finding from the latest cycle was fixed or answered
 - no fix is waiting to be committed or pushed
 
