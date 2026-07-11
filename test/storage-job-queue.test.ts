@@ -21,8 +21,10 @@ async function databaseFile(): Promise<string> {
   );
 }
 
-async function setupStorage() {
-  const storage = await openSqliteTestStorage(await databaseFile());
+async function setupStorage(
+  now: () => string = () => "2026-06-01T01:01:00.000Z",
+) {
+  const storage = await openSqliteTestStorage(await databaseFile(), { now });
   const tenant = await storage.upsertTenant(createGitLabTenantInput());
   return { storage, tenantId: tenant.id };
 }
@@ -507,7 +509,9 @@ describe("sqlite claim-aware interaction job store", () => {
   });
 
   it("does not renew a claim at or after its persisted lease deadline", async () => {
-    const { storage, tenantId } = await setupStorage();
+    const { storage, tenantId } = await setupStorage(() =>
+      new Date().toISOString(),
+    );
     const capturedNow = new Date(Date.now() - 2_000).toISOString();
     const persistedDeadline = new Date(Date.now() - 1_000).toISOString();
     const renewedDeadline = new Date(Date.now() + 60_000).toISOString();
@@ -537,6 +541,77 @@ describe("sqlite claim-aware interaction job store", () => {
       ).toMatchObject({
         claimExpiresAt: persistedDeadline,
       });
+    } finally {
+      await storage.close();
+    }
+  });
+
+  it("rejects claim-scoped writes after the persisted lease deadline", async () => {
+    let currentTime = "2026-06-01T01:01:00.000Z";
+    const { storage, tenantId } = await setupStorage(() => currentTime);
+    try {
+      await storage.stores.interactionJobs.upsert(
+        makeJob(tenantId, {
+          id: "job-expired-write",
+          dedupeKey: "expired-write",
+        }),
+      );
+      await storage.stores.interactionJobs.claimNext({
+        workerId: "worker-1",
+        claimToken: "token-1",
+        now: "2026-06-01T01:00:00.000Z",
+        claimExpiresAt: "2026-06-01T01:02:00.000Z",
+        queuedAfter: QUEUED_AFTER,
+        maxJobRetries: 3,
+      });
+      const runInput = {
+        interactionJobId: "job-expired-write",
+        tenantId,
+        provider: "copilot-sdk",
+        model: "gpt-5.6",
+        modelProfileName: null,
+        providerBaseUrl: null,
+        providerType: null,
+        textGenerationModel: null,
+      };
+      const run =
+        await storage.stores.interactionJobs.createInteractionRunForClaim({
+          jobId: "job-expired-write",
+          claimToken: "token-1",
+          run: runInput,
+        });
+      expect(run).not.toBeNull();
+
+      currentTime = "2026-06-01T01:02:00.000Z";
+      await expect(
+        storage.stores.interactionJobs.createInteractionRunForClaim({
+          jobId: "job-expired-write",
+          claimToken: "token-1",
+          run: runInput,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        storage.stores.interactionJobs.transitionInteractionRunForClaim({
+          jobId: "job-expired-write",
+          claimToken: "token-1",
+          interactionRunId: run!.id,
+          status: "completed",
+          resultJson: "{}",
+          error: null,
+          finishedAt: currentTime,
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        storage.stores.interactionJobs.transitionClaim({
+          jobId: "job-expired-write",
+          claimToken: "token-1",
+          status: "completed",
+          retryCount: 0,
+          lastError: null,
+          availableAt: currentTime,
+          finishedAt: currentTime,
+        }),
+      ).resolves.toBe(false);
     } finally {
       await storage.close();
     }

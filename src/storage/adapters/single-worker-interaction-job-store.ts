@@ -178,7 +178,8 @@ export function createSingleWorkerInteractionJobStore(
     if (
       job &&
       job.status === "in_progress" &&
-      job.claimToken === claimToken
+      job.claimToken === claimToken &&
+      !isLeaseExpired(job, now())
     ) {
       return job;
     }
@@ -193,7 +194,8 @@ export function createSingleWorkerInteractionJobStore(
     if (
       run &&
       run.status === "in_progress" &&
-      run.interactionJobClaimToken === claimToken
+      run.interactionJobClaimToken === claimToken &&
+      (await isJobOwned(run.interactionJobId, claimToken))
     ) {
       return run;
     }

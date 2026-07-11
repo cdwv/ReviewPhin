@@ -56,6 +56,7 @@ import { buildSqlPlaceholders, WHERE_OPERATORS } from "./where-operators.js";
 interface SqliteStoreDatabaseOptions {
   databasePath: string;
   logger?: Logger;
+  now?: () => string;
 }
 
 type Row = Record<string, unknown>;
@@ -65,10 +66,12 @@ export class SqliteStoreDatabase {
   private db: DatabaseSync | null = null;
 
   private readonly logger: Logger | undefined;
+  private readonly now: () => string;
 
   public constructor(options: SqliteStoreDatabaseOptions) {
     this.databasePath = options.databasePath;
     this.logger = options.logger;
+    this.now = options.now ?? (() => new Date().toISOString());
   }
 
   public async open(): Promise<void> {
@@ -78,6 +81,7 @@ export class SqliteStoreDatabase {
 
     await mkdir(dirname(this.databasePath), { recursive: true });
     this.db = new DatabaseSync(this.databasePath);
+    this.db.function("reviewphin_now", () => this.now());
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
@@ -928,7 +932,7 @@ export class SqliteStoreDatabase {
            WHERE id = ? AND claim_token = ? AND status = 'in_progress'
              AND claim_expires_at IS NOT NULL
              AND claim_expires_at > ?
-             AND claim_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+             AND claim_expires_at > reviewphin_now()`,
         )
         .run(input.claimExpiresAt, input.jobId, input.claimToken, input.now);
       return Number(result.changes) === 1;
@@ -950,7 +954,9 @@ export class SqliteStoreDatabase {
           `UPDATE interaction_jobs
            SET status = ?, retry_count = ?, last_error = ?, available_at = ?, finished_at = ?,
                claim_token = NULL, claimed_by = NULL, claim_expires_at = NULL
-           WHERE id = ? AND claim_token = ? AND status = 'in_progress'`,
+           WHERE id = ? AND claim_token = ? AND status = 'in_progress'
+             AND claim_expires_at IS NOT NULL
+             AND claim_expires_at > reviewphin_now()`,
         )
         .run(
           input.status,
@@ -3188,7 +3194,10 @@ function isInteractionJobOwned(
 ): boolean {
   const row = database
     .prepare(
-      "SELECT id FROM interaction_jobs WHERE id = ? AND claim_token = ? AND status = 'in_progress'",
+      `SELECT id FROM interaction_jobs
+       WHERE id = ? AND claim_token = ? AND status = 'in_progress'
+         AND claim_expires_at IS NOT NULL
+         AND claim_expires_at > reviewphin_now()`,
     )
     .get(jobId, claimToken) as Row | undefined;
   return row !== undefined;
@@ -3201,9 +3210,18 @@ function isInteractionRunOwnedInProgress(
 ): boolean {
   const row = database
     .prepare(
-      "SELECT id FROM interaction_runs WHERE id = ? AND interaction_job_claim_token = ? AND status = 'in_progress'",
+      `SELECT run.id
+       FROM interaction_runs run
+       JOIN interaction_jobs job ON job.id = run.interaction_job_id
+       WHERE run.id = ?
+         AND run.interaction_job_claim_token = ?
+         AND run.status = 'in_progress'
+         AND job.status = 'in_progress'
+         AND job.claim_token = ?
+         AND job.claim_expires_at IS NOT NULL
+         AND job.claim_expires_at > reviewphin_now()`,
     )
-    .get(interactionRunId, claimToken) as Row | undefined;
+    .get(interactionRunId, claimToken, claimToken) as Row | undefined;
   return row !== undefined;
 }
 
