@@ -102,7 +102,7 @@ curl http://localhost:3000/healthz
 A Helm chart is published to GHCR as `oci://ghcr.io/cdwv/charts/reviewphin`. Local checkouts can also install the chart from `.chart/`. It deploys one `Deployment`, one `Service` on port `3000`, and one `PersistentVolumeClaim` for `/app/data` and `/app/tmp`.
 
 ```bash
-REVIEWPHIN_VERSION=1.0.0
+REVIEWPHIN_VERSION=1.0.1
 REVIEWPHIN_CHART=oci://ghcr.io/cdwv/charts/reviewphin
 
 kubectl create namespace reviewphin
