@@ -34,17 +34,20 @@ type GitRunner = (input: GitRunnerInput) => Promise<GitRunnerResult>;
 
 interface WorkspaceMaterializerOptions {
   workspaceRoot: string;
+  workspaceAttemptId?: string | undefined;
   logger: Logger;
   gitRunner?: GitRunner;
 }
 
 export class WorkspaceMaterializer {
   private readonly workspaceRoot: string;
+  private readonly workspaceAttemptId: string | undefined;
   private readonly logger: Logger;
   private readonly gitRunner: GitRunner;
 
   public constructor(options: WorkspaceMaterializerOptions) {
     this.workspaceRoot = options.workspaceRoot;
+    this.workspaceAttemptId = options.workspaceAttemptId;
     this.logger = options.logger;
     this.gitRunner = options.gitRunner ?? runGitCommand;
   }
@@ -57,7 +60,9 @@ export class WorkspaceMaterializer {
     headSha: string;
     changes: GitLabMergeRequestChange[];
   }): Promise<MaterializedWorkspace> {
-    const cleanupRoot = join(this.workspaceRoot, input.jobId);
+    const cleanupRoot = this.workspaceAttemptId
+      ? join(this.workspaceRoot, input.jobId, this.workspaceAttemptId)
+      : join(this.workspaceRoot, input.jobId);
     await resetDirectory(cleanupRoot);
 
     try {

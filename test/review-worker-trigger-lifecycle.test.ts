@@ -212,4 +212,60 @@ describe("ReviewWorker provider trigger lifecycle", () => {
     expect(lifecycle.retry).not.toHaveBeenCalled();
     expect(transitionClaim).not.toHaveBeenCalled();
   });
+
+  it("does not overwrite lifecycle state owned by a replacement claim", async () => {
+    const lifecycle: PlatformTriggerLifecycle = {
+      queued: vi.fn(async () => {}),
+      inProgress: vi.fn(async () => {}),
+      completed: vi.fn(async () => {}),
+      retry: vi.fn(async () => {}),
+      failed: vi.fn(async () => {}),
+    };
+    const job = {
+      id: "job-reclaimed",
+      tenantId: "tenant-github",
+      status: "in_progress",
+      claimToken: "replacement-claim",
+      lastError: "Previous attempt lost its lease.",
+    };
+    const tenant = {
+      id: "tenant-github",
+      platform: "github",
+    };
+    const connection = {
+      id: "connection-github",
+    };
+    const platform = {
+      createTriggerLifecycle: vi.fn(() => lifecycle),
+    } as unknown as IPlatform;
+    const worker = new ReviewWorker({
+      storage: {
+        stores: {
+          interactionJobs: {
+            get: vi.fn(async () => job),
+          },
+        },
+      } as never,
+      tenantRegistry: {
+        getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
+      } as never,
+      reviewProviderFactory: {} as never,
+      chatterRunnerFactory: {} as never,
+      reconciler: {} as never,
+      logger: createLogger("silent"),
+      runLogDir: "tmp/test-trigger-lifecycle",
+      maxJobRetries: 3,
+      retryBackoffMs: 1000,
+      platformResolver: () => platform,
+    });
+
+    await worker.reconcileOrphanLifecycle({
+      id: "run-stale",
+      interactionJobId: job.id,
+      interactionJobClaimToken: "stale-claim",
+    } as never);
+
+    expect(lifecycle.retry).not.toHaveBeenCalled();
+    expect(lifecycle.failed).not.toHaveBeenCalled();
+  });
 });

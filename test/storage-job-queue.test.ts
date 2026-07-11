@@ -506,6 +506,39 @@ describe("sqlite claim-aware interaction job store", () => {
     }
   });
 
+  it("does not renew a claim at or after its persisted lease deadline", async () => {
+    const { storage, tenantId } = await setupStorage();
+    try {
+      await storage.stores.interactionJobs.upsert(
+        makeJob(tenantId, { id: "job-expired-renewal", dedupeKey: "expired" }),
+      );
+      await storage.stores.interactionJobs.claimNext({
+        workerId: "worker-1",
+        claimToken: "token-1",
+        now: "2026-06-01T01:00:00.000Z",
+        claimExpiresAt: "2026-06-01T01:02:00.000Z",
+        queuedAfter: QUEUED_AFTER,
+        maxJobRetries: 3,
+      });
+
+      expect(
+        await storage.stores.interactionJobs.renewClaim({
+          jobId: "job-expired-renewal",
+          claimToken: "token-1",
+          now: "2026-06-01T01:02:00.000Z",
+          claimExpiresAt: "2026-06-01T01:04:00.000Z",
+        }),
+      ).toBe(false);
+      expect(
+        await storage.stores.interactionJobs.get("job-expired-renewal"),
+      ).toMatchObject({
+        claimExpiresAt: "2026-06-01T01:02:00.000Z",
+      });
+    } finally {
+      await storage.close();
+    }
+  });
+
   it("creates runs and reconciles orphaned runs after lease loss", async () => {
     const { storage, tenantId } = await setupStorage();
     try {

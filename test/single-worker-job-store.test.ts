@@ -383,6 +383,31 @@ describe("single-worker interaction job store", () => {
     });
   });
 
+  it("does not renew a claim at or after its persisted lease deadline", async () => {
+    const { jobs, store } = makeStores();
+    await jobs.upsert(makeJob({ id: "job-expired-renewal" }));
+    await store.claimNext({
+      workerId: "worker-1",
+      claimToken: "token-1",
+      now: "2026-06-01T01:00:00.000Z",
+      claimExpiresAt: "2026-06-01T01:02:00.000Z",
+      queuedAfter: QUEUED_AFTER,
+      maxJobRetries: 3,
+    });
+
+    expect(
+      await store.renewClaim({
+        jobId: "job-expired-renewal",
+        claimToken: "token-1",
+        now: "2026-06-01T01:02:00.000Z",
+        claimExpiresAt: "2026-06-01T01:04:00.000Z",
+      }),
+    ).toBe(false);
+    expect(await store.get("job-expired-renewal")).toMatchObject({
+      claimExpiresAt: "2026-06-01T01:02:00.000Z",
+    });
+  });
+
   it("reconciles orphaned in-progress runs after the job loses its claim", async () => {
     const { jobs, store } = makeStores();
     await jobs.upsert(makeJob({ id: "job-orphan" }));

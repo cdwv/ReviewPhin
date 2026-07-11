@@ -67,6 +67,7 @@ interface GitLabReviewRuntimeOptions {
   logger: Logger;
   resolvedTenant: ResolvedTenant;
   interactionJobId: string;
+  workspaceAttemptId?: string | undefined;
   workspaceRoot: string;
   memoryEnabled: boolean;
   interactionRunId?: string | undefined;
@@ -89,6 +90,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     this.tenant = options.resolvedTenant.tenant;
     this.workspaceMaterializer = new WorkspaceMaterializer({
       workspaceRoot: options.workspaceRoot,
+      workspaceAttemptId: options.workspaceAttemptId,
       logger: options.logger,
     });
     this.hydrator = new CodeReviewContextHydrator({

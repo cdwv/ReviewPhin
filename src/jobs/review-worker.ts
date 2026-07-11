@@ -49,6 +49,7 @@ interface ReviewRuntimeFactoryInput {
   tenant: TenantRecord;
   connection: ResolvedTenant["connection"];
   interactionJobId: string;
+  workspaceAttemptId: string;
   workspaceRoot: string;
   memoryEnabled: boolean;
   interactionRunId?: string | undefined;
@@ -115,6 +116,7 @@ export class ReviewWorker {
             connection: input.connection,
           },
           interactionJobId: input.interactionJobId,
+          workspaceAttemptId: input.workspaceAttemptId,
           workspaceRoot: input.workspaceRoot,
           memoryEnabled: input.memoryEnabled,
           interactionRunId: input.interactionRunId,
@@ -174,8 +176,9 @@ export class ReviewWorker {
    * that a runner has just marked failed. Maps the owning job's current state to
    * a provider-side lifecycle action per the storage-v005 contract:
    *
-   * - a queued job, or an in-progress job now owned by a different claim, maps to
-   *   `retry`;
+   * - a queued job maps to `retry`;
+   * - an in-progress job owned by a replacement claim performs no action because
+   *   the replacement attempt owns the provider lifecycle;
    * - a `failed`, `cancelled`, or `expired` job maps to `failed`;
    * - a `completed` job performs no action because the winning attempt already
    *   completed its lifecycle.
@@ -211,11 +214,7 @@ export class ReviewWorker {
       const message =
         job.lastError ??
         "Interaction run abandoned after its owning claim was lost.";
-      if (
-        job.status === "queued" ||
-        (job.status === "in_progress" &&
-          job.claimToken !== run.interactionJobClaimToken)
-      ) {
+      if (job.status === "queued") {
         await lifecycle.retry(message);
       } else if (
         job.status === "failed" ||
@@ -286,6 +285,7 @@ export class ReviewWorker {
         tenant,
         connection,
         interactionJobId: job.id,
+        workspaceAttemptId: context.claimToken,
         workspaceRoot: this.workspaceRoot,
         memoryEnabled: this.memoryEnabled,
       });
@@ -351,6 +351,7 @@ export class ReviewWorker {
         tenant,
         connection,
         interactionJobId: job.id,
+        workspaceAttemptId: context.claimToken,
         interactionRunId: interactionRun.id,
         runArtifacts,
         workspaceRoot: this.workspaceRoot,

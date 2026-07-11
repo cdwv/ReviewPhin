@@ -925,9 +925,10 @@ export class SqliteStoreDatabase {
       const result = database
         .prepare(
           `UPDATE interaction_jobs SET claim_expires_at = ?
-           WHERE id = ? AND claim_token = ? AND status = 'in_progress'`,
+           WHERE id = ? AND claim_token = ? AND status = 'in_progress'
+             AND claim_expires_at IS NOT NULL AND claim_expires_at > ?`,
         )
-        .run(input.claimExpiresAt, input.jobId, input.claimToken);
+        .run(input.claimExpiresAt, input.jobId, input.claimToken, input.now);
       return Number(result.changes) === 1;
     });
   }

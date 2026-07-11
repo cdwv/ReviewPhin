@@ -1232,6 +1232,25 @@ describe("SqliteStorage tenants", () => {
     await expect(storage.deleteTenantWithSummary(tenant.key)).rejects.toThrow(
       /in progress/,
     );
+    const queuedJob = await storage.createOrGetInteractionJob({
+      tenantId: tenant.id,
+      dedupeKey: "tenant-delete-queued-job",
+      codeReviewId: 8,
+      commentId: 56,
+      headSha: "def456",
+      payloadJson: "{}",
+    });
+    await expect(storage.deleteTenantWithSummary(tenant.key)).rejects.toThrow(
+      /in progress/,
+    );
+    expect(
+      await storage.stores.interactionJobs.get(queuedJob.job.id),
+    ).toMatchObject({
+      status: "queued",
+      finishedAt: null,
+      lastError: null,
+    });
+    await storage.stores.interactionJobs.delete(queuedJob.job.id);
     expect(countRows(databasePath, "interaction_jobs")).toBe(1);
     expect(countRows(databasePath, "code_review_snapshots")).toBe(1);
     expect(countRows(databasePath, "interaction_runs")).toBe(1);

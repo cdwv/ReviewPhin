@@ -400,7 +400,11 @@ export function createSingleWorkerInteractionJobStore(
     renewClaim(input) {
       return serializeJobMutation(async () => {
       const job = await isJobOwned(input.jobId, input.claimToken);
-      if (!job) {
+      if (
+        !job ||
+        job.claimExpiresAt === null ||
+        job.claimExpiresAt <= input.now
+      ) {
         return false;
       }
       await jobs.upsert({

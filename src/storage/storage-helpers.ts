@@ -439,6 +439,16 @@ export class StoreBackedStorage implements StorageHelpers {
       return null;
     }
 
+    const activeJob = await this.stores.interactionJobs.find({
+      tenantId: { eq: tenant.id },
+      status: { eq: "in_progress" },
+    });
+    if (activeJob) {
+      throw new Error(
+        `Cannot delete tenant ${tenant.key} while interaction job ${activeJob.id} is in progress`,
+      );
+    }
+
     const tenantJobs = await listAll(this.stores.interactionJobs, {
       filters: { tenantId: { eq: tenant.id } },
     });
@@ -457,16 +467,6 @@ export class StoreBackedStorage implements StorageHelpers {
             claimExpiresAt: null,
           },
         })),
-      );
-    }
-
-    const activeJob = await this.stores.interactionJobs.find({
-      tenantId: { eq: tenant.id },
-      status: { eq: "in_progress" },
-    });
-    if (activeJob) {
-      throw new Error(
-        `Cannot delete tenant ${tenant.key} while interaction job ${activeJob.id} is in progress`,
       );
     }
 

@@ -287,6 +287,59 @@ describe("WorkspaceMaterializer", () => {
     );
   });
 
+  it("isolates cleanup between attempts for the same job", async () => {
+    const workspaceRoot = await createTempRoot();
+    const client = {
+      getProject: async () => ({
+        id: 1085,
+        web_url: "https://gitlab.example.com/group/project",
+        path_with_namespace: "group/project",
+        http_url_to_repo: "https://gitlab.example.com/group/project.git",
+      }),
+      buildGitAuthEnv: () => ({}),
+      downloadRepositoryArchive: vi.fn(),
+      getRawFile: vi.fn(),
+      listRepositoryTree: vi.fn(),
+    } as never;
+    const gitRunner = vi.fn(async ({ cwd, args }) => {
+      if (args[0] === "-c" && args[2] === "checkout") {
+        await mkdir(join(cwd, ".git"), { recursive: true });
+        await writeFile(join(cwd, "attempt.txt"), cwd);
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const oldAttempt = new WorkspaceMaterializer({
+      workspaceRoot,
+      workspaceAttemptId: "claim-old",
+      logger: createLogger("silent"),
+      gitRunner,
+    });
+    const replacementAttempt = new WorkspaceMaterializer({
+      workspaceRoot,
+      workspaceAttemptId: "claim-new",
+      logger: createLogger("silent"),
+      gitRunner,
+    });
+    const input = {
+      client,
+      jobId: "job-shared",
+      projectId: 1085,
+      codeReviewId: 7,
+      headSha: "abc123",
+      changes: [],
+    };
+
+    const staleWorkspace = await oldAttempt.materialize(input);
+    const activeWorkspace = await replacementAttempt.materialize(input);
+    expect(staleWorkspace.cleanupRoot).not.toBe(activeWorkspace.cleanupRoot);
+
+    await oldAttempt.cleanup(staleWorkspace);
+
+    expect(
+      await readFile(join(activeWorkspace.rootPath, "attempt.txt"), "utf8"),
+    ).toBe(activeWorkspace.rootPath);
+  });
+
   async function createTempRoot(): Promise<string> {
     const path = await mkdtemp(join(tmpdir(), "reviewphin-"));
     tempRoots.push(path);
