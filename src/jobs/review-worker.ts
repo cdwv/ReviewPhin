@@ -744,6 +744,7 @@ export class ReviewWorker {
           codeReviewId: routingContext.codeReviewId,
           result: replyResult,
           plannedTargets: interactionPlan.responseTargets,
+          guard: context,
         });
         context.assertOwned();
         await runArtifacts.writeJsonArtifact(

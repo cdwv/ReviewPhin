@@ -435,6 +435,9 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
     codeReviewId: number;
     result: ChatterBatchResult;
     plannedTargets: ResponseTarget[];
+    guard: {
+      assertOwned(): void;
+    };
   }): Promise<
     Array<{
       target: ResponseTarget;
@@ -473,6 +476,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       if (!target || !plannedKeys.has(responseTargetKey(target))) {
         continue;
       }
+      input.guard.assertOwned();
       try {
         const published =
           target.kind === "code-review-comment" ||
@@ -505,6 +509,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
           error: error instanceof Error ? error.message : String(error),
         });
       }
+      input.guard.assertOwned();
     }
     return outcomes;
   }

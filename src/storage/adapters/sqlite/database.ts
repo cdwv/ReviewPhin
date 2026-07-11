@@ -926,7 +926,9 @@ export class SqliteStoreDatabase {
         .prepare(
           `UPDATE interaction_jobs SET claim_expires_at = ?
            WHERE id = ? AND claim_token = ? AND status = 'in_progress'
-             AND claim_expires_at IS NOT NULL AND claim_expires_at > ?`,
+             AND claim_expires_at IS NOT NULL
+             AND claim_expires_at > ?
+             AND claim_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
         )
         .run(input.claimExpiresAt, input.jobId, input.claimToken, input.now);
       return Number(result.changes) === 1;

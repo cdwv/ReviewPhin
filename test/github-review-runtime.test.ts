@@ -557,6 +557,7 @@ describe("GitHubPlatformReviewRuntime", () => {
       body: "Reply",
       instruction: "Reply",
     };
+    const chatterGuard = { assertOwned: vi.fn() };
     await expect(
       runtime.publishChatterReplies({
         codeReviewId: 42,
@@ -567,6 +568,7 @@ describe("GitHubPlatformReviewRuntime", () => {
             { target: threadTarget, replyBody: "Thread response" },
           ],
         },
+        guard: chatterGuard,
       }),
     ).resolves.toEqual([
       expect.objectContaining({
@@ -606,6 +608,7 @@ describe("GitHubPlatformReviewRuntime", () => {
             },
           ],
         },
+        guard: chatterGuard,
       }),
     ).resolves.toEqual([
       expect.objectContaining({
@@ -620,6 +623,31 @@ describe("GitHubPlatformReviewRuntime", () => {
         body: "Delayed thread response",
       }),
     );
+
+    vi.mocked(client.createIssueComment).mockClear();
+    const leaseLost = new Error("lease lost");
+    const expiringGuard = {
+      assertOwned: vi
+        .fn()
+        .mockImplementationOnce(() => undefined)
+        .mockImplementationOnce(() => {
+          throw leaseLost;
+        }),
+    };
+    await expect(
+      runtime.publishChatterReplies({
+        codeReviewId: 42,
+        plannedTargets: [issueTarget],
+        result: {
+          replies: [
+            { target: issueTarget, replyBody: "First response" },
+            { target: issueTarget, replyBody: "Stale response" },
+          ],
+        },
+        guard: expiringGuard,
+      }),
+    ).rejects.toBe(leaseLost);
+    expect(client.createIssueComment).toHaveBeenCalledTimes(1);
 
     const adapter = runtime.createReviewPublicationAdapter({
       context: hydrated,

@@ -133,7 +133,10 @@ function createInMemoryStore<T extends WithId>(): EntityStore<
   };
 }
 
-function makeStores(pageSize = 5) {
+function makeStores(
+  pageSize = 5,
+  now: () => string = () => "2026-06-01T01:01:00.000Z",
+) {
   const jobs = createInMemoryStore<InteractionJobRecord>();
   const runs = createInMemoryStore<InteractionRunRecord>();
   const metrics = createInMemoryStore();
@@ -146,6 +149,7 @@ function makeStores(pageSize = 5) {
     codeReviewSnapshots: snapshots as never,
     discussionMappings: createInMemoryStore() as never,
     pageSize,
+    now,
   });
   return { jobs, runs, metrics, snapshots, store };
 }
@@ -384,7 +388,10 @@ describe("single-worker interaction job store", () => {
   });
 
   it("does not renew a claim at or after its persisted lease deadline", async () => {
-    const { jobs, store } = makeStores();
+    const { jobs, store } = makeStores(
+      5,
+      () => "2026-06-01T01:02:00.000Z",
+    );
     await jobs.upsert(makeJob({ id: "job-expired-renewal" }));
     await store.claimNext({
       workerId: "worker-1",
@@ -399,7 +406,7 @@ describe("single-worker interaction job store", () => {
       await store.renewClaim({
         jobId: "job-expired-renewal",
         claimToken: "token-1",
-        now: "2026-06-01T01:02:00.000Z",
+        now: "2026-06-01T01:01:00.000Z",
         claimExpiresAt: "2026-06-01T01:04:00.000Z",
       }),
     ).toBe(false);

@@ -463,8 +463,8 @@ describe("sqlite claim-aware interaction job store", () => {
       await storage.stores.interactionJobs.claimNext({
         workerId: "worker-1",
         claimToken: "token-1",
-        now: "2026-06-01T01:00:00.000Z",
-        claimExpiresAt: "2026-06-01T01:02:00.000Z",
+        now: "2099-06-01T01:00:00.000Z",
+        claimExpiresAt: "2099-06-01T01:02:00.000Z",
         queuedAfter: QUEUED_AFTER,
         maxJobRetries: 3,
       });
@@ -473,16 +473,16 @@ describe("sqlite claim-aware interaction job store", () => {
         await storage.stores.interactionJobs.renewClaim({
           jobId: "job-r",
           claimToken: "wrong",
-          now: "2026-06-01T01:01:00.000Z",
-          claimExpiresAt: "2026-06-01T01:03:00.000Z",
+          now: "2099-06-01T01:01:00.000Z",
+          claimExpiresAt: "2099-06-01T01:03:00.000Z",
         }),
       ).toBe(false);
       expect(
         await storage.stores.interactionJobs.renewClaim({
           jobId: "job-r",
           claimToken: "token-1",
-          now: "2026-06-01T01:01:00.000Z",
-          claimExpiresAt: "2026-06-01T01:03:00.000Z",
+          now: "2099-06-01T01:01:00.000Z",
+          claimExpiresAt: "2099-06-01T01:03:00.000Z",
         }),
       ).toBe(true);
 
@@ -493,8 +493,8 @@ describe("sqlite claim-aware interaction job store", () => {
           status: "completed",
           retryCount: 0,
           lastError: null,
-          availableAt: "2026-06-01T00:00:00.000Z",
-          finishedAt: "2026-06-01T01:04:00.000Z",
+          availableAt: "2099-06-01T00:00:00.000Z",
+          finishedAt: "2099-06-01T01:04:00.000Z",
         });
       expect(transitioned).toBe(true);
       const job = await storage.stores.interactionJobs.get("job-r");
@@ -508,6 +508,9 @@ describe("sqlite claim-aware interaction job store", () => {
 
   it("does not renew a claim at or after its persisted lease deadline", async () => {
     const { storage, tenantId } = await setupStorage();
+    const capturedNow = new Date(Date.now() - 2_000).toISOString();
+    const persistedDeadline = new Date(Date.now() - 1_000).toISOString();
+    const renewedDeadline = new Date(Date.now() + 60_000).toISOString();
     try {
       await storage.stores.interactionJobs.upsert(
         makeJob(tenantId, { id: "job-expired-renewal", dedupeKey: "expired" }),
@@ -515,8 +518,8 @@ describe("sqlite claim-aware interaction job store", () => {
       await storage.stores.interactionJobs.claimNext({
         workerId: "worker-1",
         claimToken: "token-1",
-        now: "2026-06-01T01:00:00.000Z",
-        claimExpiresAt: "2026-06-01T01:02:00.000Z",
+        now: capturedNow,
+        claimExpiresAt: persistedDeadline,
         queuedAfter: QUEUED_AFTER,
         maxJobRetries: 3,
       });
@@ -525,14 +528,14 @@ describe("sqlite claim-aware interaction job store", () => {
         await storage.stores.interactionJobs.renewClaim({
           jobId: "job-expired-renewal",
           claimToken: "token-1",
-          now: "2026-06-01T01:02:00.000Z",
-          claimExpiresAt: "2026-06-01T01:04:00.000Z",
+          now: capturedNow,
+          claimExpiresAt: renewedDeadline,
         }),
       ).toBe(false);
       expect(
         await storage.stores.interactionJobs.get("job-expired-renewal"),
       ).toMatchObject({
-        claimExpiresAt: "2026-06-01T01:02:00.000Z",
+        claimExpiresAt: persistedDeadline,
       });
     } finally {
       await storage.close();

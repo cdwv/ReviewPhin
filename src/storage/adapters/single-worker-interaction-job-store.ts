@@ -65,6 +65,7 @@ export interface SingleWorkerInteractionJobStoreOptions {
   readonly codeReviewSnapshots: SnapshotStore;
   readonly discussionMappings: MappingStore;
   readonly pageSize?: number;
+  readonly now?: () => string;
 }
 
 const DEFAULT_PAGE_SIZE = 200;
@@ -90,6 +91,7 @@ export function createSingleWorkerInteractionJobStore(
   options: SingleWorkerInteractionJobStoreOptions,
 ): InteractionJobStore {
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
+  const now = options.now ?? (() => new Date().toISOString());
   const { jobs, runs } = options;
   let jobMutationTail: Promise<void> = Promise.resolve();
   let completedReconciliationPage = 1;
@@ -400,10 +402,12 @@ export function createSingleWorkerInteractionJobStore(
     renewClaim(input) {
       return serializeJobMutation(async () => {
       const job = await isJobOwned(input.jobId, input.claimToken);
+      const renewalNow = now();
       if (
         !job ||
         job.claimExpiresAt === null ||
-        job.claimExpiresAt <= input.now
+        job.claimExpiresAt <= input.now ||
+        job.claimExpiresAt <= renewalNow
       ) {
         return false;
       }

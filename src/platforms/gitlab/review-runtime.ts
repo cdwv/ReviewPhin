@@ -472,6 +472,9 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     codeReviewId: number;
     result: ChatterBatchResult;
     plannedTargets: ResponseTarget[];
+    guard: {
+      assertOwned(): void;
+    };
   }): Promise<
     Array<{
       target: ResponseTarget;
@@ -505,6 +508,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
         continue;
       }
 
+      input.guard.assertOwned();
       try {
         const published = matchingTarget.discussionId
           ? await this.client.replyToDiscussion(
@@ -530,6 +534,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
           error: getErrorMessage(error),
         });
       }
+      input.guard.assertOwned();
     }
 
     return outcomes;

@@ -162,6 +162,9 @@ export interface PlatformReviewRuntime {
     codeReviewId: number;
     result: ChatterBatchResult;
     plannedTargets: ResponseTarget[];
+    guard: {
+      assertOwned(): void;
+    };
   }): Promise<
     Array<{
       target: ResponseTarget;
