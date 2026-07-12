@@ -96,7 +96,7 @@ export async function watchReviewJob(input: {
   let previousJobStatus: InteractionJobStatus | null = null;
   let previousRunStatus: InteractionRunStatus | null = null;
   let previousRunId: string | null = null;
-  let tail = createLogTailState(null);
+  let tail = createLogTailState();
 
   for (;;) {
     throwIfAborted(input.signal);
@@ -111,7 +111,7 @@ export async function watchReviewJob(input: {
     if (state.run?.id !== previousRunId) {
       previousRunId = state.run?.id ?? null;
       previousRunStatus = null;
-      tail = createLogTailState(previousRunId);
+      tail = createLogTailState();
     }
     if (
       input.outputMode === "human" &&
@@ -202,16 +202,14 @@ async function summarizeReviewWatchState(input: {
 }
 
 interface LogTailState {
-  runId: string | null;
   byteOffset: number;
   bufferedText: string;
   decoder: StringDecoder;
   liveLogsAvailable: boolean;
 }
 
-function createLogTailState(runId: string | null): LogTailState {
+function createLogTailState(): LogTailState {
   return {
-    runId,
     byteOffset: 0,
     bufferedText: "",
     decoder: new StringDecoder("utf8"),
