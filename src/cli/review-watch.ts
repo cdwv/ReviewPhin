@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
@@ -224,9 +224,9 @@ async function tailRunLog(input: {
   path: string;
   outputMode: "human" | "json";
 }): Promise<void> {
-  let content: Buffer;
+  let file;
   try {
-    content = await readFile(input.path);
+    file = await open(input.path, "r");
     input.tail.liveLogsAvailable = true;
   } catch (error) {
     if (isUnavailableLogError(error)) {
@@ -234,17 +234,42 @@ async function tailRunLog(input: {
     }
     throw error;
   }
-  if (content.length < input.tail.byteOffset) {
-    input.tail.byteOffset = 0;
-    input.tail.bufferedText = "";
-    input.tail.decoder = new StringDecoder("utf8");
-  }
-  if (content.length === input.tail.byteOffset) {
-    return;
+
+  let chunk: Buffer;
+  try {
+    const { size } = await file.stat();
+    if (size < input.tail.byteOffset) {
+      input.tail.byteOffset = 0;
+      input.tail.bufferedText = "";
+      input.tail.decoder = new StringDecoder("utf8");
+    }
+    if (size === input.tail.byteOffset) {
+      return;
+    }
+
+    chunk = Buffer.allocUnsafe(size - input.tail.byteOffset);
+    let totalBytesRead = 0;
+    while (totalBytesRead < chunk.length) {
+      const { bytesRead } = await file.read(
+        chunk,
+        totalBytesRead,
+        chunk.length - totalBytesRead,
+        input.tail.byteOffset + totalBytesRead,
+      );
+      if (bytesRead === 0) {
+        break;
+      }
+      totalBytesRead += bytesRead;
+    }
+    chunk = chunk.subarray(0, totalBytesRead);
+    input.tail.byteOffset += totalBytesRead;
+  } finally {
+    await file.close();
   }
 
-  const chunk = content.subarray(input.tail.byteOffset);
-  input.tail.byteOffset = content.length;
+  if (chunk.length === 0) {
+    return;
+  }
   input.tail.bufferedText += input.tail.decoder.write(chunk);
   const lines = input.tail.bufferedText.split(/\r?\n/);
   input.tail.bufferedText = lines.pop() ?? "";
