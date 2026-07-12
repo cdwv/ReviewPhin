@@ -56,6 +56,7 @@ import type {
   HydratedGitHubPullRequestContext,
 } from "./review-types.js";
 import { buildGitHubCheckRunReviewTriggerContext } from "./trigger-lifecycle.js";
+import { localReviewTriggerSchema } from "../../review/local-trigger.js";
 import { GitHubWorkspaceMaterializer } from "./workspace.js";
 import {
   buildGitHubCommentReviewTriggerContext,
@@ -158,6 +159,23 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
     priorDiscussions: ProviderDiscussionContext[];
     mappings: DiscussionMappingRecord[];
   }): ReviewContext["trigger"] {
+    const localTrigger = localReviewTriggerSchema.safeParse(
+      JSON.parse(input.job.triggerJson),
+    );
+    if (localTrigger.success) {
+      const trigger = localTrigger.data;
+      return {
+        kind: "manual-review",
+        provider: "github",
+        source: "cli",
+        instruction: trigger.instruction,
+        metadata: {
+          requestId: trigger.requestId,
+          codeReviewId: trigger.codeReviewId,
+          createdAt: trigger.createdAt,
+        },
+      };
+    }
     if (
       githubCommentTriggerSchema.safeParse(JSON.parse(input.job.triggerJson))
         .success

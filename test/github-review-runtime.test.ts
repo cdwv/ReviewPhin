@@ -236,6 +236,7 @@ describe("GitHubPlatformReviewRuntime", () => {
       kind: "manual-review",
       provider: "github",
       source: "check-run-requested-action",
+      instruction: null,
       metadata: {
         deliveryId: "delivery-1",
         checkRunId: 1357,

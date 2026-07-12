@@ -6,10 +6,9 @@ description: From webhook to published review.
 ReviewPhin turns platform events into idempotent review work. The review worker uses three logical roles — Router, Reviewer, and Chatter — across the pipeline below.
 
 ```text
-Platform event
-  -> /webhooks/<platform>      Router: parse + validate signature
-  -> tenant resolution          map event to a configured tenant
-  -> trigger classification     review? follow-up? lifecycle? ignore?
+Platform event -> /webhooks/<platform> -> validate + classify
+CLI request    -> mr review             -> resolve + construct trigger
+  -> tenant resolution          map trigger to a configured tenant
   -> interaction job            deduplicated, persisted
   -> review worker              runner claims a leased job
   -> model harness              Reviewer (context-analyst -> review-author)
@@ -27,7 +26,9 @@ The tenant registry maps the platform event to a configured tenant.
 
 ## Interaction jobs and the runner
 
-Webhooks and other trigger sources write persisted interaction jobs; they never enqueue process-local work. The persisted queue is the source of truth.
+Webhooks, provider-owned actions, and `mr review` write persisted interaction jobs; they never enqueue process-local work. The persisted queue is the source of truth. The CLI uses the configured platform connection to verify a selected comment and preserves that platform's normal trigger lifecycle.
+
+A CLI text selector creates a local manual-review trigger instead of a synthetic comment. Its instruction is included in review scope and prompt context. It always requests review work, never requests a trigger-comment reply, and still publishes normal findings and a summary.
 
 Each enabled runner process polls for work, while storage permits only one active review:
 

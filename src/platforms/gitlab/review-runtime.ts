@@ -23,6 +23,7 @@ import type {
   ReviewResult,
   TriggerCommentReference,
 } from "../../review/types.js";
+import { localReviewTriggerSchema } from "../../review/local-trigger.js";
 import { buildScopedReviewContext } from "../../review/review-scope.js";
 import type { InteractionRunArtifacts } from "../../review/run-artifacts.js";
 import type {
@@ -157,6 +158,25 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     priorDiscussions: ProviderDiscussionContext[];
     mappings: DiscussionMappingRecord[];
   }): ReviewContext["trigger"] {
+    const localTrigger =
+      typeof input.job.triggerJson === "string" &&
+      input.job.triggerJson.includes('"reviewphin-local-review"')
+        ? localReviewTriggerSchema.safeParse(JSON.parse(input.job.triggerJson))
+        : { success: false as const };
+    if (localTrigger.success) {
+      const trigger = localTrigger.data;
+      return {
+        kind: "manual-review",
+        provider: "gitlab",
+        source: "cli",
+        instruction: trigger.instruction,
+        metadata: {
+          requestId: trigger.requestId,
+          codeReviewId: trigger.codeReviewId,
+          createdAt: trigger.createdAt,
+        },
+      };
+    }
     const context = this.unwrapContext(input.context);
     return buildGitLabReviewTriggerContext({
       payload: input.payload as never,

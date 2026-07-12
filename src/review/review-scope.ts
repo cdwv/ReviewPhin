@@ -72,9 +72,7 @@ export function buildScopedReviewContext(
     input.previousReview?.changesJson ?? null,
   );
   const explicitFullRescan = hasExplicitFullRescanInstruction(
-    input.trigger.kind === "manual-review"
-      ? null
-      : input.trigger.instruction,
+    input.trigger.instruction,
   );
   const mode = determineReviewMode(
     input.trigger,
@@ -554,7 +552,9 @@ function buildScopeSummary(
 
     if (input.trigger.kind === "manual-review") {
       parts.push(
-        "A provider-owned manual action requested another review pass.",
+        input.trigger.instruction
+          ? `A manual action requested another review pass with this instruction: ${input.trigger.instruction}`
+          : "A provider-owned manual action requested another review pass.",
       );
     } else if (input.trigger.kind === "summary-follow-up") {
       parts.push(
@@ -592,6 +592,9 @@ function buildScopeSummary(
   }
 
   return [
+    ...(input.trigger.kind === "manual-review" && input.trigger.instruction
+      ? [`Apply this manual review instruction: ${input.trigger.instruction}`]
+      : []),
     input.previousReview
       ? "A fresh full rescan was explicitly requested even though a previous review exists."
       : "This is the first full review request for this code review.",

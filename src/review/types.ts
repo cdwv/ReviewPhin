@@ -322,6 +322,7 @@ export interface ManualReviewTriggerContext {
   kind: "manual-review";
   provider: string;
   source: string;
+  instruction: string | null;
   metadata: Record<string, string | number | boolean | null>;
 }
 

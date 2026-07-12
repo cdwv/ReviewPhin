@@ -1,4 +1,4 @@
-import { access, readdir, rm } from "node:fs/promises";
+import { access, readFile, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
@@ -22,6 +22,7 @@ import {
 } from "./storage/runtime.js";
 import { listAll, type StorageHelpers } from "./storage/storage-helpers.js";
 import { createInteractionJobDedupeKey } from "./utils/ids.js";
+import { createId } from "./utils/ids.js";
 import { createLogger } from "./logger.js";
 import type {
   DiscussionMappingRecord,
@@ -39,8 +40,18 @@ import type {
 } from "./storage/contract/index.js";
 import {
   getPlatforms,
+  getPlatformBySlug,
   initializePlatformRegistry,
 } from "./platforms/platform-registry.js";
+import type { LocalReviewSelector } from "./platforms/IPlatform.js";
+import { syncPlatformTriggerLifecycle } from "./platforms/trigger-lifecycle.js";
+import { TenantRegistry } from "./tenants/tenant-registry.js";
+import {
+  buildReviewWatchSummary,
+  ReviewWatchAbortedError,
+  watchReviewJob,
+  type ReviewWatchSummary,
+} from "./cli/review-watch.js";
 import { getGitLabTenantConfig } from "./platforms/gitlab/tenant-config.js";
 
 interface ParsedCliArgs {
@@ -204,6 +215,68 @@ const mergeRequestDescribeSchema = z
         message:
           "Provide --trigger-comment-updated-at or --trigger-comment-body for update trigger dedupe checks.",
         path: ["triggerNoteUpdatedAt"],
+      });
+    }
+  });
+
+const mergeRequestReviewSchema = z
+  .object({
+    tenantId: z.string().min(1).optional(),
+    tenantKey: z.string().min(1).optional(),
+    triggerCommentUrl: z.string().min(1).optional(),
+    triggerCommentId: z.coerce.number().int().positive().optional(),
+    triggerText: z.string().trim().min(1).optional(),
+    triggerTextFile: z.string().min(1).optional(),
+    codeReviewId: z.coerce.number().int().positive().optional(),
+    forceNew: z.boolean(),
+    watchRequested: z.boolean(),
+    noWatchRequested: z.boolean(),
+    json: z.boolean(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      Number(value.tenantId !== undefined) +
+        Number(value.tenantKey !== undefined) !==
+      1
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide exactly one of --tenant-id or --key.",
+        path: ["tenantId"],
+      });
+    }
+    const triggerCount = [
+      value.triggerCommentUrl,
+      value.triggerCommentId,
+      value.triggerText,
+      value.triggerTextFile,
+    ].filter((entry) => entry !== undefined).length;
+    if (triggerCount !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Provide exactly one trigger selector: --trigger-comment-url, --trigger-comment-id, --trigger-text, or --trigger-text-file.",
+        path: ["triggerCommentUrl"],
+      });
+    }
+    if (value.watchRequested && value.noWatchRequested) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide either --watch or --no-watch, not both.",
+        path: ["watchRequested"],
+      });
+    }
+    if (
+      (value.triggerCommentId !== undefined ||
+        value.triggerText !== undefined ||
+        value.triggerTextFile !== undefined) &&
+      value.codeReviewId === undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "--trigger-comment-id, --trigger-text, and --trigger-text-file require --code-review-id.",
+        path: ["codeReviewId"],
       });
     }
   });
@@ -410,10 +483,13 @@ export async function runCli(
 ): Promise<number> {
   loadLocalEnvFile();
   const config = loadConfig();
-  const logger = createLogger(config.logLevel);
-
   const { positionals, options } = parseCliArgs(argv);
   const [resource, action, subAction] = positionals;
+  const logger = createLogger(
+    resource === "mr" && action === "review" && Object.hasOwn(options, "json")
+      ? "silent"
+      : config.logLevel,
+  );
 
   if (options.help === true || options.help === "true") {
     printHelp(positionals);
@@ -1074,6 +1150,10 @@ export async function runCli(
     return runCodeReviewDescribeCommand(options, config);
   }
 
+  if (resource === "mr" && action === "review") {
+    return runMergeRequestReviewCommand(options, config, logger);
+  }
+
   if (resource === "metrics" && action === "sessions") {
     const config = loadConfig();
     const runLogDir =
@@ -1275,6 +1355,7 @@ function printHelp(
     "model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "storage migrate --from-storage-provider-module <module> [--from-sqlite-database-path <path>] --to-storage-provider-module <module> [--to-sqlite-database-path <path>]",
     "mr describe (--tenant-id <id> | --key <key>) --code-review-id <id> [--current-interaction-job-id <id>] [--trigger-comment-id <id> --trigger-comment-action <create|update> [--trigger-comment-updated-at <iso>] [--trigger-comment-body <text>]] [--json] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "mr review (--tenant-id <id> | --key <tenant-key>) (--trigger-comment-url <url> | --trigger-comment-id <id> | --trigger-text <text> | --trigger-text-file <path>) [--code-review-id <id>] [--force-new] [--watch | --no-watch] [--json] [--sqlite-database-path <path>] [--storage-provider-module <module>] [--run-log-dir <path>]",
     "metrics sessions [--run-log-dir <path>]",
   );
 
@@ -1393,6 +1474,197 @@ async function runCodeReviewDescribeCommand(
     );
     return 0;
   });
+}
+
+async function runMergeRequestReviewCommand(
+  options: Record<string, string | boolean>,
+  config: ReturnType<typeof loadConfig>,
+  logger: ReturnType<typeof createLogger>,
+): Promise<number> {
+  const input = mergeRequestReviewSchema.parse({
+    tenantId: options["tenant-id"],
+    tenantKey: options.key,
+    triggerCommentUrl: options["trigger-comment-url"],
+    triggerCommentId: options["trigger-comment-id"],
+    triggerText: options["trigger-text"],
+    triggerTextFile: options["trigger-text-file"],
+    codeReviewId: options["code-review-id"],
+    forceNew: Object.hasOwn(options, "force-new"),
+    watchRequested: Object.hasOwn(options, "watch"),
+    noWatchRequested: Object.hasOwn(options, "no-watch"),
+    json: Object.hasOwn(options, "json"),
+  });
+  const selector = await resolveLocalReviewSelector(input);
+  await initializePlatformRegistry({
+    platformModules: config.platformModules,
+    env: process.env,
+    logger: logger.child({ component: "platform-registry" }),
+  });
+
+  return withStorage(options, config, async (storage) => {
+    const tenantRegistry = new TenantRegistry({ storage });
+    const resolvedTenant = input.tenantId
+      ? await tenantRegistry.getResolvedTenantById(input.tenantId)
+      : input.tenantKey
+        ? await tenantRegistry.getResolvedTenantByKey(input.tenantKey)
+        : null;
+    if (!resolvedTenant) {
+      throw new Error(
+        input.tenantId
+          ? `Tenant ${input.tenantId} was not found or its platform connection is not ready.`
+          : `Tenant ${input.tenantKey} was not found or its platform connection is not ready.`,
+      );
+    }
+    const platform = getPlatformBySlug(resolvedTenant.tenant.platform);
+    if (!platform) {
+      throw new Error(
+        `Platform ${resolvedTenant.tenant.platform} is not registered.`,
+      );
+    }
+    if (!platform.createLocalInteractionJob) {
+      throw new Error(
+        `Platform ${resolvedTenant.tenant.platform} does not support local review submission.`,
+      );
+    }
+
+    const requestId = createId("local-review");
+    const interactionJob = await platform.createLocalInteractionJob({
+      resolvedTenant,
+      storage,
+      selector,
+      forceNew: input.forceNew,
+      requestId,
+      createdAt: new Date().toISOString(),
+    });
+    const submitted = await storage.createOrGetInteractionJob({
+      ...interactionJob,
+      tenantId: resolvedTenant.tenant.id,
+    });
+    if (submitted.created) {
+      const lifecycle = platform.createTriggerLifecycle({
+        resolvedTenant,
+        job: submitted.job,
+        logger,
+      });
+      await syncPlatformTriggerLifecycle({
+        logger,
+        job: submitted.job,
+        phase: "queued",
+        update: () => lifecycle.queued(),
+      });
+    }
+
+    if (!input.json) {
+      process.stdout.write(
+        `Interaction job ${submitted.job.id} ${
+          submitted.created ? "created" : "reused"
+        }.\n`,
+      );
+    }
+    const runLogRoot =
+      typeof options["run-log-dir"] === "string"
+        ? resolve(options["run-log-dir"])
+        : config.runLogDir;
+    if (input.noWatchRequested) {
+      const summary = await buildReviewWatchSummary({
+        storage,
+        jobId: submitted.job.id,
+        created: submitted.created,
+        runLogRoot,
+      });
+      printReviewSubmissionSummary(summary, input.json);
+      return 0;
+    }
+
+    const controller = new AbortController();
+    let signalExitCode: 130 | 143 | null = null;
+    const handleSigint = () => {
+      signalExitCode ??= 130;
+      controller.abort();
+    };
+    const handleSigterm = () => {
+      signalExitCode ??= 143;
+      controller.abort();
+    };
+    process.on("SIGINT", handleSigint);
+    process.on("SIGTERM", handleSigterm);
+    try {
+      const summary = await watchReviewJob({
+        storage,
+        jobId: submitted.job.id,
+        created: submitted.created,
+        runLogRoot,
+        pollIntervalMs: config.jobPollIntervalMs,
+        outputMode: input.json ? "json" : "human",
+        signal: controller.signal,
+      });
+      return summary.jobStatus === "completed" ? 0 : 1;
+    } catch (error) {
+      if (error instanceof ReviewWatchAbortedError && signalExitCode) {
+        return signalExitCode;
+      }
+      throw error;
+    } finally {
+      process.removeListener("SIGINT", handleSigint);
+      process.removeListener("SIGTERM", handleSigterm);
+    }
+  });
+}
+
+async function resolveLocalReviewSelector(
+  input: z.infer<typeof mergeRequestReviewSchema>,
+): Promise<LocalReviewSelector> {
+  if (input.triggerCommentUrl !== undefined) {
+    return {
+      kind: "comment-url",
+      url: input.triggerCommentUrl,
+      ...(input.codeReviewId !== undefined
+        ? { codeReviewId: input.codeReviewId }
+        : {}),
+    };
+  }
+  if (input.triggerCommentId !== undefined && input.codeReviewId !== undefined) {
+    return {
+      kind: "comment-id",
+      commentId: input.triggerCommentId,
+      codeReviewId: input.codeReviewId,
+    };
+  }
+  let text = input.triggerText;
+  if (input.triggerTextFile !== undefined) {
+    text = (
+      await readFile(resolve(process.cwd(), input.triggerTextFile), "utf8")
+    ).trim();
+  }
+  if (!text || text.trim().length === 0 || input.codeReviewId === undefined) {
+    throw new Error("The selected review instruction must not be empty.");
+  }
+  return {
+    kind: "text",
+    text: text.trim(),
+    codeReviewId: input.codeReviewId,
+  };
+}
+
+function printReviewSubmissionSummary(
+  summary: ReviewWatchSummary,
+  json: boolean,
+): void {
+  if (json) {
+    process.stdout.write(`${JSON.stringify(summary)}\n`);
+    return;
+  }
+  process.stdout.write(
+    [
+      `jobStatus: ${summary.jobStatus}`,
+      `runId: ${summary.runId ?? "(none)"}`,
+      `runStatus: ${summary.runStatus ?? "(none)"}`,
+      `runLogDirectory: ${summary.runLogDirectory ?? "(none)"}`,
+      `findingCount: ${summary.findingCount}`,
+      `error: ${summary.error ?? "(none)"}`,
+      `liveLogsAvailable: ${summary.liveLogsAvailable}`,
+    ].join("\n") + "\n",
+  );
 }
 
 async function resolveDescribeTenant(
@@ -2823,17 +3095,24 @@ export async function runCliEntry(
 ): Promise<number> {
   try {
     const exitCode = await runCli(argv);
-    if (exitCode !== 0) {
+    if (exitCode !== 0 && !isMergeRequestReviewInvocation(argv)) {
       const { positionals } = parseCliArgs(argv);
       printHelp(positionals, false);
     }
     return exitCode;
   } catch (error: unknown) {
     const { positionals } = parseCliArgs(argv);
-    printHelp(positionals, false);
+    if (!isMergeRequestReviewInvocation(argv)) {
+      printHelp(positionals, false);
+    }
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`${message}\n`);
     return 1;
+  }
+
+  function isMergeRequestReviewInvocation(argv: string[]): boolean {
+    const { positionals } = parseCliArgs(argv);
+    return positionals[0] === "mr" && positionals[1] === "review";
   }
 }
 
