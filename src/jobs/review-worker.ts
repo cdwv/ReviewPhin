@@ -9,6 +9,7 @@ import type {
   ResolvedTenant,
 } from "../platforms/IPlatform.js";
 import { getPlatformBySlug } from "../platforms/platform-registry.js";
+import { syncPlatformTriggerLifecycle } from "../platforms/trigger-lifecycle.js";
 import type {
   DiscussionReconciler,
   ReconcileSummary,
@@ -155,9 +156,12 @@ export class ReviewWorker {
         job: createdJob.job,
         logger: this.logger,
       });
-      await this.syncTriggerLifecycle(createdJob.job, "queued", () =>
-        lifecycle.queued(),
-      );
+      await syncPlatformTriggerLifecycle({
+        logger: this.logger,
+        job: createdJob.job,
+        phase: "queued",
+        update: () => lifecycle.queued(),
+      });
     }
 
     return createdJob;
@@ -257,9 +261,12 @@ export class ReviewWorker {
     });
 
     context.assertOwned();
-    await this.syncTriggerLifecycle(job, "in_progress", () =>
-      triggerLifecycle.inProgress(),
-    );
+    await syncPlatformTriggerLifecycle({
+      logger: this.logger,
+      job,
+      phase: "in_progress",
+      update: () => triggerLifecycle.inProgress(),
+    });
     context.assertOwned();
 
     let interactionRunId: string | null = null;
@@ -799,14 +806,18 @@ export class ReviewWorker {
       if (!this.claimIsOwned(context, job, "completed", interactionRunId)) {
         return;
       }
-      await this.syncTriggerLifecycle(job, "completed", () =>
-        triggerLifecycle.completed(
+      await syncPlatformTriggerLifecycle({
+        logger: this.logger,
+        job,
+        phase: "completed",
+        update: () =>
+          triggerLifecycle.completed(
           runRuntime.buildTriggerOutcome({
             reviewResult,
             reconcileSummary,
           }),
-        ),
-      );
+          ),
+      });
       if (!this.claimIsOwned(context, job, "completed", interactionRunId)) {
         return;
       }
@@ -936,11 +947,15 @@ export class ReviewWorker {
       if (!this.claimIsOwned(context, job, phase, interactionRunId)) {
         return;
       }
-      await this.syncTriggerLifecycle(job, phase, () =>
-        phase === "retry"
-          ? triggerLifecycle.retry(errorMessage)
-          : triggerLifecycle.failed(errorMessage),
-      );
+      await syncPlatformTriggerLifecycle({
+        logger: this.logger,
+        job,
+        phase,
+        update: () =>
+          phase === "retry"
+            ? triggerLifecycle.retry(errorMessage)
+            : triggerLifecycle.failed(errorMessage),
+      });
 
       if (!this.claimIsOwned(context, job, phase, interactionRunId)) {
         return;
@@ -1157,24 +1172,6 @@ export class ReviewWorker {
     });
   }
 
-  private async syncTriggerLifecycle(
-    job: InteractionJobRecord,
-    phase: string,
-    update: () => Promise<void>,
-  ): Promise<void> {
-    try {
-      await update();
-    } catch (error) {
-      this.logger.warn(
-        {
-          err: error,
-          interactionJobId: job.id,
-          triggerLifecyclePhase: phase,
-        },
-        "failed to synchronize provider trigger lifecycle",
-      );
-    }
-  }
 }
 
 function getErrorMessage(error: unknown): string {

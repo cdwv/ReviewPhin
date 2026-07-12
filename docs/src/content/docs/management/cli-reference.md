@@ -368,6 +368,69 @@ reviewphin storage migrate \
 
 ---
 
+## Review commands
+
+### `mr review`
+
+Submit a review to the persisted queue without exposing a webhook. A separate ReviewPhin runner connected to the same storage backend must already be running; this command never starts a server or review worker.
+
+```bash
+reviewphin mr review \
+  --key https://gitlab.example.com::123 \
+  --trigger-comment-url \
+    https://gitlab.example.com/group/project/-/merge_requests/42#note_9001
+```
+
+You can also submit a new instruction that is not attached to a platform comment:
+
+```bash
+reviewphin mr review \
+  --tenant-id tenant_01ABC \
+  --code-review-id 42 \
+  --trigger-text "Focus on authorization boundary regressions."
+```
+
+Exactly one tenant selector and one trigger selector are required.
+
+| Flag                        | Required  | Description                                                                                                 |
+| --------------------------- | --------- | ----------------------------------------------------------------------------------------------------------- |
+| `--tenant-id`               | Yes\*     | Internal tenant ID.                                                                                         |
+| `--key`                     | Yes\*     | Stable tenant key printed by `tenant list`.                                                                 |
+| `--trigger-comment-url`     | Yes\*\*   | Canonical GitLab merge request note or GitHub pull request comment URL.                                     |
+| `--trigger-comment-id`      | Yes\*\*   | Positive platform comment ID. Requires `--code-review-id`.                                                  |
+| `--trigger-text`            | Yes\*\*   | Review instruction. It is trimmed and must not be empty. Requires `--code-review-id`.                       |
+| `--trigger-text-file`       | Yes\*\*   | UTF-8 instruction file, resolved from the current directory. Requires `--code-review-id`.                   |
+| `--code-review-id`          | Sometimes | Positive merge request IID or pull request number. A comment URL supplies it; an explicit value must match. |
+| `--force-new`               | No        | Create a distinct job for a comment that would otherwise reuse its canonical job.                           |
+| `--watch`                   | No        | Watch persisted job and run state. This is the default.                                                     |
+| `--no-watch`                | No        | Return after persistence without waiting.                                                                   |
+| `--json`                    | No        | Write exactly one JSON summary to stdout.                                                                   |
+| `--sqlite-database-path`    | No        | Override the SQLite path.                                                                                   |
+| `--storage-provider-module` | No        | Override the storage adapter module.                                                                        |
+| `--run-log-dir`             | No        | Location where the watcher looks for live `app.ndjson` logs. Defaults to `RUN_LOG_DIR`.                     |
+
+\* Provide either `--tenant-id` or `--key`.
+
+\*\* Provide one of the four trigger selectors.
+
+Supported comment URLs are:
+
+```text
+https://<gitlab-host>/<project>/-/merge_requests/<iid>#note_<note-id>
+https://<github-host>/<owner>/<repo>/pull/<number>#issuecomment-<comment-id>
+https://<github-host>/<owner>/<repo>/pull/<number>#discussion_r<comment-id>
+```
+
+ReviewPhin verifies the URL against the resolved tenant and fetches the comment through that platform connection. Unsupported URL shapes should be submitted with `--trigger-comment-id` and `--code-review-id`.
+
+Comment submissions use the same deduplication identity as webhook submissions. Repeating one reuses the existing job, including a terminal job; `--force-new` derives a distinct identity. Text instructions always include a new local request ID and therefore always create a fresh job.
+
+Watch mode reports persisted status changes and follows the selected attempt through retries. It tails live logs only when the configured run-log directory is locally accessible or shared with the runner. Missing live logs do not affect persisted status or findings. Leaving watch mode with `SIGINT` or `SIGTERM` does not cancel the job.
+
+The final summary contains `jobId`, `created`, `jobStatus`, `runId`, `runStatus`, `runLogDirectory`, `findingCount`, `error`, and `liveLogsAvailable`. Exit code `0` means a no-watch submission succeeded or a watched job completed. Validation and operational errors, or watched jobs ending as failed, cancelled, or expired, return `1`; interrupted watches return `130` for `SIGINT` and `143` for `SIGTERM`.
+
+---
+
 ## Diagnostic commands
 
 ### `mr describe`

@@ -13,6 +13,7 @@ describe("buildInteractionPlan", () => {
         kind: "manual-review",
         provider: "github",
         source: "check-run-requested-action",
+        instruction: null,
         metadata: {
           checkRunId: 1357,
           actionIdentifier: "run_review",

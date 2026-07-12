@@ -21,6 +21,7 @@ import type {
   WebhookReviewTrigger,
 } from "../review/types.js";
 import type {
+  CreateInteractionJobInput,
   DiscussionMappingRecord,
   InteractionJobRecord,
   PlatformConnectionRecord,
@@ -43,6 +44,18 @@ export interface ResolvedTenant {
   tenant: TenantRecord;
   connection: PlatformConnectionRecord;
 }
+
+export type LocalReviewSelector =
+  | { kind: "comment-url"; url: string; codeReviewId?: number | undefined }
+  | { kind: "comment-id"; commentId: number; codeReviewId: number }
+  | { kind: "text"; text: string; codeReviewId: number };
+
+export type PlatformInteractionJobInput = Omit<
+  CreateInteractionJobInput,
+  "tenantId" | "triggerJson"
+> & {
+  triggerJson: string;
+};
 
 export interface PlatformSetupContext {
   pathSuffix: string;
@@ -217,14 +230,15 @@ export interface IPlatform {
     payload: unknown;
     trigger: WebhookReviewTrigger;
     storage: StorageHelpers;
-  }): Promise<{
-    dedupeKey: string;
-    codeReviewId: number;
-    commentId: number | null;
-    triggerJson: string;
-    headSha: string;
-    payloadJson: string;
-  }>;
+  }): Promise<PlatformInteractionJobInput>;
+  createLocalInteractionJob?(input: {
+    resolvedTenant: ResolvedTenant;
+    storage: StorageHelpers;
+    selector: LocalReviewSelector;
+    forceNew: boolean;
+    requestId: string;
+    createdAt: string;
+  }): Promise<PlatformInteractionJobInput>;
   createTriggerLifecycle(input: {
     resolvedTenant: ResolvedTenant;
     job: InteractionJobRecord;

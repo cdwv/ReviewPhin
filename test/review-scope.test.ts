@@ -28,6 +28,7 @@ describe("buildScopedReviewContext", () => {
         kind: "manual-review",
         provider: "github",
         source: "check-run-requested-action",
+        instruction: null,
         metadata: {
           checkRunId: 1357,
           actionIdentifier: "run_review",
@@ -43,6 +44,35 @@ describe("buildScopedReviewContext", () => {
         kind: "manual-review",
         provider: "github",
       }),
+    );
+  });
+
+  it("includes a local manual instruction in first-pass scope text", () => {
+    const scoped = buildScopedReviewContext({
+      workspacePath: repoPath(),
+      codeReview,
+      changes: [
+        createChange("src/manual.ts", "@@ -1 +1 @@\n-old\n+new"),
+      ],
+      comments: [],
+      discussions: [],
+      trigger: {
+        kind: "manual-review",
+        provider: "gitlab",
+        source: "cli",
+        instruction: "Focus on authorization boundary regressions.",
+        metadata: {
+          requestId: "local-review_1",
+          codeReviewId: 7,
+          createdAt: "2026-07-12T09:00:00.000Z",
+        },
+      },
+      priorDiscussions: [],
+      previousReview: null,
+    });
+
+    expect(scoped.scope.scopeSummary).toContain(
+      "Focus on authorization boundary regressions.",
     );
   });
 

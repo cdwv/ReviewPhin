@@ -92,6 +92,45 @@ describe("CLI help", () => {
     expect(help).toContain("[--clear-text-generation-reasoning-effort]");
   });
 
+  it("documents mr review selectors and watch controls", async () => {
+    vi.stubEnv("REVIEWPHIN_CLI_COMMAND", "pnpm cli");
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    await expect(runCli(["mr", "review", "--help"])).resolves.toBe(0);
+
+    const help = output.mock.calls.join("");
+    expect(help).toContain("pnpm cli mr review ");
+    expect(help).toContain("--trigger-comment-url <url>");
+    expect(help).toContain("--trigger-text-file <path>");
+    expect(help).toContain("[--watch | --no-watch]");
+  });
+
+  it("validates mr review selectors without appending usage", async () => {
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const errors = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+    await expect(
+      runCliEntry([
+        "mr",
+        "review",
+        "--tenant-id",
+        "tenant_1",
+        "--trigger-text",
+        "review",
+        "--watch",
+        "--no-watch",
+      ]),
+    ).resolves.toBe(1);
+
+    expect(output.mock.calls.join("")).not.toContain("Usage:");
+    expect(errors.mock.calls.join("")).toContain(
+      "Provide either --watch or --no-watch",
+    );
+    expect(errors.mock.calls.join("")).toContain(
+      "--trigger-text-file require --code-review-id",
+    );
+  });
+
   it("includes --help in every displayed usage entry", async () => {
     vi.stubEnv("REVIEWPHIN_CLI_COMMAND", "pnpm cli");
     const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);

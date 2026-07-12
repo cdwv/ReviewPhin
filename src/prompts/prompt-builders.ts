@@ -404,6 +404,9 @@ function buildCompactTrigger(trigger: ReviewContext["trigger"]) {
       kind: trigger.kind,
       provider: trigger.provider,
       source: trigger.source,
+      instruction: trigger.instruction
+        ? truncate(trigger.instruction, 1_000)
+        : null,
       metadata: trigger.metadata,
     };
   }

@@ -20,6 +20,7 @@ describe("buildReviewPrompt", () => {
         kind: "manual-review",
         provider: "github",
         source: "check-run-requested-action",
+        instruction: null,
         metadata: {
           checkRunId: 1357,
           actionIdentifier: "run_review",
@@ -33,6 +34,32 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain('"kind": "manual-review"');
     expect(prompt).toContain('"checkRunId": 1357');
     expect(compact.reviewTrigger).not.toHaveProperty("commentId");
+  });
+
+  it("includes local manual instructions in the compact review trigger", () => {
+    const context: ReviewContext = {
+      ...createContext(),
+      trigger: {
+        kind: "manual-review",
+        provider: "gitlab",
+        source: "cli",
+        instruction: "Focus on authorization boundary regressions.",
+        metadata: {
+          requestId: "local-review_1",
+          codeReviewId: 7,
+          createdAt: "2026-07-12T09:00:00.000Z",
+        },
+      },
+    };
+
+    const compact = buildCompactReviewContext(context, 5_000);
+
+    expect(compact.reviewTrigger).toEqual(
+      expect.objectContaining({
+        source: "cli",
+        instruction: "Focus on authorization boundary regressions.",
+      }),
+    );
   });
 
   it("includes project memory in the serialized prompt context", () => {

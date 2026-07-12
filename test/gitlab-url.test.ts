@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildGitLabApiUrl,
   normalizeGitLabBaseUrl,
+  parseGitLabNoteUrl,
   urlMatchesGitLabBase,
 } from "../src/platforms/gitlab/url.js";
 import {
@@ -32,6 +33,29 @@ describe("GitLab URL helpers", () => {
         "https://gitlab.example.com/gitlab",
       ),
     ).toBe(true);
+  });
+
+  it("parses only canonical merge request note urls", () => {
+    expect(
+      parseGitLabNoteUrl(
+        "https://gitlab.example.com/group/project/-/merge_requests/17#note_42",
+      ),
+    ).toEqual({
+      url: "https://gitlab.example.com/group/project/-/merge_requests/17#note_42",
+      codeReviewId: 17,
+      commentId: 42,
+    });
+
+    for (const value of [
+      "http://gitlab.example.com/group/project/-/merge_requests/17#note_42",
+      "https://gitlab.example.com/group/project/-/merge_requests/17",
+      "https://gitlab.example.com/group/project/-/issues/17#note_42",
+      "https://gitlab.example.com/group/project/-/merge_requests/17?x=1#note_42",
+    ]) {
+      expect(() => parseGitLabNoteUrl(value)).toThrow(
+        /Unsupported GitLab comment URL/,
+      );
+    }
   });
 
   it("matches webhook payload urls against a path-prefixed tenant base url", () => {

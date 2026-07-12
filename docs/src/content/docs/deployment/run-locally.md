@@ -71,7 +71,22 @@ pnpm cli platform connection add \
 
 Continue with [platform connections](../../management/platform-connections/) and [tenants](../../management/tenants/).
 
+## 6. Submit a review without a webhook
+
+With the local worker still running, submit a review through the same SQLite database:
+
+```bash
+pnpm cli mr review \
+  --key https://gitlab.example.com::123 \
+  --code-review-id 42 \
+  --trigger-text "Review the current changes."
+```
+
+The CLI persists the job and watches the already-running worker process it. It does not start another worker. Pressing `Ctrl+C` stops the watch but leaves the job queued or running.
+
+Live log lines appear when the CLI and worker can access the same `RUN_LOG_DIR`. Persisted status and findings remain available when they cannot. See [`mr review`](../../management/cli-reference/#mr-review) for comment selectors, JSON output, and storage overrides.
+
 ## Next steps
 
-- Local instances are not reachable by GitLab or GitHub yet. Expose the worker with a [tunnel](../exposing-webhooks/#tunnels-for-local-and-docker) before configuring webhooks.
+- To receive platform-triggered reviews, expose the worker with a [tunnel](../exposing-webhooks/#tunnels-for-local-and-docker) before configuring webhooks.
 - Previewing the GitHub setup screens without starting the App flow? `pnpm dev` logs a `/github/setup/samples` URL with sample data.

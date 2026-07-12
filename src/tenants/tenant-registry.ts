@@ -24,6 +24,15 @@ export class TenantRegistry {
     return tenant ? this.resolveTenant(tenant) : null;
   }
 
+  public async getResolvedTenantByKey(
+    tenantKey: string,
+  ): Promise<ResolvedTenant | null> {
+    const tenant = await this.storage.stores.tenants.find({
+      key: { eq: tenantKey },
+    });
+    return tenant ? this.resolveTenant(tenant) : null;
+  }
+
   public async resolveWebhookTenant(
     platform: IPlatform,
     payload: unknown,

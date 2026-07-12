@@ -49,6 +49,48 @@ export function urlMatchesGitLabBase(
   return candidatePath === basePath || candidatePath.startsWith(`${basePath}/`);
 }
 
+export interface GitLabNoteUrl {
+  url: string;
+  codeReviewId: number;
+  commentId: number;
+}
+
+export function parseGitLabNoteUrl(value: string): GitLabNoteUrl {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw unsupportedGitLabNoteUrl();
+  }
+
+  const pathMatch = parsed.pathname.match(
+    /^\/.+\/-\/merge_requests\/([1-9]\d*)$/,
+  );
+  const fragmentMatch = parsed.hash.match(/^#note_([1-9]\d*)$/);
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.search !== "" ||
+    !pathMatch ||
+    !fragmentMatch
+  ) {
+    throw unsupportedGitLabNoteUrl();
+  }
+
+  return {
+    url: parsed.toString(),
+    codeReviewId: Number(pathMatch[1]),
+    commentId: Number(fragmentMatch[1]),
+  };
+}
+
+function unsupportedGitLabNoteUrl(): Error {
+  return new Error(
+    "Unsupported GitLab comment URL. Use the canonical merge request note URL or provide --trigger-comment-id with --code-review-id.",
+  );
+}
+
 function stripTrailingSlashes(value: string): string {
   if (value === "/") {
     return "";

@@ -7,6 +7,8 @@ import { z } from "zod";
 import type { HarnessRunLoggingContext } from "../../harness/types.js";
 import type {
   IPlatform,
+  LocalReviewSelector,
+  PlatformInteractionJobInput,
   PlatformSetupHandler,
   PlatformWebhookRequest,
   ResolvedTenant,
@@ -19,6 +21,11 @@ import type {
 } from "../../storage/contract/current.js";
 import type { StorageHelpers } from "../../storage/storage-helpers.js";
 import type { WebhookReviewTrigger } from "../../review/types.js";
+import type { TriggerCommentReference } from "../../review/types.js";
+import {
+  isLocalReviewTrigger,
+  serializeLocalReviewTrigger,
+} from "../../review/local-trigger.js";
 import { listAll } from "../../storage/storage-helpers.js";
 import {
   githubConnectionRegistrationSchema,
@@ -33,6 +40,10 @@ import {
   GitHubClient,
   type GitHubAppApi,
   type GitHubAppFactoryConfig,
+  type GitHubIssueComment,
+  type GitHubPullRequest,
+  type GitHubReviewComment,
+  type GitHubReviewThread,
 } from "./client.js";
 import {
   renderGitHubSetupErrorPage,
@@ -48,6 +59,7 @@ import {
 } from "./tenant-config.js";
 import { createTenantKey } from "../../utils/ids.js";
 import { sha256 } from "../../utils/hash.js";
+import { NoOpPlatformTriggerLifecycle } from "../trigger-lifecycle.js";
 import {
   getGitHubSignatureHeader,
   isGitHubWebhookPayload,
@@ -69,6 +81,10 @@ import {
   extractGitHubReviewCommand,
   githubCommentTriggerSchema,
 } from "./comment-trigger.js";
+import {
+  parseGitHubCommentUrl,
+  type GitHubCommentUrl,
+} from "./url.js";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -646,7 +662,7 @@ export default class GitHubPlatform implements IPlatform {
     payload: unknown;
     trigger: WebhookReviewTrigger;
     storage: StorageHelpers;
-  }) {
+  }): Promise<PlatformInteractionJobInput> {
     if (!isGitHubWebhookPayload(input.payload)) {
       throw new Error("GitHub interaction jobs require a GitHub webhook");
     }
@@ -745,11 +761,152 @@ export default class GitHubPlatform implements IPlatform {
     };
   }
 
+  public async createLocalInteractionJob(input: {
+    resolvedTenant: ResolvedTenant;
+    storage: StorageHelpers;
+    selector: LocalReviewSelector;
+    forceNew: boolean;
+    requestId: string;
+    createdAt: string;
+  }): Promise<PlatformInteractionJobInput> {
+    const connectionConfig = readyGitHubConnectionConfigSchema.parse(
+      JSON.parse(
+        input.resolvedTenant.connection.platformConnectionConfigJson,
+      ) as unknown,
+    );
+    const tenantConfig = getGitHubTenantConfig(input.resolvedTenant.tenant);
+    const client = this.createClient(connectionConfig);
+    let urlSelection: GitHubCommentUrl | null = null;
+    let codeReviewId: number;
+    if (input.selector.kind === "comment-url") {
+      urlSelection = parseGitHubCommentUrl(input.selector.url);
+      codeReviewId = urlSelection.codeReviewId;
+    } else {
+      codeReviewId = input.selector.codeReviewId;
+    }
+    if (
+      input.selector.kind === "comment-url" &&
+      input.selector.codeReviewId !== undefined &&
+      input.selector.codeReviewId !== codeReviewId
+    ) {
+      throw new Error(
+        `--code-review-id ${input.selector.codeReviewId} does not match GitHub comment URL pull request ${codeReviewId}.`,
+      );
+    }
+
+    const pullRequest = await client.getPullRequest(
+      tenantConfig.repositoryFullName,
+      codeReviewId,
+    );
+    validateGitHubLocalSelection({
+      tenantRepository: tenantConfig.repositoryFullName,
+      pullRequest,
+      codeReviewId,
+      urlSelection,
+    });
+
+    if (input.selector.kind === "text") {
+      const triggerJson = serializeLocalReviewTrigger({
+        kind: "reviewphin-local-review",
+        source: "cli",
+        requestId: input.requestId,
+        codeReviewId,
+        instruction: input.selector.text,
+        createdAt: input.createdAt,
+      });
+      return {
+        dedupeKey: sha256(
+          [
+            "reviewphin-local-review",
+            input.resolvedTenant.tenant.id,
+            codeReviewId,
+            input.requestId,
+          ].join("::"),
+        ),
+        codeReviewId,
+        commentId: null,
+        triggerJson,
+        headSha: pullRequest.head.sha,
+        payloadJson: triggerJson,
+      };
+    }
+
+    let commentId: number;
+    if (input.selector.kind === "comment-id") {
+      commentId = input.selector.commentId;
+    } else {
+      if (!urlSelection) {
+        throw new Error("GitHub comment URL selection was not resolved.");
+      }
+      commentId = urlSelection.commentId;
+    }
+    const [issueComments, reviewComments, reviewThreads] = await Promise.all([
+      client.listIssueComments(tenantConfig.repositoryFullName, codeReviewId),
+      client.listReviewComments(tenantConfig.repositoryFullName, codeReviewId),
+      client.listReviewThreads(tenantConfig.repositoryFullName, codeReviewId),
+    ]);
+    const located = locateGitHubLocalComment({
+      commentId,
+      issueComments,
+      reviewComments,
+      reviewThreads,
+      expectedKind: urlSelection?.kind,
+    });
+    if (!located) {
+      throw new Error(
+        `GitHub comment ${commentId} was not found on pull request ${codeReviewId}.`,
+      );
+    }
+    if (urlSelection && located.comment.html_url !== urlSelection.url) {
+      throw new Error(
+        "GitHub comment URL does not match the selected comment in the resolved tenant repository.",
+      );
+    }
+    const payload = buildLocalGitHubCommentPayload({
+      requestId: input.requestId,
+      connectionInstallationId: connectionConfig.installationId,
+      repositoryId: tenantConfig.repositoryId,
+      repositoryFullName: tenantConfig.repositoryFullName,
+      pullRequest,
+      located,
+    });
+    const trigger = await this.classifyWebhookTrigger(
+      input.resolvedTenant,
+      payload,
+    );
+    if (!trigger || trigger.kind === "check-run-requested-action") {
+      throw new Error(
+        `GitHub comment ${commentId} is not a recognized ReviewPhin review trigger.`,
+      );
+    }
+    const nativeTrigger: WebhookReviewTrigger = {
+      ...trigger,
+      comment: located.reference,
+    };
+    const interactionJob = await this.createInteractionJob({
+      resolvedTenant: input.resolvedTenant,
+      payload,
+      trigger: nativeTrigger,
+      storage: input.storage,
+    });
+    return input.forceNew
+      ? {
+          ...interactionJob,
+          dedupeKey: sha256(
+            `${interactionJob.dedupeKey}::${input.requestId}`,
+          ),
+        }
+      : interactionJob;
+  }
+
   public createTriggerLifecycle(input: {
     resolvedTenant: ResolvedTenant;
     job: InteractionJobRecord;
   }) {
     const parsedTrigger: unknown = JSON.parse(input.job.triggerJson);
+    if (isLocalReviewTrigger(parsedTrigger)) {
+      return new NoOpPlatformTriggerLifecycle();
+    }
     if (githubCommentTriggerSchema.safeParse(parsedTrigger).success) {
       const config = readyGitHubConnectionConfigSchema.parse(
         JSON.parse(
@@ -1026,4 +1183,165 @@ export default class GitHubPlatform implements IPlatform {
       return null;
     }
   }
+}
+
+type LocatedGitHubComment =
+    | {
+        eventName: "issue_comment";
+        comment: GitHubIssueComment;
+        reference: TriggerCommentReference;
+      }
+    | {
+        eventName: "pull_request_review_comment";
+        comment: GitHubReviewComment;
+        reference: TriggerCommentReference;
+      };
+
+function validateGitHubLocalSelection(input: {
+    tenantRepository: string;
+    pullRequest: GitHubPullRequest;
+    codeReviewId: number;
+    urlSelection: GitHubCommentUrl | null;
+  }): void {
+    if (input.pullRequest.number !== input.codeReviewId) {
+      throw new Error(
+        `GitHub pull request ${input.codeReviewId} does not match the resolved tenant repository.`,
+      );
+    }
+    if (!input.urlSelection) {
+      return;
+    }
+    const selectedRepository =
+      `${input.urlSelection.owner}/${input.urlSelection.repository}`.toLowerCase();
+    if (selectedRepository !== input.tenantRepository.toLowerCase()) {
+      throw new Error(
+        "GitHub comment URL repository does not match the resolved tenant.",
+      );
+    }
+    const selectedUrl = new URL(input.urlSelection.url);
+    selectedUrl.hash = "";
+    const pullRequestUrl = new URL(input.pullRequest.html_url);
+    if (
+      selectedUrl.origin !== pullRequestUrl.origin ||
+      selectedUrl.pathname.toLowerCase() !==
+        pullRequestUrl.pathname.toLowerCase()
+    ) {
+      throw new Error(
+        "GitHub comment URL host, repository, or pull request does not match the resolved tenant.",
+      );
+    }
+  }
+
+function locateGitHubLocalComment(input: {
+    commentId: number;
+    issueComments: GitHubIssueComment[];
+    reviewComments: GitHubReviewComment[];
+    reviewThreads: GitHubReviewThread[];
+    expectedKind?: GitHubCommentUrl["kind"] | undefined;
+  }): LocatedGitHubComment | null {
+    const issueComment = input.issueComments.find(
+      (comment) => comment.id === input.commentId,
+    );
+    if (issueComment && input.expectedKind !== "review-comment") {
+      return {
+        eventName: "issue_comment",
+        comment: issueComment,
+        reference: {
+          kind: "code-review-comment",
+          commentId: input.commentId,
+        },
+      };
+    }
+    const reviewComment = input.reviewComments.find(
+      (comment) => comment.id === input.commentId,
+    );
+    if (!reviewComment || input.expectedKind === "issue-comment") {
+      return null;
+    }
+    const thread = input.reviewThreads.find((entry) =>
+      entry.comments.nodes.some(
+        (comment) => comment.databaseId === input.commentId,
+      ),
+    );
+    return {
+      eventName: "pull_request_review_comment",
+      comment: reviewComment,
+      reference: {
+        kind: "discussion-comment",
+        discussionId:
+          thread?.id ??
+          `review-comment:${reviewComment.in_reply_to_id ?? reviewComment.id}`,
+        commentId: input.commentId,
+      },
+    };
+  }
+
+function buildLocalGitHubCommentPayload(input: {
+    requestId: string;
+    connectionInstallationId: number;
+    repositoryId: number;
+    repositoryFullName: string;
+    pullRequest: GitHubPullRequest;
+    located: LocatedGitHubComment;
+  }): GitHubWebhookPayload {
+    const user = input.located.comment.user;
+    const body = {
+      action: "created",
+      installation: { id: input.connectionInstallationId },
+      repository: {
+        id: input.repositoryId,
+        full_name: input.repositoryFullName,
+      },
+      ...(input.located.eventName === "issue_comment"
+        ? {
+            issue: {
+              number: input.pullRequest.number,
+              pull_request: {},
+            },
+          }
+        : {
+            pull_request: {
+              number: input.pullRequest.number,
+              head: { sha: input.pullRequest.head.sha },
+            },
+          }),
+      comment: {
+        id: input.located.comment.id,
+        body: input.located.comment.body ?? "",
+        ...(input.located.eventName === "pull_request_review_comment" &&
+        input.located.comment.in_reply_to_id
+          ? { in_reply_to_id: input.located.comment.in_reply_to_id }
+          : {}),
+        user: user
+          ? {
+              id: user.id,
+              login: user.login,
+              ...(user.type ? { type: user.type } : {}),
+            }
+          : null,
+      },
+    };
+    return {
+      body,
+      deliveryId: input.requestId,
+      eventName: input.located.eventName,
+      action: "created",
+      installationId: input.connectionInstallationId,
+      repositoryId: input.repositoryId,
+      requestedActionIdentifier: null,
+      checkRunId: null,
+      checkRunHeadSha: null,
+      checkRunAppId: null,
+      pullRequestNumber: input.pullRequest.number,
+      pullRequestHeadSha: input.pullRequest.head.sha,
+      issueIsPullRequest: input.located.eventName === "issue_comment",
+      commentId: input.located.comment.id,
+      commentBody: input.located.comment.body ?? "",
+      commentAuthorLogin: user?.login ?? null,
+      commentAuthorType: user?.type ?? null,
+      commentInReplyToId:
+        input.located.eventName === "pull_request_review_comment"
+          ? (input.located.comment.in_reply_to_id ?? null)
+          : null,
+    };
 }
