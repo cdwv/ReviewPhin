@@ -115,13 +115,20 @@ export class GitLabReviewPublicationAdapter implements PlatformReviewPublication
     const projectId = getGitLabTenantConfig(this.tenant).projectId;
     switch (mutation.kind) {
       case "set-resolved":
-        await this.client.resolveDiscussion(
-          projectId,
-          this.context.mergeRequest.iid,
-          mutation.discussionId,
-          mutation.resolved,
-        );
-        return {};
+        try {
+          await this.client.resolveDiscussion(
+            projectId,
+            this.context.mergeRequest.iid,
+            mutation.discussionId,
+            mutation.resolved,
+          );
+          return {};
+        } catch (error) {
+          return {
+            skipped: true,
+            skipReason: error instanceof Error ? error.message : String(error),
+          };
+        }
       case "update-finding": {
         const position = this.findCommentPosition(
           mutation.discussionId,

@@ -65,10 +65,14 @@ export interface ReconcileSummary {
   replied: number;
   resolved: number;
   skippedResolution: number;
+  skippedResolutionReasons?: string[];
   kept: number;
   summaryCommentAction: "created" | "updated" | null;
   links: PlatformPublicationLink[];
 }
+
+const MANUAL_RESOLUTION_NOTICE_MARKER =
+  "<!-- reviewphin-manual-resolution-notice:v1 -->";
 
 interface DiscussionReconcilerOptions {
   storage: StorageHelpers;
@@ -94,9 +98,7 @@ export interface ReconcileClaimGuard {
  * lost mid-reconcile the wrapper throws before issuing (or after completing) an
  * adapter mutation, preventing a stale attempt from publishing platform changes.
  */
-export class ClaimGuardedReviewPublicationAdapter
-  implements PlatformReviewPublicationAdapter
-{
+export class ClaimGuardedReviewPublicationAdapter implements PlatformReviewPublicationAdapter {
   public constructor(
     private readonly delegate: PlatformReviewPublicationAdapter,
     private readonly guard: ReconcileClaimGuard,
@@ -142,11 +144,7 @@ export class ClaimGuardedReviewPublicationAdapter
 }
 
 type DiscussionReconcileAction =
-  | "created"
-  | "updated"
-  | "replied"
-  | "resolved"
-  | "kept";
+  "created" | "updated" | "replied" | "resolved" | "kept";
 
 export class DiscussionReconciler {
   private readonly storage: StorageHelpers;
@@ -222,6 +220,7 @@ export class DiscussionReconciler {
       replied: 0,
       resolved: 0,
       skippedResolution: 0,
+      skippedResolutionReasons: [],
       kept: 0,
       summaryCommentAction: null,
       links: [],
@@ -299,6 +298,7 @@ export class DiscussionReconciler {
 
       if (disposition.action === "resolve") {
         let platformResolved = knownDiscussion.resolved;
+        let skippedResolutionReason: string | null = null;
         if (!knownDiscussion.resolved) {
           if (knownDiscussion.resolvable) {
             const mutation = await input.publicationAdapter.mutateDiscussion({
@@ -307,18 +307,22 @@ export class DiscussionReconciler {
               resolved: true,
             });
             if (mutation.skipped) {
+              skippedResolutionReason =
+                mutation.skipReason ?? "platform skipped resolution";
               this.logSkippedDiscussionResolutionMutation({
                 tenant: input.tenant,
                 codeReviewId: input.context.codeReview.id,
                 interactionRunId: input.interactionRunId,
                 knownDiscussion,
-                reason: mutation.skipReason ?? "platform skipped resolution",
+                reason: skippedResolutionReason,
               });
               summary.skippedResolution += 1;
+              summary.skippedResolutionReasons?.push(skippedResolutionReason);
             } else {
               platformResolved = true;
             }
           } else {
+            skippedResolutionReason = `Discussion ${knownDiscussion.platformDiscussionId} is not resolvable by the platform`;
             this.logSkippedDiscussionResolutionChange({
               tenant: input.tenant,
               codeReviewId: input.context.codeReview.id,
@@ -327,6 +331,7 @@ export class DiscussionReconciler {
               resolved: true,
             });
             summary.skippedResolution += 1;
+            summary.skippedResolutionReasons?.push(skippedResolutionReason);
           }
         }
 
@@ -373,6 +378,20 @@ export class DiscussionReconciler {
           discussionStatus: platformResolved ? "resolved" : "open",
           findingStatus: disposition.resolution ?? "resolved",
         });
+        if (skippedResolutionReason) {
+          const notified = await this.notifyManualDiscussionResolution({
+            tenant: input.tenant,
+            codeReviewId: input.context.codeReview.id,
+            interactionRunId: input.interactionRunId,
+            publicationAdapter: input.publicationAdapter,
+            knownDiscussion,
+            resolution: disposition.resolution ?? "resolved",
+            reason: skippedResolutionReason,
+          });
+          if (notified) {
+            summary.replied += 1;
+          }
+        }
         if (platformResolved) {
           summary.resolved += 1;
         }
@@ -509,11 +528,12 @@ export class DiscussionReconciler {
       let discussionStatus: "open" | "resolved" = "open";
       if (input.knownDiscussion.resolved) {
         if (input.knownDiscussion.resolvable) {
-          const reopenMutation = await input.publicationAdapter.mutateDiscussion({
-            kind: "set-resolved",
-            discussionId: input.knownDiscussion.platformDiscussionId,
-            resolved: false,
-          });
+          const reopenMutation =
+            await input.publicationAdapter.mutateDiscussion({
+              kind: "set-resolved",
+              discussionId: input.knownDiscussion.platformDiscussionId,
+              resolved: false,
+            });
           if (reopenMutation.skipped) {
             discussionStatus = "resolved";
             this.logSkippedDiscussionResolutionMutation({
@@ -851,6 +871,70 @@ export class DiscussionReconciler {
     );
   }
 
+  private async notifyManualDiscussionResolution(input: {
+    tenant: TenantRecord;
+    codeReviewId: number;
+    interactionRunId: string;
+    publicationAdapter: PlatformReviewPublicationAdapter;
+    knownDiscussion: KnownDiscussion;
+    resolution: "resolved" | "dismissed";
+    reason: string;
+  }): Promise<boolean> {
+    const discussions = await input.publicationAdapter.loadDiscussions({
+      fresh: true,
+    });
+    const discussion = discussions.find(
+      (entry) => entry.id === input.knownDiscussion.platformDiscussionId,
+    );
+    if (!discussion) {
+      throw new Error(
+        `Cannot notify missing platform discussion ${input.knownDiscussion.platformDiscussionId} about skipped resolution`,
+      );
+    }
+    if (
+      discussion.comments.some((comment) =>
+        comment.body.includes(MANUAL_RESOLUTION_NOTICE_MARKER),
+      )
+    ) {
+      this.logger.debug(
+        {
+          tenantId: input.tenant.id,
+          codeReviewId: input.codeReviewId,
+          interactionRunId: input.interactionRunId,
+          discussionId: input.knownDiscussion.discussionId,
+          platformDiscussionId: input.knownDiscussion.platformDiscussionId,
+        },
+        "manual discussion resolution notice already exists",
+      );
+      return false;
+    }
+
+    const body = buildManualResolutionNotice(input.resolution);
+    const mutation = await input.publicationAdapter.mutateDiscussion({
+      kind: "reply-text",
+      discussionId: input.knownDiscussion.platformDiscussionId,
+      body,
+    });
+    if (!mutation.comment) {
+      throw new Error(
+        `Platform did not return a manual resolution notice reply for discussion ${input.knownDiscussion.platformDiscussionId}`,
+      );
+    }
+    this.logger.warn(
+      {
+        tenantId: input.tenant.id,
+        codeReviewId: input.codeReviewId,
+        interactionRunId: input.interactionRunId,
+        discussionId: input.knownDiscussion.discussionId,
+        platformDiscussionId: input.knownDiscussion.platformDiscussionId,
+        resolution: input.resolution,
+        reason: input.reason,
+      },
+      "notified discussion that internal resolution requires manual platform resolution",
+    );
+    return true;
+  }
+
   private async syncSummaryNote(input: {
     platform: IPlatform;
     tenant: TenantRecord;
@@ -996,6 +1080,16 @@ export class DiscussionReconciler {
 
     return [...activeFindings.values()];
   }
+}
+
+function buildManualResolutionNotice(
+  resolution: "resolved" | "dismissed",
+): string {
+  const disposition =
+    resolution === "dismissed"
+      ? "dismissed this finding as no longer applicable"
+      : "considers this finding fixed";
+  return `${MANUAL_RESOLUTION_NOTICE_MARKER}\nReviewPhin's latest review ${disposition}. No further code change is requested for it, but this discussion could not be resolved automatically. Please review and resolve this thread manually when satisfied.`;
 }
 
 type SummaryFinding = Pick<

@@ -145,6 +145,27 @@ describe("Discussion reconciler", () => {
     );
   });
 
+  it("reports GitLab resolution failures as skipped mutations", async () => {
+    const context = createHydratedContext();
+    const resolveDiscussion = vi.fn(async () => {
+      throw new Error("GitLab token cannot resolve this discussion");
+    });
+
+    const result = await createDiscussionAdapter(context, {
+      resolveDiscussion,
+    }).mutateDiscussion({
+      kind: "set-resolved",
+      discussionId: "disc_1",
+      resolved: true,
+    });
+
+    expect(result).toEqual({
+      skipped: true,
+      skipReason: "GitLab token cannot resolve this discussion",
+    });
+    expect(resolveDiscussion).toHaveBeenCalledWith(123, 7, "disc_1", true);
+  });
+
   it("updates a bot-owned thread when the model revises the finding after a human reply", async () => {
     const storage = {
       upsertDiscussionMapping: vi.fn(async (input) => ({
@@ -985,7 +1006,6 @@ describe("Discussion reconciler", () => {
         },
       ],
     });
-
     const summary = await reconciler.reconcile({
       platform,
       tenant,
@@ -1080,65 +1100,103 @@ describe("Discussion reconciler", () => {
         },
       ],
     });
+    const liveDiscussions = structuredClone(context.discussions);
+    const listCodeReviewDiscussions = vi.fn(async () => liveDiscussions);
+    const replyToDiscussion = vi.fn(
+      async (
+        _projectId: number,
+        _codeReviewId: number,
+        _discussionId: string,
+        body: string,
+      ) => {
+        const note = {
+          id: 12,
+          body,
+          author: { id: 999, username: "review-bot", name: "Review Bot" },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          system: false,
+          resolvable: false,
+          resolved: false,
+        };
+        liveDiscussions[0]!.notes.push(note);
+        return note;
+      },
+    );
 
-    const summary = await reconciler.reconcile({
-      platform,
-      tenant,
-      context,
-      mappings: [
-        {
-          id: "map_1",
-          tenantId: tenant.id,
-          codeReviewId: 7,
-          identityKey: "identity",
-          findingFingerprint: "old",
-          title: "Old finding",
-          severity: "medium",
-          category: "bug",
-          body: "**Old finding**\n\nOld body",
-          platformDiscussionId: "disc_1",
-          platformCommentId: 10,
-          anchorJson: null,
-          positionJson: null,
-          botDiscussion: true,
-          botComment: true,
-          commentAuthorId: 999,
-          commentAuthorUsername: "review-bot",
-          status: "open" as const,
-          lastInteractionRunId: "run_old",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ],
-      interactionRunId: "run_1",
-      interactionJobId: "job-publication",
-      reviewResult: {
-        overview: {
-          summary: "Handled follow-up",
-          overallSeverity: "low",
-        },
-        findings: [],
-        priorDispositions: [
+    const reconcile = () =>
+      reconciler.reconcile({
+        platform,
+        tenant,
+        context,
+        mappings: [
           {
-            discussionId: "map_1",
-            action: "resolve",
-            resolution: "dismissed",
+            id: "map_1",
+            tenantId: tenant.id,
+            codeReviewId: 7,
+            identityKey: "identity",
+            findingFingerprint: "old",
+            title: "Old finding",
+            severity: "medium",
+            category: "bug",
+            body: "**Old finding**\n\nOld body",
+            platformDiscussionId: "disc_1",
+            platformCommentId: 10,
+            anchorJson: null,
+            positionJson: null,
+            botDiscussion: true,
+            botComment: true,
+            commentAuthorId: 999,
+            commentAuthorUsername: "review-bot",
+            status: "open" as const,
+            lastInteractionRunId: "run_old",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
           },
         ],
-      },
-      publicationAdapter: createDiscussionAdapter(context, {
-        createCodeReviewComment,
-        updateCodeReviewComment: vi.fn(),
-        replyToDiscussion: vi.fn(),
-        updateDiscussionNote: vi.fn(),
-        createCodeReviewDiscussion: vi.fn(),
-        resolveDiscussion,
-      }),
-    });
+        interactionRunId: "run_1",
+        interactionJobId: "job-publication",
+        reviewResult: {
+          overview: {
+            summary: "Handled follow-up",
+            overallSeverity: "low",
+          },
+          findings: [],
+          priorDispositions: [
+            {
+              discussionId: "map_1",
+              action: "resolve",
+              resolution: "dismissed",
+            },
+          ],
+        },
+        publicationAdapter: createDiscussionAdapter(context, {
+          createCodeReviewComment,
+          updateCodeReviewComment: vi.fn(),
+          replyToDiscussion,
+          updateDiscussionNote: vi.fn(),
+          createCodeReviewDiscussion: vi.fn(),
+          listCodeReviewDiscussions,
+          resolveDiscussion,
+        }),
+      });
+    const summary = await reconcile();
+    await reconcile();
 
     expect(summary.resolved).toBe(0);
     expect(summary.skippedResolution).toBe(1);
+    expect(summary.skippedResolutionReasons).toEqual([
+      "Discussion disc_1 is not resolvable by the platform",
+    ]);
+    expect(summary.replied).toBe(1);
     expect(resolveDiscussion).not.toHaveBeenCalled();
+    expect(replyToDiscussion).toHaveBeenCalledTimes(1);
+    expect(replyToDiscussion.mock.calls[0]?.[3]).toContain(
+      "<!-- reviewphin-manual-resolution-notice:v1 -->",
+    );
+    expect(replyToDiscussion.mock.calls[0]?.[3]).toContain(
+      "dismissed this finding as no longer applicable",
+    );
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
       expect.objectContaining({ status: "open" }),
     );
@@ -1163,10 +1221,30 @@ describe("Discussion reconciler", () => {
       storage: storage as never,
       logger,
     });
-    const mutateDiscussion = vi.fn(async () => ({
-      skipped: true,
-      skipReason: "Resource not accessible by integration",
-    }));
+    const mutateDiscussion = vi.fn(async (mutation) => {
+      if (mutation.kind === "set-resolved") {
+        return {
+          skipped: true,
+          skipReason: "Resource not accessible by integration",
+        };
+      }
+      return {
+        comment: {
+          id: "11",
+          body: mutation.body,
+          authorId: "999",
+          authorUsername: "review-bot",
+          isBot: true,
+          resolvable: true,
+          resolved: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          anchor: null,
+          positionJson: null,
+          url: null,
+        },
+      };
+    });
 
     const summary = await reconciler.reconcile({
       platform,
@@ -1260,6 +1338,17 @@ describe("Discussion reconciler", () => {
     });
     expect(summary.resolved).toBe(0);
     expect(summary.skippedResolution).toBe(1);
+    expect(summary.skippedResolutionReasons).toEqual([
+      "Resource not accessible by integration",
+    ]);
+    expect(summary.replied).toBe(1);
+    expect(mutateDiscussion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "reply-text",
+        discussionId: "PRRT_1",
+        body: expect.stringContaining("considers this finding fixed"),
+      }),
+    );
     expect(storage.upsertDiscussionMapping).toHaveBeenCalledWith(
       expect.objectContaining({ status: "open" }),
     );
