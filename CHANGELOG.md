@@ -3,6 +3,22 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v1.2.0 - 2026-07-13
+### Added
+- Administrators can authorize a GitHub maintainer for new or existing
+GitHub connections through the setup flow or CLI.
+- Administrators can check whether a GitHub connection is ready to
+resolve review threads.
+
+### Fixed
+- ReviewPhin now closes resolved GitHub review conversations on the pull
+request instead of updating only its internal review summary.
+
+### Changed
+- Existing GitHub Apps must add the ReviewPhin user authorization
+callback URL and complete a one-time maintainer authorization after
+upgrading.
+
 ## v1.1.0 - 2026-07-12
 ### Added
 - Operators can submit merge request and pull request reviews from the
