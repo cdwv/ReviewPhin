@@ -148,7 +148,12 @@ describe("Discussion reconciler", () => {
   it("reports GitLab resolution failures as skipped mutations", async () => {
     const context = createHydratedContext();
     const resolveDiscussion = vi.fn(async () => {
-      throw new Error("GitLab token cannot resolve this discussion");
+      throw new GitLabApiError(
+        "GitLab token cannot resolve this discussion",
+        403,
+        '{"message":"403 Forbidden"}',
+        "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/discussions/disc_1",
+      );
     });
 
     const result = await createDiscussionAdapter(context, {
@@ -164,6 +169,43 @@ describe("Discussion reconciler", () => {
       skipReason: "GitLab token cannot resolve this discussion",
     });
     expect(resolveDiscussion).toHaveBeenCalledWith(123, 7, "disc_1", true);
+  });
+
+  it.each([
+    [
+      "rate limit",
+      new GitLabApiError(
+        "GitLab rate limit reached",
+        429,
+        '{"message":"429 Too Many Requests"}',
+        "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/discussions/disc_1",
+      ),
+    ],
+    [
+      "server failure",
+      new GitLabApiError(
+        "GitLab request failed",
+        500,
+        '{"message":"500 Internal Server Error"}',
+        "https://gitlab.example.com/api/v4/projects/123/merge_requests/7/discussions/disc_1",
+      ),
+    ],
+    ["network failure", new TypeError("fetch failed")],
+  ])("propagates transient GitLab %s errors", async (_label, error) => {
+    const context = createHydratedContext();
+    const resolveDiscussion = vi.fn(async () => {
+      throw error;
+    });
+
+    await expect(
+      createDiscussionAdapter(context, {
+        resolveDiscussion,
+      }).mutateDiscussion({
+        kind: "set-resolved",
+        discussionId: "disc_1",
+        resolved: true,
+      }),
+    ).rejects.toBe(error);
   });
 
   it("updates a bot-owned thread when the model revises the finding after a human reply", async () => {

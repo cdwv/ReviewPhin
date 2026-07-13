@@ -124,6 +124,9 @@ export class GitLabReviewPublicationAdapter implements PlatformReviewPublication
           );
           return {};
         } catch (error) {
+          if (!isPermanentGitLabResolutionFailure(error)) {
+            throw error;
+          }
           return {
             skipped: true,
             skipReason: error instanceof Error ? error.message : String(error),
@@ -473,6 +476,12 @@ export class GitLabReviewPublicationAdapter implements PlatformReviewPublication
       return createDraft(null);
     }
   }
+}
+
+function isPermanentGitLabResolutionFailure(
+  error: unknown,
+): error is GitLabApiError {
+  return error instanceof GitLabApiError && error.status === 403;
 }
 
 export function toPlatformReviewDiscussion(

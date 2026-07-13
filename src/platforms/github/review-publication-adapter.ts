@@ -14,14 +14,15 @@ import {
   isReviewSummaryNoteBody,
 } from "../../review/summary.js";
 import type { ReviewAnchor, ReviewFinding } from "../../review/types.js";
-import type {
-  GitHubClient,
-  GitHubIssueComment,
-  GitHubPendingReviewComment,
-  GitHubPullRequestFile,
-  GitHubPullRequestReview,
-  GitHubReviewComment,
-  GitHubReviewThread,
+import {
+  GitHubApiError,
+  type GitHubClient,
+  type GitHubIssueComment,
+  type GitHubPendingReviewComment,
+  type GitHubPullRequestFile,
+  type GitHubPullRequestReview,
+  type GitHubReviewComment,
+  type GitHubReviewThread,
 } from "./client.js";
 
 const PUBLICATION_MARKER_PREFIX = "reviewphin-publication:";
@@ -153,10 +154,13 @@ export class GitHubReviewPublicationAdapter implements PlatformReviewPublication
           );
           return {};
         } catch (error) {
+          const skipReason = getPermanentGitHubResolutionFailure(error);
+          if (!skipReason) {
+            throw error;
+          }
           return {
             skipped: true,
-            skipReason:
-              error instanceof Error ? error.message : String(error),
+            skipReason,
           };
         }
       case "update-finding": {
@@ -602,6 +606,23 @@ export class GitHubReviewPublicationAdapter implements PlatformReviewPublication
     }
     return null;
   }
+}
+
+function getPermanentGitHubResolutionFailure(error: unknown): string | null {
+  if (!(error instanceof GitHubApiError)) {
+    return null;
+  }
+
+  let current: unknown = error;
+  const visited = new Set<unknown>();
+  while (current instanceof Error && !visited.has(current)) {
+    visited.add(current);
+    if (current.message.includes("Resource not accessible by integration")) {
+      return current.message;
+    }
+    current = current.cause;
+  }
+  return null;
 }
 
 export function renderGitHubFindingBody(

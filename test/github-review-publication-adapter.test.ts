@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  GitHubPendingReviewComment,
-  GitHubIssueComment,
-  GitHubPullRequestReview,
-  GitHubReviewComment,
-  GitHubReviewThread,
+import {
+  GitHubApiError,
+  type GitHubPendingReviewComment,
+  type GitHubIssueComment,
+  type GitHubPullRequestReview,
+  type GitHubReviewComment,
+  type GitHubReviewThread,
 } from "../src/platforms/github/client.js";
 import { GitHubReviewPublicationAdapter } from "../src/platforms/github/review-publication-adapter.js";
 
@@ -694,7 +695,9 @@ describe("GitHubReviewPublicationAdapter", () => {
       ],
     });
     state.client.setReviewThreadResolved.mockRejectedValueOnce(
-      new Error("Resource not accessible by integration"),
+      new GitHubApiError("GitHub review thread PRRT_600 request failed", null, {
+        cause: new Error("Resource not accessible by integration"),
+      }),
     );
 
     await expect(
@@ -711,6 +714,64 @@ describe("GitHubReviewPublicationAdapter", () => {
       "PRRT_600",
       true,
     );
+  });
+
+  it.each([
+    [
+      "rate limit",
+      new GitHubApiError(
+        "GitHub review thread PRRT_600 request failed with status 429",
+        429,
+      ),
+    ],
+    [
+      "server failure",
+      new GitHubApiError(
+        "GitHub review thread PRRT_600 request failed with status 500",
+        500,
+      ),
+    ],
+    [
+      "network failure",
+      new GitHubApiError("GitHub review thread PRRT_600 request failed", null, {
+        cause: new TypeError("fetch failed"),
+      }),
+    ],
+  ])("propagates transient GitHub %s errors", async (_label, error) => {
+    const state = createState();
+    const adapter = createAdapter(state);
+    await adapter.publishFindings({
+      publicationKey: "job-transient-resolution",
+      existingDiscussionIds: new Set(),
+      findings: [
+        {
+          identityKey: "inline",
+          fingerprint: "inline-fingerprint",
+          marker: "github:job-transient-resolution:inline",
+          finding: {
+            title: "Return the computed value",
+            body: "The current branch drops the result.",
+            severity: "high",
+            category: "bug",
+            anchor: {
+              path: "src/index.ts",
+              startLine: 2,
+              endLine: 2,
+              side: "new",
+            },
+          },
+        },
+      ],
+    });
+    state.client.setReviewThreadResolved.mockRejectedValueOnce(error);
+
+    await expect(
+      adapter.mutateDiscussion({
+        kind: "set-resolved",
+        discussionId: "PRRT_600",
+        resolved: true,
+      }),
+    ).rejects.toBe(error);
   });
 
   it("creates then updates the marked summary issue comment", async () => {
