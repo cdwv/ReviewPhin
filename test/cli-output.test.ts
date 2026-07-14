@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { runCli, runCliEntry } from "../src/cli.js";
-import { createStringWriter, resolveOutputMode } from "../src/cli/output.js";
+import {
+  CliOutput,
+  createStringWriter,
+  resolveOutputMode,
+} from "../src/cli/output.js";
 import { createGitLabTenantInput } from "./helpers/gitlab-tenant.js";
 import { openSqliteTestStorage } from "./helpers/storage.js";
 
@@ -22,6 +26,18 @@ describe("CLI output contract", () => {
     expect(() => resolveOutputMode({ output: "plain", json: true })).toThrow(
       "Cannot combine --json with --output plain",
     );
+  });
+
+  it("tracks the current terminal width when no fixed width is injected", () => {
+    const stdout = createStringWriter(() => undefined) as ReturnType<
+      typeof createStringWriter
+    > & { columns: number };
+    stdout.columns = 90;
+    const output = new CliOutput("pretty", { stdout, stdoutIsTTY: true });
+
+    expect(output.columns).toBe(90);
+    stdout.columns = 132;
+    expect(output.columns).toBe(132);
   });
 
   it("renders safe list projections as one JSON value and plain text without ANSI", async () => {

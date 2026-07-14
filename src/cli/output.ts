@@ -57,10 +57,10 @@ export class CliOutput {
   public readonly stderr: NodeJS.WritableStream;
   public readonly stdinIsTTY: boolean;
   public readonly stdoutIsTTY: boolean;
-  public readonly columns: number;
   public readonly color: boolean;
   public readonly unicode: boolean;
   public readonly now: () => Date;
+  private readonly columnOverride: number | undefined;
 
   public constructor(
     mode: OutputMode,
@@ -72,15 +72,22 @@ export class CliOutput {
     this.stdinIsTTY = dependencies.stdinIsTTY ?? Boolean(process.stdin.isTTY);
     this.stdoutIsTTY =
       dependencies.stdoutIsTTY ?? Boolean(process.stdout.isTTY);
-    this.columns = Math.max(
-      20,
-      dependencies.columns ?? process.stdout.columns ?? 100,
-    );
+    this.columnOverride = dependencies.columns;
     this.color =
       dependencies.color ??
       (this.stdoutIsTTY && !Object.hasOwn(process.env, "NO_COLOR"));
     this.unicode = dependencies.unicode ?? true;
     this.now = dependencies.now ?? (() => new Date());
+  }
+
+  public get columns(): number {
+    const streamColumns = (
+      this.stdout as NodeJS.WritableStream & { readonly columns?: number }
+    ).columns;
+    return Math.max(
+      20,
+      this.columnOverride ?? streamColumns ?? process.stdout.columns ?? 100,
+    );
   }
 
   public write(text: string): void {

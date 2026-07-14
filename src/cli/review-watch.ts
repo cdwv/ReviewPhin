@@ -201,6 +201,7 @@ export async function watchReviewJob(input: {
           output,
         });
       }
+      renderer.setLiveLogsAvailable(tail.liveLogsAvailable);
 
       const jobTerminal = TERMINAL_JOB_STATUSES.has(state.job.status);
       const runSettled =
@@ -465,8 +466,9 @@ class ReviewWatchRenderer {
   private jobStatus: InteractionJobStatus = "queued";
   private runId: string | null = null;
   private runStatus: InteractionRunStatus | null = null;
+  private liveLogsAvailable = false;
   private summary: ReviewWatchSummary | null = null;
-  private paintedLines = 0;
+  private hasPainted = false;
   private cursorHidden = false;
 
   public constructor(
@@ -498,6 +500,10 @@ class ReviewWatchRenderer {
     this.repaint();
   }
 
+  public setLiveLogsAvailable(available: boolean): void {
+    this.liveLogsAvailable = available;
+  }
+
   public close(): void {
     if (!this.cursorHidden) {
       return;
@@ -514,7 +520,7 @@ class ReviewWatchRenderer {
       this.runStatus = event.status;
     } else if (event.type === "activity") {
       this.activities.push(event);
-      if (this.activities.length > DASHBOARD_ACTIVITY_ROWS) {
+      if (this.activities.length > DASHBOARD_ACTIVITY_EVENTS) {
         this.activities.shift();
       }
     } else if (event.type === "review_completed") {
@@ -530,9 +536,11 @@ class ReviewWatchRenderer {
       this.output.stdout.write("\u001B[?25l");
       this.cursorHidden = true;
     }
-    if (this.paintedLines > 0) {
-      this.output.stdout.write(`\u001B[${this.paintedLines}F`);
+    if (this.hasPainted) {
+      this.output.stdout.write("\u001B[u");
       this.output.stdout.write("\u001B[J");
+    } else {
+      this.output.stdout.write("\u001B[s");
     }
     const elapsed = Math.max(0, this.output.now().valueOf() - this.startedAt);
     const lines = formatReviewDashboard({
@@ -543,18 +551,25 @@ class ReviewWatchRenderer {
       runStatus: this.runStatus,
       activities: this.activities,
       summary: this.summary,
+      liveLogsAvailable: this.liveLogsAvailable,
       elapsed,
     });
     this.output.stdout.write(`${lines.join("\n")}\n`);
-    this.paintedLines = lines.length;
+    this.hasPainted = true;
   }
 }
 
-const DASHBOARD_ACTIVITY_ROWS = 5;
+const DASHBOARD_ACTIVITY_EVENTS = 5;
 
 interface DashboardSegment {
   readonly text: string;
   readonly style?: TextStyle | undefined;
+}
+
+interface DashboardField {
+  readonly label: string;
+  readonly value: string;
+  readonly valueStyle?: TextStyle | undefined;
 }
 
 interface DashboardBox {
@@ -580,10 +595,12 @@ function formatReviewDashboard(input: {
   runStatus: InteractionRunStatus | null;
   activities: readonly Extract<ReviewWatchEvent, { type: "activity" }>[];
   summary: ReviewWatchSummary | null;
+  liveLogsAvailable: boolean;
   elapsed: number;
 }): string[] {
-  const width = Math.min(88, input.output.columns);
+  const width = input.output.columns;
   const box = dashboardBox(input.output.unicode);
+  const contentWidth = dashboardContentWidth(box, width);
   const overallStatus = input.summary?.jobStatus ?? input.jobStatus;
   const findingCount =
     input.summary === null
@@ -594,66 +611,81 @@ function formatReviewDashboard(input: {
   const activityRows = formatDashboardActivities(
     input.activities,
     input.summary,
-  ).slice(-DASHBOARD_ACTIVITY_ROWS);
-  while (activityRows.length < DASHBOARD_ACTIVITY_ROWS) {
-    activityRows.push([]);
-  }
+    contentWidth,
+    input.output.unicode,
+  );
+  const activityStatus =
+    input.liveLogsAvailable || input.summary?.liveLogsAvailable
+      ? "Live"
+      : input.summary
+        ? "Unavailable"
+        : "Waiting";
+  const statusFields: DashboardField[] = [
+    {
+      label: "Status",
+      value: `${input.output.unicode ? "●" : "*"} ${statusLabel(overallStatus)}`,
+      valueStyle: statusStyle(overallStatus),
+    },
+    {
+      label: "Elapsed",
+      value: formatDuration(input.elapsed),
+      valueStyle: "strong",
+    },
+    {
+      label: "Job",
+      value: statusLabel(input.jobStatus),
+      valueStyle: statusStyle(input.jobStatus),
+    },
+    {
+      label: "Run",
+      value: input.runStatus ? statusLabel(input.runStatus) : "Waiting",
+      valueStyle: input.runStatus ? statusStyle(input.runStatus) : "muted",
+    },
+    {
+      label: "Findings",
+      value: findingCount,
+      valueStyle: input.summary ? "strong" : "muted",
+    },
+    {
+      label: "Activity",
+      value: activityStatus,
+      valueStyle: activityStatus === "Live" ? "active" : "muted",
+    },
+  ];
+  const identityFields: DashboardField[] = [
+    {
+      label: "Review",
+      value:
+        input.identity.codeReviewId === null
+          ? "~"
+          : String(input.identity.codeReviewId),
+      valueStyle: input.identity.codeReviewId === null ? "muted" : "strong",
+    },
+    {
+      label: "Tenant",
+      value: input.identity.tenantKey ?? "~",
+      valueStyle: input.identity.tenantKey === null ? "muted" : "strong",
+    },
+    {
+      label: "Job",
+      value: input.identity.jobId,
+      valueStyle: "strong",
+    },
+    {
+      label: "Run",
+      value: input.runId ?? "waiting for first attempt",
+      valueStyle: input.runId === null ? "muted" : "strong",
+    },
+  ];
 
   return [
     dashboardRule(input.output, box, width, "top", "REVIEW WATCH"),
-    dashboardLine(input.output, box, width, [
-      {
-        text: `${input.output.unicode ? "●" : "*"} ${statusLabel(overallStatus)}`,
-        style: statusStyle(overallStatus),
-      },
-      { text: "   elapsed ", style: "muted" },
-      { text: formatDuration(input.elapsed), style: "strong" },
-      { text: "   findings ", style: "muted" },
-      {
-        text: findingCount,
-        style: input.summary ? "strong" : "muted",
-      },
-    ]),
-    dashboardLine(input.output, box, width, [
-      { text: "Job ", style: "muted" },
-      {
-        text: statusLabel(input.jobStatus),
-        style: statusStyle(input.jobStatus),
-      },
-      { text: "   Run ", style: "muted" },
-      {
-        text: input.runStatus ? statusLabel(input.runStatus) : "Waiting",
-        style: input.runStatus ? statusStyle(input.runStatus) : "muted",
-      },
-    ]),
-    dashboardLine(input.output, box, width, dashboardStatusNote(input)),
+    ...dashboardGridLines(input.output, box, width, statusFields),
+    dashboardFieldLine(input.output, box, width, dashboardStatusNote(input)),
     dashboardRule(input.output, box, width, "section", "IDENTITY"),
-    dashboardLine(input.output, box, width, [
-      { text: "Review ", style: "muted" },
-      {
-        text:
-          input.identity.codeReviewId === null
-            ? "~"
-            : String(input.identity.codeReviewId),
-        style: input.identity.codeReviewId === null ? "muted" : "strong",
-      },
-      { text: "   Tenant ", style: "muted" },
-      {
-        text: input.identity.tenantKey ?? "~",
-        style: input.identity.tenantKey === null ? "muted" : "strong",
-      },
-    ]),
-    dashboardLine(input.output, box, width, [
-      { text: "Job    ", style: "muted" },
-      { text: input.identity.jobId, style: "strong" },
-    ]),
-    dashboardLine(input.output, box, width, [
-      { text: "Run    ", style: "muted" },
-      {
-        text: input.runId ?? "waiting for first attempt",
-        style: input.runId === null ? "muted" : "strong",
-      },
-    ]),
+    ...identityFields.map((field) =>
+      dashboardFieldLine(input.output, box, width, field),
+    ),
     dashboardRule(input.output, box, width, "section", "LATEST ACTIVITY"),
     ...activityRows.map((segments) =>
       dashboardLine(input.output, box, width, segments),
@@ -665,6 +697,8 @@ function formatReviewDashboard(input: {
 function formatDashboardActivities(
   activities: readonly Extract<ReviewWatchEvent, { type: "activity" }>[],
   summary: ReviewWatchSummary | null,
+  contentWidth: number,
+  unicode: boolean,
 ): DashboardSegment[][] {
   if (activities.length === 0) {
     const message =
@@ -675,22 +709,55 @@ function formatDashboardActivities(
           : "Waiting for live review activity…";
     return [[{ text: message, style: "muted" }]];
   }
-  return activities.map((event) => {
-    const level = event.level.toUpperCase();
-    const details = formatSafeDetails(event.data);
-    return [
-      { text: `${formatActivityTime(event.timestamp)} `, style: "muted" },
-      { text: `${level.padEnd(5)} `, style: logLevelStyle(event.level) },
-      ...(event.component
-        ? [{ text: `${event.component} `, style: "strong" as const }]
-        : []),
-      {
-        text: `${event.message}${
-          event.action ? ` (${event.action})` : ""
-        }${details ? ` — ${details}` : ""}`,
-      },
-    ];
+  return activities.flatMap((event) =>
+    formatDashboardActivity(event, contentWidth, unicode),
+  );
+}
+
+function formatDashboardActivity(
+  event: Extract<ReviewWatchEvent, { type: "activity" }>,
+  contentWidth: number,
+  unicode: boolean,
+): DashboardSegment[][] {
+  const level = event.level.toUpperCase();
+  const details = formatSafeDetails(event.data);
+  const prefix: DashboardSegment[] = [];
+  if (contentWidth >= 38) {
+    prefix.push({
+      text: `${formatActivityTime(event.timestamp)} `,
+      style: "muted",
+    });
+  }
+  prefix.push({
+    text: `${level.padEnd(5)} `,
+    style: logLevelStyle(event.level),
   });
+  if (event.component && contentWidth >= 70) {
+    prefix.push({
+      text: `${fitDashboardText(
+        sanitizeDashboardText(event.component),
+        18,
+        unicode,
+      )} `,
+      style: "strong",
+    });
+  }
+  const prefixWidth = prefix.reduce(
+    (width, segment) => width + terminalTextWidth(segment.text),
+    0,
+  );
+  const message = sanitizeDashboardText(
+    `${event.message}${
+      event.action ? ` (${event.action})` : ""
+    }${details ? ` — ${details}` : ""}`,
+  ).trim();
+  const messageWidth = Math.max(1, contentWidth - prefixWidth);
+  const wrapped = wrapDashboardText(message, messageWidth);
+  return wrapped.map((line, index) =>
+    index === 0
+      ? [...prefix, { text: line }]
+      : [{ text: " ".repeat(prefixWidth), style: "muted" }, { text: line }],
+  );
 }
 
 function dashboardStatusNote(input: {
@@ -698,46 +765,44 @@ function dashboardStatusNote(input: {
   runId: string | null;
   activities: readonly Extract<ReviewWatchEvent, { type: "activity" }>[];
   summary: ReviewWatchSummary | null;
-}): DashboardSegment[] {
+}): DashboardField {
   if (input.summary?.error) {
-    return [
-      { text: "Error  ", style: "failure" },
-      { text: input.summary.error, style: "failure" },
-    ];
+    return {
+      label: "Error",
+      value: input.summary.error,
+      valueStyle: "failure",
+    };
   }
   if (input.jobStatus === "queued") {
-    return [
-      {
-        text: "Waiting for a runner connected to this storage backend.",
-        style: "warning",
-      },
-    ];
+    return {
+      label: "Note",
+      value: "Waiting for a runner connected to this storage backend.",
+      valueStyle: "warning",
+    };
   }
   if (input.summary) {
-    return [
-      {
-        text: `Review finished with ${input.summary.findingCount} finding(s).`,
-        style: input.summary.jobStatus === "completed" ? "success" : "failure",
-      },
-    ];
+    return {
+      label: "Note",
+      value: `Review finished with ${input.summary.findingCount} finding(s).`,
+      valueStyle:
+        input.summary.jobStatus === "completed" ? "success" : "failure",
+    };
   }
   if (input.runId === null) {
-    return [
-      {
-        text: "Waiting for the first review attempt to start.",
-        style: "muted",
-      },
-    ];
+    return {
+      label: "Note",
+      value: "Waiting for the first review attempt to start.",
+      valueStyle: "muted",
+    };
   }
-  return [
-    {
-      text:
-        input.activities.length === 0
-          ? "Following persisted state; live activity appears when logs are shared."
-          : "Following persisted state and live runner activity.",
-      style: "muted",
-    },
-  ];
+  return {
+    label: "Note",
+    value:
+      input.activities.length === 0
+        ? "Following persisted state; live activity appears when logs are shared."
+        : "Following persisted state and live runner activity.",
+    valueStyle: "muted",
+  };
 }
 
 function dashboardBox(unicode: boolean): DashboardBox {
@@ -762,6 +827,89 @@ function dashboardBox(unicode: boolean): DashboardBox {
         horizontal: "-",
         vertical: "|",
       };
+}
+
+function dashboardContentWidth(box: DashboardBox, width: number): number {
+  const horizontalPadding = width >= 4 ? 1 : 0;
+  return Math.max(
+    0,
+    width - terminalTextWidth(box.vertical) * 2 - horizontalPadding * 2,
+  );
+}
+
+function dashboardGridLines(
+  output: CliOutput,
+  box: DashboardBox,
+  width: number,
+  fields: readonly DashboardField[],
+): string[] {
+  const contentWidth = dashboardContentWidth(box, width);
+  const columnCount = contentWidth >= 64 ? 2 : 1;
+  const columnGap = columnCount === 2 ? 4 : 0;
+  const columnWidth = Math.floor(
+    (contentWidth - columnGap * (columnCount - 1)) / columnCount,
+  );
+  const lines: string[] = [];
+  for (let index = 0; index < fields.length; index += columnCount) {
+    const segments: DashboardSegment[] = [];
+    for (let column = 0; column < columnCount; column += 1) {
+      const field = fields[index + column];
+      if (field) {
+        segments.push(...dashboardFieldSegments(output, field, columnWidth));
+      } else {
+        segments.push({ text: " ".repeat(columnWidth) });
+      }
+      if (column < columnCount - 1) {
+        segments.push({ text: " ".repeat(columnGap) });
+      }
+    }
+    lines.push(dashboardLine(output, box, width, segments));
+  }
+  return lines;
+}
+
+function dashboardFieldLine(
+  output: CliOutput,
+  box: DashboardBox,
+  width: number,
+  field: DashboardField,
+): string {
+  return dashboardLine(
+    output,
+    box,
+    width,
+    dashboardFieldSegments(output, field, dashboardContentWidth(box, width)),
+  );
+}
+
+function dashboardFieldSegments(
+  output: CliOutput,
+  field: DashboardField,
+  width: number,
+): DashboardSegment[] {
+  const labelWidth = Math.min(10, Math.max(5, Math.floor(width / 3)));
+  const fittedLabel = fitDashboardText(
+    sanitizeDashboardText(field.label),
+    labelWidth,
+    output.unicode,
+  );
+  const valueWidth = Math.max(0, width - labelWidth);
+  const cleanValue = sanitizeDashboardText(field.value);
+  const fittedValue = fitDashboardText(cleanValue, valueWidth, output.unicode);
+  const trailingWidth = Math.max(
+    0,
+    valueWidth - terminalTextWidth(fittedValue),
+  );
+  return [
+    {
+      text: `${fittedLabel}${" ".repeat(
+        Math.max(0, labelWidth - terminalTextWidth(fittedLabel)),
+      )}`,
+      style: "muted",
+    },
+    { text: fittedValue, style: field.valueStyle },
+    { text: " ".repeat(trailingWidth) },
+  ];
 }
 
 function dashboardRule(
@@ -865,6 +1013,41 @@ function fitDashboardText(
     width += characterWidth;
   }
   return `${result}${ellipsis}`;
+}
+
+function wrapDashboardText(value: string, maximumWidth: number): string[] {
+  let remaining = sanitizeDashboardText(value).trim();
+  if (remaining.length === 0) {
+    return [""];
+  }
+  const lines: string[] = [];
+  while (terminalTextWidth(remaining) > maximumWidth) {
+    const characters = [...remaining];
+    let usedWidth = 0;
+    let splitIndex = 0;
+    let lastSpaceIndex = -1;
+    for (let index = 0; index < characters.length; index += 1) {
+      const character = characters[index] ?? "";
+      const characterWidth = terminalCharacterWidth(character);
+      if (usedWidth + characterWidth > maximumWidth) {
+        break;
+      }
+      usedWidth += characterWidth;
+      splitIndex = index + 1;
+      if (character === " ") {
+        lastSpaceIndex = index;
+      }
+    }
+    splitIndex = Math.max(1, splitIndex);
+    if (lastSpaceIndex >= Math.floor(splitIndex / 3)) {
+      splitIndex = lastSpaceIndex + 1;
+    }
+    const line = characters.slice(0, splitIndex).join("").trimEnd();
+    lines.push(line);
+    remaining = characters.slice(splitIndex).join("").trimStart();
+  }
+  lines.push(remaining);
+  return lines;
 }
 
 function terminalTextWidth(value: string): number {

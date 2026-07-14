@@ -630,7 +630,9 @@ async function runCliCommand(argv: string[]): Promise<number> {
   const { positionals, options } = parseCliArgs(argv);
   const [resource, action, subAction] = positionals;
   const logger = createLogger(
-    output().mode === "json" ? "silent" : config.logLevel,
+    output().mode === "json" || (resource === "mr" && action === "review")
+      ? "silent"
+      : config.logLevel,
     output().stderr,
   );
 

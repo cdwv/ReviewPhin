@@ -228,7 +228,7 @@ describe("review job watcher", () => {
     expect(storage.stores.reviewFindings.list).not.toHaveBeenCalled();
   });
 
-  it("keeps a fixed-width dashboard with stable identity and latest activity", async () => {
+  it("uses terminal width, aligned grids, and wrapped latest activity", async () => {
     const root = await mkdtemp(join(tmpdir(), "review-dashboard-"));
     const runDirectory = join(root, "run_1");
     await mkdir(runDirectory);
@@ -239,7 +239,7 @@ describe("review job watcher", () => {
           timestamp: `2026-07-12T09:00:0${index}.000Z`,
           level: index === 6 ? "warn" : "info",
           component: "review",
-          message: `activity ${index + 1} ${"detail ".repeat(20)}`,
+          message: `activity ${index + 1} ${"detail ".repeat(20)}tail-${index + 1}`,
         }),
       ).join("\n")}\n`,
       "utf8",
@@ -278,7 +278,7 @@ describe("review job watcher", () => {
         stdout: createStringWriter((text) => (terminal += text)),
         stdoutIsTTY: true,
         color: true,
-        columns: 72,
+        columns: 110,
         now: () => new Date("2026-07-12T09:00:00.000Z"),
       }),
       tenantKey: "https://gitlab.example.com::123",
@@ -289,6 +289,8 @@ describe("review job watcher", () => {
     expect(summary.jobStatus).toBe("completed");
     expect(terminal).toContain("\u001B[?25l");
     expect(terminal).toContain("\u001B[?25h");
+    expect(terminal).toContain("\u001B[s");
+    expect(terminal).toContain("\u001B[u");
     expect(terminal).toContain("\u001B[J");
 
     const finalPaint = terminal.split("\u001B[J").at(-1) ?? terminal;
@@ -296,18 +298,25 @@ describe("review job watcher", () => {
     expect(dashboard).toContain("REVIEW WATCH");
     expect(dashboard).toContain("IDENTITY");
     expect(dashboard).toContain("LATEST ACTIVITY");
-    expect(dashboard).toContain("● Complete");
-    expect(dashboard).toContain("findings 2");
-    expect(dashboard).toContain("Job    job_1");
-    expect(dashboard).toContain("Run    run_1");
+    expect(dashboard).toContain("Status    ● Complete");
+    expect(dashboard).toContain("Elapsed   0ms");
+    expect(dashboard).toContain("Job       Complete");
+    expect(dashboard).toContain("Run       Complete");
+    expect(dashboard).toContain("Findings  2");
+    expect(dashboard).toContain("Activity  Live");
+    expect(dashboard).toContain("Job       job_1");
+    expect(dashboard).toContain("Run       run_1");
     expect(dashboard).toContain("activity 7");
+    expect(dashboard).toContain("tail-7");
     expect(dashboard).not.toContain("activity 1");
-    expect(
-      dashboard
-        .split("\n")
-        .filter((line) => line.length > 0)
-        .every((line) => line.length <= 72),
-    ).toBe(true);
+    expect(dashboard).not.toContain("…");
+    const dashboardLines = dashboard
+      .split("\n")
+      .filter((line) => line.length > 0);
+    const continuation = dashboardLines.find((line) => line.includes("tail-7"));
+    expect(continuation?.indexOf("tail-7")).toBeGreaterThan(20);
+    expect(dashboardLines[0]).toHaveLength(110);
+    expect(dashboardLines.every((line) => line.length <= 110)).toBe(true);
   });
 
   it("fails on a missing referenced run and aborts polling without mutation", async () => {

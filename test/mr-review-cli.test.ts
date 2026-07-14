@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../src/cli.js";
+import { createStringWriter } from "../src/cli/output.js";
 import { parseLocalReviewTrigger } from "../src/review/local-trigger.js";
 import { listAll } from "../src/storage/storage-helpers.js";
 import { createGitLabTenantInput } from "./helpers/gitlab-tenant.js";
@@ -106,6 +107,35 @@ describe("mr review CLI", () => {
         instruction: "Focus on authorization boundaries.",
       }),
     );
+
+    let prettyOutput = "";
+    let diagnostics = "";
+    await expect(
+      runCli(
+        [
+          "mr",
+          "review",
+          "--key",
+          "https://gitlab.example.com::123",
+          "--trigger-text",
+          "Review the retry boundary.",
+          "--code-review-id",
+          "7",
+          "--no-watch",
+          "--sqlite-database-path",
+          databasePath,
+        ],
+        {
+          stdout: createStringWriter((text) => (prettyOutput += text)),
+          stderr: createStringWriter((text) => (diagnostics += text)),
+          stdoutIsTTY: true,
+          color: false,
+        },
+      ),
+    ).resolves.toBe(0);
+
+    expect(prettyOutput).toContain("Review submitted.");
+    expect(diagnostics).toBe("");
   });
 });
 
