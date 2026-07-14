@@ -278,7 +278,6 @@ const mergeRequestReviewSchema = z
     forceNew: z.boolean(),
     watchRequested: z.boolean(),
     noWatchRequested: z.boolean(),
-    json: z.boolean(),
   })
   .superRefine((value, ctx) => {
     if (
@@ -1910,7 +1909,6 @@ async function runMergeRequestReviewCommand(
     forceNew: Object.hasOwn(options, "force-new"),
     watchRequested: Object.hasOwn(options, "watch"),
     noWatchRequested: Object.hasOwn(options, "no-watch"),
-    json: Object.hasOwn(options, "json"),
   });
   const selector = await resolveLocalReviewSelector(input);
   await initializePlatformRegistry({
