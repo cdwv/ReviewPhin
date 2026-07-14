@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { detectCliCommand, runCli, runCliEntry } from "../src/cli.js";
+import { createStringWriter } from "../src/cli/output.js";
+import { resetPlatformRegistryForTests } from "../src/platforms/platform-registry.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -131,18 +133,65 @@ describe("CLI help", () => {
     );
   });
 
-  it("includes --help in every displayed usage entry", async () => {
+  it("shows global options once instead of repeating them per command", async () => {
     vi.stubEnv("REVIEWPHIN_CLI_COMMAND", "pnpm cli");
     const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
     await expect(runCli(["tenant"])).resolves.toBe(1);
 
-    const usageLines = output.mock.calls
-      .join("")
-      .split("\n")
-      .filter((line) => line.startsWith("  pnpm cli"));
-    expect(usageLines.length).toBeGreaterThan(0);
-    expect(usageLines.every((line) => line.endsWith("[--help]"))).toBe(true);
+    const help = output.mock.calls.join("");
+    expect(help).toContain("Global options");
+    expect(help).toContain("--output <pretty|plain|json>");
+    expect(help).toContain("--json");
+    expect(help).toContain("--help");
+    expect(help.match(/Global options/g)).toHaveLength(1);
+    expect(help.match(/--help/g)).toHaveLength(1);
+  });
+
+  it("groups and styles pretty help to expose its hierarchy", async () => {
+    vi.stubEnv("REVIEWPHIN_CLI_COMMAND", "reviewphin");
+    resetPlatformRegistryForTests();
+    let help = "";
+
+    await expect(
+      runCli(["--help"], {
+        stdout: createStringWriter((text) => (help += text)),
+        stdoutIsTTY: true,
+        color: true,
+      }),
+    ).resolves.toBe(0);
+
+    expect(help).toContain("\u001B[1;36mPlatform connections\u001B[0m");
+    expect(help).toContain("\u001B[1;36mTenants\u001B[0m");
+    expect(help).toContain("\u001B[1;36mModel profiles\u001B[0m");
+    expect(help).toContain("\u001B[1;36mStorage\u001B[0m");
+    expect(help).toContain("\u001B[1;36mMerge requests\u001B[0m");
+    expect(help).toContain("\u001B[1;36mDiagnostics\u001B[0m");
+    expect(help).toContain("\u001B[2mreviewphin\u001B[0m");
+    expect(help).toContain("\u001B[1mtenant list\u001B[0m");
+    expect(help).toContain("\u001B[1;36m--sqlite-database-path\u001B[0m");
+    expect(help).toContain("\u001B[1;33m<path>\u001B[0m");
+    expect(help).toContain("\u001B[2m[\u001B[0m");
+    expect(help).not.toContain('"level":');
+  });
+
+  it("keeps help human-readable and unstyled for explicit output modes", async () => {
+    let help = "";
+
+    await expect(
+      runCli(["tenant", "list", "--output", "json", "--help"], {
+        stdout: createStringWriter((text) => (help += text)),
+        stdoutIsTTY: true,
+        color: true,
+      }),
+    ).resolves.toBe(0);
+
+    expect(help).toContain("Usage:");
+    expect(help).toContain(
+      "tenant list [--sqlite-database-path <path>] [--storage-provider-module <module>] [--output <pretty|plain|json>] [--json] [--help]",
+    );
+    expect(help).not.toContain("\u001B");
+    expect(() => JSON.parse(help)).toThrow();
   });
 
   it("shows matching help when a valid command fails", async () => {

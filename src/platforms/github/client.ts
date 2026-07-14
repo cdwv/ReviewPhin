@@ -1144,7 +1144,6 @@ function translateGitHubApiError(
     typeof error.status === "number"
       ? error.status
       : null;
-  console.log(error);
   return new GitHubApiError(
     `${resource} request failed${status === null ? "" : ` with status ${status}`}`,
     status,

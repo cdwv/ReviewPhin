@@ -1,4 +1,5 @@
 import { access, readFile, readdir, rm } from "node:fs/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
@@ -53,13 +54,22 @@ import {
   type ReviewWatchSummary,
 } from "./cli/review-watch.js";
 import { getGitLabTenantConfig } from "./platforms/gitlab/tenant-config.js";
+import {
+  CliOutput,
+  formatIsoDate,
+  formatKeyValues,
+  formatPrettyDate,
+  formatTable as formatOutputTable,
+  resolveOutputMode,
+  type CliOutputDependencies,
+} from "./cli/output.js";
 
 interface ParsedCliArgs {
   readonly positionals: string[];
   readonly options: Record<string, string | boolean>;
 }
 
-interface RunMetricsRow {
+export interface RunMetricsRow {
   readonly run: string;
   readonly premiumRequests: number;
   readonly premiumRequestsByModel: PremiumRequestsByModelMetric[];
@@ -69,7 +79,7 @@ interface RunMetricsRow {
   readonly durationMs: number;
 }
 
-interface SummaryMetricsRow {
+export interface SummaryMetricsRow {
   readonly stat: string;
   readonly premiumRequests: number;
   readonly inputTokens: number;
@@ -78,7 +88,7 @@ interface SummaryMetricsRow {
   readonly durationMs: number;
 }
 
-interface ModelPremiumRequestsStatsRow {
+export interface ModelPremiumRequestsStatsRow {
   readonly model: string;
   readonly runs: number;
   readonly premiumRequests: number;
@@ -89,6 +99,45 @@ interface ModelPremiumRequestsStatsRow {
   readonly p50: number;
   readonly p75: number;
   readonly p90: number;
+}
+
+export interface MetricsSessionsResult {
+  readonly runLogDirectory: string;
+  readonly runs: readonly RunMetricsRow[];
+  readonly summary: readonly SummaryMetricsRow[];
+  readonly models: readonly ModelPremiumRequestsStatsRow[];
+}
+
+export interface TenantCliResult {
+  readonly id: string;
+  readonly key: string;
+  readonly platform: string;
+  readonly projectId?: number;
+  readonly modelProfileName: string | null;
+  readonly platformConnectionId: string;
+  readonly platformConnectionName?: string | null;
+}
+
+export interface PlatformConnectionCliResult {
+  readonly id: string;
+  readonly name: string;
+  readonly platform: string;
+  readonly status: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface ModelProfileCliResult {
+  readonly name: string;
+  readonly providerBaseUrl: string | null;
+  readonly providerType: string | null;
+  readonly wireApi: string | null;
+  readonly reviewModel: string | null;
+  readonly textGenerationModel: string | null;
+  readonly reviewReasoningEffort: string | null;
+  readonly textGenerationReasoningEffort: string | null;
+  readonly isDefault: boolean;
+  readonly authToken: string | null;
 }
 
 interface TenantArtifactSummary {
@@ -127,9 +176,7 @@ const modelProfileSchema = z.object({
   authToken: z.string().min(1).optional(),
   reviewModel: z.string().min(1).optional(),
   textGenerationModel: z.string().min(1).optional(),
-  reviewReasoningEffort: z
-    .enum(["low", "medium", "high", "xhigh"])
-    .optional(),
+  reviewReasoningEffort: z.enum(["low", "medium", "high", "xhigh"]).optional(),
   textGenerationReasoningEffort: z
     .enum(["low", "medium", "high", "xhigh"])
     .optional(),
@@ -231,7 +278,6 @@ const mergeRequestReviewSchema = z
     forceNew: z.boolean(),
     watchRequested: z.boolean(),
     noWatchRequested: z.boolean(),
-    json: z.boolean(),
   })
   .superRefine((value, ctx) => {
     if (
@@ -307,6 +353,30 @@ interface StorageMigrationContext {
   readonly interactionJobIds: Map<string, string>;
   readonly interactionRunIds: Map<string, string>;
 }
+
+export type StorageMigrationEvent =
+  | {
+      readonly type: "migration_step_started";
+      readonly store: string;
+    }
+  | {
+      readonly type: "migration_progress";
+      readonly store: string;
+      readonly page: number;
+      readonly totalPages: number;
+      readonly migrated: number;
+      readonly total: number;
+    }
+  | {
+      readonly type: "migration_completed";
+      readonly source: { readonly provider: string; readonly module: string };
+      readonly destination: {
+        readonly provider: string;
+        readonly module: string;
+      };
+      readonly counts: Readonly<Record<string, number>>;
+      readonly total: number;
+    };
 
 const STORAGE_MIGRATION_PAGE_SIZE = 20;
 
@@ -478,17 +548,91 @@ const storageMigrationSteps: readonly StorageMigrationStep[] = [
   },
 ];
 
+const cliOutputStorage = new AsyncLocalStorage<CliOutput>();
+
+function output(): CliOutput {
+  return cliOutputStorage.getStore() ?? new CliOutput("pretty");
+}
+
+function prettyHeading(value: string): string {
+  return output().style("heading", value);
+}
+
+function prettyOutcome(
+  value: string,
+  semantic: "success" | "warning" | "failure" | "active" = "success",
+): string {
+  return output().style(semantic, value);
+}
+
+function prettyFields(values: readonly (readonly [string, unknown])[]): string {
+  return formatKeyValues(values, "~", {
+    label: (label) => output().style("muted", label),
+    null: (value) => output().style("muted", value),
+  });
+}
+
+function prettyField(label: string, value: unknown): string {
+  return `${output().style("muted", label)}: ${String(value)}`;
+}
+
+function prettyTableStyles() {
+  return {
+    header: (value: string) => output().style("strong", value),
+    separator: (value: string) => output().style("muted", value),
+  };
+}
+
+function prettyStatus(value: string): string {
+  const normalized = value.toLowerCase();
+  if (["ready", "completed", "success", "active"].includes(normalized)) {
+    return output().style("success", value);
+  }
+  if (
+    ["setup_required", "queued", "pending", "in_progress"].includes(normalized)
+  ) {
+    return output().style(
+      normalized === "in_progress" ? "active" : "warning",
+      value,
+    );
+  }
+  if (["failed", "cancelled", "expired", "error"].includes(normalized)) {
+    return output().style("failure", value);
+  }
+  return value;
+}
+
+function decorateTable(table: string): string {
+  const [header, separator, ...rows] = table.split("\n");
+  return [
+    header ? output().style("strong", header) : "",
+    separator ? output().style("muted", separator) : "",
+    ...rows,
+  ].join("\n");
+}
+
 export async function runCli(
   argv: string[] = process.argv.slice(2),
+  dependencies: CliOutputDependencies = {},
 ): Promise<number> {
+  const parsed = parseCliArgs(argv);
+  const cliOutput = new CliOutput(
+    resolveOutputMode(parsed.options),
+    dependencies,
+  );
+  return cliOutputStorage.run(cliOutput, () => runCliCommand(argv));
+}
+
+async function runCliCommand(argv: string[]): Promise<number> {
   loadLocalEnvFile();
   const config = loadConfig();
   const { positionals, options } = parseCliArgs(argv);
   const [resource, action, subAction] = positionals;
   const logger = createLogger(
-    resource === "mr" && action === "review" && Object.hasOwn(options, "json")
+    output().mode === "json" || (resource === "mr" && action === "review")
       ? "silent"
       : config.logLevel,
+    output().stderr,
   );
 
   if (options.help === true || options.help === "true") {
@@ -551,14 +695,14 @@ export async function runCli(
           : {}),
       };
       const savedTenant = await storage.upsertTenant(newTenant);
-      process.stdout.write(
-        [
-          "Tenant saved.",
-          `id: ${savedTenant.id}`,
-          `key: ${savedTenant.key}`,
-          `modelProfile: ${savedTenant.modelProfileName ?? "(none)"}`,
-        ].join("\n") + "\n",
-      );
+      const result = {
+        ...summarizeTenant(savedTenant),
+        platformConnectionName: connection.name,
+      };
+      output().result(result, {
+        pretty: `${prettyOutcome("Tenant saved.")}\n${formatTenantDetails(result)}`,
+        plain: `tenant saved\n${formatTenantDetails(result, true)}`,
+      });
       return 0;
     });
   }
@@ -627,9 +771,22 @@ export async function runCli(
               platformConnectionConfigJson: JSON.stringify(connectionConfig),
             });
         const setupUrl = platform.getConnectionSetupUrl?.(connectionConfig);
-        process.stdout.write(
-          `${formatPlatformConnection(saved)}${setupUrl ? `Setup URL: ${setupUrl}\n` : ""}`,
-        );
+        const result = {
+          ...summarizePlatformConnection(saved),
+          setupUrl: setupUrl ?? null,
+          notices: lifecycle.notices ?? [],
+        };
+        output().result(result, {
+          pretty: formatPlatformConnectionDetails(
+            result,
+            "Platform connection saved.",
+          ),
+          plain: formatPlatformConnectionDetails(
+            result,
+            "platform connection saved",
+            true,
+          ),
+        });
         return 0;
       });
     }
@@ -639,9 +796,17 @@ export async function runCli(
         const connections = await listAll(storage.stores.platformConnections, {
           order: [{ field: "name", direction: "asc" }],
         });
-        process.stdout.write(
-          `${JSON.stringify(connections.map(summarizePlatformConnection), null, 2)}\n`,
-        );
+        const result = connections.map(summarizePlatformConnection);
+        output().result(result, {
+          pretty:
+            result.length === 0
+              ? output().style("muted", "No platform connections configured.")
+              : formatPlatformConnectionTable(result),
+          plain:
+            result.length === 0
+              ? "No platform connections configured."
+              : formatPlatformConnectionList(result),
+        });
         return 0;
       });
     }
@@ -656,9 +821,11 @@ export async function runCli(
         throw new Error(`Platform connection ${reference} not found`);
       }
       if (subAction === "describe") {
-        process.stdout.write(
-          `${JSON.stringify(summarizePlatformConnection(existing), null, 2)}\n`,
-        );
+        const result = summarizePlatformConnection(existing);
+        output().result(result, {
+          pretty: formatPlatformConnectionDetails(result),
+          plain: formatPlatformConnectionDetails(result, undefined, true),
+        });
         return 0;
       }
       if (subAction === "remove") {
@@ -672,7 +839,16 @@ export async function runCli(
           await platform.onBeforeRemoveConnection?.(existing),
         );
         await storage.deletePlatformConnection(reference);
-        process.stdout.write(`Platform connection ${existing.name} removed.\n`);
+        const result = {
+          removed: true,
+          ...summarizePlatformConnection(existing),
+        };
+        output().result(result, {
+          pretty: prettyOutcome(
+            `Platform connection ${existing.name} removed.`,
+          ),
+          plain: `platform connection removed\n${formatPlatformConnectionDetails(result, undefined, true)}`,
+        });
         return 0;
       }
       if (subAction !== "update") {
@@ -719,7 +895,18 @@ export async function runCli(
         status,
         platformConnectionConfigJson: JSON.stringify(combined),
       });
-      process.stdout.write(formatPlatformConnection(updated));
+      const result = summarizePlatformConnection(updated);
+      output().result(result, {
+        pretty: formatPlatformConnectionDetails(
+          result,
+          "Platform connection updated.",
+        ),
+        plain: formatPlatformConnectionDetails(
+          result,
+          "platform connection updated",
+          true,
+        ),
+      });
       return 0;
     });
   }
@@ -729,23 +916,25 @@ export async function runCli(
       const tenants = await listAll(storage.stores.tenants, {
         order: [{ field: "key", direction: "asc" }],
       });
-      if (tenants.length === 0) {
-        process.stdout.write("No tenants registered.\n");
-        return 0;
-      }
-
-      process.stdout.write(
-        `${JSON.stringify(
-          tenants.map((tenant) => ({
-            id: tenant.id,
-            key: tenant.key,
-            platform: tenant.platform,
-            modelProfileName: tenant.modelProfileName,
-          })),
-          null,
-          2,
-        )}\n`,
+      const connections = await listAll(storage.stores.platformConnections);
+      const connectionNames = new Map(
+        connections.map((connection) => [connection.id, connection.name]),
       );
+      const result = tenants.map((tenant) => ({
+        ...summarizeTenant(tenant),
+        platformConnectionName:
+          connectionNames.get(tenant.platformConnectionId) ?? null,
+      }));
+      output().result(result, {
+        pretty:
+          result.length === 0
+            ? output().style("muted", "No tenants registered.")
+            : formatTenantTable(result),
+        plain:
+          result.length === 0
+            ? "No tenants registered."
+            : formatTenantList(result),
+      });
       return 0;
     });
   }
@@ -770,14 +959,11 @@ export async function runCli(
         persistedTenant.key,
         tenant.modelProfileName,
       );
-      process.stdout.write(
-        [
-          "Tenant profile updated.",
-          `id: ${updatedTenant.id}`,
-          `key: ${updatedTenant.key}`,
-          `modelProfile: ${updatedTenant.modelProfileName ?? "(none)"}`,
-        ].join("\n") + "\n",
-      );
+      const result = summarizeTenant(updatedTenant);
+      output().result(result, {
+        pretty: `${prettyOutcome("Tenant profile updated.")}\n${formatTenantDetails(result)}`,
+        plain: `tenant profile updated\n${formatTenantDetails(result, true)}`,
+      });
       return 0;
     });
   }
@@ -801,13 +987,11 @@ export async function runCli(
         persistedTenant.key,
         null,
       );
-      process.stdout.write(
-        [
-          "Tenant profile cleared.",
-          `id: ${updatedTenant.id}`,
-          `key: ${updatedTenant.key}`,
-        ].join("\n") + "\n",
-      );
+      const result = summarizeTenant(updatedTenant);
+      output().result(result, {
+        pretty: `${prettyOutcome("Tenant profile cleared.")}\n${formatTenantDetails(result)}`,
+        plain: `tenant profile cleared\n${formatTenantDetails(result, true)}`,
+      });
       return 0;
     });
   }
@@ -830,18 +1014,39 @@ export async function runCli(
     return withStorage(options, config, async (storage, storageContext) => {
       const persistedTenant = await resolveTenantByLookup(storage, tenant);
       if (!persistedTenant) {
-        process.stdout.write(
-          tenant.tenantId
-            ? `Tenant ${tenant.tenantId} not found.\n`
-            : `Tenant not found for ${tenant.tenantKey}.\n`,
-        );
+        const result = {
+          removed: false,
+          reason: "not_found",
+          tenantId: tenant.tenantId ?? null,
+          tenantKey: tenant.tenantKey ?? null,
+        };
+        output().result(result, {
+          pretty: prettyOutcome(
+            tenant.tenantId
+              ? `Tenant ${tenant.tenantId} not found.`
+              : `Tenant not found for ${tenant.tenantKey}.`,
+            "failure",
+          ),
+        });
         return 1;
       }
       const deletionSummary = await storage.getTenantDeletionSummary(
         persistedTenant.key,
       );
       if (!deletionSummary) {
-        process.stdout.write(`Tenant not found for ${persistedTenant.key}\n`);
+        output().result(
+          {
+            removed: false,
+            reason: "not_found",
+            tenantKey: persistedTenant.key,
+          },
+          {
+            pretty: prettyOutcome(
+              `Tenant not found for ${persistedTenant.key}.`,
+              "failure",
+            ),
+          },
+        );
         return 1;
       }
 
@@ -850,21 +1055,40 @@ export async function runCli(
         workspaceRoot,
         runLogDir,
       );
-      process.stdout.write(
-        formatTenantRemovalSummary(
-          deletionSummary,
-          artifactSummary,
-          storageContext.sqliteDatabasePath ??
-            resolve("./data/review-worker.sqlite"),
-          workspaceRoot,
-          runLogDir,
-        ),
+      const removalPreview = buildTenantRemovalResult(
+        deletionSummary,
+        artifactSummary,
+        storageContext.sqliteDatabasePath ??
+          resolve("./data/review-worker.sqlite"),
+        workspaceRoot,
+        runLogDir,
       );
+      if (output().mode !== "json") {
+        output().write(
+          formatTenantRemovalSummary(
+            deletionSummary,
+            artifactSummary,
+            removalPreview.databasePath,
+            workspaceRoot,
+            runLogDir,
+          ),
+        );
+      }
 
       if (!assumeYes) {
-        if (!process.stdin.isTTY) {
-          process.stdout.write(
-            "Tenant removal requires confirmation. Re-run with --yes in non-interactive mode.\n",
+        if (output().mode !== "pretty" || !output().stdinIsTTY) {
+          output().result(
+            {
+              ...removalPreview,
+              removed: false,
+              reason: "confirmation_required",
+            },
+            {
+              pretty: prettyOutcome(
+                "Tenant removal requires confirmation. Re-run with --yes in non-interactive mode.",
+                "warning",
+              ),
+            },
           );
           return 1;
         }
@@ -873,7 +1097,12 @@ export async function runCli(
           "Continue and remove all tenant data? [y/N] ",
         );
         if (!confirmed) {
-          process.stdout.write("Tenant removal aborted.\n");
+          output().result(
+            { ...removalPreview, removed: false, reason: "aborted" },
+            {
+              pretty: prettyOutcome("Tenant removal aborted.", "warning"),
+            },
+          );
           return 1;
         }
       }
@@ -893,13 +1122,15 @@ export async function runCli(
         runLogDir,
       );
 
-      process.stdout.write(
-        [
-          "Tenant removed.",
-          `id: ${deletedSummary.tenant.id}`,
-          `key: ${deletedSummary.tenant.key}`,
-        ].join("\n") + "\n",
-      );
+      const result = {
+        ...removalPreview,
+        removed: true,
+        tenant: summarizeTenant(deletedSummary.tenant),
+      };
+      output().result(result, {
+        pretty: `${prettyOutcome("Tenant removed.")}\n${formatTenantDetails(result.tenant)}`,
+        plain: `tenant removed\n${formatTenantDetails(result.tenant, true)}`,
+      });
       return 0;
     });
   }
@@ -1012,9 +1243,15 @@ export async function runCli(
           ? { isDefault: profile.isDefault ?? false }
           : {}),
       });
-      process.stdout.write(
-        formatModelProfileSummary("Model profile saved.", savedProfile),
-      );
+      const result = summarizeModelProfile(savedProfile);
+      output().result(result, {
+        pretty: formatModelProfileSummary("Model profile saved.", savedProfile),
+        plain: formatModelProfileSummary(
+          "model profile saved",
+          savedProfile,
+          true,
+        ),
+      });
       return 0;
     });
   }
@@ -1027,30 +1264,19 @@ export async function runCli(
           { field: "name", direction: "asc" },
         ],
       });
-      if (profiles.length === 0) {
-        process.stdout.write("No model profiles configured.\n");
-        return 0;
-      }
-
-      process.stdout.write(
-        `${JSON.stringify(
-          profiles.map((profile) => ({
-            name: profile.name,
-            providerBaseUrl: profile.providerBaseUrl,
-            providerType: profile.providerType,
-            wireApi: profile.wireApi,
-            reviewModel: profile.reviewModel,
-            textGenerationModel: profile.textGenerationModel,
-            reviewReasoningEffort: profile.reviewReasoningEffort,
-            textGenerationReasoningEffort:
-              profile.textGenerationReasoningEffort,
-            isDefault: profile.isDefault,
-            authToken: maskSecret(profile.authToken),
-          })),
-          null,
-          2,
-        )}\n`,
-      );
+      const result = profiles.map(summarizeModelProfile);
+      output().result(result, {
+        pretty:
+          result.length === 0
+            ? output().style("muted", "No model profiles configured.")
+            : formatModelProfileTable(result),
+        plain:
+          result.length === 0
+            ? "No model profiles configured."
+            : result
+                .map((profile) => formatModelProfileValues(profile, true))
+                .join("\n\n"),
+      });
       return 0;
     });
   }
@@ -1063,13 +1289,33 @@ export async function runCli(
     return withStorage(options, config, async (storage) => {
       const removedProfile = await storage.deleteModelProfile(profile.name);
       if (!removedProfile) {
-        process.stdout.write(`Model profile ${profile.name} not found.\n`);
+        output().result(
+          { removed: false, reason: "not_found", name: profile.name },
+          {
+            pretty: prettyOutcome(
+              `Model profile ${profile.name} not found.`,
+              "failure",
+            ),
+          },
+        );
         return 1;
       }
 
-      process.stdout.write(
-        formatModelProfileSummary("Model profile removed.", removedProfile),
-      );
+      const result = {
+        removed: true,
+        ...summarizeModelProfile(removedProfile),
+      };
+      output().result(result, {
+        pretty: formatModelProfileSummary(
+          "Model profile removed.",
+          removedProfile,
+        ),
+        plain: formatModelProfileSummary(
+          "model profile removed",
+          removedProfile,
+          true,
+        ),
+      });
       return 0;
     });
   }
@@ -1082,16 +1328,30 @@ export async function runCli(
     return withStorage(options, config, async (storage) => {
       const updatedProfile = await storage.setDefaultModelProfile(profile.name);
       if (!updatedProfile) {
-        process.stdout.write("No model profile selected as default.\n");
+        output().result(
+          { updated: false, reason: "not_found", name: profile.name },
+          {
+            pretty: prettyOutcome(
+              "No model profile selected as default.",
+              "failure",
+            ),
+          },
+        );
         return 1;
       }
 
-      process.stdout.write(
-        formatModelProfileSummary(
+      const result = summarizeModelProfile(updatedProfile);
+      output().result(result, {
+        pretty: formatModelProfileSummary(
           "Default model profile updated.",
           updatedProfile,
         ),
-      );
+        plain: formatModelProfileSummary(
+          "default model profile updated",
+          updatedProfile,
+          true,
+        ),
+      });
       return 0;
     });
   }
@@ -1099,7 +1359,10 @@ export async function runCli(
   if (resource === "model-profile" && action === "clear-default") {
     return withStorage(options, config, async (storage) => {
       await storage.setDefaultModelProfile(null);
-      process.stdout.write("Default model profile cleared.\n");
+      output().result(
+        { cleared: true, defaultModelProfileName: null },
+        { pretty: prettyOutcome("Default model profile cleared.") },
+      );
       return 0;
     });
   }
@@ -1134,7 +1397,25 @@ export async function runCli(
           sourceRuntime.storage.stores,
           targetRuntime.storage.stores,
         );
-        process.stdout.write(
+        const total = Object.values(migratedCounts).reduce(
+          (sum, count) => sum + count,
+          0,
+        );
+        const event: StorageMigrationEvent = {
+          type: "migration_completed",
+          source: {
+            provider: sourceRuntime.provider.getProviderId(),
+            module: sourceRuntime.moduleSpecifier,
+          },
+          destination: {
+            provider: targetRuntime.provider.getProviderId(),
+            module: targetRuntime.moduleSpecifier,
+          },
+          counts: migratedCounts,
+          total,
+        };
+        output().event(
+          event,
           formatStorageMigrationSummary(
             sourceRuntime,
             targetRuntime,
@@ -1163,26 +1444,49 @@ export async function runCli(
     const runRows = await loadRunMetricsRows(runLogDir);
 
     if (runRows.length === 0) {
-      process.stdout.write(
-        `No readable Copilot session logs found in ${runLogDir}.\n`,
-      );
+      const result: MetricsSessionsResult = {
+        runLogDirectory: runLogDir,
+        runs: [],
+        summary: [],
+        models: [],
+      };
+      output().result(result, {
+        pretty: output().style(
+          "muted",
+          `No readable Copilot session logs found in ${runLogDir}.`,
+        ),
+      });
       return 0;
     }
 
     const modelPremiumRequestsRows =
       buildModelPremiumRequestsStatsRows(runRows);
-    process.stdout.write(
-      [
-        formatRunMetricsTable(runRows),
-        formatSummaryMetricsTable(buildSummaryMetricsRows(runRows)),
+    const summaryRows = buildSummaryMetricsRows(runRows);
+    const result: MetricsSessionsResult = {
+      runLogDirectory: runLogDir,
+      runs: runRows,
+      summary: summaryRows,
+      models: modelPremiumRequestsRows,
+    };
+    output().result(result, {
+      pretty: [
+        `${prettyHeading("Runs")}\n${decorateTable(formatRunMetricsTable(runRows))}`,
+        `${prettyHeading("Summary")}\n${decorateTable(formatSummaryMetricsTable(summaryRows))}`,
         ...(modelPremiumRequestsRows.length > 0
-          ? [formatModelPremiumRequestsStatsTable(modelPremiumRequestsRows)]
+          ? [
+              `${prettyHeading("Premium requests by model")}\n${decorateTable(formatModelPremiumRequestsStatsTable(modelPremiumRequestsRows))}`,
+            ]
           : []),
-      ].join("\n\n") + "\n",
-    );
+      ].join("\n\n"),
+    });
     return 0;
   }
 
+  if (output().mode === "json") {
+    throw new Error(
+      `Unsupported command: ${positionals.join(" ") || "(none)"}. Use --help to list commands.`,
+    );
+  }
   printHelp(positionals);
   return 1;
 }
@@ -1278,7 +1582,7 @@ function printHelp(
   fallbackToAllCommands = true,
 ): boolean {
   const cliCommand = detectCliCommand();
-  const platforms = getPlatforms();
+  const platforms = getPlatforms(createLogger("silent", output().stderr));
   const commands: string[] = [];
   for (const platform of platforms) {
     const info = platform.getPlatformInfo();
@@ -1354,8 +1658,8 @@ function printHelp(
     "model-profile set-default --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "storage migrate --from-storage-provider-module <module> [--from-sqlite-database-path <path>] --to-storage-provider-module <module> [--to-sqlite-database-path <path>]",
-    "mr describe (--tenant-id <id> | --key <key>) --code-review-id <id> [--current-interaction-job-id <id>] [--trigger-comment-id <id> --trigger-comment-action <create|update> [--trigger-comment-updated-at <iso>] [--trigger-comment-body <text>]] [--json] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-    "mr review (--tenant-id <id> | --key <tenant-key>) (--trigger-comment-url <url> | --trigger-comment-id <id> | --trigger-text <text> | --trigger-text-file <path>) [--code-review-id <id>] [--force-new] [--watch | --no-watch] [--json] [--sqlite-database-path <path>] [--storage-provider-module <module>] [--run-log-dir <path>]",
+    "mr describe (--tenant-id <id> | --key <key>) --code-review-id <id> [--current-interaction-job-id <id>] [--trigger-comment-id <id> --trigger-comment-action <create|update> [--trigger-comment-updated-at <iso>] [--trigger-comment-body <text>]] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "mr review (--tenant-id <id> | --key <tenant-key>) (--trigger-comment-url <url> | --trigger-comment-id <id> | --trigger-text <text> | --trigger-text-file <path>) [--code-review-id <id>] [--force-new] [--watch | --no-watch] [--sqlite-database-path <path>] [--storage-provider-module <module>] [--run-log-dir <path>]",
     "metrics sessions [--run-log-dir <path>]",
   );
 
@@ -1373,12 +1677,105 @@ function printHelp(
   const displayedCommands =
     matchingCommands.length > 0 ? matchingCommands : commands;
 
-  const usageLines = displayedCommands
-    .toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0))
-    .map((command) => `  ${cliCommand} ${command} [--help]`);
+  const sortedCommands = displayedCommands.toSorted((a, b) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  if (output().mode === "pretty") {
+    const groupedCommands = groupHelpCommands(sortedCommands);
+    const lines = [
+      prettyHeading("Usage"),
+      ...groupedCommands.flatMap((group) => [
+        "",
+        prettyHeading(group.label),
+        ...group.commands.map((command) =>
+          formatPrettyHelpCommand(cliCommand, command),
+        ),
+      ]),
+      "",
+      prettyHeading("Global options"),
+      formatPrettyHelpOption(
+        "--output <pretty|plain|json>",
+        "Select the result format (default: pretty).",
+      ),
+      formatPrettyHelpOption("--json", "Alias for --output json."),
+      formatPrettyHelpOption("--help", "Show command help."),
+    ];
+    output().write(lines.join("\n"));
+    return true;
+  }
 
-  process.stdout.write(["Usage:", ...usageLines].join("\n") + "\n");
+  const usageLines = sortedCommands.map(
+    (command) =>
+      `  ${cliCommand} ${command} [--output <pretty|plain|json>] [--json] [--help]`,
+  );
+  output().write(["Usage:", ...usageLines].join("\n"));
   return true;
+}
+
+interface HelpCommandGroup {
+  readonly key: string;
+  readonly label: string;
+  readonly order: number;
+  readonly commands: string[];
+}
+
+function groupHelpCommands(commands: readonly string[]): HelpCommandGroup[] {
+  const groups = new Map<string, HelpCommandGroup>();
+  for (const command of commands) {
+    const definition = getHelpGroup(command);
+    const group = groups.get(definition.key) ?? {
+      ...definition,
+      commands: [],
+    };
+    group.commands.push(command);
+    groups.set(group.key, group);
+  }
+  return [...groups.values()].toSorted(
+    (left, right) => left.order - right.order,
+  );
+}
+
+function getHelpGroup(command: string): Omit<HelpCommandGroup, "commands"> {
+  if (command.startsWith("platform connection ")) {
+    return { key: "connections", label: "Platform connections", order: 0 };
+  }
+  if (command.startsWith("tenant ")) {
+    return { key: "tenants", label: "Tenants", order: 1 };
+  }
+  if (command.startsWith("model-profile ")) {
+    return { key: "profiles", label: "Model profiles", order: 2 };
+  }
+  if (command.startsWith("storage ")) {
+    return { key: "storage", label: "Storage", order: 3 };
+  }
+  if (command.startsWith("mr ")) {
+    return { key: "reviews", label: "Merge requests", order: 4 };
+  }
+  return { key: "diagnostics", label: "Diagnostics", order: 5 };
+}
+
+function formatPrettyHelpCommand(cliCommand: string, command: string): string {
+  const syntaxStart = command.search(/\s(?=--|\[|\()/);
+  const commandPath =
+    syntaxStart === -1 ? command : command.slice(0, syntaxStart);
+  const syntax = syntaxStart === -1 ? "" : command.slice(syntaxStart);
+  return `  ${output().style("muted", cliCommand)} ${output().style("strong", commandPath)}${colorHelpSyntax(syntax)}`;
+}
+
+function formatPrettyHelpOption(syntax: string, description: string): string {
+  return `  ${colorHelpSyntax(syntax)}\n    ${output().style("muted", description)}`;
+}
+
+function colorHelpSyntax(syntax: string): string {
+  return syntax.replace(/--[a-z][a-z0-9-]*|<[^>]+>|[[\]()|]/gi, (token) => {
+    if (token.startsWith("--")) {
+      return output().style("active", token);
+    }
+    if (token.startsWith("<")) {
+      return output().style("warning", token);
+    }
+    return output().style("muted", token);
+  });
 }
 
 interface CliHelpParam {
@@ -1420,7 +1817,6 @@ async function runCodeReviewDescribeCommand(
   options: Record<string, string | boolean>,
   config: ReturnType<typeof loadConfig>,
 ): Promise<number> {
-  const jsonOutput = options.json === true || options.json === "true";
   const input = mergeRequestDescribeSchema.parse({
     tenantId: options["tenant-id"],
     tenantKey: options.key,
@@ -1435,8 +1831,19 @@ async function runCodeReviewDescribeCommand(
   return withStorage(options, config, async (storage) => {
     const tenant = await resolveDescribeTenant(storage, input);
     if (!tenant) {
-      process.stdout.write(
-        formatMissingDescribeTenantMessage(input.tenantId, input.tenantKey),
+      output().result(
+        {
+          found: false,
+          tenantId: input.tenantId ?? null,
+          tenantKey: input.tenantKey ?? null,
+          codeReviewId: input.codeReviewId,
+        },
+        {
+          pretty: formatMissingDescribeTenantMessage(
+            input.tenantId,
+            input.tenantKey,
+          ),
+        },
       );
       return 1;
     }
@@ -1450,8 +1857,19 @@ async function runCodeReviewDescribeCommand(
       input.currentInteractionJobId &&
       !interactionJobs.some((job) => job.id === input.currentInteractionJobId)
     ) {
-      process.stdout.write(
-        `Interaction job ${input.currentInteractionJobId} not found for tenant ${tenant.id} merge request ${input.codeReviewId}.\n`,
+      output().result(
+        {
+          found: false,
+          tenantId: tenant.id,
+          codeReviewId: input.codeReviewId,
+          interactionJobId: input.currentInteractionJobId,
+        },
+        {
+          pretty: prettyOutcome(
+            `Interaction job ${input.currentInteractionJobId} not found for tenant ${tenant.id} merge request ${input.codeReviewId}.`,
+            "failure",
+          ),
+        },
       );
       return 1;
     }
@@ -1467,11 +1885,10 @@ async function runCodeReviewDescribeCommand(
       resolveCodeReviewTriggerDedupeInput(input),
     );
 
-    process.stdout.write(
-      jsonOutput
-        ? `${JSON.stringify(description, null, 2)}\n`
-        : formatCodeReviewDescription(description),
-    );
+    output().result(description, {
+      pretty: formatCodeReviewDescription(description),
+      plain: formatCodeReviewDescription(description),
+    });
     return 0;
   });
 }
@@ -1492,7 +1909,6 @@ async function runMergeRequestReviewCommand(
     forceNew: Object.hasOwn(options, "force-new"),
     watchRequested: Object.hasOwn(options, "watch"),
     noWatchRequested: Object.hasOwn(options, "no-watch"),
-    json: Object.hasOwn(options, "json"),
   });
   const selector = await resolveLocalReviewSelector(input);
   await initializePlatformRegistry({
@@ -1554,13 +1970,6 @@ async function runMergeRequestReviewCommand(
       });
     }
 
-    if (!input.json) {
-      process.stdout.write(
-        `Interaction job ${submitted.job.id} ${
-          submitted.created ? "created" : "reused"
-        }.\n`,
-      );
-    }
     const runLogRoot =
       typeof options["run-log-dir"] === "string"
         ? resolve(options["run-log-dir"])
@@ -1572,7 +1981,7 @@ async function runMergeRequestReviewCommand(
         created: submitted.created,
         runLogRoot,
       });
-      printReviewSubmissionSummary(summary, input.json);
+      printReviewSubmissionSummary(summary);
       return 0;
     }
 
@@ -1595,7 +2004,10 @@ async function runMergeRequestReviewCommand(
         created: submitted.created,
         runLogRoot,
         pollIntervalMs: config.jobPollIntervalMs,
-        outputMode: input.json ? "json" : "human",
+        outputMode: output().mode,
+        output: output(),
+        tenantKey: resolvedTenant.tenant.key,
+        codeReviewId: submitted.job.codeReviewId,
         signal: controller.signal,
       });
       return summary.jobStatus === "completed" ? 0 : 1;
@@ -1623,7 +2035,10 @@ async function resolveLocalReviewSelector(
         : {}),
     };
   }
-  if (input.triggerCommentId !== undefined && input.codeReviewId !== undefined) {
+  if (
+    input.triggerCommentId !== undefined &&
+    input.codeReviewId !== undefined
+  ) {
     return {
       kind: "comment-id",
       commentId: input.triggerCommentId,
@@ -1646,25 +2061,31 @@ async function resolveLocalReviewSelector(
   };
 }
 
-function printReviewSubmissionSummary(
-  summary: ReviewWatchSummary,
-  json: boolean,
-): void {
-  if (json) {
-    process.stdout.write(`${JSON.stringify(summary)}\n`);
-    return;
-  }
-  process.stdout.write(
-    [
-      `jobStatus: ${summary.jobStatus}`,
-      `runId: ${summary.runId ?? "(none)"}`,
-      `runStatus: ${summary.runStatus ?? "(none)"}`,
-      `runLogDirectory: ${summary.runLogDirectory ?? "(none)"}`,
-      `findingCount: ${summary.findingCount}`,
-      `error: ${summary.error ?? "(none)"}`,
-      `liveLogsAvailable: ${summary.liveLogsAvailable}`,
-    ].join("\n") + "\n",
-  );
+function printReviewSubmissionSummary(summary: ReviewWatchSummary): void {
+  output().result(summary, {
+    pretty: [
+      prettyOutcome(
+        summary.created ? "Review submitted." : "Existing review reused.",
+        "active",
+      ),
+      prettyFields([
+        ["jobId", summary.jobId],
+        ["jobStatus", prettyStatus(summary.jobStatus)],
+        ["runId", summary.runId],
+        [
+          "runStatus",
+          summary.runStatus ? prettyStatus(summary.runStatus) : null,
+        ],
+        ["runLogDirectory", summary.runLogDirectory],
+        ["findingCount", summary.findingCount],
+        [
+          "error",
+          summary.error ? output().style("failure", summary.error) : null,
+        ],
+        ["liveLogsAvailable", summary.liveLogsAvailable],
+      ]),
+    ].join("\n"),
+  });
 }
 
 async function resolveDescribeTenant(
@@ -1930,13 +2351,13 @@ function formatMissingDescribeTenantMessage(
   tenantKey: string | undefined,
 ): string {
   if (tenantId) {
-    return `Tenant ${tenantId} not found.\n`;
+    return `${prettyOutcome(`Tenant ${tenantId} not found.`, "failure")}\n`;
   }
 
-  return `Tenant not found for ${tenantKey}.\n`;
+  return `${prettyOutcome(`Tenant not found for ${tenantKey}.`, "failure")}\n`;
 }
 
-function summarizeTenant(tenant: TenantRecord) {
+function summarizeTenant(tenant: TenantRecord): TenantCliResult {
   const gitLabConfig =
     tenant.platform === "gitlab" ? getGitLabTenantConfig(tenant) : null;
 
@@ -1954,7 +2375,9 @@ function summarizeTenant(tenant: TenantRecord) {
   };
 }
 
-function summarizePlatformConnection(connection: PlatformConnectionRecord) {
+function summarizePlatformConnection(
+  connection: PlatformConnectionRecord,
+): PlatformConnectionCliResult {
   return {
     id: connection.id,
     name: connection.name,
@@ -1965,10 +2388,155 @@ function summarizePlatformConnection(connection: PlatformConnectionRecord) {
   };
 }
 
-function formatPlatformConnection(
-  connection: PlatformConnectionRecord,
+type PlatformConnectionSummary = ReturnType<typeof summarizePlatformConnection>;
+
+function formatPlatformConnectionDetails(
+  connection: PlatformConnectionSummary & {
+    setupUrl?: string | null;
+    notices?: readonly string[];
+  },
+  header?: string,
+  plain = false,
 ): string {
-  return `${JSON.stringify(summarizePlatformConnection(connection), null, 2)}\n`;
+  return [
+    ...(header ? [plain ? header : prettyOutcome(header)] : []),
+    (plain ? formatKeyValues : prettyFields)([
+      ["id", plain ? connection.id : output().style("muted", connection.id)],
+      [
+        "name",
+        plain ? connection.name : output().style("strong", connection.name),
+      ],
+      ["platform", connection.platform],
+      ["status", plain ? connection.status : prettyStatus(connection.status)],
+      [
+        "createdAt",
+        plain
+          ? formatIsoDate(connection.createdAt)
+          : formatPrettyDate(connection.createdAt),
+      ],
+      [
+        "updatedAt",
+        plain
+          ? formatIsoDate(connection.updatedAt)
+          : formatPrettyDate(connection.updatedAt),
+      ],
+      ...(connection.setupUrl !== undefined
+        ? ([
+            [
+              "Setup URL",
+              plain || !connection.setupUrl
+                ? connection.setupUrl
+                : output().style("active", connection.setupUrl),
+            ],
+          ] as const)
+        : []),
+    ]),
+  ].join("\n");
+}
+
+function formatPlatformConnectionTable(
+  connections: readonly PlatformConnectionSummary[],
+): string {
+  return formatOutputTable(
+    connections,
+    [
+      {
+        header: "NAME",
+        value: (connection) => connection.name,
+        minWidth: 8,
+        style: (value) => output().style("strong", value),
+      },
+      { header: "PLATFORM", value: (connection) => connection.platform },
+      {
+        header: "STATUS",
+        value: (connection) => connection.status,
+        style: (value) => prettyStatus(value),
+      },
+      {
+        header: "UPDATED",
+        value: (connection) => formatPrettyDate(connection.updatedAt),
+        priority: 1,
+        style: (value) => output().style("muted", value),
+      },
+      {
+        header: "ID",
+        value: (connection) => connection.id,
+        priority: 2,
+        minWidth: 8,
+        style: (value) => output().style("muted", value),
+      },
+    ],
+    output().columns,
+    prettyTableStyles(),
+  );
+}
+
+function formatPlatformConnectionList(
+  connections: readonly PlatformConnectionSummary[],
+): string {
+  return connections
+    .map((connection) =>
+      formatPlatformConnectionDetails(connection, undefined, true),
+    )
+    .join("\n\n");
+}
+
+type TenantSummary = ReturnType<typeof summarizeTenant> & {
+  platformConnectionName?: string | null;
+};
+
+function formatTenantDetails(tenant: TenantSummary, plain = false): string {
+  const fields = [
+    ["id", plain ? tenant.id : output().style("muted", tenant.id)],
+    ["key", plain ? tenant.key : output().style("strong", tenant.key)],
+    ["platform", tenant.platform],
+    [
+      "connection",
+      tenant.platformConnectionName ?? tenant.platformConnectionId,
+    ],
+    ["modelProfile", tenant.modelProfileName],
+  ] as const;
+  return plain ? formatKeyValues(fields) : prettyFields(fields);
+}
+
+function formatTenantTable(tenants: readonly TenantSummary[]): string {
+  return formatOutputTable(
+    tenants,
+    [
+      {
+        header: "KEY",
+        value: (tenant) => tenant.key,
+        minWidth: 12,
+        style: (value) => output().style("strong", value),
+      },
+      { header: "PLATFORM", value: (tenant) => tenant.platform },
+      {
+        header: "CONNECTION",
+        value: (tenant) => tenant.platformConnectionName,
+        minWidth: 8,
+      },
+      {
+        header: "MODEL PROFILE",
+        value: (tenant) => tenant.modelProfileName,
+        priority: 1,
+      },
+      {
+        header: "ID",
+        value: (tenant) => tenant.id,
+        priority: 2,
+        minWidth: 8,
+        style: (value) => output().style("muted", value),
+      },
+    ],
+    output().columns,
+    prettyTableStyles(),
+  );
+}
+
+function formatTenantList(tenants: readonly TenantSummary[]): string {
+  return tenants
+    .map((tenant) => formatTenantDetails(tenant, true))
+    .join("\n\n");
 }
 
 function mapCliOptions(
@@ -2182,49 +2750,86 @@ function formatCodeReviewDescription(
   const latestReviewLines = description.latestInteractionJob
     ? [
         "",
-        "Latest Review",
-        `job: ${description.latestInteractionJob.id} (${description.latestInteractionJob.status})`,
-        `commentId: ${description.latestInteractionJob.commentId}`,
-        `headSha: ${shortenValue(description.latestInteractionJob.headSha)}`,
-        `enqueuedAt: ${description.latestInteractionJob.enqueuedAt}`,
-        `finishedAt: ${description.latestInteractionJob.finishedAt ?? "(none)"}`,
+        prettyHeading("Latest review"),
+        prettyField(
+          "job",
+          `${description.latestInteractionJob.id} (${prettyStatus(description.latestInteractionJob.status)})`,
+        ),
+        prettyField("commentId", description.latestInteractionJob.commentId),
+        prettyField(
+          "headSha",
+          shortenValue(description.latestInteractionJob.headSha),
+        ),
+        prettyField("enqueuedAt", description.latestInteractionJob.enqueuedAt),
+        prettyField(
+          "finishedAt",
+          description.latestInteractionJob.finishedAt ?? "(none)",
+        ),
       ]
     : [];
   const latestFindingLines =
     description.latestReviewFindingsOverall.length > 0
       ? [
           "",
-          "Latest Findings",
+          prettyHeading("Latest findings"),
           ...formatFindingsSummary(description.latestReviewFindingsOverall),
         ]
       : [];
 
   const lines = [
-    "Merge Request",
-    `tenant: ${description.tenant.key} (${description.tenant.platform})`,
-    `tenant: ${description.tenant.id}`,
-    `codeReviewId: ${description.codeReviewId}`,
+    prettyHeading("Merge request"),
+    prettyField(
+      "tenant",
+      `${description.tenant.key} (${description.tenant.platform})`,
+    ),
+    prettyField("tenant ID", description.tenant.id),
+    prettyField("codeReviewId", description.codeReviewId),
     "",
-    "Current State",
-    `currentInteractionJobId: ${description.currentInteractionJobId ?? "(none)"}`,
-    `interactionJobs: ${description.counts.interactionJobs}`,
-    `interactionRuns: ${description.counts.interactionRuns}`,
-    `codeReviewSnapshots: ${description.counts.codeReviewSnapshots}`,
-    `discussionMappings: ${description.counts.discussionMappings}`,
-    `latestReviewFindingsOverall: ${description.counts.latestReviewFindingsOverall}`,
-    `priorReviewFindingsRelativeToCurrent: ${description.counts.priorReviewFindingsRelativeToCurrent}`,
+    prettyHeading("Current state"),
+    prettyField(
+      "currentInteractionJobId",
+      description.currentInteractionJobId ?? "(none)",
+    ),
+    prettyField("interactionJobs", description.counts.interactionJobs),
+    prettyField("interactionRuns", description.counts.interactionRuns),
+    prettyField("codeReviewSnapshots", description.counts.codeReviewSnapshots),
+    prettyField("discussionMappings", description.counts.discussionMappings),
+    prettyField(
+      "latestReviewFindingsOverall",
+      description.counts.latestReviewFindingsOverall,
+    ),
+    prettyField(
+      "priorReviewFindingsRelativeToCurrent",
+      description.counts.priorReviewFindingsRelativeToCurrent,
+    ),
     ...latestReviewLines,
     "",
-    "History Signal",
-    `tenant+mr jobs: ${description.interactionJobDiagnostics.counts.byTenantAndCodeReview}`,
-    `tenant jobs total: ${description.interactionJobDiagnostics.counts.byTenantOnly}`,
-    `assessment: ${buildCodeReviewAssessment(description)}`,
+    prettyHeading("History signal"),
+    prettyField(
+      "tenant+mr jobs",
+      description.interactionJobDiagnostics.counts.byTenantAndCodeReview,
+    ),
+    prettyField(
+      "tenant jobs total",
+      description.interactionJobDiagnostics.counts.byTenantOnly,
+    ),
+    prettyField("assessment", buildCodeReviewAssessment(description)),
     "",
-    "Previous Review",
-    `latestCompletedInteractionOverall: ${formatPreviousInteractionSummary(description.latestCompletedInteractionOverall)}`,
-    `previousCompletedInteractionRelativeToCurrent: ${formatPreviousInteractionSummary(description.previousCompletedInteractionRelativeToCurrent)}`,
+    prettyHeading("Previous review"),
+    prettyField(
+      "latestCompletedInteractionOverall",
+      formatPreviousInteractionSummary(
+        description.latestCompletedInteractionOverall,
+      ),
+    ),
+    prettyField(
+      "previousCompletedInteractionRelativeToCurrent",
+      formatPreviousInteractionSummary(
+        description.previousCompletedInteractionRelativeToCurrent,
+      ),
+    ),
     "",
-    "Dedupe",
+    prettyHeading("Dedupe"),
     ...formatDedupeInspection(description.dedupeInspection),
     ...latestFindingLines,
   ];
@@ -2365,7 +2970,14 @@ async function migrateStorageStores(
   };
 
   for (const step of storageMigrationSteps) {
-    process.stdout.write(`Migrating ${step.label}...\n`);
+    const event: StorageMigrationEvent = {
+      type: "migration_step_started",
+      store: step.label,
+    };
+    output().event(
+      event,
+      output().style("active", `Migrating ${step.label}...`),
+    );
     migratedCounts[step.label] = await step.run(source, target, context);
   }
 
@@ -2491,12 +3103,19 @@ async function migrateStorePages<TEntity, TFilters, TOrder extends string>(
   let migratedCount = 0;
 
   if (totalPages === 0) {
-    process.stdout.write(`${label} (0/0)\n`);
+    const event: StorageMigrationEvent = {
+      type: "migration_progress",
+      store: label,
+      page: 0,
+      totalPages: 0,
+      migrated: 0,
+      total: 0,
+    };
+    output().event(event, output().style("muted", `${label} (0/0)`));
     return 0;
   }
 
   for (let page = 1; page <= totalPages; page += 1) {
-    process.stdout.write(`${label} (${page}/${totalPages})\n`);
     const batch = await source.list({
       ...(order ? { order } : {}),
       page,
@@ -2505,6 +3124,18 @@ async function migrateStorePages<TEntity, TFilters, TOrder extends string>(
 
     await processBatch(batch);
     migratedCount += batch.length;
+    const event: StorageMigrationEvent = {
+      type: "migration_progress",
+      store: label,
+      page,
+      totalPages,
+      migrated: migratedCount,
+      total: totalItems,
+    };
+    output().event(
+      event,
+      `${output().style("muted", label)} ${output().style("active", `(${page}/${totalPages})`)}`,
+    );
   }
 
   return migratedCount;
@@ -2561,46 +3192,134 @@ function formatStorageMigrationSummary(
 
   return (
     [
-      "Storage migration completed.",
-      `source: ${sourceRuntime.provider.getProviderId()} (${sourceRuntime.moduleSpecifier})`,
-      `destination: ${targetRuntime.provider.getProviderId()} (${targetRuntime.moduleSpecifier})`,
-      ...storageMigrationSteps.map(
-        (step) => `- ${step.label}: ${migratedCounts[step.label] ?? 0}`,
+      prettyOutcome("Storage migration completed."),
+      prettyField(
+        "source",
+        `${sourceRuntime.provider.getProviderId()} (${sourceRuntime.moduleSpecifier})`,
       ),
-      `total: ${totalMigrated}`,
+      prettyField(
+        "destination",
+        `${targetRuntime.provider.getProviderId()} (${targetRuntime.moduleSpecifier})`,
+      ),
+      ...storageMigrationSteps.map(
+        (step) =>
+          `- ${output().style("muted", step.label)}: ${migratedCounts[step.label] ?? 0}`,
+      ),
+      `${output().style("strong", "total")}: ${output().style("strong", String(totalMigrated))}`,
     ].join("\n") + "\n"
   );
 }
 
+interface ModelProfileOutput {
+  name: string;
+  providerBaseUrl: string | null;
+  providerType: string | null;
+  wireApi: string | null;
+  reviewModel: string | null;
+  textGenerationModel: string | null;
+  reviewReasoningEffort: string | null;
+  textGenerationReasoningEffort: string | null;
+  isDefault: boolean;
+  authToken: string | null;
+}
+
+type SafeModelProfileOutput = ModelProfileCliResult;
+
+function summarizeModelProfile(
+  profile: ModelProfileOutput,
+): SafeModelProfileOutput {
+  return {
+    name: profile.name,
+    providerBaseUrl: profile.providerBaseUrl,
+    providerType: profile.providerType,
+    wireApi: profile.wireApi,
+    reviewModel: profile.reviewModel,
+    textGenerationModel: profile.textGenerationModel,
+    reviewReasoningEffort: profile.reviewReasoningEffort,
+    textGenerationReasoningEffort: profile.textGenerationReasoningEffort,
+    isDefault: profile.isDefault,
+    authToken: maskSecret(profile.authToken),
+  };
+}
+
 function formatModelProfileSummary(
   header: string,
-  profile: {
-    name: string;
-    providerBaseUrl: string | null;
-    providerType: string | null;
-    wireApi: string | null;
-    reviewModel: string | null;
-    textGenerationModel: string | null;
-    reviewReasoningEffort: string | null;
-    textGenerationReasoningEffort: string | null;
-    isDefault: boolean;
-    authToken: string | null;
-  },
+  profile: ModelProfileOutput,
+  plain = false,
 ): string {
-  return (
+  return `${plain ? header : prettyOutcome(header)}\n${formatModelProfileValues(summarizeModelProfile(profile), plain)}`;
+}
+
+function formatModelProfileValues(
+  profile: SafeModelProfileOutput,
+  _plain = false,
+): string {
+  const fields = [
+    ["name", _plain ? profile.name : output().style("strong", profile.name)],
+    ["providerBaseUrl", profile.providerBaseUrl],
+    ["providerType", profile.providerType ?? "native"],
     [
-      header,
-      `name: ${profile.name}`,
-      `providerBaseUrl: ${profile.providerBaseUrl ?? "(none)"}`,
-      `providerType: ${profile.providerType ?? "(native)"}`,
-      `wireApi: ${profile.providerBaseUrl ? (profile.wireApi ?? "responses") : "(native)"}`,
-      `reviewModel: ${profile.reviewModel ?? "(default)"}`,
-      `textGenerationModel: ${profile.textGenerationModel ?? "(default)"}`,
-      `reviewReasoningEffort: ${profile.reviewReasoningEffort ?? "(default)"}`,
-      `textGenerationReasoningEffort: ${profile.textGenerationReasoningEffort ?? "(default)"}`,
-      `default: ${profile.isDefault ? "yes" : "no"}`,
-      `authToken: ${maskSecret(profile.authToken) ?? "(none)"}`,
-    ].join("\n") + "\n"
+      "wireApi",
+      profile.providerBaseUrl ? (profile.wireApi ?? "responses") : "native",
+    ],
+    ["reviewModel", profile.reviewModel ?? "default"],
+    ["textGenerationModel", profile.textGenerationModel ?? "default"],
+    ["reviewReasoningEffort", profile.reviewReasoningEffort ?? "default"],
+    [
+      "textGenerationReasoningEffort",
+      profile.textGenerationReasoningEffort ?? "default",
+    ],
+    [
+      "default",
+      _plain
+        ? profile.isDefault
+        : profile.isDefault
+          ? output().style("success", "yes")
+          : "no",
+    ],
+    [
+      "authToken",
+      _plain || !profile.authToken
+        ? profile.authToken
+        : output().style("muted", profile.authToken),
+    ],
+  ] as const;
+  return _plain ? formatKeyValues(fields) : prettyFields(fields);
+}
+
+function formatModelProfileTable(
+  profiles: readonly SafeModelProfileOutput[],
+): string {
+  return formatOutputTable(
+    profiles,
+    [
+      {
+        header: "DEFAULT",
+        value: (profile) =>
+          profile.isDefault ? (output().unicode ? "✓" : "*") : "",
+        style: (value) => (value ? output().style("success", value) : value),
+      },
+      {
+        header: "NAME",
+        value: (profile) => profile.name,
+        minWidth: 8,
+        style: (value, profile) =>
+          profile.isDefault ? output().style("strong", value) : value,
+      },
+      { header: "REVIEW MODEL", value: (profile) => profile.reviewModel },
+      {
+        header: "TEXT MODEL",
+        value: (profile) => profile.textGenerationModel,
+        priority: 1,
+      },
+      {
+        header: "PROVIDER",
+        value: (profile) => profile.providerType ?? "native",
+        priority: 2,
+      },
+    ],
+    output().columns,
+    prettyTableStyles(),
   );
 }
 
@@ -2672,9 +3391,12 @@ function formatTenantRemovalSummary(
   runLogDir: string,
 ): string {
   return [
-    `Preparing to remove tenant ${summary.tenant.key} (${summary.tenant.platform})`,
-    `database: ${databasePath}`,
-    "This will delete:",
+    prettyOutcome(
+      `Preparing to remove tenant ${summary.tenant.key} (${summary.tenant.platform})`,
+      "warning",
+    ),
+    prettyField("database", databasePath),
+    prettyHeading("This will delete:"),
     `- 1 tenant record`,
     `- ${summary.interactionJobCount} ${pluralize("interaction job", summary.interactionJobCount)}`,
     `- ${summary.codeReviewSnapshotCount} ${pluralize("code review snapshot", summary.codeReviewSnapshotCount)}`,
@@ -2683,10 +3405,51 @@ function formatTenantRemovalSummary(
     `- ${summary.interactionRunMetricCount} ${pluralize("interaction run metric", summary.interactionRunMetricCount)}`,
     `- ${summary.discussionMappingCount} ${pluralize("discussion mapping", summary.discussionMappingCount)}`,
     `- ${summary.projectMemoryCount} ${pluralize("project memory record", summary.projectMemoryCount)}`,
-    `- ${artifactSummary.existingWorkspaceCount}/${artifactSummary.workspacePaths.length} workspace ${pluralize("directory", artifactSummary.workspacePaths.length)} under ${workspaceRoot}`,
-    `- ${artifactSummary.existingRunLogCount}/${artifactSummary.runLogPaths.length} run log ${pluralize("directory", artifactSummary.runLogPaths.length)} under ${runLogDir}`,
+    output().style(
+      "muted",
+      `- ${artifactSummary.existingWorkspaceCount}/${artifactSummary.workspacePaths.length} workspace ${pluralize("directory", artifactSummary.workspacePaths.length)} under ${workspaceRoot}`,
+    ),
+    output().style(
+      "muted",
+      `- ${artifactSummary.existingRunLogCount}/${artifactSummary.runLogPaths.length} run log ${pluralize("directory", artifactSummary.runLogPaths.length)} under ${runLogDir}`,
+    ),
     "",
   ].join("\n");
+}
+
+function buildTenantRemovalResult(
+  summary: TenantDeletionSummary,
+  artifactSummary: TenantArtifactSummary,
+  databasePath: string,
+  workspaceRoot: string,
+  runLogDirectory: string,
+) {
+  return {
+    tenant: summarizeTenant(summary.tenant),
+    databasePath,
+    workspaceRoot,
+    runLogDirectory,
+    records: {
+      tenants: 1,
+      interactionJobs: summary.interactionJobCount,
+      codeReviewSnapshots: summary.codeReviewSnapshotCount,
+      interactionRuns: summary.interactionRunCount,
+      reviewFindings: summary.reviewFindingCount,
+      interactionRunMetrics: summary.interactionRunMetricCount,
+      discussionMappings: summary.discussionMappingCount,
+      projectMemories: summary.projectMemoryCount,
+    },
+    artifacts: {
+      workspaceDirectories: {
+        existing: artifactSummary.existingWorkspaceCount,
+        total: artifactSummary.workspacePaths.length,
+      },
+      runLogDirectories: {
+        existing: artifactSummary.existingRunLogCount,
+        total: artifactSummary.runLogPaths.length,
+      },
+    },
+  };
 }
 
 function pluralize(noun: string, count: number): string {
@@ -2699,19 +3462,20 @@ function writePlatformConnectionNotices(
   if (!notices || notices.length === 0) {
     return;
   }
-  process.stdout.write(
+  output().diagnostic(
+    "notice",
     [
       "Provider cleanup required:",
       ...notices.map((notice) => `- ${notice}`),
-      "",
     ].join("\n"),
+    { notices },
   );
 }
 
 async function promptForConfirmation(prompt: string): Promise<boolean> {
   const readline = createInterface({
     input: process.stdin,
-    output: process.stdout,
+    output: output().stdout,
   });
 
   try {
@@ -3092,27 +3856,55 @@ function percentile(values: number[], percentileRank: number): number {
 
 export async function runCliEntry(
   argv: string[] = process.argv.slice(2),
+  dependencies: CliOutputDependencies = {},
 ): Promise<number> {
   try {
-    const exitCode = await runCli(argv);
-    if (exitCode !== 0 && !isMergeRequestReviewInvocation(argv)) {
+    const exitCode = await runCli(argv, dependencies);
+    if (
+      exitCode !== 0 &&
+      resolveOutputMode(parseCliArgs(argv).options) !== "json" &&
+      !isMergeRequestReviewInvocation(argv)
+    ) {
       const { positionals } = parseCliArgs(argv);
-      printHelp(positionals, false);
+      cliOutputStorage.run(
+        new CliOutput(
+          resolveOutputMode(parseCliArgs(argv).options),
+          dependencies,
+        ),
+        () => printHelp(positionals, false),
+      );
     }
     return exitCode;
   } catch (error: unknown) {
-    const { positionals } = parseCliArgs(argv);
-    if (!isMergeRequestReviewInvocation(argv)) {
-      printHelp(positionals, false);
+    const parsed = parseCliArgs(argv);
+    const mode = resolveErrorOutputMode(parsed.options);
+    const errorOutput = new CliOutput(mode, dependencies);
+    if (mode !== "json" && !isMergeRequestReviewInvocation(argv)) {
+      cliOutputStorage.run(errorOutput, () => {
+        printHelp(parsed.positionals, false);
+      });
     }
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`${message}\n`);
+    errorOutput.error(error);
     return 1;
   }
 
   function isMergeRequestReviewInvocation(argv: string[]): boolean {
     const { positionals } = parseCliArgs(argv);
     return positionals[0] === "mr" && positionals[1] === "review";
+  }
+}
+
+function resolveErrorOutputMode(
+  options: Record<string, string | boolean>,
+): "pretty" | "plain" | "json" {
+  try {
+    return resolveOutputMode(options);
+  } catch {
+    return options.output === "json" ||
+      options.json === true ||
+      options.json === "true"
+      ? "json"
+      : "pretty";
   }
 }
 

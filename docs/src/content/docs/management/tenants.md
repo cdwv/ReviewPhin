@@ -56,7 +56,7 @@ reviewphin tenant clear-profile --key https://gitlab.example.com::123
 reviewphin tenant list
 ```
 
-The JSON output includes each tenant's `id`, `key`, `platform`, and `modelProfileName`.
+The default table includes each tenant's connection name. Use `--output json` for records containing `id`, `key`, `platform`, `platformConnectionId`, `platformConnectionName`, and `modelProfileName`.
 
 ```bash
 reviewphin tenant remove --key https://gitlab.example.com::123 --yes

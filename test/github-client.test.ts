@@ -299,7 +299,8 @@ describe("GitHubClient", () => {
     ).resolves.toEqual(Buffer.from([31, 139, 8, 0]));
   });
 
-  it("translates GitHub API failures with their status", async () => {
+  it("translates GitHub API failures without writing to stdout", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const request = vi.fn(async () => {
       throw Object.assign(new Error("Not Found"), { status: 404 });
     });
@@ -314,6 +315,8 @@ describe("GitHubClient", () => {
       message:
         "GitHub pull request octo-org/reviewphin#42 request failed with status 404",
     });
+    expect(log).not.toHaveBeenCalled();
+    log.mockRestore();
   });
 
   it("resolves one pull request from an app-owned Check Run head", async () => {

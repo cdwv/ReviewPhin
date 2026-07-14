@@ -10,6 +10,7 @@ import {
   selectReviewAttempt,
   watchReviewJob,
 } from "../src/cli/review-watch.js";
+import { CliOutput, createStringWriter } from "../src/cli/output.js";
 import type {
   InteractionJobRecord,
   InteractionRunRecord,
@@ -52,7 +53,7 @@ describe("review job watcher", () => {
         timestamp: "2026-07-12T09:00:00.000Z",
         level: "info",
         message: "review started",
-        data: { attempt: 2 },
+        data: { attempt: 2, webhookSecret: "human-mode-secret" },
       })}\nmalformed\n`,
       "utf8",
     );
@@ -125,8 +126,9 @@ describe("review job watcher", () => {
       "waiting for an external runner",
     );
     expect(output.mock.calls.join("")).toContain(
-      'INFO review started {"attempt":2}',
+      "INFO review started — attempt=2, webhookSecret=[redacted]",
     );
+    expect(output.mock.calls.join("")).not.toContain("human-mode-secret");
     expect(warnings.mock.calls.join("")).toContain("malformed live log line");
   });
 
@@ -159,6 +161,7 @@ describe("review job watcher", () => {
       },
     };
 
+    let jsonl = "";
     const summary = await watchReviewJob({
       storage: storage as never,
       jobId: "job_1",
@@ -166,6 +169,9 @@ describe("review job watcher", () => {
       runLogRoot: "missing-run-logs",
       pollIntervalMs: 1,
       outputMode: "json",
+      output: new CliOutput("json", {
+        stdout: createStringWriter((text) => (jsonl += text)),
+      }),
       signal: new AbortController().signal,
     });
 
@@ -176,6 +182,90 @@ describe("review job watcher", () => {
       findingCount: 1,
       liveLogsAvailable: false,
     });
+    const events = jsonl
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string });
+    expect(events.map((event) => event.type)).toEqual([
+      "review_submitted",
+      "job_status",
+      "run_status",
+      "run_status",
+      "review_completed",
+    ]);
+  });
+
+  it("projects activity data safely in JSONL output", async () => {
+    const root = await mkdtemp(join(tmpdir(), "review-watch-safe-data-"));
+    const runDirectory = join(root, "run_1");
+    await mkdir(runDirectory);
+    await writeFile(
+      join(runDirectory, "app.ndjson"),
+      `${JSON.stringify({
+        timestamp: "2026-07-12T09:00:00.000Z",
+        level: "info",
+        message: "review started",
+        component: "review",
+        action: "start",
+        data: {
+          attempt: 2,
+          apiToken: "super-secret",
+          context: { authorization: "nested-secret" },
+          successful: true,
+        },
+      })}\n`,
+      "utf8",
+    );
+    const job = createJob({
+      status: "completed",
+      latestInteractionRunId: "run_1",
+    });
+    const storage = {
+      stores: {
+        interactionJobs: { get: async () => job },
+        interactionRuns: {
+          list: async () => [
+            {
+              ...createRun("run_1", "claim_1", "2026-07-12T09:00:00.000Z"),
+              status: "completed",
+            },
+          ],
+        },
+        reviewFindings: { list: async () => [] },
+      },
+    };
+    let jsonl = "";
+
+    await watchReviewJob({
+      storage: storage as never,
+      jobId: "job_1",
+      created: true,
+      runLogRoot: root,
+      pollIntervalMs: 1,
+      outputMode: "json",
+      output: new CliOutput("json", {
+        stdout: createStringWriter((text) => (jsonl += text)),
+      }),
+      signal: new AbortController().signal,
+    });
+
+    expect(jsonl).not.toContain("super-secret");
+    expect(jsonl).not.toContain("nested-secret");
+    const activity = jsonl
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((event) => event.type === "activity");
+    expect(activity).toMatchObject({
+      component: "review",
+      action: "start",
+      data: {
+        attempt: 2,
+        apiToken: "[redacted]",
+        successful: true,
+      },
+    });
+    expect(activity?.data).not.toHaveProperty("context");
   });
 
   it("summarizes expiration before a first run", async () => {
@@ -210,6 +300,97 @@ describe("review job watcher", () => {
       liveLogsAvailable: false,
     });
     expect(storage.stores.reviewFindings.list).not.toHaveBeenCalled();
+  });
+
+  it("uses terminal width, aligned grids, and wrapped latest activity", async () => {
+    const root = await mkdtemp(join(tmpdir(), "review-dashboard-"));
+    const runDirectory = join(root, "run_1");
+    await mkdir(runDirectory);
+    await writeFile(
+      join(runDirectory, "app.ndjson"),
+      `${Array.from({ length: 7 }, (_, index) =>
+        JSON.stringify({
+          timestamp: `2026-07-12T09:00:0${index}.000Z`,
+          level: index === 6 ? "warn" : "info",
+          component: "review",
+          message: `activity ${index + 1} ${"detail ".repeat(20)}tail-${index + 1}`,
+        }),
+      ).join("\n")}\n`,
+      "utf8",
+    );
+    const storage = {
+      stores: {
+        interactionJobs: {
+          get: async () =>
+            createJob({
+              status: "completed",
+              latestInteractionRunId: "run_1",
+            }),
+        },
+        interactionRuns: {
+          list: async () => [
+            {
+              ...createRun("run_1", "claim_1", "2026-07-12T09:00:00.000Z"),
+              status: "completed",
+            },
+          ],
+        },
+        reviewFindings: {
+          list: async () => [{ id: "finding_1" }, { id: "finding_2" }],
+        },
+      },
+    };
+    let terminal = "";
+    const summary = await watchReviewJob({
+      storage: storage as never,
+      jobId: "job_1",
+      created: true,
+      runLogRoot: root,
+      pollIntervalMs: 1,
+      outputMode: "pretty",
+      output: new CliOutput("pretty", {
+        stdout: createStringWriter((text) => (terminal += text)),
+        stdoutIsTTY: true,
+        color: true,
+        columns: 110,
+        now: () => new Date("2026-07-12T09:00:00.000Z"),
+      }),
+      tenantKey: "https://gitlab.example.com::123",
+      codeReviewId: 7,
+      signal: new AbortController().signal,
+    });
+
+    expect(summary.jobStatus).toBe("completed");
+    expect(terminal).toContain("\u001B[?25l");
+    expect(terminal).toContain("\u001B[?25h");
+    expect(terminal).toContain("\u001B[s");
+    expect(terminal).toContain("\u001B[u");
+    expect(terminal).toContain("\u001B[J");
+
+    const finalPaint = terminal.split("\u001B[J").at(-1) ?? terminal;
+    const dashboard = stripAnsi(finalPaint);
+    expect(dashboard).toContain("REVIEW WATCH");
+    expect(dashboard).toContain("IDENTITY");
+    expect(dashboard).toContain("LATEST ACTIVITY");
+    expect(dashboard).toContain("Status    ● Complete");
+    expect(dashboard).toContain("Elapsed   0ms");
+    expect(dashboard).toContain("Job       Complete");
+    expect(dashboard).toContain("Run       Complete");
+    expect(dashboard).toContain("Findings  2");
+    expect(dashboard).toContain("Activity  Live");
+    expect(dashboard).toContain("Job       job_1");
+    expect(dashboard).toContain("Run       run_1");
+    expect(dashboard).toContain("activity 7");
+    expect(dashboard).toContain("tail-7");
+    expect(dashboard).not.toContain("activity 1");
+    expect(dashboard).not.toContain("…");
+    const dashboardLines = dashboard
+      .split("\n")
+      .filter((line) => line.length > 0);
+    const continuation = dashboardLines.find((line) => line.includes("tail-7"));
+    expect(continuation?.indexOf("tail-7")).toBeGreaterThan(20);
+    expect(dashboardLines[0]).toHaveLength(110);
+    expect(dashboardLines.every((line) => line.length <= 110)).toBe(true);
   });
 
   it("fails on a missing referenced run and aborts polling without mutation", async () => {
@@ -310,4 +491,23 @@ function createRun(
     startedAt,
     finishedAt: null,
   };
+}
+
+function stripAnsi(value: string): string {
+  let result = "";
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) !== 27 || value[index + 1] !== "[") {
+      result += value[index];
+      continue;
+    }
+    index += 2;
+    while (index < value.length) {
+      const code = value.charCodeAt(index);
+      if (code >= 0x40 && code <= 0x7e) {
+        break;
+      }
+      index += 1;
+    }
+  }
+  return result;
 }
