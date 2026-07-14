@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 3 — Group comments that arrive together</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="high">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 03</p>
+          <p class="rail-value">Group nearby requests</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">Reuse current fields</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a>
+            <a href="#goal">What do we want?</a>
+            <a href="#fix">How do we fix it?</a>
+            <a href="#steps">Work steps</a>
+            <a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 03 · nearby requests</p>
+          <h1>Turn several quick comments into one review run.</h1>
+          <p class="lede">
+            People often leave several comments in a short burst. ReviewPhin
+            should wait a few seconds, gather the comments for the same merge
+            request or pull request, and handle them together.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>High</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Busy teams</strong>
+            </div>
+            <div class="meta-item">
+              <span>Wait time</span><strong>15 seconds by default</strong>
+            </div>
+            <div class="meta-item">
+              <span>New stored columns</span><strong>None expected</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> comments that arrive close
+            together become one job, exact duplicate webhooks are ignored, and
+            no comment can disappear when a worker starts the job.
+          </div>
+        </header>
+
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>One burst can start several jobs</h3>
+              <p>
+                Three comments about the same code review can create three
+                separate model runs. That costs more and may produce answers
+                that do not know about each other.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Duplicate webhooks look like new work</h3>
+              <p>
+                GitLab or GitHub may send the same event more than once. A
+                duplicate must not add the same request twice or restart the
+                waiting time.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Adding a comment can race with starting the job</h3>
+              <p>
+                One process may add a comment at the same moment another process
+                takes the job. Without one safe database action, the new comment
+                can be missed.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The code may move while we wait</h3>
+              <p>
+                A new commit can change the pull request or merge request before
+                the grouped review starts. ReviewPhin needs one clear rule for
+                which code it reviews.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="Grouped request flow">
+            <div>
+              <strong>1. First request opens a group</strong
+              ><span
+                >The job waits 15 seconds before a worker can take it.</span
+              >
+            </div>
+            <div>
+              <strong>2. Nearby requests join</strong
+              ><span
+                >Each real new request resets the short wait. An exact duplicate
+                does nothing.</span
+              >
+            </div>
+            <div>
+              <strong>3. One worker closes the group</strong
+              ><span
+                >Once the worker takes the job, later requests start the next
+                group.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>
+              Group only requests for the same tenant and the same merge request
+              or pull request.
+            </li>
+            <li>
+              Keep different tenants and different code reviews running in
+              parallel.
+            </li>
+            <li>
+              Put a maximum number of requests and a maximum total wait on one
+              group.
+            </li>
+            <li>
+              Choose the strongest request in the group: full review first, then
+              a finding follow-up or normal review, then a reply-only question.
+            </li>
+            <li>Reply to every comment that needs a reply.</li>
+            <li>
+              Give every triggering comment the correct queued, running,
+              success, or failure signal when its platform supports one.
+            </li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <ol>
+            <li>
+              <strong>Use the job’s existing ready time.</strong> Set the job’s
+              ready time to 15 seconds after the newest real request. Do not add
+              another “start later” field.
+            </li>
+            <li>
+              <strong>Keep the grouped requests inside the job data.</strong>
+              Store a small versioned list in the job’s existing JSON payload.
+              Each item keeps its duplicate key, trigger, provider payload, code
+              revision, and arrival time.
+            </li>
+            <li>
+              <strong>Add one indivisible database action.</strong> The database
+              must check for a duplicate, find or create an open group, add the
+              request, and move the ready time as one action. Nothing else may
+              take the job halfway through that action.
+            </li>
+            <li>
+              <strong>Close the group when a worker takes it.</strong> A running
+              or retried job accepts no new request. The new request opens
+              another group.
+            </li>
+            <li>
+              <strong>Build one plan from all requests.</strong> Work out
+              whether the group needs a review, a full review, replies, or
+              memory updates. Keep all reply targets.
+            </li>
+            <li>
+              <strong>Check the code revision before work starts.</strong> Use
+              the newest checked head before the job starts. If the code changes
+              after loading begins, follow one tested GitLab/GitHub rule instead
+              of guessing.
+            </li>
+          </ol>
+          <div class="callout warning">
+            <strong>Never wait forever:</strong> a steady stream of comments
+            must not keep pushing the job back forever. Decide the maximum group
+            size and maximum total waiting time before writing the code.
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Write the rules as tests.</strong> Choose which request
+                types can join, their priority, the duplicate key, the size/time
+                limits, and what happens when the code changes.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Define the grouped JSON shape.</strong> Make it
+                versioned and strictly checked. A job with one normal payload
+                must still work as a one-request group.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add the safe database action.</strong> Implement it for
+                SQLite and for the one-worker store used by Flotiq and simple
+                custom storage.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Use it when webhooks arrive.</strong> Return a clear
+                result: new group, added to group, exact duplicate, or new group
+                because the first one closed.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Build and run the grouped work.</strong> Merge the
+                request types, keep all replies, and update the status of all
+                triggers.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Test races and code changes.</strong> Prove that a
+                comment arriving as a worker takes the job ends up in either
+                that job or the next job—never nowhere.
+              </div>
+            </li>
+          </ol>
+
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                Reuse <code>tenantId</code>, <code>codeReviewId</code>,
+                <code>availableAt</code>, <code>triggerJson</code>,
+                <code>payloadJson</code>, <code>dedupeKey</code>,
+                <code>headSha</code>, and the claim fields in
+                <a href="../../src/storage/contract/history/storage-v005.d.ts"
+                  >storage-v005</a
+                >.
+              </li>
+              <li>
+                Do not add <code>triggersJson</code> or
+                <code>startNotBefore</code>. Read a non-group
+                <code>payloadJson</code> as one group item so stored jobs need
+                no data rewrite.
+              </li>
+              <li>
+                Add a store operation such as
+                <code>admitInteractionTrigger</code>. SQLite needs a transaction
+                or conditional update. The single-worker store may serialize the
+                same action.
+              </li>
+              <li>
+                The new operation may require a new storage contract version
+                even with no SQLite column or Flotiq field change. Update
+                contract history and custom-storage guidance if it does.
+              </li>
+              <li>
+                <a href="../../src/storage/storage-helpers.ts"
+                  ><code>createOrGetInteractionJob</code></a
+                >
+                is a find followed by an upsert and cannot provide the required
+                race guarantee by itself.
+              </li>
+              <li>
+                Parse <code>REVIEWPHIN_JOB_DEBOUNCE</code> with the project’s
+                normal configuration rules.
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              Several real requests for one code review join one group when they
+              arrive inside the limits.
+            </li>
+            <li>
+              The same webhook delivered twice is stored once and does not
+              extend the wait.
+            </li>
+            <li>
+              A race test proves every request lands in the running group or the
+              next group.
+            </li>
+            <li>
+              Different tenants and code reviews can still run at the same time.
+            </li>
+            <li>A group cannot wait forever or grow forever.</li>
+            <li>
+              Jobs stored as a single request still run without a data
+              migration.
+            </li>
+            <li>
+              GitLab and GitHub follow the same request-priority and
+              code-revision rules.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> storage contract tests, SQLite
+            tests, Flotiq tests, one-worker store tests, queue and worker tests,
+            webhook and trigger-status tests, <code>npm test</code>, and
+            <code>npm run build</code>.
+          </p>
+        </section>
+
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="2.publication-integrity-and-recovery.html">← Safe posting</a
+          ><a href="4.github-setup-security-and-operations.html"
+            >Next: safer GitHub setup →</a
+          >
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 6 — Load platform data more carefully</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="low">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 06</p>
+          <p class="rail-value">Load only what is needed</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">No change</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a>
+            <a href="#goal">What do we want?</a>
+            <a href="#fix">How do we fix it?</a>
+            <a href="#steps">Work steps</a>
+            <a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 06 · platform data</p>
+          <h1>Fetch all needed comments, but skip work we do not need.</h1>
+          <p class="lede">
+            ReviewPhin asks GitLab and GitHub for code-review data. Some GitHub
+            threads can be cut off after 100 replies, while some simple requests
+            can load much more data than they need. The code also passes
+            platform data through loosely typed containers that are easy to
+            misuse.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>Lower</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Large or busy projects</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main code area</span><strong>GitLab/GitHub runtime</strong>
+            </div>
+            <div class="meta-item">
+              <span>New stored data</span><strong>None</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> ReviewPhin reads every reply it
+            needs, does not download a repository for a request that can be
+            answered without it, and keeps GitLab/GitHub data in clear, checked
+            shapes.
+          </div>
+        </header>
+
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Long GitHub threads can be incomplete</h3>
+              <p>
+                ReviewPhin can fetch all review threads, but each thread may
+                contain only its first 100 comments. A later reply can be
+                missing from the model’s context.
+              </p>
+            </article>
+            <article class="card">
+              <h3>A small request can trigger large downloads</h3>
+              <p>
+                Before ReviewPhin knows what kind of work is needed, it may load
+                repository files, memory, discussions, and posting data. A
+                simple ignored event or short reply should not pay for a full
+                review.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Platform data loses its type</h3>
+              <p>
+                Some shared code carries GitLab or GitHub context as
+                <code>unknown</code>. Provider code later casts it back. A wrong
+                cast can fail only at runtime.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The same comment rules live in several places</h3>
+              <p>
+                GitHub code works out ownership, thread markers, anchors,
+                fallbacks, and resolved state during loading and again during
+                posting. The answers can drift apart.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="Careful platform loading">
+            <div>
+              <strong>1. Load just enough to choose</strong
+              ><span
+                >Find the tenant, code review, trigger, code revision, and small
+                amount of thread data needed to understand the request.</span
+              >
+            </div>
+            <div>
+              <strong>2. Load the full review only when needed</strong
+              ><span
+                >Then fetch code, workspace, memory, all thread pages, images,
+                and review history.</span
+              >
+            </div>
+            <div>
+              <strong>3. Post with the same meaning</strong
+              ><span
+                >Use one GitHub mapper for comment ownership, anchors,
+                fallbacks, and thread state.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>Read every page of comments inside a GitHub review thread.</li>
+            <li>
+              Keep comment order stable and avoid duplicate comments where pages
+              meet.
+            </li>
+            <li>Measure API calls before changing when data loads.</li>
+            <li>
+              Skip repository and full-review loading for events that do not
+              need it.
+            </li>
+            <li>
+              Keep provider-specific fields inside provider code, but pass them
+              in a type-safe wrapper.
+            </li>
+            <li>
+              Use one provider function to turn raw GitHub comments and threads
+              into ReviewPhin’s common discussion shape.
+            </li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <ol>
+            <li>
+              <strong>Measure first.</strong> Count API calls and time for an
+              ignored webhook, a reply-only comment, a normal review, a thread
+              with more than 100 comments, and a retry. This tells us which work
+              is truly wasteful.
+            </li>
+            <li>
+              <strong>Fix long threads.</strong> Add inner comment pagination to
+              the GitHub client. Fetch until there is no next page, keep order,
+              and remove page-edge duplicates.
+            </li>
+            <li>
+              <strong>Make a small first-stage record.</strong> The first stage
+              should contain only what ReviewPhin needs to decide whether to
+              ignore, reply, or review.
+            </li>
+            <li>
+              <strong>Load expensive data after the decision.</strong> Download
+              the workspace, full changes, memory, attachments, and full
+              discussions only for work that uses them.
+            </li>
+            <li>
+              <strong>Give platform context a real type.</strong> Shared code
+              may carry an opaque provider value, but it should not use
+              unchecked casts scattered through the runtime.
+            </li>
+            <li>
+              <strong>Use one GitHub comment mapper.</strong> Loading and
+              posting must agree on which comments belong to ReviewPhin, where
+              they are anchored, and whether they are fallback, outdated, or
+              resolved.
+            </li>
+          </ol>
+          <div class="callout">
+            <strong>Keep this focused:</strong> do not rewrite the whole
+            platform system just to make the diagram look cleaner. Change one
+            boundary at a time, and require a bug, test problem, or measured
+            cost for each change.
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Add measurements and fixtures.</strong> Record the API
+                calls for the five common flows and create a thread with more
+                than 100 comments.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add nested GitHub pagination.</strong> Test several
+                pages, an empty last page, repeated page-edge comments, order,
+                and API errors.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Write down the small and full data shapes.</strong> Move
+                expensive calls out of the first stage only when tests prove
+                they are not needed there.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Type one unsafe boundary.</strong> Start with the
+                provider context that has the most casts or has caused the
+                clearest bugs. Do not change every interface at once.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Move GitHub comment meaning into one mapper.</strong>
+                Use it from both data loading and review posting.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Compare GitLab and GitHub behavior.</strong> Test common
+                meanings such as owned, resolved, outdated, fallback, summary,
+                and reply while keeping real platform differences visible.
+              </div>
+            </li>
+          </ol>
+
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                GitHub outer review-thread pages are fetched, but the comments
+                inside each GraphQL thread are limited to the first 100.
+              </li>
+              <li>
+                <code>loadRoutingContext</code> and <code>hydrate</code> are
+                separate today. Improve that split from call-count evidence
+                instead of creating new layers by name alone.
+              </li>
+              <li>
+                <a href="../../src/platforms/IPlatform.ts"
+                  ><code>IPlatform</code></a
+                >
+                and runtime context carry <code>platformContext: unknown</code>.
+                Prefer a generic or provider-owned opaque wrapper at one clear
+                boundary.
+              </li>
+              <li>
+                Keep central review scope, job ownership, and finding rules
+                outside providers. Keep authentication, pagination, API shapes,
+                and marker parsing inside providers.
+              </li>
+              <li>
+                This plan changes API loading, in-memory types, and provider
+                mapping only. It needs no storage contract or migration.
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              A GitHub thread with more than 100 comments loads every comment
+              once and in order.
+            </li>
+            <li>
+              An ignored event and a reply-only request avoid the expensive
+              calls they do not need.
+            </li>
+            <li>
+              Any workspace that is created is cleaned up after success,
+              failure, cancellation, or an early return.
+            </li>
+            <li>
+              The chosen provider-context boundary is checked by TypeScript
+              without shared code reading GitHub- or GitLab-only fields.
+            </li>
+            <li>
+              GitHub loading and posting use the same comment ownership, anchor,
+              fallback, and thread-state rules.
+            </li>
+            <li>Before-and-after API call counts show the improvement.</li>
+            <li>No database or stored-data type changes.</li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> GitHub client and runtime tests,
+            GitHub posting tests, GitLab runtime and posting tests, worker and
+            cleanup tests, provider behavior tests, <code>npm test</code>, and
+            <code>npm run build</code>.
+          </p>
+        </section>
+
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="5.reviewphin-repository-instructions.html"
+            >← Repository instructions</a
+          ><a href="index.html">All plans →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

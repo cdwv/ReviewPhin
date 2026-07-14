@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ReviewPhin implementation plans</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="medium">
+    <a class="skip-link" href="#content">Skip to plans</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Checked</p>
+          <p class="rail-value">14 July 2026</p>
+          <p class="rail-label">Database format</p>
+          <p class="rail-value">storage-v005</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#order">What to do first</a>
+            <a href="#data">Database changes</a>
+            <a href="#reading">How to read a plan</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Work we want to do</p>
+          <h1>Six plans, in the order that matters most.</h1>
+          <p class="lede">
+            Start at the top. The first plans fix things that can confuse users
+            or produce bad review results. The last plans improve the code and
+            make ReviewPhin cheaper to run.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item"><span>Plans</span><strong>6</strong></div>
+            <div class="meta-item">
+              <span>Most urgent</span><strong>GitHub images</strong>
+            </div>
+            <div class="meta-item">
+              <span>Plans needing new database data</span><strong>1</strong>
+            </div>
+            <div class="meta-item">
+              <span>First place to start</span><strong>Plan 1</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Simple rule:</strong> finish one whole problem before moving
+            to the next one. Do not pick small, easy pieces from several plans
+            and leave the main problems half fixed.
+          </div>
+        </header>
+
+        <section id="order">
+          <h2>What to do first</h2>
+          <div class="card-grid">
+            <article class="card">
+              <span class="badge schema">1 · broken feature</span>
+              <h3>
+                <a href="1.github-image-attachments.html"
+                  >Let ReviewPhin see GitHub images</a
+                >
+              </h3>
+              <p>
+                A user can attach a screenshot and ask about it, but ReviewPhin
+                does not send that image to the model.
+              </p>
+            </article>
+            <article class="card">
+              <span class="badge contract">2 · reliability</span>
+              <h3>
+                <a href="2.publication-integrity-and-recovery.html"
+                  >Post each review safely</a
+                >
+              </h3>
+              <p>
+                If posting stops halfway, a retry must finish the same review
+                without making duplicate or different comments.
+              </p>
+            </article>
+            <article class="card">
+              <span class="badge contract">3 · queue safety</span>
+              <h3>
+                <a href="3.interaction-admission-grouping-and-revisions.html"
+                  >Group comments that arrive together</a
+                >
+              </h3>
+              <p>
+                Several requests on one merge request or pull request should
+                become one clear review run, without losing a request in a race.
+              </p>
+            </article>
+            <article class="card">
+              <span class="badge schema">4 · setup security</span>
+              <h3>
+                <a href="4.github-setup-security-and-operations.html"
+                  >Make GitHub setup safer</a
+                >
+              </h3>
+              <p>
+                Temporary setup links need safer storage, direct lookup, better
+                permission checks, and clearer repair tools.
+              </p>
+            </article>
+            <article class="card">
+              <span class="badge no-schema">5 · repository feature</span>
+              <h3>
+                <a href="5.reviewphin-repository-instructions.html"
+                  >Load instructions meant only for ReviewPhin</a
+                >
+              </h3>
+              <p>
+                A repository should be able to give ReviewPhin special review
+                rules without giving those rules to every other coding tool.
+              </p>
+            </article>
+            <article class="card">
+              <span class="badge no-schema">6 · code health</span>
+              <h3>
+                <a href="6.provider-runtime-and-hydration.html"
+                  >Load platform data more carefully</a
+                >
+              </h3>
+              <p>
+                Fetch every needed comment, avoid expensive work when it is not
+                needed, and make GitHub and GitLab code easier to follow.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="data">
+          <h2>Which plans change stored data?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Plan</th>
+                <th>Database decision</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1. GitHub images</td>
+                <td>
+                  No database change. Images belong to one running review.
+                </td>
+              </tr>
+              <tr>
+                <td>2. Safe publication</td>
+                <td>
+                  Use the review result field that exists now. A new safe write
+                  operation may be needed, but not a new column.
+                </td>
+              </tr>
+              <tr>
+                <td>3. Grouped comments</td>
+                <td>
+                  Use the job fields that exist now. Add one safe “add this
+                  request to the group” operation, but no new column.
+                </td>
+              </tr>
+              <tr>
+                <td>4. GitHub setup</td>
+                <td>
+                  Add one small store for short-lived setup sessions. Store a
+                  token hash, never the raw token.
+                </td>
+              </tr>
+              <tr>
+                <td>5. Repository instructions</td>
+                <td>
+                  No database change. Read files from the repository being
+                  reviewed.
+                </td>
+              </tr>
+              <tr>
+                <td>6. Platform data</td>
+                <td>
+                  No database change. This work changes API loading and code
+                  types.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="reading">
+          <h2>How each plan is written</h2>
+          <div class="flow" aria-label="How to read a plan">
+            <div>
+              <strong>1. What is wrong?</strong
+              ><span
+                >A short example of the problem a user or operator can see
+                today.</span
+              >
+            </div>
+            <div>
+              <strong>2. What do we want?</strong
+              ><span
+                >The result that should be true when the work is finished.</span
+              >
+            </div>
+            <div>
+              <strong>3. How do we fix it?</strong
+              ><span
+                >Small steps, checks, and a technical note for the implementing
+                agent.</span
+              >
+            </div>
+          </div>
+          <p>
+            Every plan talks about the product as it works today and the result
+            we want next. You do not need to know the project’s history to
+            understand the work.
+          </p>
+        </section>
+
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <span></span
+          ><a href="1.github-image-attachments.html">Start with Plan 1 →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

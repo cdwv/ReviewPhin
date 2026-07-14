@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 1 — Let ReviewPhin see GitHub images</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="critical">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 01</p>
+          <p class="rail-value">Fix a broken feature</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">No change</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a>
+            <a href="#goal">What do we want?</a>
+            <a href="#fix">How do we fix it?</a>
+            <a href="#steps">Work steps</a>
+            <a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 01 · GitHub images</p>
+          <h1>Let ReviewPhin see the screenshot a user sends.</h1>
+          <p class="lede">
+            When someone adds an image to a GitHub comment, ReviewPhin sees the
+            words in the comment but not the image. The model may refuse to
+            answer or guess from missing information.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>Fix first</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>GitHub users</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main code area</span><strong>GitHub review input</strong>
+            </div>
+            <div class="meta-item">
+              <span>New stored data</span><strong>None</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> a user can attach a normal image
+            to a GitHub pull request comment, ask ReviewPhin about it, and get
+            an answer based on the actual image.
+          </div>
+        </header>
+
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="flow" aria-label="The broken image flow">
+            <div>
+              <strong>1. User adds a screenshot</strong
+              ><span
+                >The comment contains text plus a GitHub attachment link.</span
+              >
+            </div>
+            <div>
+              <strong>2. ReviewPhin drops the image</strong
+              ><span>The GitHub code returns an empty image list.</span>
+            </div>
+            <div>
+              <strong>3. The model gets only text</strong
+              ><span
+                >It cannot honestly describe or inspect the screenshot.</span
+              >
+            </div>
+          </div>
+          <p>
+            This is especially bad for private repositories. The image may need
+            GitHub App permission to download, so handing the model the web link
+            is not enough.
+          </p>
+        </section>
+
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <ul class="checklist">
+            <li>
+              Find normal Markdown and HTML images in the GitHub comments used
+              by the review.
+            </li>
+            <li>
+              Download allowed GitHub images with the GitHub App’s permission.
+            </li>
+            <li>
+              Send the downloaded image to the model when that model supports
+              images.
+            </li>
+            <li>
+              If one image fails, keep the rest of the review running and
+              clearly tell the model which image is missing.
+            </li>
+            <li>
+              Never download random websites just because somebody put a URL in
+              a comment.
+            </li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <ol>
+            <li>
+              <strong>Find image links.</strong> Read image links from the
+              comment text. Support the same common Markdown and HTML forms that
+              work on GitLab.
+            </li>
+            <li>
+              <strong>Check that the link is safe.</strong> Allow only known
+              GitHub attachment locations. Check redirects too, because a
+              safe-looking URL can redirect somewhere unsafe.
+            </li>
+            <li>
+              <strong>Download with GitHub access.</strong> Use the repository’s
+              GitHub App installation access. Stop if the file is too large,
+              empty, or not a supported image type.
+            </li>
+            <li>
+              <strong>Use the shared image path.</strong> Give the image to the
+              same model and logging code used for GitLab images. Do not build a
+              second model-image system.
+            </li>
+            <li>
+              <strong>Explain failures.</strong> If an image cannot be
+              downloaded, add a clear note to the model input. The model must
+              not pretend it saw that image.
+            </li>
+          </ol>
+          <div class="callout warning">
+            <strong>Safety rule:</strong> do not turn this into a general web
+            downloader. The code must reject unknown hosts, unsafe redirects,
+            unsupported file types, and files over the size limit.
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Test real GitHub attachment links.</strong> Record how
+                public, private, missing, and forbidden images behave. Do not
+                log access tokens or secret parts of URLs.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Share only the common image code.</strong> Reuse link
+                parsing, file naming, duplicate removal, size checks, and result
+                formatting. Keep GitHub login and URL rules in GitHub code.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add the GitHub download method.</strong> Stream the file
+                so the size limit can stop a large download early.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Connect it to review and chat runs.</strong> A question
+                about an image must work even when it does not ask for a full
+                code review.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add tests.</strong> Cover successful images, private
+                images, redirects, bad file types, large files, partial failure,
+                duplicate links, and models without image support.
+              </div>
+            </li>
+          </ol>
+
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                <a href="../../src/platforms/github/review-runtime.ts"
+                  ><code>GitHubReviewRuntime.materializeAttachments()</code></a
+                >
+                returns empty arrays today. This is the main missing connection.
+              </li>
+              <li>
+                <a href="../../src/platforms/gitlab/image-attachments.ts"
+                  >GitLab image attachment code</a
+                >
+                shows the working discovery, download-result, naming, and
+                partial-failure shape.
+              </li>
+              <li>
+                Keep using <code>ReviewContext.attachments</code>,
+                <code>attachmentIssues</code>, harness blob attachments, model
+                image checks, and
+                <code>orchestration/image-attachments.json</code>.
+              </li>
+              <li>
+                No storage contract, SQLite table, Flotiq type, or model-profile
+                field should change.
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              A model with image support can correctly describe a known image
+              attached to a private GitHub pull request comment.
+            </li>
+            <li>The same image linked twice is downloaded only once.</li>
+            <li>
+              A bad image does not stop good images or the text part of the
+              review.
+            </li>
+            <li>
+              A model without image support gets the normal clear warning
+              instead of raw image data.
+            </li>
+            <li>
+              Logs contain no image bytes, access tokens, or secret download
+              links.
+            </li>
+            <li>GitLab image tests still pass.</li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> GitHub and GitLab image tests,
+            review runtime tests, worker tests, model-session tests, prompt
+            tests, and <code>npm run build</code>.
+          </p>
+        </section>
+
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="index.html">← All plans</a
+          ><a href="2.publication-integrity-and-recovery.html"
+            >Next: post reviews safely →</a
+          >
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

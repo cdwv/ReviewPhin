@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 4 — Make GitHub setup safer</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="high">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 04</p>
+          <p class="rail-value">Safer GitHub setup</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">Add setup sessions</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a>
+            <a href="#goal">What do we want?</a>
+            <a href="#fix">How do we fix it?</a>
+            <a href="#steps">Work steps</a>
+            <a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 04 · GitHub setup</p>
+          <h1>Protect setup links and show operators what needs fixing.</h1>
+          <p class="lede">
+            GitHub setup uses a secret link for a short time. That secret is
+            stored with the long-lived connection, and ReviewPhin searches every
+            GitHub connection to find it. Setup also needs stronger permission
+            checks and safer tools for large repositories.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>High</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Operators</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main code area</span><strong>GitHub App setup</strong>
+            </div>
+            <div class="meta-item">
+              <span>New stored data</span><strong>Setup session</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> setup links are short-lived and
+            one-use, the raw secret is not stored, broken permissions are
+            explained, repair jobs are controlled, and setup works behind a
+            public URL path such as <code>/reviewphin</code>.
+          </div>
+        </header>
+
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>The setup secret lives in connection JSON</h3>
+              <p>
+                The raw token is stored with the GitHub connection. A temporary
+                login-like secret should not live beside long-lived app
+                settings.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Finding a setup link means scanning connections</h3>
+              <p>
+                ReviewPhin reads every GitHub connection and opens its JSON
+                until it finds the token. This gets slower as more connections
+                are added.
+              </p>
+            </article>
+            <article class="card">
+              <h3>“Set up” does not always mean “can work”</h3>
+              <p>
+                The GitHub App may be installed but lack permission to create
+                checks, post reviews, or use project memory. Operators need a
+                clear list of missing permissions.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Repair work can be large or deployment-specific</h3>
+              <p>
+                Creating checks for many open pull requests needs progress and
+                limits. Public URLs with a path prefix need a real proxy test,
+                not only string tests.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <ul class="checklist">
+            <li>
+              Store only a hash of the setup token, like storing a password hash
+              instead of the password.
+            </li>
+            <li>
+              Find a setup session directly by that hash. Do not scan all
+              connections.
+            </li>
+            <li>Reject expired, used, unknown, or wrong-owner setup links.</li>
+            <li>
+              Remove setup sessions when their connection is deleted and clean
+              up expired sessions.
+            </li>
+            <li>
+              Check the GitHub App’s real permissions before calling the
+              connection ready.
+            </li>
+            <li>Show any old GitHub App cleanup work in connection status.</li>
+            <li>
+              Run open-pull-request check creation as an explicit repair job
+              with progress, retry details, and a safe concurrency limit.
+            </li>
+            <li>
+              Make every setup, callback, webhook, docs, asset, and badge route
+              work behind a path prefix.
+            </li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <div class="flow" aria-label="Safe setup session flow">
+            <div>
+              <strong>1. Create a one-time link</strong
+              ><span
+                >Give the operator a random token, but store only its hash and
+                expiry.</span
+              >
+            </div>
+            <div>
+              <strong>2. Look it up directly</strong
+              ><span
+                >Hash the token from the callback URL and find one setup-session
+                record.</span
+              >
+            </div>
+            <div>
+              <strong>3. Use it once</strong
+              ><span
+                >Check expiry and owner, mark it used, then continue
+                setup.</span
+              >
+            </div>
+          </div>
+          <h3>New setup-session data</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Why it exists</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Internal ID</td>
+                <td>Names the setup-session record.</td>
+              </tr>
+              <tr>
+                <td>Token hash</td>
+                <td>
+                  Finds the session without storing the raw secret. It must be
+                  unique.
+                </td>
+              </tr>
+              <tr>
+                <td>Connection ID</td>
+                <td>Points to the GitHub connection being set up.</td>
+              </tr>
+              <tr>
+                <td>Expected owner</td>
+                <td>Stops another GitHub account from finishing the flow.</td>
+              </tr>
+              <tr>
+                <td>Created, expiry, and used times</td>
+                <td>
+                  Supports expiry, one-time use, cleanup, and troubleshooting.
+                </td>
+              </tr>
+              <tr>
+                <td>Small amount of callback state</td>
+                <td>
+                  Keeps only information that cannot be read again from the
+                  connection. No copied credentials.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            <strong>Important:</strong> putting a token hash back inside
+            connection JSON is not enough. It would still require scanning every
+            connection and would still mix temporary setup state with long-lived
+            connection state.
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Write the security rules.</strong> Cover stolen links,
+                repeated use, expired links, two callbacks at once, wrong
+                owners, deleted connections, and safe logging.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add the setup-session store.</strong> Add matching
+                support to SQLite, Flotiq, and custom-storage documentation.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Change setup routes.</strong> Create a raw token only
+                for the URL, hash it before storage and lookup, and safely mark
+                the session used.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Check real GitHub permissions.</strong> Tell the
+                operator which permission or repository access is missing. Show
+                pending cleanup from a replaced GitHub App.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Make check creation a controlled repair task.</strong>
+                Add progress, limited parallel work, useful retry errors, and
+                safe reruns.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Test a real path-prefix proxy.</strong> Put ReviewPhin
+                behind a proxy that removes the prefix and walk through setup,
+                callbacks, webhooks, and static files.
+              </div>
+            </li>
+          </ol>
+
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                <a href="../../src/platforms/github/config.ts"
+                  >GitHub connection config</a
+                >
+                contains <code>setupToken</code>,
+                <code>setupTokenExpiresAt</code>, and
+                <code>previousAppCleanup</code>.
+              </li>
+              <li>
+                Keep GitHub App credentials, installation identity, connection
+                status, and <code>previousAppCleanup</code> on the platform
+                connection. Only the temporary setup flow moves to the new
+                store.
+              </li>
+              <li>
+                Add direct <code>tokenHash</code> lookup and a safe one-time
+                consume operation. SQLite needs a table and unique index. Flotiq
+                needs the matching content type and mapping.
+              </li>
+              <li>
+                Connection deletion must delete its setup sessions. Tenant
+                deletion does not need special setup-session work.
+              </li>
+              <li>
+                Keep setup HTML in
+                <a href="../../public/github/setup/templates/"
+                  ><code>public/github/setup/templates</code></a
+                >.
+              </li>
+              <li>
+                This work needs a new storage contract version and the full
+                storage verification checklist.
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>No raw setup token is stored after the change.</li>
+            <li>
+              A callback finds its session without listing all platform
+              connections.
+            </li>
+            <li>
+              An expired, used, repeated, unknown, or wrong-owner link fails
+              safely.
+            </li>
+            <li>
+              SQLite and Flotiq follow the same lookup, one-use, cleanup, and
+              connection-deletion rules.
+            </li>
+            <li>
+              A connection with missing GitHub permissions is not shown as
+              ready, and the error says exactly what is missing.
+            </li>
+            <li>
+              The repair task can stop and run again without creating duplicate
+              same-commit checks.
+            </li>
+            <li>
+              The full GitHub setup flow works through a real path-prefix proxy.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> GitHub setup tests, connection and
+            CLI tests, proxy route tests, storage migration tests, SQLite and
+            Flotiq tests, deletion tests, <code>npm test</code>, and
+            <code>npm run build</code>.
+          </p>
+        </section>
+
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="3.interaction-admission-grouping-and-revisions.html"
+            >← Group requests</a
+          ><a href="5.reviewphin-repository-instructions.html"
+            >Next: repository instructions →</a
+          >
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

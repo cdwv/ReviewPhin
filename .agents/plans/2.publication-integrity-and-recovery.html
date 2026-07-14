@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 2 — Post each review safely</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="high">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 02</p>
+          <p class="rail-value">Post reviews safely</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">Reuse current fields</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a>
+            <a href="#goal">What do we want?</a>
+            <a href="#fix">How do we fix it?</a>
+            <a href="#steps">Work steps</a>
+            <a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 02 · review comments</p>
+          <h1>Finish posting the same review after something goes wrong.</h1>
+          <p class="lede">
+            ReviewPhin can create a good review result and then fail while
+            posting it to GitLab or GitHub. A retry must continue that exact
+            review. It must not ask the model for a different review or post the
+            same comment twice.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>High</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Everyone reading a review</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main code area</span><strong>Review posting</strong>
+            </div>
+            <div class="meta-item">
+              <span>New stored columns</span><strong>None expected</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> after a timeout, crash, or partly
+            failed post, ReviewPhin checks what is already on the merge request
+            or pull request and posts only the missing pieces of the same saved
+            review.
+          </div>
+        </header>
+
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Posting can stop halfway</h3>
+              <p>
+                A review may contain five findings. If the first two comments
+                are posted and the third request fails, the merge request or
+                pull request is left with only part of the review.
+              </p>
+            </article>
+            <article class="card">
+              <h3>A timeout does not tell us what happened</h3>
+              <p>
+                GitLab or GitHub may create a comment and then the network times
+                out before ReviewPhin gets the answer. ReviewPhin does not know
+                whether it should create that comment again.
+              </p>
+            </article>
+            <article class="card">
+              <h3>A retry can produce different findings</h3>
+              <p>
+                If the model runs again, it may return different words or a
+                different list of findings. The retry can no longer safely
+                continue the first posting attempt.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Some review comments lose useful behavior</h3>
+              <p>
+                Deletion suggestions are rejected because the replacement is
+                empty. Important spaces can be trimmed. Comments that cannot
+                attach to a line fall back to a flat comment that is harder to
+                reply to or mark resolved.
+              </p>
+            </article>
+          </div>
+          <p>
+            The summary comment also needs one clear link that teaches users how
+            to ask for another review, a full review, or a follow-up. We do not
+            need a separate help command for that.
+          </p>
+        </section>
+
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="Safe review posting">
+            <div>
+              <strong>1. Save the result</strong
+              ><span
+                >Store the exact model result before posting any comment.</span
+              >
+            </div>
+            <div>
+              <strong>2. Post what is missing</strong
+              ><span
+                >Use ReviewPhin markers and saved links to find comments that
+                exist.</span
+              >
+            </div>
+            <div>
+              <strong>3. Retry safely</strong
+              ><span
+                >Reuse the saved result and continue. Never run the model again
+                for the same posting attempt.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>One review run produces one saved result.</li>
+            <li>Every retry uses that saved result.</li>
+            <li>ReviewPhin can tell its own comments from human comments.</li>
+            <li>
+              A retry adds missing comments but does not duplicate comments that
+              are already there.
+            </li>
+            <li>
+              Suggestions keep the exact replacement text, including an empty
+              replacement for deleting code.
+            </li>
+            <li>The summary shows a friendly link to the interaction guide.</li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>How do we fix each problem?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Problem</th>
+                <th>Fix</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>The post stops halfway.</td>
+                <td>
+                  Save the full review first. On retry, list ReviewPhin’s
+                  comments and post only findings or the summary that are
+                  missing.
+                </td>
+              </tr>
+              <tr>
+                <td>The API call times out after it may have worked.</td>
+                <td>
+                  Look for the marked comment or pending review before trying
+                  the create call again.
+                </td>
+              </tr>
+              <tr>
+                <td>The model could give a different answer on retry.</td>
+                <td>
+                  If a saved result exists, skip the model completely and reuse
+                  the saved JSON.
+                </td>
+              </tr>
+              <tr>
+                <td>A finding moved to another line.</td>
+                <td>
+                  Post a new comment at the new line, mark the old finding
+                  finished, and resolve the old thread when the platform allows
+                  it.
+                </td>
+              </tr>
+              <tr>
+                <td>A comment cannot be attached to a line or resolved.</td>
+                <td>
+                  Use a clearly marked fallback comment. Finish the stored
+                  finding even when the platform has no matching button or
+                  thread feature.
+                </td>
+              </tr>
+              <tr>
+                <td>A suggestion deletes code or needs exact spaces.</td>
+                <td>
+                  Allow an empty replacement and stop trimming meaningful
+                  replacement text.
+                </td>
+              </tr>
+              <tr>
+                <td>Users do not know what they can ask.</td>
+                <td>
+                  Add “Ways to ask ReviewPhin for another pass, a full review,
+                  or a follow-up” to the summary, linking to the public guide.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            <strong>Ownership rule:</strong> ReviewPhin may clean up only
+            comments or draft reviews that it can prove it owns. It must never
+            delete a human comment or a submitted review.
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>List every failure point.</strong> Test failure before
+                the first comment, after some comments, after a comment may have
+                been created, while submitting a GitHub review, and while
+                updating the summary.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Save the model result before posting.</strong> Write the
+                exact checked result while the job still owns the run.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Make retries inspect the platform first.</strong> Find
+                ReviewPhin’s marked comments, draft reviews, submitted reviews,
+                and summary. Continue from what exists.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Make comment features honest.</strong> Give the posting
+                code a simple way to say whether a platform can update, reply,
+                resolve, show a suggestion, or move an anchor. Use a fallback
+                when it cannot.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Fix suggestion text.</strong> Test deletion, leading
+                spaces, trailing spaces, and several replacement lines on GitLab
+                and GitHub.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add the guide link.</strong> Put the same friendly link
+                in every review summary.
+              </div>
+            </li>
+          </ol>
+
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                Use
+                <a href="../../src/storage/contract/history/storage-v005.d.ts"
+                  ><code>InteractionRunRecord.resultJson</code></a
+                >
+                for the saved result. Do not add a second result column.
+              </li>
+              <li>
+                The store may need a claim-checked method such as
+                <code>saveInteractionRunResultForClaim</code>. This can require
+                a new storage contract version even though SQLite and Flotiq
+                need no new field.
+              </li>
+              <li>
+                Use review findings, discussion mappings, job/run IDs, and
+                platform ownership markers to find work that was posted.
+              </li>
+              <li>
+                <a href="../../src/review/types.ts"
+                  ><code>reviewSuggestionSchema</code></a
+                >
+                must allow an empty replacement. Review renderers must preserve
+                the replacement text.
+              </li>
+              <li>
+                The guide target is
+                <a
+                  href="../../docs/src/content/docs/using-reviewphin/comments-and-triggers.md"
+                  >Comments and triggers</a
+                >.
+              </li>
+              <li>
+                Keep the tests that cover a finding moving to a new anchor. That
+                behavior is part of the goal.
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              After the model result is saved, a retry makes no new model call.
+            </li>
+            <li>
+              Every tested failure point ends with one complete set of findings
+              and one summary.
+            </li>
+            <li>
+              A timeout after a successful create does not cause a duplicate
+              comment.
+            </li>
+            <li>
+              ReviewPhin never deletes a human comment or a submitted review.
+            </li>
+            <li>
+              Deletion suggestions and suggestions with important spaces render
+              correctly.
+            </li>
+            <li>
+              A finding that cannot use a native thread still gets a clear
+              fallback and does not fail the whole review.
+            </li>
+            <li>
+              Every summary contains the working, friendly guide link. There is
+              no help command or “help shown” database state.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> posting adapter tests, discussion
+            tests, GitHub requested-action tests, job ownership tests, summary
+            tests, storage tests if the contract changes, <code>npm test</code>,
+            and <code>npm run build</code>.
+          </p>
+        </section>
+
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="1.github-image-attachments.html">← GitHub images</a
+          ><a href="3.interaction-admission-grouping-and-revisions.html"
+            >Next: group requests →</a
+          >
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

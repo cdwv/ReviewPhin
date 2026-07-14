@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 5 — Load instructions meant only for ReviewPhin</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="medium">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 05</p>
+          <p class="rail-value">Review-only instructions</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">No change</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a>
+            <a href="#goal">What do we want?</a>
+            <a href="#fix">How do we fix it?</a>
+            <a href="#steps">Work steps</a>
+            <a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 05 · repository rules</p>
+          <h1>Let a repository give rules only to ReviewPhin.</h1>
+          <p class="lede">
+            A team may want ReviewPhin to focus on security, ignore generated
+            files, or follow a special review style. Those rules should live
+            with the code, but they should not automatically affect every other
+            coding agent.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>Medium</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Repository teams</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main code area</span><strong>Workspace and prompts</strong>
+            </div>
+            <div class="meta-item">
+              <span>New stored data</span><strong>None</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> a repository can add
+            <code>.reviewphin/instructions.md</code>, and ReviewPhin uses those
+            rules for both reviews and replies on GitLab and GitHub.
+          </div>
+        </header>
+
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <ul>
+            <li>
+              ReviewPhin can bring common agent instruction files into the
+              review workspace.
+            </li>
+            <li>
+              There is no file name that clearly means “these rules are only for
+              ReviewPhin.”
+            </li>
+            <li>
+              A file under <code>.reviewphin</code> is not something the model
+              tool will discover by magic. ReviewPhin must read it and add it to
+              the model input itself.
+            </li>
+            <li>
+              Project memory is not the right place for these rules. Memory is
+              learned and stored by ReviewPhin. Repository instructions are
+              written by the team, reviewed like code, and tied to a commit.
+            </li>
+          </ul>
+          <div class="callout">
+            <strong>Example:</strong> a team can write “Focus on authentication
+            and permission mistakes. Ignore files under
+            <code>generated/</code>.” ReviewPhin should follow that rule, while
+            another agent working in the repository does not have to.
+          </div>
+        </section>
+
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <span class="badge no-schema">Main file</span>
+              <h3><code>.reviewphin/instructions.md</code></h3>
+              <p>
+                One clear file for review rules that apply across the
+                repository.
+              </p>
+            </article>
+            <article class="card">
+              <span class="badge no-schema">Optional extra files</span>
+              <h3>
+                <code>.reviewphin/instructions/**/*.instructions.md</code>
+              </h3>
+              <p>
+                More files for teams that want to split rules by topic. Load
+                them in a stable name order.
+              </p>
+            </article>
+          </div>
+          <ul class="checklist">
+            <li>
+              Read the files from the same commit that ReviewPhin is reviewing.
+            </li>
+            <li>Use the same file rules on GitLab and GitHub.</li>
+            <li>
+              Keep common repository instructions, then add ReviewPhin-only
+              instructions.
+            </li>
+            <li>Keep project memory separate and clearly named.</li>
+            <li>
+              Show which instruction files were used, without printing their
+              private contents into normal logs.
+            </li>
+            <li>Limit the number and total size of instruction files.</li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <div class="flow" aria-label="Instruction loading flow">
+            <div>
+              <strong>1. Find the files</strong
+              ><span
+                >Look only in the allowed <code>.reviewphin</code> paths at the
+                commit being reviewed.</span
+              >
+            </div>
+            <div>
+              <strong>2. Check and order them</strong
+              ><span
+                >Reject unsafe paths and bad files, apply size limits, then sort
+                names in a stable order.</span
+              >
+            </div>
+            <div>
+              <strong>3. Give them to the model</strong
+              ><span
+                >Add clearly labeled instruction text to review and reply
+                inputs, and record a small file list for troubleshooting.</span
+              >
+            </div>
+          </div>
+          <h3>Order of instructions</h3>
+          <ol>
+            <li>ReviewPhin’s built-in safety and review rules.</li>
+            <li>
+              Common repository instructions such as <code>AGENTS.md</code> and
+              GitHub instruction files.
+            </li>
+            <li>ReviewPhin-only repository instructions.</li>
+            <li>Project memory, clearly labeled as learned team rules.</li>
+            <li>The user’s comment that started this review or reply.</li>
+          </ol>
+          <p>
+            Keep a label around each source. Do not make one giant piece of text
+            where nobody can tell which file a rule came from.
+          </p>
+          <div class="callout warning">
+            <strong>Safe file rule:</strong> never follow a symbolic link or
+            path that escapes the review workspace. A missing
+            <code>.reviewphin</code> directory is normal and should do nothing.
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Write the file rules.</strong> Decide allowed paths,
+                order, file count, total size, text encoding, symbolic-link
+                behavior, and what happens to a bad file.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add one shared file finder.</strong> GitLab and GitHub
+                should use the same path-checking and ordering code.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong
+                  >Make both providers bring the files into the
+                  workspace.</strong
+                >
+                Test repository checkout and archive paths at the exact reviewed
+                commit.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add the text to model input.</strong> Use the shared
+                review and reply path. Do not assume the model tool knows what
+                <code>.reviewphin</code> means.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add a small run record and user docs.</strong> Record
+                file path, order, byte count, and whether the file was used or
+                skipped. Explain when to use common instructions,
+                ReviewPhin-only instructions, or memory.
+              </div>
+            </li>
+          </ol>
+
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                <a href="../../src/harness/workspace.ts">Workspace rules</a>
+                list <code>AGENTS.md</code>,
+                <code>.github/copilot-instructions.md</code>, and
+                <code>.github/instructions/**/*.instructions.md</code>.
+              </li>
+              <li>
+                Extend shared discovery instead of copying path rules into
+                GitLab and GitHub runtimes.
+              </li>
+              <li>
+                Pass labeled content through the shared prompt/session boundary
+                used by both the reviewer and chatter. A file in the workspace
+                alone is not proof that the harness will use it.
+              </li>
+              <li>
+                Path-specific frontmatter is not part of this work unless there
+                is a reusable, tested rule for it. Do not invent a new glob
+                language.
+              </li>
+              <li>
+                Store no instruction text in the database. Use the repository
+                workspace and a run artifact that lists safe metadata.
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              A rule in <code>.reviewphin/instructions.md</code> changes review
+              and reply behavior in GitLab and GitHub tests.
+            </li>
+            <li>
+              Common instruction files still work, and ReviewPhin-only files are
+              added in a stable order.
+            </li>
+            <li>Files come from the exact commit being reviewed.</li>
+            <li>
+              Project memory stays separate and no new database data is created.
+            </li>
+            <li>
+              Too many, too large, badly encoded, duplicate, linked, or unsafe
+              files have clear tested results.
+            </li>
+            <li>
+              Run details list the files used, but normal logs do not copy
+              private instruction text.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> workspace tests, GitLab and GitHub
+            runtime tests, prompt tests, review and reply harness tests, worker
+            tests, and <code>npm run build</code>.
+          </p>
+        </section>
+
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="4.github-setup-security-and-operations.html"
+            >← GitHub setup</a
+          ><a href="6.provider-runtime-and-hydration.html"
+            >Next: load platform data →</a
+          >
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>
