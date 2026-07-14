@@ -12,8 +12,8 @@ import { listAll, type StorageHelpers } from "../storage/storage-helpers.js";
 import {
   CliOutput,
   formatDuration,
-  formatKeyValues,
   type OutputMode,
+  type TextStyle,
 } from "./output.js";
 
 const TERMINAL_JOB_STATUSES = new Set<InteractionJobStatus>([
@@ -161,6 +161,7 @@ export async function watchReviewJob(input: {
     codeReviewId: input.codeReviewId ?? null,
     timestamp: output.now().toISOString(),
   });
+  renderer.refresh();
 
   try {
     for (;;) {
@@ -219,9 +220,11 @@ export async function watchReviewJob(input: {
           summary,
           timestamp: output.now().toISOString(),
         });
+        renderer.refresh();
         return summary;
       }
 
+      renderer.refresh();
       await waitForNextPoll(input.pollIntervalMs, input.signal);
     }
   } finally {
@@ -454,11 +457,15 @@ function readNestedString(data: unknown, key: string): string | null {
 }
 
 class ReviewWatchRenderer {
-  private readonly activities: string[] = [];
+  private readonly activities: Extract<
+    ReviewWatchEvent,
+    { type: "activity" }
+  >[] = [];
   private readonly startedAt: number;
   private jobStatus: InteractionJobStatus = "queued";
   private runId: string | null = null;
   private runStatus: InteractionRunStatus | null = null;
+  private summary: ReviewWatchSummary | null = null;
   private paintedLines = 0;
   private cursorHidden = false;
 
@@ -481,9 +488,14 @@ class ReviewWatchRenderer {
     }
     if (this.output.mode === "plain" || !this.output.stdoutIsTTY) {
       this.output.write(formatReviewEvent(event, this.output));
+    }
+  }
+
+  public refresh(): void {
+    if (this.output.mode !== "pretty" || !this.output.stdoutIsTTY) {
       return;
     }
-    this.repaint(event.type === "review_completed" ? event.summary : undefined);
+    this.repaint();
   }
 
   public close(): void {
@@ -501,98 +513,454 @@ class ReviewWatchRenderer {
       this.runId = event.runId;
       this.runStatus = event.status;
     } else if (event.type === "activity") {
-      this.activities.push(formatActivity(event, this.output));
-      if (this.activities.length > 5) {
+      this.activities.push(event);
+      if (this.activities.length > DASHBOARD_ACTIVITY_ROWS) {
         this.activities.shift();
       }
     } else if (event.type === "review_completed") {
       this.jobStatus = event.summary.jobStatus;
       this.runId = event.summary.runId;
       this.runStatus = event.summary.runStatus;
+      this.summary = event.summary;
     }
   }
 
-  private repaint(summary?: ReviewWatchSummary): void {
+  private repaint(): void {
     if (!this.cursorHidden) {
       this.output.stdout.write("\u001B[?25l");
       this.cursorHidden = true;
     }
     if (this.paintedLines > 0) {
       this.output.stdout.write(`\u001B[${this.paintedLines}F`);
+      this.output.stdout.write("\u001B[J");
     }
     const elapsed = Math.max(0, this.output.now().valueOf() - this.startedAt);
-    const lines = [
-      this.output.style(
-        summary
-          ? summary.jobStatus === "completed"
-            ? "success"
-            : "failure"
-          : "active",
-        summary ? `Review ${summary.jobStatus}` : "Review in progress",
-      ),
-      formatKeyValues(
-        [
-          ["tenant", this.identity.tenantKey],
-          ["review", this.identity.codeReviewId],
-          [
-            "job",
-            `${this.identity.jobId} (${this.styleStatus(this.jobStatus)})`,
-          ],
-          [
-            "run",
-            this.runId
-              ? `${this.runId} (${this.styleStatus(this.runStatus ?? "unknown")})`
-              : null,
-          ],
-          ["elapsed", formatDuration(elapsed)],
-        ],
-        "~",
-        {
-          label: (value) => this.output.style("muted", value),
-          null: (value) => this.output.style("muted", value),
-        },
-      ),
-      ...(this.activities.length > 0
-        ? [
-            "",
-            this.output.style("heading", "Latest activity"),
-            ...this.activities,
-          ]
-        : []),
-      ...(summary
-        ? [
-            "",
-            this.output.style(
-              summary.error ? "failure" : "strong",
-              `${summary.findingCount} finding(s)${summary.error ? `; error: ${summary.error}` : ""}`,
-            ),
-          ]
-        : []),
-    ];
-    const text = lines.join("\n");
-    const clear = Array.from(
-      { length: Math.max(this.paintedLines, lines.length) },
-      (_, index) => `\u001B[2K${index === 0 ? "" : "\u001B[1E"}`,
-    ).join("");
-    if (this.paintedLines > 0) {
-      this.output.stdout.write(clear);
-      this.output.stdout.write(
-        `\u001B[${Math.max(this.paintedLines, lines.length) - 1}F`,
-      );
-    }
-    this.output.stdout.write(`${text}\n`);
+    const lines = formatReviewDashboard({
+      output: this.output,
+      identity: this.identity,
+      jobStatus: this.jobStatus,
+      runId: this.runId,
+      runStatus: this.runStatus,
+      activities: this.activities,
+      summary: this.summary,
+      elapsed,
+    });
+    this.output.stdout.write(`${lines.join("\n")}\n`);
     this.paintedLines = lines.length;
   }
+}
 
-  private styleStatus(value: string): string {
-    if (["completed", "ready"].includes(value)) {
-      return this.output.style("success", value);
-    }
-    if (["failed", "cancelled", "expired"].includes(value)) {
-      return this.output.style("failure", value);
-    }
-    return this.output.style("active", value);
+const DASHBOARD_ACTIVITY_ROWS = 5;
+
+interface DashboardSegment {
+  readonly text: string;
+  readonly style?: TextStyle | undefined;
+}
+
+interface DashboardBox {
+  readonly topLeft: string;
+  readonly topRight: string;
+  readonly sectionLeft: string;
+  readonly sectionRight: string;
+  readonly bottomLeft: string;
+  readonly bottomRight: string;
+  readonly horizontal: string;
+  readonly vertical: string;
+}
+
+function formatReviewDashboard(input: {
+  output: CliOutput;
+  identity: {
+    readonly jobId: string;
+    readonly tenantKey: string | null;
+    readonly codeReviewId: number | null;
+  };
+  jobStatus: InteractionJobStatus;
+  runId: string | null;
+  runStatus: InteractionRunStatus | null;
+  activities: readonly Extract<ReviewWatchEvent, { type: "activity" }>[];
+  summary: ReviewWatchSummary | null;
+  elapsed: number;
+}): string[] {
+  const width = Math.min(88, input.output.columns);
+  const box = dashboardBox(input.output.unicode);
+  const overallStatus = input.summary?.jobStatus ?? input.jobStatus;
+  const findingCount =
+    input.summary === null
+      ? input.output.unicode
+        ? "—"
+        : "-"
+      : String(input.summary.findingCount);
+  const activityRows = formatDashboardActivities(
+    input.activities,
+    input.summary,
+  ).slice(-DASHBOARD_ACTIVITY_ROWS);
+  while (activityRows.length < DASHBOARD_ACTIVITY_ROWS) {
+    activityRows.push([]);
   }
+
+  return [
+    dashboardRule(input.output, box, width, "top", "REVIEW WATCH"),
+    dashboardLine(input.output, box, width, [
+      {
+        text: `${input.output.unicode ? "●" : "*"} ${statusLabel(overallStatus)}`,
+        style: statusStyle(overallStatus),
+      },
+      { text: "   elapsed ", style: "muted" },
+      { text: formatDuration(input.elapsed), style: "strong" },
+      { text: "   findings ", style: "muted" },
+      {
+        text: findingCount,
+        style: input.summary ? "strong" : "muted",
+      },
+    ]),
+    dashboardLine(input.output, box, width, [
+      { text: "Job ", style: "muted" },
+      {
+        text: statusLabel(input.jobStatus),
+        style: statusStyle(input.jobStatus),
+      },
+      { text: "   Run ", style: "muted" },
+      {
+        text: input.runStatus ? statusLabel(input.runStatus) : "Waiting",
+        style: input.runStatus ? statusStyle(input.runStatus) : "muted",
+      },
+    ]),
+    dashboardLine(input.output, box, width, dashboardStatusNote(input)),
+    dashboardRule(input.output, box, width, "section", "IDENTITY"),
+    dashboardLine(input.output, box, width, [
+      { text: "Review ", style: "muted" },
+      {
+        text:
+          input.identity.codeReviewId === null
+            ? "~"
+            : String(input.identity.codeReviewId),
+        style: input.identity.codeReviewId === null ? "muted" : "strong",
+      },
+      { text: "   Tenant ", style: "muted" },
+      {
+        text: input.identity.tenantKey ?? "~",
+        style: input.identity.tenantKey === null ? "muted" : "strong",
+      },
+    ]),
+    dashboardLine(input.output, box, width, [
+      { text: "Job    ", style: "muted" },
+      { text: input.identity.jobId, style: "strong" },
+    ]),
+    dashboardLine(input.output, box, width, [
+      { text: "Run    ", style: "muted" },
+      {
+        text: input.runId ?? "waiting for first attempt",
+        style: input.runId === null ? "muted" : "strong",
+      },
+    ]),
+    dashboardRule(input.output, box, width, "section", "LATEST ACTIVITY"),
+    ...activityRows.map((segments) =>
+      dashboardLine(input.output, box, width, segments),
+    ),
+    dashboardRule(input.output, box, width, "bottom"),
+  ];
+}
+
+function formatDashboardActivities(
+  activities: readonly Extract<ReviewWatchEvent, { type: "activity" }>[],
+  summary: ReviewWatchSummary | null,
+): DashboardSegment[][] {
+  if (activities.length === 0) {
+    const message =
+      summary && !summary.liveLogsAvailable
+        ? "Live logs unavailable; persisted status is still authoritative."
+        : summary
+          ? "No live activity messages were emitted."
+          : "Waiting for live review activity…";
+    return [[{ text: message, style: "muted" }]];
+  }
+  return activities.map((event) => {
+    const level = event.level.toUpperCase();
+    const details = formatSafeDetails(event.data);
+    return [
+      { text: `${formatActivityTime(event.timestamp)} `, style: "muted" },
+      { text: `${level.padEnd(5)} `, style: logLevelStyle(event.level) },
+      ...(event.component
+        ? [{ text: `${event.component} `, style: "strong" as const }]
+        : []),
+      {
+        text: `${event.message}${
+          event.action ? ` (${event.action})` : ""
+        }${details ? ` — ${details}` : ""}`,
+      },
+    ];
+  });
+}
+
+function dashboardStatusNote(input: {
+  jobStatus: InteractionJobStatus;
+  runId: string | null;
+  activities: readonly Extract<ReviewWatchEvent, { type: "activity" }>[];
+  summary: ReviewWatchSummary | null;
+}): DashboardSegment[] {
+  if (input.summary?.error) {
+    return [
+      { text: "Error  ", style: "failure" },
+      { text: input.summary.error, style: "failure" },
+    ];
+  }
+  if (input.jobStatus === "queued") {
+    return [
+      {
+        text: "Waiting for a runner connected to this storage backend.",
+        style: "warning",
+      },
+    ];
+  }
+  if (input.summary) {
+    return [
+      {
+        text: `Review finished with ${input.summary.findingCount} finding(s).`,
+        style: input.summary.jobStatus === "completed" ? "success" : "failure",
+      },
+    ];
+  }
+  if (input.runId === null) {
+    return [
+      {
+        text: "Waiting for the first review attempt to start.",
+        style: "muted",
+      },
+    ];
+  }
+  return [
+    {
+      text:
+        input.activities.length === 0
+          ? "Following persisted state; live activity appears when logs are shared."
+          : "Following persisted state and live runner activity.",
+      style: "muted",
+    },
+  ];
+}
+
+function dashboardBox(unicode: boolean): DashboardBox {
+  return unicode
+    ? {
+        topLeft: "╭",
+        topRight: "╮",
+        sectionLeft: "├",
+        sectionRight: "┤",
+        bottomLeft: "╰",
+        bottomRight: "╯",
+        horizontal: "─",
+        vertical: "│",
+      }
+    : {
+        topLeft: "+",
+        topRight: "+",
+        sectionLeft: "+",
+        sectionRight: "+",
+        bottomLeft: "+",
+        bottomRight: "+",
+        horizontal: "-",
+        vertical: "|",
+      };
+}
+
+function dashboardRule(
+  output: CliOutput,
+  box: DashboardBox,
+  width: number,
+  kind: "top" | "section" | "bottom",
+  label?: string,
+): string {
+  const left =
+    kind === "top"
+      ? box.topLeft
+      : kind === "bottom"
+        ? box.bottomLeft
+        : box.sectionLeft;
+  const right =
+    kind === "top"
+      ? box.topRight
+      : kind === "bottom"
+        ? box.bottomRight
+        : box.sectionRight;
+  const available = Math.max(0, width - terminalTextWidth(left + right));
+  if (!label) {
+    return output.style(
+      "muted",
+      `${left}${box.horizontal.repeat(available)}${right}`,
+    );
+  }
+  const fittedLabel = fitDashboardText(
+    label,
+    Math.max(0, available - 3),
+    output.unicode,
+  );
+  const prefix = `${left}${box.horizontal} `;
+  const used = terminalTextWidth(prefix + fittedLabel);
+  const suffixWidth = Math.max(
+    0,
+    width - used - terminalTextWidth(` ${right}`),
+  );
+  return `${output.style("muted", prefix)}${output.style(
+    "heading",
+    fittedLabel,
+  )}${output.style("muted", ` ${box.horizontal.repeat(suffixWidth)}${right}`)}`;
+}
+
+function dashboardLine(
+  output: CliOutput,
+  box: DashboardBox,
+  width: number,
+  segments: readonly DashboardSegment[],
+): string {
+  const horizontalPadding = width >= 4 ? 1 : 0;
+  const innerWidth = Math.max(
+    0,
+    width - terminalTextWidth(box.vertical) * 2 - horizontalPadding * 2,
+  );
+  let remaining = innerWidth;
+  let rendered = "";
+  for (const segment of segments) {
+    if (remaining === 0) {
+      break;
+    }
+    const clean = sanitizeDashboardText(segment.text);
+    const fitted = fitDashboardText(clean, remaining, output.unicode);
+    rendered += segment.style ? output.style(segment.style, fitted) : fitted;
+    remaining -= terminalTextWidth(fitted);
+    if (terminalTextWidth(clean) > terminalTextWidth(fitted)) {
+      break;
+    }
+  }
+  const padding = " ".repeat(horizontalPadding);
+  return `${output.style("muted", box.vertical)}${padding}${rendered}${" ".repeat(
+    remaining,
+  )}${padding}${output.style("muted", box.vertical)}`;
+}
+
+function fitDashboardText(
+  value: string,
+  maximumWidth: number,
+  unicode: boolean,
+): string {
+  if (maximumWidth <= 0) {
+    return "";
+  }
+  if (terminalTextWidth(value) <= maximumWidth) {
+    return value;
+  }
+  const ellipsis = unicode ? "…" : "...";
+  const ellipsisWidth = terminalTextWidth(ellipsis);
+  if (maximumWidth <= ellipsisWidth) {
+    return ".".repeat(maximumWidth);
+  }
+  let result = "";
+  let width = 0;
+  for (const character of value) {
+    const characterWidth = terminalCharacterWidth(character);
+    if (width + characterWidth + ellipsisWidth > maximumWidth) {
+      break;
+    }
+    result += character;
+    width += characterWidth;
+  }
+  return `${result}${ellipsis}`;
+}
+
+function terminalTextWidth(value: string): number {
+  return [...value].reduce(
+    (width, character) => width + terminalCharacterWidth(character),
+    0,
+  );
+}
+
+function terminalCharacterWidth(character: string): number {
+  const codePoint = character.codePointAt(0) ?? 0;
+  if (
+    (codePoint >= 0x0300 && codePoint <= 0x036f) ||
+    (codePoint >= 0xfe00 && codePoint <= 0xfe0f)
+  ) {
+    return 0;
+  }
+  if (
+    codePoint >= 0x1100 &&
+    (codePoint <= 0x115f ||
+      codePoint === 0x2329 ||
+      codePoint === 0x232a ||
+      (codePoint >= 0x2e80 && codePoint <= 0xa4cf) ||
+      (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+      (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+      (codePoint >= 0xfe10 && codePoint <= 0xfe6f) ||
+      (codePoint >= 0xff00 && codePoint <= 0xff60) ||
+      (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+      (codePoint >= 0x1f300 && codePoint <= 0x1faff))
+  ) {
+    return 2;
+  }
+  return 1;
+}
+
+function sanitizeDashboardText(value: string): string {
+  let result = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (["\n", "\r", "\t"].includes(character)) {
+      result += " ";
+    } else if (codePoint >= 32 && codePoint !== 127) {
+      result += character;
+    }
+  }
+  return result;
+}
+
+function formatActivityTime(timestamp: string): string {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.valueOf())
+    ? timestamp.slice(0, 8).padEnd(8)
+    : date.toISOString().slice(11, 19);
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case "queued":
+      return "Queued";
+    case "in_progress":
+      return "Reviewing";
+    case "completed":
+      return "Complete";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    case "expired":
+      return "Expired";
+    default:
+      return status;
+  }
+}
+
+function statusStyle(status: string): TextStyle {
+  if (status === "completed") {
+    return "success";
+  }
+  if (["failed", "cancelled", "expired"].includes(status)) {
+    return "failure";
+  }
+  return status === "queued" ? "warning" : "active";
+}
+
+function logLevelStyle(level: string): TextStyle {
+  const normalized = level.toLowerCase();
+  if (["error", "fatal"].includes(normalized)) {
+    return "failure";
+  }
+  if (normalized === "warn") {
+    return "warning";
+  }
+  if (["debug", "trace"].includes(normalized)) {
+    return "muted";
+  }
+  return "active";
 }
 
 function formatReviewEvent(event: ReviewWatchEvent, output: CliOutput): string {

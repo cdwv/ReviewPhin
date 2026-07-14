@@ -228,18 +228,42 @@ describe("review job watcher", () => {
     expect(storage.stores.reviewFindings.list).not.toHaveBeenCalled();
   });
 
-  it("restores the cursor and leaves a final summary in pretty TTY mode", async () => {
+  it("keeps a fixed-width dashboard with stable identity and latest activity", async () => {
+    const root = await mkdtemp(join(tmpdir(), "review-dashboard-"));
+    const runDirectory = join(root, "run_1");
+    await mkdir(runDirectory);
+    await writeFile(
+      join(runDirectory, "app.ndjson"),
+      `${Array.from({ length: 7 }, (_, index) =>
+        JSON.stringify({
+          timestamp: `2026-07-12T09:00:0${index}.000Z`,
+          level: index === 6 ? "warn" : "info",
+          component: "review",
+          message: `activity ${index + 1} ${"detail ".repeat(20)}`,
+        }),
+      ).join("\n")}\n`,
+      "utf8",
+    );
     const storage = {
       stores: {
         interactionJobs: {
           get: async () =>
             createJob({
               status: "completed",
-              latestInteractionRunId: null,
+              latestInteractionRunId: "run_1",
             }),
         },
-        interactionRuns: { list: async () => [] },
-        reviewFindings: { list: vi.fn() },
+        interactionRuns: {
+          list: async () => [
+            {
+              ...createRun("run_1", "claim_1", "2026-07-12T09:00:00.000Z"),
+              status: "completed",
+            },
+          ],
+        },
+        reviewFindings: {
+          list: async () => [{ id: "finding_1" }, { id: "finding_2" }],
+        },
       },
     };
     let terminal = "";
@@ -247,13 +271,14 @@ describe("review job watcher", () => {
       storage: storage as never,
       jobId: "job_1",
       created: true,
-      runLogRoot: "run-logs",
+      runLogRoot: root,
       pollIntervalMs: 1,
       outputMode: "pretty",
       output: new CliOutput("pretty", {
         stdout: createStringWriter((text) => (terminal += text)),
         stdoutIsTTY: true,
         color: true,
+        columns: 72,
         now: () => new Date("2026-07-12T09:00:00.000Z"),
       }),
       tenantKey: "https://gitlab.example.com::123",
@@ -264,8 +289,25 @@ describe("review job watcher", () => {
     expect(summary.jobStatus).toBe("completed");
     expect(terminal).toContain("\u001B[?25l");
     expect(terminal).toContain("\u001B[?25h");
-    expect(terminal).toContain("Review completed");
-    expect(terminal).toContain("0 finding(s)");
+    expect(terminal).toContain("\u001B[J");
+
+    const finalPaint = terminal.split("\u001B[J").at(-1) ?? terminal;
+    const dashboard = stripAnsi(finalPaint);
+    expect(dashboard).toContain("REVIEW WATCH");
+    expect(dashboard).toContain("IDENTITY");
+    expect(dashboard).toContain("LATEST ACTIVITY");
+    expect(dashboard).toContain("● Complete");
+    expect(dashboard).toContain("findings 2");
+    expect(dashboard).toContain("Job    job_1");
+    expect(dashboard).toContain("Run    run_1");
+    expect(dashboard).toContain("activity 7");
+    expect(dashboard).not.toContain("activity 1");
+    expect(
+      dashboard
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .every((line) => line.length <= 72),
+    ).toBe(true);
   });
 
   it("fails on a missing referenced run and aborts polling without mutation", async () => {
@@ -366,4 +408,23 @@ function createRun(
     startedAt,
     finishedAt: null,
   };
+}
+
+function stripAnsi(value: string): string {
+  let result = "";
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) !== 27 || value[index + 1] !== "[") {
+      result += value[index];
+      continue;
+    }
+    index += 2;
+    while (index < value.length) {
+      const code = value.charCodeAt(index);
+      if (code >= 0x40 && code <= 0x7e) {
+        break;
+      }
+      index += 1;
+    }
+  }
+  return result;
 }
