@@ -1,6 +1,6 @@
 ---
 name: babysit-pr
-description: Publish the current work as a GitHub pull request, request ReviewPhin reviews, wait for ReviewPhin lifecycle reactions, address or rebut findings, and repeat incremental reviews until no fixes remain. Use when asked to create, publish, watch, babysit, or finish a pull request.
+description: Publish or continue work on a GitHub pull request, request ReviewPhin reviews, wait for ReviewPhin lifecycle reactions, address or rebut findings, and repeat incremental reviews until no fixes remain. Use when the user asks to babysit, watch, shepherd, finish, or keep working on a pull request until it is done or review-ready. Do not use when the user only asks to create, open, or publish a pull request without also asking for ongoing review monitoring and follow-through.
 user-invocable: true
 disable-model-invocation: false
 ---
