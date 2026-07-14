@@ -53,7 +53,7 @@ describe("review job watcher", () => {
         timestamp: "2026-07-12T09:00:00.000Z",
         level: "info",
         message: "review started",
-        data: { attempt: 2 },
+        data: { attempt: 2, webhookSecret: "human-mode-secret" },
       })}\nmalformed\n`,
       "utf8",
     );
@@ -126,8 +126,9 @@ describe("review job watcher", () => {
       "waiting for an external runner",
     );
     expect(output.mock.calls.join("")).toContain(
-      "INFO review started — attempt=2",
+      "INFO review started — attempt=2, webhookSecret=[redacted]",
     );
+    expect(output.mock.calls.join("")).not.toContain("human-mode-secret");
     expect(warnings.mock.calls.join("")).toContain("malformed live log line");
   });
 
@@ -192,6 +193,79 @@ describe("review job watcher", () => {
       "run_status",
       "review_completed",
     ]);
+  });
+
+  it("projects activity data safely in JSONL output", async () => {
+    const root = await mkdtemp(join(tmpdir(), "review-watch-safe-data-"));
+    const runDirectory = join(root, "run_1");
+    await mkdir(runDirectory);
+    await writeFile(
+      join(runDirectory, "app.ndjson"),
+      `${JSON.stringify({
+        timestamp: "2026-07-12T09:00:00.000Z",
+        level: "info",
+        message: "review started",
+        component: "review",
+        action: "start",
+        data: {
+          attempt: 2,
+          apiToken: "super-secret",
+          context: { authorization: "nested-secret" },
+          successful: true,
+        },
+      })}\n`,
+      "utf8",
+    );
+    const job = createJob({
+      status: "completed",
+      latestInteractionRunId: "run_1",
+    });
+    const storage = {
+      stores: {
+        interactionJobs: { get: async () => job },
+        interactionRuns: {
+          list: async () => [
+            {
+              ...createRun("run_1", "claim_1", "2026-07-12T09:00:00.000Z"),
+              status: "completed",
+            },
+          ],
+        },
+        reviewFindings: { list: async () => [] },
+      },
+    };
+    let jsonl = "";
+
+    await watchReviewJob({
+      storage: storage as never,
+      jobId: "job_1",
+      created: true,
+      runLogRoot: root,
+      pollIntervalMs: 1,
+      outputMode: "json",
+      output: new CliOutput("json", {
+        stdout: createStringWriter((text) => (jsonl += text)),
+      }),
+      signal: new AbortController().signal,
+    });
+
+    expect(jsonl).not.toContain("super-secret");
+    expect(jsonl).not.toContain("nested-secret");
+    const activity = jsonl
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((event) => event.type === "activity");
+    expect(activity).toMatchObject({
+      component: "review",
+      action: "start",
+      data: {
+        attempt: 2,
+        apiToken: "[redacted]",
+        successful: true,
+      },
+    });
+    expect(activity?.data).not.toHaveProperty("context");
   });
 
   it("summarizes expiration before a first run", async () => {

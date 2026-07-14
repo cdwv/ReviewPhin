@@ -363,6 +363,7 @@ async function tailRunLog(input: {
     }
     try {
       const entry = parseLogEntry(line);
+      const data = projectSafeActivityData(entry.data);
       input.renderer.render({
         type: "activity",
         jobId: input.jobId,
@@ -372,7 +373,7 @@ async function tailRunLog(input: {
         component: entry.component,
         action: entry.action,
         message: entry.message,
-        ...(entry.data === undefined ? {} : { data: entry.data }),
+        ...(data === undefined ? {} : { data }),
       });
     } catch {
       input.output.diagnostic(
@@ -1231,6 +1232,34 @@ function formatSafeDetails(data: unknown): string {
     .slice(0, 4)
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(", ");
+}
+
+function projectSafeActivityData(
+  data: unknown,
+): Readonly<Record<string, string | number | boolean | null>> | undefined {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return undefined;
+  }
+  const projected = Object.fromEntries(
+    Object.entries(data as Record<string, unknown>)
+      .filter(
+        ([key, value]) =>
+          !["component", "action"].includes(key) && isScalar(value),
+      )
+      .slice(0, 4)
+      .map(([key, value]) => [
+        key,
+        isSensitiveActivityDataKey(key) ? "[redacted]" : value,
+      ]),
+  ) as Record<string, string | number | boolean | null>;
+  return Object.keys(projected).length === 0 ? undefined : projected;
+}
+
+function isSensitiveActivityDataKey(key: string): boolean {
+  const normalized = key.replace(/[^a-z0-9]/giu, "").toLowerCase();
+  return ["authorization", "credential", "password", "secret", "token"].some(
+    (marker) => normalized.includes(marker),
+  );
 }
 
 function isScalar(value: unknown): value is string | number | boolean | null {
