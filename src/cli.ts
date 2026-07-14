@@ -3859,7 +3859,7 @@ export async function runCliEntry(
   dependencies: CliOutputDependencies = {},
 ): Promise<number> {
   try {
-    const exitCode = await runCli(argv);
+    const exitCode = await runCli(argv, dependencies);
     if (
       exitCode !== 0 &&
       resolveOutputMode(parseCliArgs(argv).options) !== "json" &&

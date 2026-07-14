@@ -170,6 +170,27 @@ describe("CLI output contract", () => {
     });
   });
 
+  it("forwards injected output streams through successful entry invocations", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "cli-entry-output-"));
+    let stdout = "";
+
+    await expect(
+      runCliEntry(
+        [
+          "model-profile",
+          "list",
+          "--output",
+          "json",
+          "--sqlite-database-path",
+          join(directory, "reviewphin.sqlite"),
+        ],
+        { stdout: createStringWriter((text) => (stdout += text)) },
+      ),
+    ).resolves.toBe(0);
+
+    expect(JSON.parse(stdout)).toEqual([]);
+  });
+
   it("emits independently parseable migration events in JSON mode", async () => {
     const directory = await mkdtemp(join(tmpdir(), "cli-migration-output-"));
     let stdout = "";
