@@ -597,6 +597,8 @@ describe("GitHub App manifest setup", () => {
       "platform",
       "connection",
       "list",
+      "--output",
+      "json",
       "--sqlite-database-path",
       databasePath,
     ]);
@@ -606,11 +608,13 @@ describe("GitHub App manifest setup", () => {
       "describe",
       "--connection",
       "github-main",
+      "--output",
+      "json",
       "--sqlite-database-path",
       databasePath,
     ]);
 
-    expect(stdout).toContain('"name": "github-main"');
+    expect(stdout).toContain('"name":"github-main"');
     expect(stdout).not.toContain("client-secret");
     expect(stdout).not.toContain("webhook-secret");
     expect(stdout).not.toContain("private-key");
@@ -627,8 +631,13 @@ describe("GitHub App manifest setup", () => {
     });
     await storage.close();
     let stdout = "";
+    let stderr = "";
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
       stdout += String(chunk);
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      stderr += String(chunk);
       return true;
     });
 
@@ -644,9 +653,9 @@ describe("GitHub App manifest setup", () => {
       ]),
     ).toBe(0);
 
-    expect(stdout).toContain("uninstall installation 789 in GitHub");
-    expect(stdout).toContain('Delete the old GitHub App "ReviewPhin octo-org"');
-    expect(stdout).toContain(
+    expect(stderr).toContain("uninstall installation 789 in GitHub");
+    expect(stderr).toContain('Delete the old GitHub App "ReviewPhin octo-org"');
+    expect(stderr).toContain(
       "Local credentials cannot remove the remote App automatically",
     );
     expect(stdout).toContain("Platform connection github-main removed.");

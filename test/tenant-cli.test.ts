@@ -245,6 +245,8 @@ describe("tenant CLI", () => {
     const listExitCode = await runCli([
       "model-profile",
       "list",
+      "--output",
+      "json",
       "--sqlite-database-path",
       databasePath,
     ]);
@@ -252,9 +254,9 @@ describe("tenant CLI", () => {
     stdoutSpy.mockRestore();
 
     expect(listExitCode).toBe(0);
-    expect(stdout).toContain('"name": "byok"');
-    expect(stdout).toContain('"isDefault": true');
-    expect(stdout).toContain('"wireApi": "completions"');
+    expect(stdout).toContain('"name":"byok"');
+    expect(stdout).toContain('"isDefault":true');
+    expect(stdout).toContain('"wireApi":"completions"');
     expect(stdout).not.toContain("super-secret-token");
   });
 
@@ -442,14 +444,16 @@ describe("tenant CLI", () => {
     const listExitCode = await runCli([
       "model-profile",
       "list",
+      "--output",
+      "json",
       "--sqlite-database-path",
       databasePath,
     ]);
 
     listSpy.mockRestore();
     expect(listExitCode).toBe(0);
-    expect(listStdout).toContain('"reviewReasoningEffort": "high"');
-    expect(listStdout).toContain('"textGenerationReasoningEffort": "low"');
+    expect(listStdout).toContain('"reviewReasoningEffort":"high"');
+    expect(listStdout).toContain('"textGenerationReasoningEffort":"low"');
   });
 
   it("updates only present reasoning-effort fields and clears them explicitly", async () => {

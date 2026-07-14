@@ -237,7 +237,7 @@ the repositories you register as tenants.
 reviewphin tenant list
 ```
 
-The JSON output includes each tenant's `id`, `key`, and `platform`. See [CLI reference](https://reviewphin.com/docs/management/cli-reference/) for all tenant and model-profile commands.
+The default table includes each tenant's platform connection name. Use `--output json` for a stable machine-readable array. See [CLI reference](https://reviewphin.com/docs/management/cli-reference/) for output modes and all tenant and model-profile commands.
 
 ---
 

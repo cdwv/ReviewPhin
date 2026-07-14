@@ -21,6 +21,28 @@ pnpm cli <resource> <action> [options]
 
 Both invocations accept the same flags. The command examples below show the image command itself. From a host shell with Docker Compose, prefix the example with `docker compose run --rm worker`; from a local checkout, replace `reviewphin` with `pnpm cli`.
 
+## Output modes
+
+Every executable command accepts `--output <pretty|plain|json>`. The default is `pretty`, including when stdout is redirected.
+
+| Mode     | One-time commands                                      | Commands that report progress                                                                 |
+| -------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `pretty` | Tables, sections, readable dates, and status labels    | A live terminal view when cursor control is available; an append-only view when redirected    |
+| `plain`  | Stable, uncolored labels and ISO timestamps            | Append-only status and activity lines with no ANSI color, cursor movement, or rewritten lines |
+| `json`   | One compact JSON object or array followed by a newline | JSON Lines (JSONL), with a `type` discriminator on every independently parseable line         |
+
+`--json` remains available as an alias for `--output json`. Combining it with `--output pretty` or `--output plain` is an error.
+
+Command results are written to stdout. Diagnostics are written to stderr, so JSON stdout can be passed directly to a parser. Errors in JSON mode use this stderr shape:
+
+```json
+{ "type": "error", "error": { "name": "Error", "message": "..." } }
+```
+
+JSON output uses the same safe projection as the human modes: credentials stay omitted or masked. `NO_COLOR` disables color in pretty mode. Help remains readable usage text regardless of the selected output mode.
+
+Plain and JSON modes never open a confirmation prompt. Destructive commands such as `tenant remove` require `--yes` in those modes and whenever stdin is non-interactive.
+
 ## Help
 
 Append `--help` to any command path to show only matching usage entries:
@@ -136,7 +158,7 @@ Print all registered tenants.
 reviewphin tenant list
 ```
 
-The JSON output includes each tenant's `id`, `key`, `platform`, and `modelProfileName`.
+The pretty view is a table and includes the recognizable platform connection name. JSON returns an array whose records include `id`, `key`, `platform`, `platformConnectionId`, `platformConnectionName`, and `modelProfileName`.
 
 | Flag                        | Required | Description                  |
 | --------------------------- | -------- | ---------------------------- |
@@ -287,7 +309,7 @@ Print all model profiles.
 reviewphin model-profile list
 ```
 
-Output is a JSON array. Each entry includes `name`, provider settings, `reviewModel`, `textGenerationModel`, `reviewReasoningEffort`, `textGenerationReasoningEffort` (each `null` when unset), `isDefault`, and a masked `authToken`.
+The pretty view marks the default profile with a checkmark. JSON returns an array; each entry includes `name`, provider settings, `reviewModel`, `textGenerationModel`, `reviewReasoningEffort`, `textGenerationReasoningEffort` (each `null` when unset), `isDefault`, and a masked `authToken`.
 
 | Flag                        | Required | Description                  |
 | --------------------------- | -------- | ---------------------------- |
@@ -359,6 +381,8 @@ reviewphin storage migrate \
 
 `source-*` is an alias for `from-*`, and `destination-*` is an alias for `to-*`.
 
+JSON mode is a JSONL stream. It emits `migration_step_started` and `migration_progress` records, followed by one `migration_completed` record with provider identities, per-store counts, and the total. Plain mode prints the same transitions without rewriting earlier output.
+
 | Flag                             | Required | Description                                                          |
 | -------------------------------- | -------- | -------------------------------------------------------------------- |
 | `--from-storage-provider-module` | Yes      | Source adapter module path or package name.                          |
@@ -404,7 +428,6 @@ Exactly one tenant selector and one trigger selector are required.
 | `--force-new`               | No        | Create a distinct job for a comment that would otherwise reuse its canonical job.                           |
 | `--watch`                   | No        | Watch persisted job and run state. This is the default.                                                     |
 | `--no-watch`                | No        | Return after persistence without waiting.                                                                   |
-| `--json`                    | No        | Write exactly one JSON summary to stdout.                                                                   |
 | `--sqlite-database-path`    | No        | Override the SQLite path.                                                                                   |
 | `--storage-provider-module` | No        | Override the storage adapter module.                                                                        |
 | `--run-log-dir`             | No        | Location where the watcher looks for live `app.ndjson` logs. Defaults to `RUN_LOG_DIR`.                     |
@@ -427,6 +450,8 @@ Comment submissions use the same deduplication identity as webhook submissions. 
 
 Watch mode reports persisted status changes and follows the selected attempt through retries. It tails live logs only when the configured run-log directory is locally accessible or shared with the runner. Missing live logs do not affect persisted status or findings. Leaving watch mode with `SIGINT` or `SIGTERM` does not cancel the job.
 
+With `--output json`, watch mode emits JSONL events: `review_submitted`, `job_status`, `run_status`, `activity`, and a final `review_completed`. Activity events retain unknown structured log data in their `data` field. `--no-watch --output json` is not a stream and returns exactly one summary object.
+
 The final summary contains `jobId`, `created`, `jobStatus`, `runId`, `runStatus`, `runLogDirectory`, `findingCount`, `error`, and `liveLogsAvailable`. Exit code `0` means a no-watch submission succeeded or a watched job completed. Validation and operational errors, or watched jobs ending as failed, cancelled, or expired, return `1`; interrupted watches return `130` for `SIGINT` and `143` for `SIGTERM`.
 
 ---
@@ -441,7 +466,7 @@ Print the hydrated code review context for a given code review. Useful for debug
 reviewphin mr describe \
   --key https://gitlab.example.com::123 \
   --code-review-id 42 \
-  --json
+  --output json
 ```
 
 | Flag                           | Required | Description                                                                 |
@@ -455,7 +480,6 @@ reviewphin mr describe \
 | `--trigger-comment-action`     | No       | `create` or `update`.                                                       |
 | `--trigger-comment-updated-at` | No       | ISO timestamp for the simulated trigger.                                    |
 | `--trigger-comment-body`       | No       | Body text for the simulated trigger comment.                                |
-| `--json`                       | No       | Output raw JSON instead of formatted text.                                  |
 | `--sqlite-database-path`       | No       | Override the SQLite path.                                                   |
 | `--storage-provider-module`    | No       | Override the storage module.                                                |
 

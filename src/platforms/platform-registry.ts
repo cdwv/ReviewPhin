@@ -27,9 +27,10 @@ export async function initializePlatformRegistry(
   return platforms;
 }
 
-export function getPlatforms(): readonly IPlatform[] {
+export function getPlatforms(
+  logger: Logger = createLogger("info"),
+): readonly IPlatform[] {
   if (!platforms) {
-    const logger = createLogger("info");
     platforms = [
       new GitLabPlatform(logger.child({ component: "GitLabPlatform" })),
       new GitHubPlatform({

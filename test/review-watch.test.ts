@@ -10,6 +10,7 @@ import {
   selectReviewAttempt,
   watchReviewJob,
 } from "../src/cli/review-watch.js";
+import { CliOutput, createStringWriter } from "../src/cli/output.js";
 import type {
   InteractionJobRecord,
   InteractionRunRecord,
@@ -125,7 +126,7 @@ describe("review job watcher", () => {
       "waiting for an external runner",
     );
     expect(output.mock.calls.join("")).toContain(
-      'INFO review started {"attempt":2}',
+      "INFO review started — attempt=2",
     );
     expect(warnings.mock.calls.join("")).toContain("malformed live log line");
   });
@@ -159,6 +160,7 @@ describe("review job watcher", () => {
       },
     };
 
+    let jsonl = "";
     const summary = await watchReviewJob({
       storage: storage as never,
       jobId: "job_1",
@@ -166,6 +168,9 @@ describe("review job watcher", () => {
       runLogRoot: "missing-run-logs",
       pollIntervalMs: 1,
       outputMode: "json",
+      output: new CliOutput("json", {
+        stdout: createStringWriter((text) => (jsonl += text)),
+      }),
       signal: new AbortController().signal,
     });
 
@@ -176,6 +181,17 @@ describe("review job watcher", () => {
       findingCount: 1,
       liveLogsAvailable: false,
     });
+    const events = jsonl
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string });
+    expect(events.map((event) => event.type)).toEqual([
+      "review_submitted",
+      "job_status",
+      "run_status",
+      "run_status",
+      "review_completed",
+    ]);
   });
 
   it("summarizes expiration before a first run", async () => {
@@ -210,6 +226,46 @@ describe("review job watcher", () => {
       liveLogsAvailable: false,
     });
     expect(storage.stores.reviewFindings.list).not.toHaveBeenCalled();
+  });
+
+  it("restores the cursor and leaves a final summary in pretty TTY mode", async () => {
+    const storage = {
+      stores: {
+        interactionJobs: {
+          get: async () =>
+            createJob({
+              status: "completed",
+              latestInteractionRunId: null,
+            }),
+        },
+        interactionRuns: { list: async () => [] },
+        reviewFindings: { list: vi.fn() },
+      },
+    };
+    let terminal = "";
+    const summary = await watchReviewJob({
+      storage: storage as never,
+      jobId: "job_1",
+      created: true,
+      runLogRoot: "run-logs",
+      pollIntervalMs: 1,
+      outputMode: "pretty",
+      output: new CliOutput("pretty", {
+        stdout: createStringWriter((text) => (terminal += text)),
+        stdoutIsTTY: true,
+        color: true,
+        now: () => new Date("2026-07-12T09:00:00.000Z"),
+      }),
+      tenantKey: "https://gitlab.example.com::123",
+      codeReviewId: 7,
+      signal: new AbortController().signal,
+    });
+
+    expect(summary.jobStatus).toBe("completed");
+    expect(terminal).toContain("\u001B[?25l");
+    expect(terminal).toContain("\u001B[?25h");
+    expect(terminal).toContain("Review completed");
+    expect(terminal).toContain("0 finding(s)");
   });
 
   it("fails on a missing referenced run and aborts polling without mutation", async () => {
