@@ -3,6 +3,19 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v1.3.0 - 2026-07-14
+### Added
+- CLI commands can now return terminal-friendly, plain-text, or
+structured JSON output through `--output`, with `--json` available as a
+shortcut.
+
+### Changed
+- Pretty CLI output now uses clearer visual hierarchy, semantic status
+styling, and grouped help.
+- Watched reviews now use an aligned self-refreshing dashboard that
+adapts to terminal width and wraps recent activity without truncating
+it.
+
 ## v1.2.0 - 2026-07-13
 ### Added
 - Administrators can authorize a GitHub maintainer for new or existing
