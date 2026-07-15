@@ -479,6 +479,82 @@ describe("HarnessSessionRuntime", () => {
     );
   });
 
+  it("reports image blobs that cannot be processed within model limits", async () => {
+    const session = createSession();
+    createSessionMock.mockResolvedValue(session);
+    listModelsMock.mockResolvedValue([
+      {
+        id: "gpt-5.4",
+        name: "GPT-5.4",
+        capabilities: {
+          supports: {
+            vision: true,
+            reasoningEffort: true,
+          },
+          limits: {
+            max_context_window_tokens: 1_000_000,
+            vision: {
+              supported_media_types: ["image/png"],
+              max_prompt_images: 10,
+              max_prompt_image_size: 8,
+            },
+          },
+        },
+      },
+    ]);
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+
+    const logger = createLogger();
+    const runtime = new HarnessSessionRuntime({
+      logger,
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    await runtime.run({
+      prompt: "Review this screenshot.",
+      attachments: [
+        {
+          type: "blob",
+          data: Buffer.alloc(32, 1).toString("base64"),
+          mimeType: "image/png",
+          displayName: "broken.png",
+        },
+      ],
+      modelConfig: createModelConfig(),
+      model: "gpt-5.4",
+      tools: ["glob", "rg", "view"],
+      subagents: [],
+      logging: {
+        interactionRunId: "run_image_limit",
+        interactionJobId: "job_image_limit",
+        tenantId: "tenant_1",
+        sessionKind: "reply",
+      },
+    });
+
+    expect(session.sendAndWait).toHaveBeenCalledWith(
+      {
+        prompt: [
+          "Review this screenshot.",
+          "",
+          "Runtime note:",
+          'The selected model "gpt-5.4" could not receive these images within its advertised vision limits. These image attachments were not sent to you: broken.png. Do not claim to have inspected the images. If the user is asking about them, explain that image input is unavailable for this model and answer from the available text context only.',
+        ].join("\n"),
+      },
+      1_000,
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-5.4",
+        attachmentCount: 1,
+      }),
+      "image attachments could not be prepared for Copilot model limits; continuing with partial image context",
+    );
+  });
+
   it("skips image attachments for fallback sessions when the resolved model does not support vision", async () => {
     const session = createSession({ currentModelId: "gpt-5.4-mini" });
     createSessionMock.mockResolvedValue(session);
