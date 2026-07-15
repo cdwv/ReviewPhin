@@ -3,6 +3,20 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v1.4.1 - 2026-07-15
+### Added
+- Contributors and security researchers now have structured public
+templates and a private vulnerability-reporting path.
+
+### Changed
+- The README now explains configured-provider data flows, human review
+responsibility, GitHub setup, CI status, and security guidance more
+clearly.
+
+### Fixed
+- Docker Hub README generation now rejects descriptions that exceed the
+platform's 25,000-character limit.
+
 ## v1.4.0 - 2026-07-15
 ### Added
 - GitHub users can attach images to pull request comments and
