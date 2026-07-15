@@ -284,6 +284,9 @@ const reactionSchema = z.object({
   created_at: z.string().datetime(),
 });
 
+const GITHUB_USER_ASSET_STORAGE_HOST =
+  "github-production-user-asset-6210df.s3.amazonaws.com";
+
 export type GitHubInstallation = z.infer<typeof installationSchema>;
 export type GitHubPullRequest = z.infer<typeof pullRequestSchema>;
 export type GitHubPullRequestFile = z.infer<typeof pullRequestFileSchema>;
@@ -940,6 +943,7 @@ export class GitHubClient {
         }
         requestUrl = parseGitHubImageUrl(
           new URL(location, requestUrl).toString(),
+          { allowUserAssetStorage: true },
         );
         continue;
       }
@@ -1331,7 +1335,10 @@ function splitRepositoryFullName(value: string): {
   return { owner, repository };
 }
 
-function parseGitHubImageUrl(value: string): URL {
+function parseGitHubImageUrl(
+  value: string,
+  options: { allowUserAssetStorage?: boolean | undefined } = {},
+): URL {
   let url: URL;
   try {
     url = new URL(value);
@@ -1342,7 +1349,7 @@ function parseGitHubImageUrl(value: string): URL {
       cause: error,
     });
   }
-  if (!isAllowedGitHubImageUrl(url)) {
+  if (!isAllowedGitHubImageUrl(url, options)) {
     throw new GitHubImageDownloadError({
       message: `GitHub image URL is not an allowed attachment location: ${redactGitHubImageUrl(url.toString())}`,
       url: url.toString(),
@@ -1351,13 +1358,22 @@ function parseGitHubImageUrl(value: string): URL {
   return url;
 }
 
-function isAllowedGitHubImageUrl(url: URL): boolean {
+function isAllowedGitHubImageUrl(
+  url: URL,
+  options: { allowUserAssetStorage?: boolean | undefined },
+): boolean {
   if (url.protocol !== "https:" || url.username || url.password) {
     return false;
   }
   const hostname = url.hostname.toLowerCase();
   if (hostname === "github.com") {
     return url.pathname.startsWith("/user-attachments/assets/");
+  }
+  if (
+    options.allowUserAssetStorage &&
+    hostname === GITHUB_USER_ASSET_STORAGE_HOST
+  ) {
+    return true;
   }
   return (
     hostname === "user-images.githubusercontent.com" ||

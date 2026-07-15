@@ -359,6 +359,48 @@ describe("GitHubClient", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe("manual");
   });
 
+  it("follows GitHub user attachment redirects to its production S3 host without forwarding credentials", async () => {
+    const auth = vi.fn(async () => ({ token: "installation-token" }));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: {
+            location:
+              "https://github-production-user-asset-6210df.s3.amazonaws.com/2618837/622210718-dc641783-ad2d-4663-9d13-2cbcde3e582e.png?X-Amz-Signature=secret",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(Buffer.from([1, 2, 3]), {
+          status: 200,
+          headers: {
+            "content-type": "image/png",
+            "content-length": "3",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createClientWithAppAuth(auth);
+
+    await expect(
+      client.downloadImage(
+        "https://github.com/user-attachments/assets/dc641783-ad2d-4663-9d13-2cbcde3e582e",
+      ),
+    ).resolves.toEqual({
+      data: "AQID",
+      mimeType: "image/png",
+      sizeBytes: 3,
+    });
+
+    const redirectedHeaders = fetchMock.mock.calls[1]?.[1]?.headers as Record<
+      string,
+      string
+    >;
+    expect(redirectedHeaders.authorization).toBeUndefined();
+  });
+
   it("rejects external image URLs and redirects without requesting them", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(null, {
@@ -374,6 +416,13 @@ describe("GitHubClient", () => {
     await expect(
       client.downloadImage("https://example.com/private.png"),
     ).rejects.toBeInstanceOf(GitHubImageDownloadError);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expect(
+      client.downloadImage(
+        "https://github-production-user-asset-6210df.s3.amazonaws.com/2618837/image.png",
+      ),
+    ).rejects.toThrow("not an allowed attachment location");
     expect(fetchMock).not.toHaveBeenCalled();
 
     await expect(
