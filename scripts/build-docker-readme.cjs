@@ -2,6 +2,7 @@ const fs = require("node:fs");
 
 const CANONICAL_DOCS_URL = "https://reviewphin.com";
 const CANONICAL_REPOSITORY_URL = "https://github.com/cdwv/ReviewPhin";
+const DOCKERHUB_FULL_DESCRIPTION_MAX_CHARACTERS = 25_000;
 const DOCKER_IMAGE_BADGE_MARKDOWN =
   "[![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)";
 
@@ -124,6 +125,13 @@ content = content.replace(/\[([^\]]*)\]\(([^)]+)\)/g, (match, text, href) => {
   }
   return match;
 });
+
+const characterCount = Array.from(content).length;
+if (characterCount > DOCKERHUB_FULL_DESCRIPTION_MAX_CHARACTERS) {
+  throw new Error(
+    `Docker Hub repository overview is ${characterCount} characters, exceeding the ${DOCKERHUB_FULL_DESCRIPTION_MAX_CHARACTERS}-character limit by ${characterCount - DOCKERHUB_FULL_DESCRIPTION_MAX_CHARACTERS}`,
+  );
+}
 
 fs.writeFileSync("DOCKERHUB_README.md", content, "utf8");
 console.log("DOCKERHUB_README.md generated successfully");

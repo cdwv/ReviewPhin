@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ReviewPhin OSS launch todo</title>
+    <title>ReviewPhin open-source readiness audit</title>
     <link rel="icon" href="./favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -77,14 +77,14 @@
               <p class="font-data text-[11px] uppercase tracking-[0.24em] text-white/55">
                 ReviewPhin
               </p>
-              <h1 class="mt-1 text-2xl font-black tracking-tight">OSS launch board</h1>
+              <h1 class="mt-1 text-2xl font-black tracking-tight">OSS readiness board</h1>
             </div>
           </div>
 
           <div class="mt-8 border-l border-white/15 pl-4">
             <p class="max-w-[22rem] text-sm leading-6 text-white/72">
-              Public release work grouped by launch gate. Each item includes a comparison
-              project or public practice to calibrate quality.
+              A repository-specific audit, checked against the code and docs. Completed and
+              deliberately rejected ideas stay visible so the list does not regress into a generic OSS checklist.
             </p>
           </div>
 
@@ -133,8 +133,7 @@
                   Public release readiness
                 </p>
                 <h2 class="mt-2 max-w-4xl text-3xl font-black tracking-tight sm:text-4xl">
-                  Categorized todo list for making ReviewPhin understandable,
-                  trustworthy, and usable as open source.
+                  What ReviewPhin still needs, what is already in place, and what is not worth doing yet.
                 </h2>
               </div>
               <div class="grid grid-cols-3 gap-2 text-center font-data text-xs" id="miniStats"></div>
@@ -175,6 +174,7 @@
                 <select id="statusFilter" class="mt-1 h-10 w-full border border-rule bg-white px-3 text-sm">
                   <option value="open">Open</option>
                   <option value="done">Done</option>
+                  <option value="not-planned">Not planned</option>
                   <option value="all">All</option>
                 </select>
               </label>
@@ -194,7 +194,7 @@
                   Reset
                 </button>
                 <button id="resetProgress" class="h-10 border border-rule bg-white px-3 text-sm font-semibold text-ink">
-                  Clear done
+                  Reset checks
                 </button>
               </div>
             </div>
@@ -253,15 +253,15 @@
                 <div class="mt-4 space-y-3 text-sm leading-6">
                   <div class="border-l-4 border-danger bg-white px-3 py-2">
                     <strong>High</strong>
-                    <span class="block text-muted">Needed before a public GitHub launch.</span>
+                    <span class="block text-muted">A real trust, safety, or contribution blocker.</span>
                   </div>
                   <div class="border-l-4 border-warn bg-white px-3 py-2">
                     <strong>Medium</strong>
-                    <span class="block text-muted">Best first steps once people can find the project.</span>
+                    <span class="block text-muted">Important follow-up, but not a reason to delay opening the repository.</span>
                   </div>
                   <div class="border-l-4 border-mint bg-white px-3 py-2">
                     <strong>Low</strong>
-                    <span class="block text-muted">Useful polish, optional distribution, or community extras.</span>
+                    <span class="block text-muted">Only worth doing when usage creates a clear need.</span>
                   </div>
                 </div>
 
@@ -286,7 +286,8 @@
           area: "GitHub migration",
           effort: "M",
           title: "Replace GitLab CI with GitHub Actions CI",
-          reason: "A GitHub project needs visible, reproducible checks for pull requests and tags.",
+          reason: "Implemented in .github/workflows/quality-gates.yml, including lint, typecheck, builds, tests, coverage, CodeQL, and dependency review.",
+          status: "done",
           example: "Fastify and Vitest expose GitHub Actions as the normal contributor feedback loop.",
           links: [
             ["Fastify", "https://github.com/fastify/fastify"],
@@ -298,8 +299,8 @@
           priority: "High",
           area: "GitHub migration",
           effort: "M",
-          title: "Add required GitHub branch protection rules",
-          reason: "Public PRs should not merge without test, lint, and typecheck status checks.",
+          title: "Configure the documented GitHub branch protection rules",
+          reason: "The required checks are documented, but repository rulesets live in GitHub settings and cannot be verified from this checkout.",
           example: "Kubernetes uses protected branches and explicit contributor policy around merges.",
           links: [["Kubernetes", "https://github.com/kubernetes/kubernetes"]],
         },
@@ -309,7 +310,8 @@
           area: "Release and distribution",
           effort: "L",
           title: "Build tag-based release automation",
-          reason: "A public project needs repeatable GitHub Releases, Docker image publishing, and chart publishing.",
+          reason: "Implemented in .github/workflows/release.yml for tagged releases, Docker Hub images, the GHCR Helm chart, docs, and release artifacts.",
+          status: "done",
           example: "Renovate and Fastify make releases discoverable through GitHub releases and automation.",
           links: [
             ["Renovate", "https://github.com/renovatebot/renovate"],
@@ -332,8 +334,9 @@
           priority: "High",
           area: "Repository hygiene",
           effort: "S",
-          title: "Decide whether npm publishing is supported",
-          reason: "The package is currently private; either publish the CLI properly or document Docker-first distribution.",
+          title: "Document Docker-first distribution instead of npm publishing",
+          reason: "Done: the package remains private and the CLI reference explicitly says there is no separate global host installation.",
+          status: "done",
           example: "Docusaurus publishes npm packages and also documents the supported distribution path clearly.",
           links: [["Docusaurus", "https://github.com/facebook/docusaurus"]],
         },
@@ -354,7 +357,8 @@
           area: "Community health",
           effort: "S",
           title: "Add SECURITY.md",
-          reason: "This project handles tokens, webhooks, repositories, and model calls; reporters need a private path.",
+          reason: "Done: SECURITY.md routes sensitive reports to GitHub private vulnerability reporting, which is enabled for the repository.",
+          status: "done",
           example: "Fastify and Kubernetes both publish explicit security reporting policies.",
           links: [
             ["Fastify", "https://github.com/fastify/fastify/security"],
@@ -363,21 +367,22 @@
         },
         {
           id: "H08",
-          priority: "High",
+          priority: "Medium",
           area: "Community health",
           effort: "S",
-          title: "Add SUPPORT.md",
-          reason: "Users need to know where to ask setup questions and where security issues do not belong.",
+          title: "Add a concise support and version policy",
+          reason: "Explain where setup questions belong, which releases receive fixes, and where security reports must go. This can be one SUPPORT.md rather than several policy files.",
           example: "Docker docs routes feedback and support separately from security-sensitive reports.",
           links: [["Docker docs", "https://github.com/docker/docs"]],
         },
         {
           id: "H09",
-          priority: "High",
+          priority: "Medium",
           area: "Community health",
           effort: "M",
           title: "Add issue forms and a pull request template",
-          reason: "Structured reports reduce maintainer back-and-forth for installation, platform, and model-provider issues.",
+          reason: "Done: concise bug and feature forms gather safe reproduction context, security reports route to SECURITY.md, and the pull request template mirrors project validation and changelog requirements.",
+          status: "done",
           example: "Vitest and Docusaurus use templates to route bugs, features, and docs work.",
           links: [
             ["Vitest", "https://github.com/vitest-dev/vitest/tree/main/.github"],
@@ -401,7 +406,8 @@
           area: "Security",
           effort: "M",
           title: "Run secret scanning across the full history",
-          reason: "The repository has local config patterns and internal CI history; public launch should not expose old tokens.",
+          reason: "Done: checksum-verified Gitleaks scanned all refs across the full 400-commit history with redaction and found no secrets.",
+          status: "done",
           example: "Gitleaks and TruffleHog are common pre-publication checks for repos that handled credentials.",
           links: [
             ["Gitleaks", "https://github.com/gitleaks/gitleaks"],
@@ -410,11 +416,11 @@
         },
         {
           id: "H12",
-          priority: "High",
+          priority: "Medium",
           area: "Repository hygiene",
           effort: "S",
           title: "Audit tracked workspace metadata",
-          reason: "Decide whether .agents, .vscode, and skills-lock.json are intentional public project files.",
+          reason: "The repository tracks agent plans and skills, editor settings, and skills-lock.json. Keep them only if they help outside contributors and contain no private operational context.",
           example: "Docker docs keeps contributor tooling public only when it helps contributors reproduce work.",
           links: [["Docker docs", "https://github.com/docker/docs"]],
         },
@@ -424,7 +430,8 @@
           area: "Documentation",
           effort: "S",
           title: "Fix README technical inconsistencies",
-          reason: "The README storage implementation and Dockerfile SQLite environment variable were corrected during docs consolidation.",
+          reason: "Done: the storage and Docker inconsistencies identified by the earlier audit were corrected during docs consolidation.",
+          status: "done",
           example: "Vitest documentation keeps runtime and package assumptions explicit for contributors.",
           links: [["Vitest", "https://github.com/vitest-dev/vitest"]],
         },
@@ -468,8 +475,8 @@
           priority: "High",
           area: "Security",
           effort: "M",
-          title: "Harden the Docker runtime image",
-          reason: "Run as a non-root user, add OCI labels, document supported architectures, and keep only runtime files.",
+          title: "Run the Docker runtime as a non-root user",
+          reason: "The multi-stage image is already minimal, release builds add OCI labels, and amd64/arm64 are published. The remaining material hardening gap is that the runtime still runs as root.",
           example: "OpenTelemetry images publish clear container metadata and security expectations.",
           links: [["OpenTelemetry JS", "https://github.com/open-telemetry/opentelemetry-js"]],
         },
@@ -479,27 +486,30 @@
           area: "Security",
           effort: "S",
           title: "Add Dependabot or Renovate for dependency updates",
-          reason: "Public users expect dependency vulnerabilities to be visible and maintained.",
+          reason: "Implemented in .github/dependabot.yml for npm, GitHub Actions, and Docker dependencies.",
+          status: "done",
           example: "Renovate is itself a strong reference for automated dependency maintenance.",
           links: [["Renovate", "https://github.com/renovatebot/renovate"]],
         },
         {
           id: "H19",
-          priority: "High",
+          priority: "Medium",
           area: "Documentation",
-          effort: "M",
-          title: "Write a GitHub-first quickstart",
-          reason: "The launch target is GitHub, so the first path should cover GitHub App setup before GitLab.",
-          example: "Docusaurus optimizes its first-run path around the default user journey.",
-          links: [["Docusaurus docs", "https://docusaurus.io/docs"]],
+          effort: "S",
+          title: "Add a visible GitHub setup handoff to the GitLab-first README path",
+          reason: "Done: the GitLab-first quickstart now hands GitHub users to the canonical App setup instructions before the platform-specific walkthrough begins.",
+          status: "done",
+          example: "The ReviewPhin docs already give GitHub its own setup section while keeping GitLab first.",
+          links: [["Platform setup", "https://reviewphin.com/docs/management/platform-connections/"]],
         },
         {
           id: "H20",
           priority: "High",
           area: "Documentation",
           effort: "M",
-          title: "Add data handling and AI review caveats",
-          reason: "Users should understand what leaves their network, model quality limitations, and human review expectations.",
+          title: "Correct the data-flow claim and add AI review caveats",
+          reason: "Done: the README states that review context goes to the configured model provider, hosted storage receives persisted data when selected, and AI findings need human review.",
+          status: "done",
           example: "GitHub Copilot docs describe code review boundaries and user responsibility.",
           links: [["GitHub Copilot docs", "https://docs.github.com/en/copilot"]],
         },
@@ -516,11 +526,12 @@
         },
         {
           id: "H22",
-          priority: "High",
+          priority: "Medium",
           area: "Release and distribution",
           effort: "M",
-          title: "Add public badges and canonical project links",
-          reason: "README badges should point to GitHub Actions, release artifacts, license, security policy, and Docker/GHCR image.",
+          title: "Add a CI badge and canonical security link",
+          reason: "Done: the README adds one Quality Gates badge and a visible SECURITY.md link alongside the existing Docker and license badges.",
+          status: "done",
           example: "Fastify uses badges and top-level links to make project status obvious.",
           links: [["Fastify", "https://github.com/fastify/fastify"]],
         },
@@ -554,7 +565,7 @@
         },
         {
           id: "M03",
-          priority: "Medium",
+          priority: "High",
           area: "Documentation",
           effort: "M",
           title: "Add a troubleshooting guide",
@@ -580,8 +591,8 @@
           priority: "Medium",
           area: "Operations",
           effort: "M",
-          title: "Document backup, restore, upgrade, and rollback",
-          reason: "ReviewPhin stores tenants, model profiles, project memory, run logs, and publication mappings.",
+          title: "Complete restore and rollback guidance",
+          reason: "SQLite backup and storage migration are documented. Add a tested restore procedure and explain how to roll back the app when a storage contract migration has run.",
           example: "Kubernetes and database-backed OSS projects publish operational upgrade procedures.",
           links: [["Kubernetes docs", "https://kubernetes.io/docs/tasks/administer-cluster/"]],
         },
@@ -591,7 +602,8 @@
           area: "Documentation",
           effort: "S",
           title: "Add a compatibility matrix",
-          reason: "Users need a compact view of supported Node versions, platforms, storage providers, and model providers.",
+          reason: "Not planned: Node, platform, storage, and model support already have canonical pages. A second matrix would duplicate them and drift.",
+          status: "not-planned",
           example: "Vitest and Fastify document runtime support clearly around Node compatibility.",
           links: [
             ["Vitest", "https://vitest.dev/"],
@@ -604,7 +616,8 @@
           area: "Documentation",
           effort: "S",
           title: "Add a limitations page",
-          reason: "GitHub comment threading, file-level comments, auto triggers, and AI accuracy should be explicit.",
+          reason: "Not planned as a separate page. Fold material product limitations and AI caveats into the relevant workflow pages and the high-priority data-handling task.",
+          status: "not-planned",
           example: "GitHub docs often call out product limitations directly in feature docs.",
           links: [["GitHub docs", "https://docs.github.com/"]],
         },
@@ -614,7 +627,8 @@
           area: "Architecture",
           effort: "M",
           title: "Add architecture diagrams",
-          reason: "A webhook-to-worker-to-platform flow diagram will make the adapter and storage model easier to understand.",
+          reason: "Done: the review-flow docs include a webhook/CLI-to-worker-to-model-to-publication diagram and explain provider and storage behavior.",
+          status: "done",
           example: "OpenTelemetry docs rely on architecture diagrams for multi-component systems.",
           links: [["OpenTelemetry docs", "https://opentelemetry.io/docs/"]],
         },
@@ -624,7 +638,8 @@
           area: "Usability",
           effort: "L",
           title: "Create a public demo repository or mocked playground",
-          reason: "Potential users should see review output without wiring production credentials first.",
+          reason: "Not planned for launch: a maintained demo needs credentials, moderation, and representative fixtures. Screenshots provide the evaluation path with much less operational cost.",
+          status: "not-planned",
           example: "Docusaurus and many CLI projects provide templates or demos to lower evaluation cost.",
           links: [["Docusaurus examples", "https://github.com/facebook/docusaurus/tree/main/examples"]],
         },
@@ -634,7 +649,8 @@
           area: "Community health",
           effort: "S",
           title: "Enable GitHub Discussions with clear categories",
-          reason: "Questions, ideas, announcements, and setup help should not all become issues.",
+          reason: "Not planned until community volume justifies another inbox. Issues plus a clear support policy are sufficient for an early project.",
+          status: "not-planned",
           example: "Fastify uses Discussions for community support separate from bug tracking.",
           links: [["Fastify Discussions", "https://github.com/fastify/fastify/discussions"]],
         },
@@ -644,7 +660,8 @@
           area: "Community health",
           effort: "S",
           title: "Create a public label taxonomy",
-          reason: "Labels like good first issue, docs, platform:github, platform:gitlab, storage, and model-provider make work discoverable.",
+          reason: "Done: the existing contributor labels are joined by restrained platform:gitlab, platform:github, storage, and model-provider labels.",
+          status: "done",
           example: "Kubernetes uses rich labels to route issue ownership and contributor entry points.",
           links: [["Kubernetes issues", "https://github.com/kubernetes/kubernetes/issues"]],
         },
@@ -654,7 +671,8 @@
           area: "Community health",
           effort: "S",
           title: "Publish a roadmap",
-          reason: "Users should see what is planned, what is deliberately out of scope, and where help is useful.",
+          reason: "Not planned as a separate document. Public issues and milestones are easier to keep current; add a roadmap only when there is a stable multi-release plan.",
+          status: "not-planned",
           example: "Kubernetes and OpenTelemetry maintain public planning surfaces for future work.",
           links: [
             ["Kubernetes", "https://github.com/kubernetes/enhancements"],
@@ -666,8 +684,9 @@
           priority: "Medium",
           area: "Community health",
           effort: "S",
-          title: "Add release and support policy",
-          reason: "Users need to know semver expectations, supported versions, and migration commitments.",
+          title: "Add semver and migration promises to SUPPORT.md",
+          reason: "Keep this with the support/version task rather than creating another standalone policy document.",
+          status: "not-planned",
           example: "Fastify publishes long-term support and release expectations.",
           links: [["Fastify", "https://github.com/fastify/fastify"]],
         },
@@ -677,7 +696,8 @@
           area: "Community health",
           effort: "M",
           title: "Add governance and maintainer policy",
-          reason: "Even a small OSS project benefits from clear merge, release, and maintainer rules.",
+          reason: "Not planned while the project has one maintainer. CONTRIBUTING.md and CODEOWNERS cover the current workflow; formal governance should follow shared ownership.",
+          status: "not-planned",
           example: "Fastify and Kubernetes both publish governance models appropriate to their scale.",
           links: [
             ["Fastify governance", "https://github.com/fastify/fastify/blob/main/GOVERNANCE.md"],
@@ -690,7 +710,8 @@
           area: "Security",
           effort: "M",
           title: "Add CodeQL, dependency review, and OpenSSF Scorecard",
-          reason: "These checks build trust and catch common repository and code security issues.",
+          reason: "Implemented in the pull-request quality gates and scheduled security workflow.",
+          status: "done",
           example: "OpenSSF Scorecard is built specifically to measure open source security posture.",
           links: [
             ["Scorecard", "https://github.com/ossf/scorecard"],
@@ -699,7 +720,7 @@
         },
         {
           id: "M16",
-          priority: "Medium",
+          priority: "Low",
           area: "Security",
           effort: "L",
           title: "Publish SBOMs and artifact attestations",
@@ -716,7 +737,8 @@
           area: "Release and distribution",
           effort: "M",
           title: "Publish multi-architecture container images",
-          reason: "Users running ARM servers, Apple Silicon, and Kubernetes nodes should not build their own image.",
+          reason: "Implemented: release.yml publishes linux/amd64 and linux/arm64 images.",
+          status: "done",
           example: "Docker official images commonly publish linux/amd64 and linux/arm64 variants.",
           links: [["Docker buildx", "https://docs.docker.com/build/building/multi-platform/"]],
         },
@@ -737,7 +759,8 @@
           area: "Extensibility",
           effort: "L",
           title: "Add a PostgreSQL storage adapter",
-          reason: "SQLite is good for a start, but production operators often standardize on Postgres.",
+          reason: "Not planned in core: the documented storage contract already supports third-party PostgreSQL adapters, while SQLite and Flotiq cover the maintained built-ins.",
+          status: "not-planned",
           example: "Many self-hosted OSS apps support SQLite for simple installs and Postgres for production.",
           links: [["Django", "https://github.com/django/django"]],
         },
@@ -747,7 +770,8 @@
           area: "Developer experience",
           effort: "M",
           title: "Add Dev Container or Codespaces setup",
-          reason: "Contributors can run tests and preview setup screens without manually preparing Node and pnpm.",
+          reason: "Not planned: local setup is already Node plus Corepack/pnpm, and maintaining another development image is not justified yet.",
+          status: "not-planned",
           example: "GitHub Codespaces examples and many docs projects make browser-based contribution possible.",
           links: [["Codespaces docs", "https://docs.github.com/en/codespaces"]],
         },
@@ -777,7 +801,8 @@
           area: "Documentation",
           effort: "M",
           title: "Add reverse proxy examples",
-          reason: "Caddy, nginx, Cloudflare Tunnel, and ngrok examples would reduce setup friction.",
+          reason: "Not planned as copied configuration: the docs already cover tunnels, TLS proxies, Ingress, and Gateway API. Vendor-specific snippets would become another security-sensitive maintenance surface.",
+          status: "not-planned",
           example: "Docker docs commonly include compose and proxy snippets for deployment paths.",
           links: [["Docker docs", "https://docs.docker.com/"]],
         },
@@ -787,7 +812,8 @@
           area: "Extensibility",
           effort: "M",
           title: "Add adapter starter templates",
-          reason: "Platform and storage provider interfaces are documented, but examples make contribution practical.",
+          reason: "Not planned yet: custom-provider docs and maintained built-in adapters are better references. Extract templates only after an external adapter exposes repeated friction.",
+          status: "not-planned",
           example: "Fastify plugin examples show how template code accelerates ecosystem contributions.",
           links: [["Fastify plugins", "https://github.com/fastify/fastify-plugin"]],
         },
@@ -797,7 +823,8 @@
           area: "Testing and quality",
           effort: "M",
           title: "Add release smoke tests",
-          reason: "CI should verify the built Docker image starts, serves /healthz, and exposes the CLI.",
+          reason: "Implemented in release.yml: the built image must start, answer /healthz, and run reviewphin --help before publishing.",
+          status: "done",
           example: "Docker-based OSS projects commonly smoke-test images before publishing.",
           links: [["Docker docs", "https://docs.docker.com/build/ci/"]],
         },
@@ -807,7 +834,8 @@
           area: "Testing and quality",
           effort: "M",
           title: "Publish coverage trend or coverage artifact",
-          reason: "The project has a broad test suite; public signal helps contributors understand expectations.",
+          reason: "Implemented: pull requests and releases upload the Vitest coverage report as a workflow artifact.",
+          status: "done",
           example: "Vitest and many JS projects publish coverage artifacts or badges.",
           links: [["Vitest", "https://github.com/vitest-dev/vitest"]],
         },
@@ -826,10 +854,14 @@
           priority: "Low",
           area: "Community growth",
           effort: "S",
-          title: "Add FUNDING.yml",
-          reason: "Funding links are useful if sponsorship or paid support becomes part of the project.",
-          example: "Fastify exposes sponsorship options without making them part of basic setup.",
-          links: [["Fastify sponsors", "https://github.com/sponsors/fastify"]],
+          title: "Add FUNDING.yml for the maintainer's GitHub Sponsors profile",
+          reason: "Done: .github/FUNDING.yml points GitHub's sponsor button to @rgembalik.",
+          status: "done",
+          example: "GitHub surfaces FUNDING.yml links without requiring funding copy throughout the README or docs.",
+          links: [
+            ["Sponsor @rgembalik", "https://github.com/sponsors/rgembalik"],
+            ["GitHub docs", "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository"],
+          ],
         },
         {
           id: "L02",
@@ -850,7 +882,8 @@
           area: "Documentation",
           effort: "M",
           title: "Record a short setup video",
-          reason: "Video helps evaluation, but text docs should carry the project first.",
+          reason: "Not planned: setup behavior is still evolving, and searchable text plus screenshots are cheaper to keep accurate.",
+          status: "not-planned",
           example: "Many developer tools use videos as secondary onboarding material after docs.",
           links: [["Docker docs", "https://docs.docker.com/"]],
         },
@@ -860,7 +893,8 @@
           area: "Documentation",
           effort: "M",
           title: "Add docs style guide",
-          reason: "A style guide is useful once external contributors regularly edit docs.",
+          reason: "Done at the appropriate depth: the contributing-to-docs page defines the docs workflow, ordering, voice, links, and verification expectations.",
+          status: "done",
           example: "Docker docs maintains contribution and writing guidance for docs quality.",
           links: [["Docker docs", "https://github.com/docker/docs"]],
         },
@@ -891,7 +925,8 @@
           area: "Documentation",
           effort: "XL",
           title: "Localize documentation",
-          reason: "Translation can wait until there is stable English documentation and active demand.",
+          reason: "Not planned until the English docs stabilize and contributors volunteer to own translations.",
+          status: "not-planned",
           example: "Kubernetes localizes docs after the core documentation structure is mature.",
           links: [["Kubernetes docs", "https://kubernetes.io/docs/"]],
         },
@@ -901,7 +936,8 @@
           area: "Community growth",
           effort: "S",
           title: "Add all-contributors or contributor credits automation",
-          reason: "Useful for community recognition once external contributions start.",
+          reason: "Not planned: Git history and release notes provide credit without adding a bot and generated metadata. Reassess if contributors ask for broader recognition.",
+          status: "not-planned",
           example: "The all-contributors bot is common in community-oriented OSS projects.",
           links: [["All Contributors", "https://allcontributors.org/"]],
         },
@@ -911,7 +947,8 @@
           area: "Community growth",
           effort: "S",
           title: "Avoid or delay stale bot automation",
-          reason: "Stale bots can harm small communities if issues are closed before maintainers have capacity.",
+          reason: "Not a todo. The decision is simply to avoid stale automation while issue volume is low.",
+          status: "not-planned",
           example: "Large repos use automation selectively; small projects often do better with manual triage first.",
           links: [["Kubernetes issues", "https://github.com/kubernetes/kubernetes/issues"]],
         },
@@ -921,7 +958,8 @@
           area: "Release and distribution",
           effort: "M",
           title: "Package the CLI for Homebrew or Scoop",
-          reason: "Useful if the CLI becomes a common local operator workflow; unnecessary for Docker-first use.",
+          reason: "Not planned because Docker is the supported distribution. Reconsider only if a standalone host CLI becomes a supported product path.",
+          status: "not-planned",
           example: "Many mature CLIs add package-manager distribution after demand exists.",
           links: [["Homebrew", "https://brew.sh/"]],
         },
@@ -931,7 +969,8 @@
           area: "Operations",
           effort: "L",
           title: "Add Terraform modules",
-          reason: "Infrastructure modules are helpful only after the recommended production topology stabilizes.",
+          reason: "Not planned in core. ReviewPhin ships a Helm chart; cloud-specific infrastructure should be demand-led and can live in separate repositories.",
+          status: "not-planned",
           example: "Kubernetes ecosystem projects often add Terraform later through community demand.",
           links: [["Terraform Registry", "https://registry.terraform.io/"]],
         },
@@ -941,7 +980,8 @@
           area: "Documentation",
           effort: "M",
           title: "Create public case studies or adopter notes",
-          reason: "Real usage stories help trust, but they require users and consent.",
+          reason: "Not planned until adopters volunteer real, consented stories. This is outreach, not repository readiness.",
+          status: "not-planned",
           example: "Kubernetes and OpenTelemetry publish user stories once adoption is broad.",
           links: [
             ["Kubernetes case studies", "https://kubernetes.io/case-studies/"],
@@ -954,7 +994,8 @@
           area: "Testing and quality",
           effort: "M",
           title: "Add benchmark documentation",
-          reason: "Benchmarks are only valuable once workloads and deployment recommendations are stable.",
+          reason: "Not planned because ReviewPhin makes no performance claim and model latency dominates most runs. A benchmark would currently create a misleading comparison.",
+          status: "not-planned",
           example: "Fastify publishes benchmarks because performance is a core product claim.",
           links: [["Fastify benchmarks", "https://github.com/fastify/benchmarks"]],
         },
@@ -964,7 +1005,8 @@
           area: "Documentation",
           effort: "M",
           title: "Publish changelog as a docs page",
-          reason: "GitHub releases and CHANGELOG.md are enough at launch; a searchable page helps later.",
+          reason: "Not planned: the docs already link to the canonical CHANGELOG.md, avoiding a duplicated release-history surface.",
+          status: "not-planned",
           example: "Docusaurus projects commonly expose versioned release notes in docs.",
           links: [["Docusaurus", "https://docusaurus.io/"]],
         },
@@ -974,7 +1016,8 @@
           area: "Extensibility",
           effort: "M",
           title: "Add OpenAPI documentation for HTTP routes",
-          reason: "The public API is mostly webhooks and setup routes, so OpenAPI can wait unless external integrations grow.",
+          reason: "Not planned: these are provider-owned webhook and setup endpoints, not a supported third-party REST API.",
+          status: "not-planned",
           example: "API-heavy projects publish OpenAPI specs when third-party clients are expected.",
           links: [["OpenAPI", "https://www.openapis.org/"]],
         },
@@ -984,7 +1027,8 @@
           area: "Branding",
           effort: "M",
           title: "Polish a lightweight public website",
-          reason: "A website can help discovery, but the working docs and README matter more first.",
+          reason: "Done: the Astro/Starlight build includes a public homepage and documentation site at reviewphin.com.",
+          status: "done",
           example: "Fastify and Docusaurus have public sites once the project identity is stable.",
           links: [
             ["Fastify site", "https://fastify.dev/"],
@@ -1005,8 +1049,7 @@
 
       const priorityRank = { High: 0, Medium: 1, Low: 2 };
       const effortRank = { XS: 0, S: 1, M: 2, L: 3, XL: 4 };
-      const progressKey = "reviewphin-oss-launch-board-v1";
-      localStorage.removeItem(progressKey);
+      const initialTaskStatus = new Map(tasks.map((task) => [task.id, task.status ?? "open"]));
       const state = {
         query: "",
         priority: "All",
@@ -1067,6 +1110,14 @@
         return task.status === "done";
       }
 
+      function isTaskNotPlanned(task) {
+        return task.status === "not-planned";
+      }
+
+      function isTaskOpen(task) {
+        return !isTaskDone(task) && !isTaskNotPlanned(task);
+      }
+
       function taskMatches(task) {
         const haystack = [
           task.id,
@@ -1082,7 +1133,8 @@
         const statusMatch =
           state.status === "all" ||
           (state.status === "done" && isTaskDone(task)) ||
-          (state.status === "open" && !isTaskDone(task));
+          (state.status === "not-planned" && isTaskNotPlanned(task)) ||
+          (state.status === "open" && isTaskOpen(task));
 
         return (
           (state.priority === "All" || task.priority === state.priority) &&
@@ -1125,17 +1177,22 @@
         els.rows.innerHTML = visible
           .map((task) => {
             const done = isTaskDone(task);
+            const notPlanned = isTaskNotPlanned(task);
             const classes = priorityClasses(task.priority);
             return `
-              <tr class="border-l-4 ${classes.rail} ${done ? "bg-[#f2f4ef] opacity-60" : "bg-white/85"} hover:bg-[#f9fbf5]">
+              <tr class="border-l-4 ${classes.rail} ${done || notPlanned ? "bg-[#f2f4ef] opacity-60" : "bg-white/85"} hover:bg-[#f9fbf5]">
                 <td class="align-top px-3 py-4">
-                  <input
-                    type="checkbox"
-                    class="h-4 w-4 accent-signal"
-                    data-task-id="${escapeHtml(task.id)}"
-                    ${done ? "checked" : ""}
-                    aria-label="Mark ${escapeHtml(task.title)} done"
-                  />
+                  ${
+                    notPlanned
+                      ? '<span class="font-data text-xs font-bold text-muted" title="Not planned">—</span>'
+                      : `<input
+                          type="checkbox"
+                          class="h-4 w-4 accent-signal"
+                          data-task-id="${escapeHtml(task.id)}"
+                          ${done ? "checked" : ""}
+                          aria-label="Mark ${escapeHtml(task.title)} done"
+                        />`
+                  }
                 </td>
                 <td class="align-top px-3 py-4">
                   <span class="inline-flex min-w-20 items-center justify-center border px-2 py-1 font-data text-[11px] font-semibold ${classes.badge}">
@@ -1147,7 +1204,7 @@
                   <span class="font-data text-xs font-semibold text-ink">${escapeHtml(task.area)}</span>
                 </td>
                 <td class="max-w-xl align-top px-3 py-4">
-                  <p class="font-semibold leading-5 ${done ? "line-through decoration-2 decoration-muted" : ""}">
+                  <p class="font-semibold leading-5 ${done || notPlanned ? "line-through decoration-2 decoration-muted" : ""}">
                     ${escapeHtml(task.title)}
                   </p>
                   <p class="mt-1 leading-6 text-muted">${escapeHtml(task.reason)}</p>
@@ -1172,10 +1229,11 @@
 
       function renderStats(visible) {
         const doneCount = tasks.filter(isTaskDone).length;
-        const allOpen = tasks.length - doneCount;
-        const highOpen = tasks.filter((task) => task.priority === "High" && !isTaskDone(task)).length;
-        const mediumOpen = tasks.filter((task) => task.priority === "Medium" && !isTaskDone(task)).length;
-        const lowOpen = tasks.filter((task) => task.priority === "Low" && !isTaskDone(task)).length;
+        const notPlannedCount = tasks.filter(isTaskNotPlanned).length;
+        const allOpen = tasks.filter(isTaskOpen).length;
+        const highOpen = tasks.filter((task) => task.priority === "High" && isTaskOpen(task)).length;
+        const mediumOpen = tasks.filter((task) => task.priority === "Medium" && isTaskOpen(task)).length;
+        const lowOpen = tasks.filter((task) => task.priority === "Low" && isTaskOpen(task)).length;
 
         els.prioritySummary.innerHTML = [
           ["High", highOpen, "Before launch"],
@@ -1198,9 +1256,9 @@
           .join("");
 
         els.miniStats.innerHTML = [
-          ["Total", tasks.length],
           ["Open", allOpen],
           ["Done", doneCount],
+          ["Skipped", notPlannedCount],
         ]
           .map(
             ([label, count]) => `
@@ -1213,10 +1271,11 @@
           .join("");
 
         const visibleDone = visible.filter(isTaskDone).length;
+        const visibleNotPlanned = visible.filter(isTaskNotPlanned).length;
         els.viewStats.innerHTML = [
           ["Showing", visible.length],
           ["Done here", visibleDone],
-          ["High open", highOpen],
+          ["Skipped here", visibleNotPlanned],
           ["All open", allOpen],
         ]
           .map(
@@ -1232,7 +1291,9 @@
         document.querySelectorAll(".quickPriority").forEach((button) => {
           button.addEventListener("click", () => {
             state.priority = button.dataset.priority;
+            state.status = "open";
             els.priority.value = state.priority;
+            els.status.value = state.status;
             renderRows();
           });
         });
@@ -1273,6 +1334,8 @@
               state.area = value;
               els.area.value = value;
             }
+            state.status = "open";
+            els.status.value = state.status;
             renderRows();
           });
         });
@@ -1314,6 +1377,9 @@
           renderRows();
         });
         els.resetProgress.addEventListener("click", () => {
+          tasks.forEach((task) => {
+            task.status = initialTaskStatus.get(task.id);
+          });
           renderRows();
         });
         els.rows.addEventListener("change", (event) => {

@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest an improvement or new capability.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        For vulnerabilities, follow [SECURITY.md](https://github.com/cdwv/ReviewPhin/blob/main/SECURITY.md) instead.
+        Never include credentials, private code, or sensitive logs in a public issue.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Explain the user or operator need.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+      description: Describe the smallest useful outcome.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - GitLab
+        - GitHub
+        - Storage
+        - Model provider
+        - CLI or deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional; include any workaround you use today.
