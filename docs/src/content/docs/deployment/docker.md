@@ -59,10 +59,10 @@ A local Docker host is not reachable by your platform yet. For a quick trial, op
 
 The repository ships a multi-stage `Dockerfile`. The compose file builds it locally as `reviewphin:local`; `docker compose up --build` rebuilds after source changes.
 
-The runtime stage pins the bundled Copilot CLI to a fixed version for reproducible images. It defaults to `1.0.70` and can be overridden at build time:
+The runtime stage pins the bundled Copilot CLI version for reproducible images. Build it with:
 
 ```bash
-docker build --build-arg COPILOT_CLI_VERSION=1.0.70 -t reviewphin:local .
+docker build --tag reviewphin:local .
 ```
 
-The image installs `@github/copilot` at that version and points `COPILOT_CLI_PATH` at `/usr/local/bin/copilot`. CLI `1.0.70` is the dependency resolved for the bundled `@github/copilot-sdk` `1.0.6`.
+The image installs `@github/copilot` `1.0.70` globally with pnpm and exposes it at `/usr/local/bin/copilot`. Update the pinned version in the `Dockerfile` when intentionally upgrading the CLI.

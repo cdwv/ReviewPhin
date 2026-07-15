@@ -1,5 +1,13 @@
-FROM node:26-bookworm-slim AS build
+FROM node:24-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS base
 
+ENV PNPM_HOME=/pnpm \
+  PATH=/pnpm/bin:/pnpm:$PATH \
+  COREPACK_HOME=/opt/corepack
+
+RUN corepack enable \
+  && corepack install --global pnpm@10.18.2
+
+FROM base AS build
 
 ARG REVIEWPHIN_BUILD_HOMEPAGE=false
 ARG REVIEWPHIN_POSTHOG_KEY=
@@ -7,12 +15,6 @@ ARG REVIEWPHIN_POSTHOG_HOST=
 ENV REVIEWPHIN_BUILD_HOMEPAGE=${REVIEWPHIN_BUILD_HOMEPAGE} \
   REVIEWPHIN_POSTHOG_KEY=${REVIEWPHIN_POSTHOG_KEY} \
   REVIEWPHIN_POSTHOG_HOST=${REVIEWPHIN_POSTHOG_HOST}
-
-ENV PNPM_HOME=/pnpm
-ENV PATH=$PNPM_HOME:$PATH
-
-RUN npm install --global corepack@latest \
-  && corepack enable
 
 WORKDIR /app
 
@@ -28,9 +30,7 @@ RUN pnpm install --frozen-lockfile \
   && pnpm docs:build:container \
   && pnpm prune --prod
 
-FROM node:26-bookworm-slim AS runtime
-
-ARG COPILOT_CLI_VERSION=1.0.70
+FROM base AS runtime
 
 ENV NODE_ENV=production \
   HOST=0.0.0.0 \
@@ -45,7 +45,8 @@ ENV NODE_ENV=production \
 
 RUN apt-get update \
   && apt-get install --yes --no-install-recommends ca-certificates git \
-  && npm install --global @github/copilot@${COPILOT_CLI_VERSION} \
+  && pnpm add --global --global-bin-dir /pnpm @github/copilot@1.0.70 \
+  && ln -s /pnpm/copilot /usr/local/bin/copilot \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -5,9 +5,11 @@ on:
   release:
     types: [published]
 
+permissions: {}
+
 jobs:
   release:
-    uses: happy-changelog/happy-changelog-workflow/.github/workflows/edit-release.yml@v1.6.1
+    uses: happy-changelog/happy-changelog-workflow/.github/workflows/edit-release.yml@fbaa18ecac63a032cf0b05113561ba62be7294a1 # v1.6.1
     permissions:
       contents: write
     with:

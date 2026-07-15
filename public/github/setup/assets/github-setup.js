@@ -37,6 +37,47 @@
     requireElement(selector).textContent = String(value);
   }
 
+  /**
+   * @param {unknown} value
+   * @returns {string | null}
+   */
+  function safeHttpUrl(value) {
+    try {
+      const url = new URL(String(value), window.location.href);
+      return url.protocol === "https:" || url.protocol === "http:"
+        ? url.href
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * @param {HTMLAnchorElement} element
+   * @param {unknown} value
+   */
+  function setSafeHref(element, value) {
+    const url = safeHttpUrl(value);
+    if (url) {
+      element.href = url;
+    } else {
+      element.removeAttribute("href");
+    }
+  }
+
+  /**
+   * @param {HTMLImageElement} element
+   * @param {unknown} value
+   */
+  function setSafeImageSource(element, value) {
+    const url = safeHttpUrl(value);
+    if (url) {
+      element.src = url;
+    } else {
+      element.removeAttribute("src");
+    }
+  }
+
   /** @param {RegisterSetupPageData} page */
   function renderRegister(page) {
     const form = /** @type {HTMLFormElement} */ (requireElement("#setup-form"));
@@ -118,7 +159,7 @@
     const installUrl = /** @type {HTMLAnchorElement} */ (
       requireElement('[data-field="installUrl"]')
     );
-    installUrl.href = page.installUrl;
+    setSafeHref(installUrl, page.installUrl);
   }
 
   /** @param {SuccessSetupPageData} page */
@@ -143,7 +184,7 @@
       requireElement('[data-field="ownerAvatarUrl"]')
     );
     if (page.ownerAvatarUrl) {
-      avatar.src = page.ownerAvatarUrl;
+      setSafeImageSource(avatar, page.ownerAvatarUrl);
       avatar.hidden = false;
     }
 
@@ -152,19 +193,19 @@
       requireElement('[data-field="appHtmlUrl"]')
     );
     if (page.appHtmlUrl) {
-      appLink.href = page.appHtmlUrl;
+      setSafeHref(appLink, page.appHtmlUrl);
       appLinkSection.hidden = false;
     }
 
     const iconLink = /** @type {HTMLAnchorElement} */ (
       requireElement('[data-field="iconUrl"]')
     );
-    iconLink.href = page.iconUrl;
+    setSafeHref(iconLink, page.iconUrl);
 
     const reviewphinAvatar = /** @type {HTMLImageElement} */ (
       requireElement('[data-field="reviewphinAvatar"]')
     );
-    reviewphinAvatar.src = page.iconUrl;
+    setSafeImageSource(reviewphinAvatar, page.iconUrl);
 
     const settingsLink = /** @type {HTMLAnchorElement} */ (
       requireElement('[data-field="appSettingsUrl"]')
