@@ -4,6 +4,11 @@ Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-change
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 
+## v1.4.3 - 2026-07-15
+### Fixed
+- Container images now use the working Docker configuration from
+ReviewPhin 1.4.0 again.
+
 ## v1.4.2 - 2026-07-15
 ### Security
 - GitHub setup pages now reject unsafe link and image URL schemes.
