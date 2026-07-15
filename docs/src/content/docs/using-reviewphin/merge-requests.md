@@ -29,6 +29,14 @@ To ignore prior incremental context and rescan more broadly:
 
 Other accepted phrasings: `full rescan`, `fresh full review`, `full review from scratch`, `rescan everything`.
 
+## Ask about an image
+
+Attach an image to the comment that triggers ReviewPhin, or add one to the merge request description. ReviewPhin recognizes standard Markdown images such as `![screenshot](URL)` and HTML images such as `<img src="URL">`. It downloads only images hosted by the configured GitLab instance; links to other websites are not fetched.
+
+Up to 10 referenced images and 25 MiB of image data are included in one run. Each image also has a 10 MiB limit. A failed or omitted image does not stop the run: ReviewPhin continues with the available text and images, and limit omissions are reported as unavailable.
+
+A model must support image input to inspect attachments. When the selected model does not support images, ReviewPhin continues with text and tells the model that the images were omitted.
+
 ## Override the model for one merge request
 
 Add a directive to the merge request **description** (not a comment):

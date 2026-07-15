@@ -78,4 +78,4 @@ Selects a named [model profile](../../management/model-profiles/) for every run 
 
 GitHub's primary trigger is the **Run Review** check run action; comment commands are compatibility paths that GitHub does not autocomplete.
 
-GitHub triggers can also include image attachments. See [Ask about an image](../pull-requests/#ask-about-an-image) for supported formats, download limits, and failure behavior.
+Triggers can also include image attachments. See the GitLab [merge request image workflow](../merge-requests/#ask-about-an-image) or the GitHub [pull request image workflow](../pull-requests/#ask-about-an-image) for supported formats, download limits, and failure behavior.
