@@ -11,7 +11,10 @@ import {
   createDisabledProjectMemoryBackend,
   type ProjectMemoryBackend,
 } from "../src/memory/backend.js";
-import type { GitHubClient } from "../src/platforms/github/client.js";
+import {
+  type GitHubClient,
+  GitHubImageDownloadError,
+} from "../src/platforms/github/client.js";
 import type {
   DiscussionMappingRecord,
   InteractionJobRecord,
@@ -20,6 +23,7 @@ import type {
 } from "../src/storage/contract/current.js";
 import type { StorageHelpers } from "../src/storage/storage-helpers.js";
 import { createLogger } from "../src/logger.js";
+import { InteractionRunArtifacts } from "../src/review/run-artifacts.js";
 
 const tempRoots: string[] = [];
 
@@ -686,6 +690,86 @@ describe("GitHubPlatformReviewRuntime", () => {
     );
     expect(client.downloadRepositoryArchive).not.toHaveBeenCalled();
   });
+
+  it("materializes GitHub images for comment runs and records partial failures", async () => {
+    const workspaceRoot = await createTempRoot();
+    const downloadImage = vi.fn(async (url: string) => {
+      if (url.includes("success")) {
+        return {
+          data: "AQID",
+          mimeType: "image/png",
+          sizeBytes: 3,
+        };
+      }
+      throw new GitHubImageDownloadError({
+        message: "GitHub image request failed with status 404",
+        status: 404,
+        url,
+      });
+    });
+    const client = createClient({
+      archive: await createRepositoryArchive(),
+      pullRequestBody:
+        "![architecture](https://user-images.githubusercontent.com/1/success.png)",
+      downloadImage,
+    });
+    const runtime = createRuntime({
+      workspaceRoot,
+      tenant: createTenant("octo-org/reviewphin"),
+      client,
+      patch: vi.fn(),
+      createCodeReviewSnapshot: vi.fn(),
+    });
+    const routing = await runtime.loadRoutingContext(createJob());
+    const runArtifacts = new InteractionRunArtifacts(
+      workspaceRoot,
+      "run-images",
+    );
+    await runArtifacts.initialize();
+
+    const result = await runtime.materializeAttachments({
+      context: routing,
+      runArtifacts,
+      trigger: {
+        kind: "direct-mention",
+        commentId: 55,
+        authorUsername: "octocat",
+        body: "@reviewphin inspect ![failure](https://private-user-images.githubusercontent.com/2/failure.png?jwt=secret)",
+        instruction: "inspect",
+        targetDiscussionId: null,
+        targetPlatformDiscussionId: null,
+        targetDiscussionTitle: null,
+        responseTarget: {
+          kind: "code-review-comment",
+          locationType: "code-review-comment",
+          triggerKind: "direct-mention",
+          commentId: 55,
+          authorUsername: "octocat",
+          body: "inspect",
+          instruction: "inspect",
+        },
+      },
+    });
+
+    expect(downloadImage).toHaveBeenCalledTimes(2);
+    expect(result.attachments).toHaveLength(1);
+    expect(result.issues).toEqual([
+      expect.objectContaining({
+        commentId: 55,
+        status: 404,
+        url: "https://private-user-images.githubusercontent.com/2/failure.png",
+      }),
+    ]);
+    const artifact = await readFile(
+      join(
+        runArtifacts.runDirectory,
+        "orchestration",
+        "image-attachments.json",
+      ),
+      "utf8",
+    );
+    expect(artifact).not.toContain("jwt=secret");
+  });
 });
 
 function createRuntime(input: {
@@ -720,9 +804,11 @@ function createRuntime(input: {
 function createClient(input: {
   archive: Buffer;
   pullRequestHeadSha?: string;
+  pullRequestBody?: string;
   threadResolved?: boolean;
   threadOutdated?: boolean;
   resolveRepositoryById?: ReturnType<typeof vi.fn>;
+  downloadImage?: ReturnType<typeof vi.fn>;
 }) {
   return {
     resolveRepositoryById:
@@ -740,7 +826,7 @@ function createClient(input: {
     getPullRequest: vi.fn(async () => ({
       number: 42,
       title: "Add GitHub review runtime",
-      body: "Implements read-only hydration.",
+      body: input.pullRequestBody ?? "Implements read-only hydration.",
       html_url: "https://github.com/octo-org/reviewphin/pull/42",
       user: { login: "octocat" },
       head: {
@@ -892,6 +978,11 @@ function createClient(input: {
       updated_at: "2026-06-11T00:02:00.000Z",
     })),
     downloadRepositoryArchive: vi.fn(async () => input.archive),
+    downloadImage:
+      input.downloadImage ??
+      vi.fn(async () => {
+        throw new Error("downloadImage was not expected");
+      }),
   };
 }
 

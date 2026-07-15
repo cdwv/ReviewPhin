@@ -1,5 +1,8 @@
+import { join } from "node:path";
+
 import type { Logger } from "pino";
 
+import type { HarnessRunAttachments } from "../../harness/types.js";
 import type { ProjectMemoryBackend } from "../../memory/backend.js";
 import {
   buildProviderDiscussions,
@@ -46,6 +49,10 @@ import {
 } from "./client.js";
 import { readyGitHubConnectionConfigSchema } from "./config.js";
 import { GitHubRepositoryContextResolver } from "./repository-context.js";
+import {
+  discoverGitHubImageAttachmentReferences,
+  materializeGitHubImageAttachments,
+} from "./image-attachments.js";
 import {
   buildGitHubIssueCommentDiscussions,
   buildGitHubReviewCommentFallbackDiscussions,
@@ -441,12 +448,73 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
     );
   }
 
-  public async materializeAttachments(): Promise<{
-    attachments: [];
-    breadcrumbs: [];
-    issues: [];
+  public async materializeAttachments(input: {
+    context: PlatformReviewRoutingContext;
+    trigger: ReviewContext["trigger"];
+    runArtifacts: InteractionRunArtifacts;
+  }): Promise<{
+    attachments: HarnessRunAttachments;
+    breadcrumbs: ReviewContext["attachments"];
+    issues: ReviewContext["attachmentIssues"];
   }> {
-    return { attachments: [], breadcrumbs: [], issues: [] };
+    const context = this.unwrapContext(input.context);
+    const references = discoverGitHubImageAttachmentReferences({
+      pullRequest: context.pullRequest,
+      ...(input.trigger.kind === "manual-review"
+        ? {}
+        : {
+            triggerComment: {
+              body: input.trigger.body,
+              commentId: input.trigger.commentId,
+            },
+          }),
+    });
+    if (references.length === 0) {
+      return { attachments: [], breadcrumbs: [], issues: [] };
+    }
+
+    const materialized = await materializeGitHubImageAttachments({
+      client: this.options.client,
+      references,
+    });
+    await input.runArtifacts.writeJsonArtifact(
+      join("orchestration", "image-attachments.json"),
+      {
+        attachmentCount: materialized.attachments.length,
+        attachments: materialized.breadcrumbs,
+        issues: materialized.issues,
+        skipped: materialized.skipped,
+      },
+    );
+    if (materialized.issues.length > 0) {
+      const triggerCommentId =
+        input.trigger.kind === "manual-review" ? null : input.trigger.commentId;
+      await input.runArtifacts.appendAppLog({
+        timestamp: new Date().toISOString(),
+        level: "warn",
+        message:
+          "github image attachment downloads failed for some referenced images; continuing with partial image context",
+        data: {
+          issueCount: materialized.issues.length,
+          attachmentCount: materialized.attachments.length,
+          triggerCommentId,
+          issues: materialized.issues,
+        },
+      });
+      this.options.logger.warn(
+        {
+          tenantId: this.tenant.id,
+          triggerCommentId,
+          issueCount: materialized.issues.length,
+        },
+        "github image attachment downloads failed for some referenced images; continuing with partial image context",
+      );
+    }
+    return {
+      attachments: materialized.attachments,
+      breadcrumbs: materialized.breadcrumbs,
+      issues: materialized.issues,
+    };
   }
 
   public async publishChatterReplies(input: {
@@ -686,8 +754,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
     context: PlatformReviewRoutingContext,
   ): GitHubPullRequestContext | HydratedGitHubPullRequestContext {
     return context.platformContext as
-      | GitHubPullRequestContext
-      | HydratedGitHubPullRequestContext;
+      GitHubPullRequestContext | HydratedGitHubPullRequestContext;
   }
 
   private toCodeReviewComments(

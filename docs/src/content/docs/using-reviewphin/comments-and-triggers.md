@@ -68,12 +68,14 @@ Selects a named [model profile](../../management/model-profiles/) for every run 
 
 ## Platform notes
 
-| Command | GitLab | GitHub |
-| --- | --- | --- |
-| `@reviewphin review this` | Native mention trigger | Compatibility trigger (no autocomplete) |
-| `/reviewphin review` | — | Compatibility trigger (no autocomplete) |
-| **Run Review** check run | — | Native trigger |
-| Reply in bot discussion | Continues the finding | Continues the finding |
-| `/reviewphin-profile <name>` | In MR description | In PR description |
+| Command                      | GitLab                 | GitHub                                  |
+| ---------------------------- | ---------------------- | --------------------------------------- |
+| `@reviewphin review this`    | Native mention trigger | Compatibility trigger (no autocomplete) |
+| `/reviewphin review`         | —                      | Compatibility trigger (no autocomplete) |
+| **Run Review** check run     | —                      | Native trigger                          |
+| Reply in bot discussion      | Continues the finding  | Continues the finding                   |
+| `/reviewphin-profile <name>` | In MR description      | In PR description                       |
 
 GitHub's primary trigger is the **Run Review** check run action; comment commands are compatibility paths that GitHub does not autocomplete.
+
+Triggers can also include image attachments. See the GitLab [merge request image workflow](../merge-requests/#ask-about-an-image) or the GitHub [pull request image workflow](../pull-requests/#ask-about-an-image) for supported formats, download limits, and failure behavior.

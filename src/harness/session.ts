@@ -13,6 +13,10 @@ import type { Logger } from "pino";
 import { ProjectMemoryConsolidator } from "../memory/consolidator.js";
 import { ProjectMemoryService } from "../memory/service.js";
 import { createId } from "../utils/ids.js";
+import {
+  attachmentRequiresVision,
+  prepareImageAttachmentsForModel,
+} from "./image-input.js";
 import { parseHarnessStructuredResponse } from "./response-format.js";
 import { resolveHarnessSubagents, resolveHarnessTools } from "./registry.js";
 import { HarnessRunLog } from "./run-log.js";
@@ -242,9 +246,60 @@ export class HarnessSessionRuntime {
       });
     }
 
+    const visionLimits = selectedModel.capabilities.limits.vision;
+    if (!visionLimits) {
+      return {
+        prompt: spec.prompt,
+        attachments: spec.attachments,
+      };
+    }
+
+    const prepared = await prepareImageAttachmentsForModel(
+      spec.attachments,
+      visionLimits,
+    );
+    if (prepared.processed.length > 0) {
+      this.logger.info(
+        {
+          interactionRunId: spec.logging?.interactionRunId ?? null,
+          interactionJobId: spec.logging?.interactionJobId ?? null,
+          tenantId: spec.logging?.tenantId ?? null,
+          sessionKind: spec.logging?.sessionKind ?? null,
+          model: selectedModelId,
+          modelProfileName: spec.modelConfig.modelProfileName,
+          attachments: prepared.processed,
+        },
+        "image attachments processed to fit Copilot model limits",
+      );
+    }
+
+    if (prepared.omitted.length > 0) {
+      this.logger.warn(
+        {
+          interactionRunId: spec.logging?.interactionRunId ?? null,
+          interactionJobId: spec.logging?.interactionJobId ?? null,
+          tenantId: spec.logging?.tenantId ?? null,
+          sessionKind: spec.logging?.sessionKind ?? null,
+          model: selectedModelId,
+          modelProfileName: spec.modelConfig.modelProfileName,
+          attachmentCount: prepared.omitted.length,
+        },
+        "image attachments could not be prepared for Copilot model limits; continuing with partial image context",
+      );
+      return {
+        prompt: appendVisionUnavailableNote(spec.prompt, {
+          model: selectedModelId,
+          omittedImageAttachments: prepared.omitted,
+          reason: `The selected model "${selectedModelId}" could not receive these images within its advertised vision limits.`,
+        }),
+        attachments:
+          prepared.attachments.length > 0 ? prepared.attachments : undefined,
+      };
+    }
+
     return {
       prompt: spec.prompt,
-      attachments: spec.attachments,
+      attachments: prepared.attachments,
     };
   }
 
@@ -348,25 +403,6 @@ async function flushRunLog(
     );
     return null;
   }
-}
-
-const IMAGE_FILE_EXTENSION_PATTERN =
-  /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/i;
-
-function attachmentRequiresVision(attachment: HarnessRunAttachment): boolean {
-  if (attachment.type === "blob") {
-    return attachment.mimeType.toLowerCase().startsWith("image/");
-  }
-
-  if (attachment.type === "file") {
-    return (
-      IMAGE_FILE_EXTENSION_PATTERN.test(attachment.path) ||
-      (typeof attachment.displayName === "string" &&
-        IMAGE_FILE_EXTENSION_PATTERN.test(attachment.displayName))
-    );
-  }
-
-  return false;
 }
 
 function appendVisionUnavailableNote(

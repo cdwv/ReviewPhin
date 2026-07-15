@@ -26,6 +26,14 @@ Pull request comments also accept:
 
 Mentions of the generated App slug are accepted too. These are compatibility triggers and do not appear in GitHub slash-command or mention autocomplete.
 
+## Ask about an image
+
+Attach an image to the comment that triggers ReviewPhin, or add one to the pull request description. ReviewPhin recognizes standard Markdown images such as `![screenshot](URL)` and HTML images such as `<img src="URL">`. It downloads only GitHub-hosted attachment URLs; links to other websites are not fetched.
+
+Up to 10 referenced images and 25 MiB of image data are downloaded for one run. Each downloaded image also has a 10 MiB limit. Before sending an image, ReviewPhin checks the selected model's vision limits and resizes or re-encodes the image when necessary. If an image is unsupported, exceeds a download limit, cannot be processed within the model's limit, or cannot be downloaded, the run continues with the available text and images. The model is told which referenced images were unavailable so it does not claim to have inspected them.
+
+A model must support image input to inspect attachments. When the selected model does not support images, ReviewPhin continues with text and tells the model that the images were omitted.
+
 ## Override the model for one pull request
 
 Add a directive to the pull request **description**:

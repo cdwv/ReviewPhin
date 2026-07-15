@@ -1,16 +1,24 @@
 import { createHmac } from "node:crypto";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   GitHubApiError,
   GitHubClient,
+  GitHubImageDownloadError,
 } from "../src/platforms/github/client.js";
-import type { GitHubApi } from "../src/platforms/github/client.js";
+import type {
+  GitHubApi,
+  GitHubAppApi,
+} from "../src/platforms/github/client.js";
 import {
   githubConnectionRegistrationSchema,
   readyGitHubConnectionConfigSchema,
 } from "../src/platforms/github/config.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("GitHubClient", () => {
   it("delegates webhook signature verification to Octokit", async () => {
@@ -297,6 +305,181 @@ describe("GitHubClient", () => {
     await expect(
       client.downloadRepositoryArchive("octo-org/reviewphin", "head-sha"),
     ).resolves.toEqual(Buffer.from([31, 139, 8, 0]));
+  });
+
+  it("downloads GitHub attachments with installation access and checks redirect hosts", async () => {
+    const auth = vi.fn(async () => ({ token: "installation-token" }));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: {
+            location:
+              "https://private-user-images.githubusercontent.com/1/screenshot.png?jwt=secret",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(Buffer.from([1, 2, 3]), {
+          status: 200,
+          headers: {
+            "content-type": "image/png",
+            "content-length": "3",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createClientWithAppAuth(auth);
+
+    await expect(
+      client.downloadImage(
+        "https://github.com/user-attachments/assets/11111111-1111-1111-1111-111111111111",
+      ),
+    ).resolves.toEqual({
+      data: "AQID",
+      mimeType: "image/png",
+      sizeBytes: 3,
+    });
+
+    expect(auth).toHaveBeenCalledWith({
+      type: "installation",
+      installationId: 789,
+    });
+    const firstHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Record<
+      string,
+      string
+    >;
+    const redirectedHeaders = fetchMock.mock.calls[1]?.[1]?.headers as Record<
+      string,
+      string
+    >;
+    expect(firstHeaders.authorization).toBe("Bearer installation-token");
+    expect(redirectedHeaders.authorization).toBeUndefined();
+    expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe("manual");
+  });
+
+  it("follows GitHub user attachment redirects to its production S3 host without forwarding credentials", async () => {
+    const auth = vi.fn(async () => ({ token: "installation-token" }));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: {
+            location:
+              "https://github-production-user-asset-6210df.s3.amazonaws.com/2618837/622210718-dc641783-ad2d-4663-9d13-2cbcde3e582e.png?X-Amz-Signature=secret",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(Buffer.from([1, 2, 3]), {
+          status: 200,
+          headers: {
+            "content-type": "image/png",
+            "content-length": "3",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createClientWithAppAuth(auth);
+
+    await expect(
+      client.downloadImage(
+        "https://github.com/user-attachments/assets/dc641783-ad2d-4663-9d13-2cbcde3e582e",
+      ),
+    ).resolves.toEqual({
+      data: "AQID",
+      mimeType: "image/png",
+      sizeBytes: 3,
+    });
+
+    const redirectedHeaders = fetchMock.mock.calls[1]?.[1]?.headers as Record<
+      string,
+      string
+    >;
+    expect(redirectedHeaders.authorization).toBeUndefined();
+  });
+
+  it("rejects external image URLs and redirects without requesting them", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://example.com/private.png" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createClientWithAppAuth(
+      vi.fn(async () => ({ token: "installation-token" })),
+    );
+
+    await expect(
+      client.downloadImage("https://example.com/private.png"),
+    ).rejects.toBeInstanceOf(GitHubImageDownloadError);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expect(
+      client.downloadImage(
+        "https://github-production-user-asset-6210df.s3.amazonaws.com/2618837/image.png",
+      ),
+    ).rejects.toThrow("not an allowed attachment location");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expect(
+      client.downloadImage(
+        "https://github.com/user-attachments/assets/11111111-1111-1111-1111-111111111111",
+      ),
+    ).rejects.toThrow("not an allowed attachment location");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects unsupported, oversized, and empty GitHub attachment responses", async () => {
+    const client = createClientWithAppAuth(
+      vi.fn(async () => ({ token: "installation-token" })),
+    );
+    const url = "https://user-images.githubusercontent.com/1/image.png";
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response("not an image", {
+          status: 200,
+          headers: { "content-type": "text/plain" },
+        }),
+      ),
+    );
+    await expect(client.downloadImage(url)).rejects.toThrow(
+      "content type is unsupported",
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(Buffer.from([1]), {
+          status: 200,
+          headers: {
+            "content-type": "image/png",
+            "content-length": "11",
+          },
+        }),
+      ),
+    );
+    await expect(client.downloadImage(url, { maxBytes: 10 })).rejects.toThrow(
+      "exceeds the 10 byte limit",
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(null, {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        }),
+      ),
+    );
+    await expect(client.downloadImage(url)).rejects.toThrow(
+      "response was empty",
+    );
   });
 
   it("translates GitHub API failures without writing to stdout", async () => {
@@ -881,6 +1064,18 @@ function createClientWithInstallationRequest(request: GitHubApi["request"]) {
     createApp: () => ({
       octokit: { request: vi.fn() },
       getInstallationOctokit: vi.fn(async () => ({ request })),
+    }),
+  });
+}
+
+function createClientWithAppAuth(
+  auth: NonNullable<GitHubAppApi["octokit"]["auth"]>,
+) {
+  return new GitHubClient({
+    config: createReadyConfig(),
+    createApp: () => ({
+      octokit: { auth, request: vi.fn() },
+      getInstallationOctokit: vi.fn(),
     }),
   });
 }
