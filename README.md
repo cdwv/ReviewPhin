@@ -326,7 +326,7 @@ A developer starts a review from a GitLab merge request or GitHub pull request. 
 
 Findings are published through the platform's native review tools as bot-owned discussions, inline comments, suggestions, and a summary. Later reviews can focus on new changes, while replies inside existing findings continue the conversation without starting over.
 
-The ReviewPhin worker runs on infrastructure you control, but review context is sent to the model provider you configure. Review state and project memory are also sent to a hosted storage provider when you select one instead of local SQLite. Review AI-generated findings before acting on or merging them.
+The ReviewPhin worker runs on infrastructure you control, but review context is sent to the model provider you configure. When you select a hosted storage provider instead of local SQLite, persisted review state goes to that provider. Project memory follows the platform: GitHub uses the configured storage provider, while GitLab uses the project wiki when enabled and configured storage otherwise. Review AI-generated findings before acting on or merging them.
 
 ---
 
