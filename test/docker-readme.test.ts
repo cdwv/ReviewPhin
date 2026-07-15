@@ -99,6 +99,21 @@ describe("Docker Hub README generation", () => {
       "[License](https://github.example.test/acme/reviewphin/blob/v1.2.3/LICENSE)",
     );
   });
+
+  it("accepts a transformed README at Docker Hub's character limit", async () => {
+    const output = await generateDockerReadme("a".repeat(25_000));
+
+    expect(Array.from(output)).toHaveLength(25_000);
+  });
+
+  it("rejects a README that exceeds the limit only after transformation", async () => {
+    const readme = "[License](LICENSE)\n".repeat(400).trim();
+
+    expect(Array.from(readme).length).toBeLessThan(25_000);
+    await expect(generateDockerReadme(readme)).rejects.toThrow(
+      /Docker Hub repository overview is \d+ characters, exceeding the 25000-character limit by \d+/,
+    );
+  });
 });
 
 async function generateDockerReadme(

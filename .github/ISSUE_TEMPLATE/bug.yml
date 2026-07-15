@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible, non-security problem.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        For vulnerabilities, follow [SECURITY.md](SECURITY.md) instead.
+        Never include credentials, private code, or sensitive logs in a public issue.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How can we reproduce it?
+      description: Provide the smallest safe sequence of commands or events that triggers the problem.
+      placeholder: Do not include tokens, secrets, private repository contents, or sensitive logs.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - GitLab
+        - GitHub
+        - Storage
+        - Model provider
+        - CLI or deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ReviewPhin version
+      placeholder: For example, 1.4.0 or a commit SHA
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add only public, redacted details that help explain the issue.

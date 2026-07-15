@@ -8,6 +8,9 @@ Run on your own infrastructure. Bring your own model. Use your own agent subscri
 
 [![Docker Image](https://img.shields.io/badge/docker-cdwv%2Freviewphin-blue?logo=docker)](https://hub.docker.com/r/cdwv/reviewphin)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](LICENSE)
+[![Quality Gates](https://github.com/cdwv/ReviewPhin/actions/workflows/quality-gates.yml/badge.svg)](https://github.com/cdwv/ReviewPhin/actions/workflows/quality-gates.yml)
+
+[Security policy](SECURITY.md)
 
 </div>
 
@@ -32,7 +35,6 @@ _Created by [@rgembalik](https://github.com/rgembalik) with support from [CodeWa
 - [Using ReviewPhin](#using-reviewphin)
 - [How it works](#how-it-works)
 - [Review pipeline](#review-pipeline)
-- [Technologies](#technologies)
 - [Environment variables](#environment-variables)
 - [Inspiration & motivation](#inspiration--motivation)
 - [CLI reference](https://reviewphin.com/docs/management/cli-reference/)
@@ -71,6 +73,8 @@ docker compose up -d
 ```
 
 The compose file mounts `./data` to `/app/data` (SQLite database + run logs) and `./tmp` to `/app/tmp` (hydrated workspaces). Both directories are created automatically.
+
+> **Using GitHub?** Continue with the canonical [GitHub App setup instructions](https://reviewphin.com/docs/management/platform-connections/#github). The walkthrough below remains GitLab-first.
 
 ### 3. Expose the worker to GitLab
 
@@ -318,64 +322,48 @@ This selects a named model profile for every review run on that code review. To 
 
 ## How it works
 
-1. A developer triggers a review from GitLab comments, GitHub pull request comments, or the GitHub **Run Review** Check Run action.
-2. ReviewPhin receives the platform webhook, validates the signature, resolves the tenant, and queues a job.
-3. The **Router** hydrates the code review: it checks out the exact commit, fetches diffs, notes, and any project instruction files.
-4. The **Reviewer** (a two-agent pipeline) analyses the changes and produces structured findings with severity, category, optional line anchors, and inline code suggestions.
-5. The **Chatter** handles follow-up replies, conversational questions, and durable project memory updates.
-6. Findings are reconciled back through the platform provider as bot-owned review output. Obsolete threads are resolved where the platform supports it; the summary comment is updated.
+A developer starts a review from a GitLab merge request or GitHub pull request. ReviewPhin resolves the configured project, checks out the requested revision, gathers the change and its surrounding context, and sends that context to the selected model.
 
-All code and data stay on your infrastructure. The worker calls the configured model API and the connected code review platform API; nothing else leaves the network.
+Findings are published through the platform's native review tools as bot-owned discussions, inline comments, suggestions, and a summary. Later reviews can focus on new changes, while replies inside existing findings continue the conversation without starting over.
+
+The ReviewPhin worker runs on infrastructure you control, but review context is sent to the model provider you configure. When you select a hosted storage provider instead of local SQLite, persisted review state goes to that provider. Project memory follows the platform: GitHub uses the configured storage provider, while GitLab uses the project wiki when enabled and configured storage otherwise. Review AI-generated findings before acting on or merging them.
 
 ---
 
 ## Review pipeline
 
-ReviewPhin uses three logical components for each triggered review:
+ReviewPhin uses three logical roles across a review: the **Router** accepts and classifies work, the **Reviewer** analyses the code, and **Chatter** handles conversations and project memory.
 
-### Router
+### 1. Receive and queue
 
-The webhook handler validates the platform signature, classifies the trigger (direct mention, Check Run action, follow-up reply, or summary note reply), deduplicates concurrent jobs, and enqueues a review task. No model calls happen here.
+The Router validates the incoming platform event, resolves it to a configured tenant, and decides whether it starts a review, continues a conversation, or updates existing review state. Review jobs are persisted and deduplicated before a worker claims them. No model calls happen at this stage.
 
-### Reviewer
+### 2. Hydrate the code review
 
-The main agent runs as two sequential subagents inside a single model session:
+The worker checks out the exact commit under review and gathers the diff, relevant discussions, repository context, and project instruction files. This creates an isolated workspace for the model session.
 
-1. **context-analyst** - explores the hydrated workspace using `glob`, `ripgrep`, and file-read tools to gather the context most relevant to the changed files.
-2. **review-author** - produces structured findings: severity, category, body text, optional diff anchor, and optional inline code suggestion.
+### 3. Review
 
-The reviewer selects one of three modes based on trigger context:
+The Reviewer runs two sequential agents inside one model session:
 
-- **first-pass-full** - first review of the MR, or an explicit full rescan
-- **incremental-rereview** - focused on files changed since the last review
-- **follow-up-discussion** - scoped to one existing discussion
+1. **context-analyst** — finds the repository context most relevant to the changed files.
+2. **review-author** — produces structured findings with severity, category, an optional diff anchor, and an optional inline suggestion.
 
-### Chatter
+The Reviewer selects a mode from the trigger context:
 
-A lightweight agent that runs after the reviewer (when applicable). It handles:
+- **first-pass-full** — reviews the complete change on the first run or after an explicit full rescan.
+- **incremental-rereview** — focuses on files changed since the previous review.
+- **follow-up-discussion** — limits the pass to one existing discussion.
 
-- conversational replies to questions or wording requests
-- project memory decisions (`add_memory_entry` tool writes to the selected memory backend)
-- reply text for explicit follow-up targets
+### 4. Publish
 
-Chatter uses the `textGenerationModel` from the active profile (falling back to the review model when unset), keeping lighter interactions cheaper.
+The platform provider reconciles the structured findings with ReviewPhin's existing output. It creates or updates bot-owned discussions and the review summary, and resolves obsolete findings where the platform supports it.
 
----
+### 5. Continue conversations
 
-## Technologies
+Chatter answers replies inside ReviewPhin-owned discussions and decides whether durable project conventions should be added to memory. It uses the active profile's text-generation model, falling back to the review model when none is configured.
 
-| Layer              | Technology                                                        |
-| ------------------ | ----------------------------------------------------------------- |
-| Runtime            | Node.js 22.12+ source runtime, Node.js 26 Docker image, TypeScript 6 |
-| HTTP server        | Fastify 5                                                         |
-| AI runtime         | `@github/copilot-sdk` (Copilot CLI wrapper)                       |
-| Model APIs         | native Copilot, vLLM, Azure OpenAI, Anthropic                     |
-| Storage (default)  | SQLite via Node.js `node:sqlite`                                  |
-| Storage (optional) | Flotiq headless CMS                                               |
-| Logging            | pino (structured JSON)                                            |
-| Validation         | zod                                                               |
-| Packaging          | Docker, multi-stage build                                         |
-| Orchestration      | Helm (Kubernetes)                                                 |
+See the [technical review flow](https://reviewphin.com/docs/development/review-flow/) for queue, retry, lease, and publication details.
 
 ---
 
@@ -401,7 +389,7 @@ All variables are optional unless noted. For local Docker from source, put them 
 | `REVIEWPHIN_JOB_POLL_INTERVAL_MS`                    | `2000`                           | How often the runner polls storage for a claimable job (positive integer)          |
 | `REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS`                   | `21600000`                       | Max age from original enqueue before a queued job is expired (positive integer)    |
 | `REVIEWPHIN_JOB_LEASE_MS`                            | `120000`                         | Claim lease; heartbeat renews at one third of it (minimum `1000`)                  |
-| `REVIEWPHIN_JOB_RUNNER_ENABLED`                      | `true`                           | Set `false` for HTTP-only replicas that never claim or execute jobs                 |
+| `REVIEWPHIN_JOB_RUNNER_ENABLED`                      | `true`                           | Set `false` for HTTP-only replicas that never claim or execute jobs                |
 | `COPILOT_TIMEOUT_MS`                                 | `180000`                         | Model session timeout in milliseconds                                              |
 | `COPILOT_SDK_LOG_LEVEL`                              | _(none)_                         | SDK log verbosity: `none` \| `error` \| `warning` \| `info` \| `debug` \| `all`    |
 | `COPILOT_CLI_PATH`                                   | `/usr/local/bin/copilot` (image) | Path to the Copilot CLI binary                                                     |
@@ -412,18 +400,6 @@ All variables are optional unless noted. For local Docker from source, put them 
 For model profile setup (BYOK providers, Azure OpenAI, etc.) see [Model providers](https://reviewphin.com/docs/management/model-profiles/).
 For custom storage adapters see [Storage providers](https://reviewphin.com/docs/deployment/storage/).
 For custom code review platform providers see [Code review platform providers](https://reviewphin.com/docs/development/providers/).
-
----
-
-## Routes
-
-| Method | Path                    | Description                                                                        |
-| ------ | ----------------------- | ---------------------------------------------------------------------------------- |
-| `GET`  | `/healthz`              | Liveness probe, returns `{"status":"ok"}`                                          |
-| `POST` | `/webhooks/<platform>`  | Platform webhook receiver. Built-ins use `/webhooks/gitlab` and `/webhooks/github` |
-| `*`    | `/setup/<platform>`     | Optional platform setup handler when the provider exposes one                      |
-| `GET`  | `/github/setup/samples` | Dev-server-only GitHub setup template previews with example data                   |
-| `POST` | `/webhooks/gitlab/note` | Deprecated GitLab compatibility alias                                              |
 
 ---
 
@@ -441,4 +417,4 @@ The motivation, then, is the intersection of three constraints those tools did n
 2. **Bring-your-own model, including private ones.** I wanted to point the reviewer at models hosted inside our own infrastructure - e.g. a Qwen 3 27B running on internal GPUs - to push the cost down further and keep code inside the network. ReviewPhin's harness/profile system exists primarily to make that possible.
 3. **GitLab first.** ReviewPhin starts from self-hosted GitLab in mind. Why? Because I use it as daily driver for most of my development work. (see [Code review platform providers](https://reviewphin.com/docs/development/providers/)).
 
-So: **everything is yours.** Storage, model, subscription, hosting. You know what you pay for because it's all yours - and if any of the projects above fits your team and budget better, please use them. They are great.
+So: **the deployment choices are yours.** You choose the storage, model provider, subscription, and hosting, including self-hosted options where they fit. If any of the projects above fits your team and budget better, please use it. They are great.
