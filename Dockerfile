@@ -1,4 +1,4 @@
-FROM node:26-bookworm-slim AS build
+FROM node:26-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb AS build
 
 
 ARG REVIEWPHIN_BUILD_HOMEPAGE=false
@@ -11,7 +11,7 @@ ENV REVIEWPHIN_BUILD_HOMEPAGE=${REVIEWPHIN_BUILD_HOMEPAGE} \
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 
-RUN npm install --global corepack@latest \
+RUN npm install --global corepack@0.35.0 \
   && corepack enable
 
 WORKDIR /app
@@ -28,9 +28,7 @@ RUN pnpm install --frozen-lockfile \
   && pnpm docs:build:container \
   && pnpm prune --prod
 
-FROM node:26-bookworm-slim AS runtime
-
-ARG COPILOT_CLI_VERSION=1.0.70
+FROM node:26-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb AS runtime
 
 ENV NODE_ENV=production \
   HOST=0.0.0.0 \
@@ -45,7 +43,7 @@ ENV NODE_ENV=production \
 
 RUN apt-get update \
   && apt-get install --yes --no-install-recommends ca-certificates git \
-  && npm install --global @github/copilot@${COPILOT_CLI_VERSION} \
+  && npm install --global @github/copilot@1.0.70 \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

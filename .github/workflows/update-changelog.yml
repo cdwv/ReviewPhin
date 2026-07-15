@@ -25,7 +25,7 @@ jobs:
 
   update:
     needs: quality-gates
-    uses: happy-changelog/happy-changelog-workflow/.github/workflows/update-changelog.yml@v1.6.1
+    uses: happy-changelog/happy-changelog-workflow/.github/workflows/update-changelog.yml@fbaa18ecac63a032cf0b05113561ba62be7294a1 # v1.6.1
     permissions:
       contents: write
     with:
