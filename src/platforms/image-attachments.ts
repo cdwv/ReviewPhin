@@ -9,6 +9,8 @@ import type {
 } from "../review/types.js";
 
 export const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+export const DEFAULT_MAX_IMAGE_ATTACHMENTS_PER_RUN = 10;
+export const DEFAULT_MAX_TOTAL_IMAGE_BYTES = 25 * 1024 * 1024;
 export const SUPPORTED_IMAGE_MIME_TYPES = new Set([
   "image/gif",
   "image/jpeg",
@@ -97,7 +99,10 @@ export function dedupeImageAttachmentReferences<
 
 export async function materializePlatformImageAttachments(input: {
   references: ReadonlyArray<PlatformImageAttachmentReference>;
-  downloadImage: (url: string) => Promise<PlatformDownloadedImage>;
+  downloadImage: (
+    url: string,
+    maxBytes: number,
+  ) => Promise<PlatformDownloadedImage>;
   classifyError: (
     error: unknown,
   ) =>
@@ -105,17 +110,65 @@ export async function materializePlatformImageAttachments(input: {
     | { kind: "skip"; message: string }
     | null;
   redactUrl?: ((url: string) => string) | undefined;
+  maxAttachments?: number | undefined;
+  maxBytesPerAttachment?: number | undefined;
+  maxTotalBytes?: number | undefined;
 }): Promise<PlatformImageAttachmentMaterializationResult> {
   const attachments: HarnessRunAttachments = [];
   const breadcrumbs: ReviewAttachment[] = [];
   const issues: ReviewAttachmentIssue[] = [];
   const skipped: PlatformImageAttachmentSkip[] = [];
+  const maxAttachments =
+    input.maxAttachments ?? DEFAULT_MAX_IMAGE_ATTACHMENTS_PER_RUN;
+  const maxBytesPerAttachment =
+    input.maxBytesPerAttachment ?? DEFAULT_MAX_IMAGE_BYTES;
+  const maxTotalBytes = input.maxTotalBytes ?? DEFAULT_MAX_TOTAL_IMAGE_BYTES;
+  let totalBytes = 0;
 
   for (const [index, reference] of input.references.entries()) {
+    if (index >= maxAttachments) {
+      recordLimitSkip({
+        reference,
+        index,
+        message: `Image was not downloaded because a review run accepts at most ${maxAttachments} referenced images`,
+        issues,
+        skipped,
+        redactUrl: input.redactUrl,
+      });
+      continue;
+    }
+    const remainingBytes = maxTotalBytes - totalBytes;
+    if (remainingBytes <= 0) {
+      recordLimitSkip({
+        reference,
+        index,
+        message: `Image was not downloaded because the review run reached its ${maxTotalBytes} byte image budget`,
+        issues,
+        skipped,
+        redactUrl: input.redactUrl,
+      });
+      continue;
+    }
     try {
-      const downloaded = await input.downloadImage(reference.url);
+      const downloadLimit = Math.min(maxBytesPerAttachment, remainingBytes);
+      const downloaded = await input.downloadImage(
+        reference.url,
+        downloadLimit,
+      );
+      if (downloaded.sizeBytes > remainingBytes) {
+        recordLimitSkip({
+          reference,
+          index,
+          message: `Image was not included because it exceeds the review run's remaining ${remainingBytes} byte image budget`,
+          issues,
+          skipped,
+          redactUrl: input.redactUrl,
+        });
+        continue;
+      }
       const attachment = buildBlobAttachment(reference, downloaded, index);
       attachments.push(attachment);
+      totalBytes += downloaded.sizeBytes;
       breadcrumbs.push({
         contentType: downloaded.mimeType,
         displayName:
@@ -150,6 +203,31 @@ export async function materializePlatformImageAttachments(input: {
   }
 
   return { attachments, breadcrumbs, issues, skipped };
+}
+
+function recordLimitSkip(input: {
+  reference: PlatformImageAttachmentReference;
+  index: number;
+  message: string;
+  issues: ReviewAttachmentIssue[];
+  skipped: PlatformImageAttachmentSkip[];
+  redactUrl?: ((url: string) => string) | undefined;
+}): void {
+  const url = input.redactUrl?.(input.reference.url) ?? input.reference.url;
+  input.skipped.push({
+    message: input.message,
+    commentId: input.reference.commentId,
+    sourceKind: input.reference.sourceKind,
+    url,
+  });
+  input.issues.push({
+    displayName: inferAttachmentLabel(input.reference, input.index),
+    message: input.message,
+    commentId: input.reference.commentId,
+    sourceKind: input.reference.sourceKind,
+    status: 413,
+    url,
+  });
 }
 
 export function normalizeImageMimeType(value: string | null): string | null {

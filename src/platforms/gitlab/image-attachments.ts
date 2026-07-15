@@ -73,7 +73,8 @@ export async function materializeGitLabImageAttachments(input: {
 }): Promise<GitLabImageAttachmentMaterializationResult> {
   return materializePlatformImageAttachments({
     references: input.references,
-    downloadImage: (url) => input.client.downloadImage(url),
+    downloadImage: (url, maxBytes) =>
+      input.client.downloadImage(url, { maxBytes }),
     classifyError: (error) => {
       if (isSkippableAttachmentError(error)) {
         return { kind: "skip", message: error.message };

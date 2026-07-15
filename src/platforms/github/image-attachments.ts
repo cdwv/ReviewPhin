@@ -58,10 +58,13 @@ export function discoverGitHubImageAttachmentReferences(input: {
 export function materializeGitHubImageAttachments(input: {
   client: Pick<GitHubClient, "downloadImage">;
   references: ReadonlyArray<GitHubImageAttachmentReference>;
+  maxAttachments?: number | undefined;
+  maxTotalBytes?: number | undefined;
 }): Promise<GitHubImageAttachmentMaterializationResult> {
   return materializePlatformImageAttachments({
     references: input.references,
-    downloadImage: (url) => input.client.downloadImage(url),
+    downloadImage: (url, maxBytes) =>
+      input.client.downloadImage(url, { maxBytes }),
     classifyError: (error) =>
       error instanceof GitHubImageDownloadError
         ? {
@@ -71,6 +74,8 @@ export function materializeGitHubImageAttachments(input: {
           }
         : null,
     redactUrl: redactGitHubImageUrl,
+    maxAttachments: input.maxAttachments,
+    maxTotalBytes: input.maxTotalBytes,
   });
 }
 
