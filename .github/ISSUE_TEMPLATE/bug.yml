@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: >-
-        For vulnerabilities, follow [SECURITY.md](https://github.com/cdwv/ReviewPhin/blob/main/SECURITY.md) instead.
+        For vulnerabilities, follow [SECURITY.md](SECURITY.md) instead.
         Never include credentials, private code, or sensitive logs in a public issue.
   - type: textarea
     id: problem
