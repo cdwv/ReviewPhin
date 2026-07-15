@@ -3,6 +3,13 @@ import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type { PlatformHttpLogEntry } from "../../review/run-artifacts.js";
 import type { TriggerCommentReference } from "../../review/types.js";
+import {
+  DEFAULT_MAX_IMAGE_BYTES,
+  normalizeImageMimeType,
+  parseImageContentLength,
+  readLimitedImageResponse,
+  SUPPORTED_IMAGE_MIME_TYPES,
+} from "../image-attachments.js";
 import type {
   GitLabAwardEmoji,
   GitLabDiscussion,
@@ -52,15 +59,6 @@ export class GitLabApiError extends Error {
   }
 }
 
-const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const SUPPORTED_IMAGE_MIME_TYPES = new Set([
-  "image/gif",
-  "image/jpeg",
-  "image/jpg",
-  "image/png",
-  "image/webp",
-]);
-
 export interface GitLabDownloadedImage {
   data: string;
   mimeType: string;
@@ -70,11 +68,7 @@ export interface GitLabDownloadedImage {
 export class GitLabImageDownloadError extends Error {
   public readonly contentType: string | null;
   public readonly reason:
-    | "empty"
-    | "invalid-url"
-    | "off-host"
-    | "too-large"
-    | "unsupported-mime";
+    "empty" | "invalid-url" | "off-host" | "too-large" | "unsupported-mime";
   public readonly sizeBytes: number | null;
   public readonly url: string;
 
@@ -82,11 +76,7 @@ export class GitLabImageDownloadError extends Error {
     contentType?: string | null | undefined;
     message: string;
     reason:
-      | "empty"
-      | "invalid-url"
-      | "off-host"
-      | "too-large"
-      | "unsupported-mime";
+      "empty" | "invalid-url" | "off-host" | "too-large" | "unsupported-mime";
     sizeBytes?: number | null | undefined;
     url: string;
   }) {
@@ -702,7 +692,9 @@ export class GitLabClient {
       );
     }
 
-    const contentType = normalizeMimeType(response.headers.get("content-type"));
+    const contentType = normalizeImageMimeType(
+      response.headers.get("content-type"),
+    );
     if (!contentType || !SUPPORTED_IMAGE_MIME_TYPES.has(contentType)) {
       await this.logGitLabRequest({
         timestamp: new Date().toISOString(),
@@ -717,7 +709,9 @@ export class GitLabClient {
           headers: summarizeHeaders(response.headers),
           body: {
             kind: "binary",
-            size: parseContentLength(response.headers.get("content-length")),
+            size: parseImageContentLength(
+              response.headers.get("content-length"),
+            ),
           },
         },
       });
@@ -729,7 +723,7 @@ export class GitLabClient {
       });
     }
 
-    const declaredSize = parseContentLength(
+    const declaredSize = parseImageContentLength(
       response.headers.get("content-length"),
     );
     if (declaredSize !== null && declaredSize > maxBytes) {
@@ -759,10 +753,22 @@ export class GitLabClient {
       });
     }
 
-    const buffer = await readResponseBuffer(response, maxBytes, {
-      contentType,
-      url: downloadUrl.toString(),
-    });
+    const buffer = await readLimitedImageResponse(
+      response,
+      maxBytes,
+      { contentType },
+      (failure) =>
+        new GitLabImageDownloadError({
+          contentType: failure.contentType,
+          message:
+            failure.reason === "empty"
+              ? "GitLab image response was empty"
+              : `GitLab image exceeds the ${maxBytes} byte limit`,
+          reason: failure.reason,
+          sizeBytes: failure.sizeBytes,
+          url: downloadUrl.toString(),
+        }),
+    );
     await this.logGitLabRequest({
       timestamp: new Date().toISOString(),
       requestId,
@@ -1390,16 +1396,6 @@ function truncateForLog(value: unknown, maxLength = 20_000): unknown {
   return `${value.slice(0, maxLength)}…[truncated ${value.length - maxLength} chars]`;
 }
 
-function normalizeMimeType(value: string | null): string | null {
-  if (!value) {
-    return null;
-  }
-
-  const [mimeType] = value.split(";", 1);
-  const normalized = mimeType?.trim().toLowerCase();
-  return normalized && normalized.length > 0 ? normalized : null;
-}
-
 function deriveProjectMarkdownUploadApiUrl(
   url: URL,
   baseUrl: string,
@@ -1445,84 +1441,4 @@ function stripTrailingSlashes(value: string): string {
   }
 
   return value.replace(/\/+$/, "");
-}
-
-function parseContentLength(value: string | null): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-}
-
-async function readResponseBuffer(
-  response: Response,
-  maxBytes: number,
-  context: {
-    contentType: string;
-    url: string;
-  },
-): Promise<Buffer> {
-  const reader = response.body?.getReader();
-  if (!reader) {
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    if (buffer.byteLength === 0) {
-      throw new GitLabImageDownloadError({
-        contentType: context.contentType,
-        message: "GitLab image response was empty",
-        reason: "empty",
-        url: context.url,
-      });
-    }
-    if (buffer.byteLength > maxBytes) {
-      throw new GitLabImageDownloadError({
-        contentType: context.contentType,
-        message: `GitLab image exceeds the ${maxBytes} byte limit`,
-        reason: "too-large",
-        sizeBytes: buffer.byteLength,
-        url: context.url,
-      });
-    }
-    return buffer;
-  }
-
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-
-    if (!value) {
-      continue;
-    }
-
-    totalBytes += value.byteLength;
-    if (totalBytes > maxBytes) {
-      await reader.cancel();
-      throw new GitLabImageDownloadError({
-        contentType: context.contentType,
-        message: `GitLab image exceeds the ${maxBytes} byte limit`,
-        reason: "too-large",
-        sizeBytes: totalBytes,
-        url: context.url,
-      });
-    }
-
-    chunks.push(Buffer.from(value));
-  }
-
-  if (totalBytes === 0) {
-    throw new GitLabImageDownloadError({
-      contentType: context.contentType,
-      message: "GitLab image response was empty",
-      reason: "empty",
-      url: context.url,
-    });
-  }
-
-  return Buffer.concat(chunks, totalBytes);
 }

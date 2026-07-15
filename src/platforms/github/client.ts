@@ -1,6 +1,14 @@
 import { App, Octokit } from "octokit";
 import { z } from "zod";
 
+import {
+  DEFAULT_MAX_IMAGE_BYTES,
+  normalizeImageMimeType,
+  parseImageContentLength,
+  readLimitedImageResponse,
+  SUPPORTED_IMAGE_MIME_TYPES,
+} from "../image-attachments.js";
+
 import type {
   ReadyGitHubConnectionConfig,
   RegisteredGitHubConnectionConfig,
@@ -302,6 +310,29 @@ export class GitHubApiError extends Error {
   ) {
     super(message, options);
     this.name = "GitHubApiError";
+  }
+}
+
+export interface GitHubDownloadedImage {
+  data: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export class GitHubImageDownloadError extends Error {
+  public readonly status: number;
+  public readonly url: string;
+
+  public constructor(input: {
+    message: string;
+    status?: number | undefined;
+    url: string;
+    cause?: unknown;
+  }) {
+    super(input.message, input.cause ? { cause: input.cause } : undefined);
+    this.name = "GitHubImageDownloadError";
+    this.status = input.status ?? 0;
+    this.url = redactGitHubImageUrl(input.url);
   }
 }
 
@@ -848,6 +879,122 @@ export class GitHubClient {
     }
   }
 
+  public async downloadImage(
+    url: string,
+    options: {
+      maxBytes?: number | undefined;
+      maxRedirects?: number | undefined;
+    } = {},
+  ): Promise<GitHubDownloadedImage> {
+    let requestUrl = parseGitHubImageUrl(url);
+    const maxBytes = options.maxBytes ?? DEFAULT_MAX_IMAGE_BYTES;
+    const maxRedirects = options.maxRedirects ?? 5;
+
+    for (let redirectCount = 0; ; redirectCount += 1) {
+      const headers: Record<string, string> = {
+        accept: "image/*, */*",
+        "user-agent": "ReviewPhin",
+      };
+      if (requestUrl.hostname === "github.com") {
+        try {
+          headers.authorization = `Bearer ${await this.getInstallationToken()}`;
+        } catch (error) {
+          throw new GitHubImageDownloadError({
+            message: "GitHub image installation authentication failed",
+            url: requestUrl.toString(),
+            cause: error,
+          });
+        }
+      }
+
+      let response: Response;
+      try {
+        response = await fetch(requestUrl, {
+          method: "GET",
+          headers,
+          redirect: "manual",
+        });
+      } catch (error) {
+        throw new GitHubImageDownloadError({
+          message: `GitHub image request failed for ${redactGitHubImageUrl(requestUrl.toString())}`,
+          url: requestUrl.toString(),
+          cause: error,
+        });
+      }
+
+      if (response.status >= 300 && response.status < 400) {
+        if (redirectCount >= maxRedirects) {
+          throw new GitHubImageDownloadError({
+            message: `GitHub image request exceeded the ${maxRedirects} redirect limit`,
+            status: response.status,
+            url: requestUrl.toString(),
+          });
+        }
+        const location = response.headers.get("location");
+        if (!location) {
+          throw new GitHubImageDownloadError({
+            message: "GitHub image redirect did not include a location",
+            status: response.status,
+            url: requestUrl.toString(),
+          });
+        }
+        requestUrl = parseGitHubImageUrl(
+          new URL(location, requestUrl).toString(),
+        );
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new GitHubImageDownloadError({
+          message: `GitHub image request failed with status ${response.status}`,
+          status: response.status,
+          url: requestUrl.toString(),
+        });
+      }
+
+      const contentType = normalizeImageMimeType(
+        response.headers.get("content-type"),
+      );
+      if (!contentType || !SUPPORTED_IMAGE_MIME_TYPES.has(contentType)) {
+        throw new GitHubImageDownloadError({
+          message: `GitHub image response content type is unsupported: ${contentType ?? "missing"}`,
+          status: response.status,
+          url: requestUrl.toString(),
+        });
+      }
+      const declaredSize = parseImageContentLength(
+        response.headers.get("content-length"),
+      );
+      if (declaredSize !== null && declaredSize > maxBytes) {
+        throw new GitHubImageDownloadError({
+          message: `GitHub image exceeds the ${maxBytes} byte limit`,
+          status: response.status,
+          url: requestUrl.toString(),
+        });
+      }
+
+      const buffer = await readLimitedImageResponse(
+        response,
+        maxBytes,
+        { contentType },
+        (failure) =>
+          new GitHubImageDownloadError({
+            message:
+              failure.reason === "empty"
+                ? "GitHub image response was empty"
+                : `GitHub image exceeds the ${maxBytes} byte limit`,
+            status: response.status,
+            url: requestUrl.toString(),
+          }),
+      );
+      return {
+        data: buffer.toString("base64"),
+        mimeType: contentType,
+        sizeBytes: buffer.byteLength,
+      };
+    }
+  }
+
   public async verifyWebhookSignature(
     payload: string,
     signature: string,
@@ -1039,6 +1186,28 @@ export class GitHubClient {
     return this.app.getInstallationOctokit(this.getConfiguredInstallationId());
   }
 
+  private async getInstallationToken(): Promise<string> {
+    if (!this.app.octokit.auth) {
+      throw new Error("GitHub App installation authentication is unavailable");
+    }
+    const authentication = await this.app.octokit.auth({
+      type: "installation",
+      installationId: this.getConfiguredInstallationId(),
+    });
+    if (
+      typeof authentication !== "object" ||
+      authentication === null ||
+      !("token" in authentication) ||
+      typeof authentication.token !== "string" ||
+      authentication.token.length === 0
+    ) {
+      throw new Error(
+        "GitHub App installation authentication returned no token",
+      );
+    }
+    return authentication.token;
+  }
+
   private async requestParsed<T>(
     route: string,
     parameters: Record<string, unknown>,
@@ -1160,6 +1329,53 @@ function splitRepositoryFullName(value: string): {
     throw new Error(`Invalid GitHub repository full name: ${value}`);
   }
   return { owner, repository };
+}
+
+function parseGitHubImageUrl(value: string): URL {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch (error) {
+    throw new GitHubImageDownloadError({
+      message: "GitHub image URL is invalid",
+      url: value,
+      cause: error,
+    });
+  }
+  if (!isAllowedGitHubImageUrl(url)) {
+    throw new GitHubImageDownloadError({
+      message: `GitHub image URL is not an allowed attachment location: ${redactGitHubImageUrl(url.toString())}`,
+      url: url.toString(),
+    });
+  }
+  return url;
+}
+
+function isAllowedGitHubImageUrl(url: URL): boolean {
+  if (url.protocol !== "https:" || url.username || url.password) {
+    return false;
+  }
+  const hostname = url.hostname.toLowerCase();
+  if (hostname === "github.com") {
+    return url.pathname.startsWith("/user-attachments/assets/");
+  }
+  return (
+    hostname === "user-images.githubusercontent.com" ||
+    hostname === "private-user-images.githubusercontent.com"
+  );
+}
+
+export function redactGitHubImageUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return "(invalid GitHub image URL)";
+  }
 }
 
 function getCheckRunTitle(state: GitHubCheckRunState): string {
