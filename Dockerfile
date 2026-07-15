@@ -41,11 +41,12 @@ ENV NODE_ENV=production \
   MAX_JOB_RETRIES=3 \
   RETRY_BACKOFF_MS=5000 \
   COPILOT_TIMEOUT_MS=180000 \
-  COPILOT_CLI_PATH=/pnpm/copilot
+  COPILOT_CLI_PATH=/usr/local/bin/copilot
 
 RUN apt-get update \
   && apt-get install --yes --no-install-recommends ca-certificates git \
   && pnpm add --global --global-bin-dir /pnpm @github/copilot@1.0.70 \
+  && ln -s /pnpm/copilot /usr/local/bin/copilot \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
