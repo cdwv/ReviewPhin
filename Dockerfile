@@ -1,4 +1,22 @@
-FROM node:26-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb AS build
+FROM node:24-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS package-manager
+
+ENV COREPACK_HOME=/opt/corepack
+
+RUN corepack install --global pnpm@10.18.2
+
+FROM node:26-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb AS node-with-pnpm
+
+ENV PNPM_HOME=/pnpm \
+  PATH=/pnpm/bin:/pnpm:$PATH \
+  COREPACK_HOME=/opt/corepack
+
+COPY --from=package-manager /usr/local/lib/node_modules/corepack /usr/local/lib/node_modules/corepack
+COPY --from=package-manager /opt/corepack /opt/corepack
+
+RUN ln -s ../lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack \
+  && corepack enable --install-directory /usr/local/bin
+
+FROM node-with-pnpm AS build
 
 
 ARG REVIEWPHIN_BUILD_HOMEPAGE=false
@@ -7,12 +25,6 @@ ARG REVIEWPHIN_POSTHOG_HOST=
 ENV REVIEWPHIN_BUILD_HOMEPAGE=${REVIEWPHIN_BUILD_HOMEPAGE} \
   REVIEWPHIN_POSTHOG_KEY=${REVIEWPHIN_POSTHOG_KEY} \
   REVIEWPHIN_POSTHOG_HOST=${REVIEWPHIN_POSTHOG_HOST}
-
-ENV PNPM_HOME=/pnpm
-ENV PATH=$PNPM_HOME:$PATH
-
-RUN npm install --global corepack@0.35.0 \
-  && corepack enable
 
 WORKDIR /app
 
@@ -28,7 +40,7 @@ RUN pnpm install --frozen-lockfile \
   && pnpm docs:build:container \
   && pnpm prune --prod
 
-FROM node:26-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb AS runtime
+FROM node-with-pnpm AS runtime
 
 ENV NODE_ENV=production \
   HOST=0.0.0.0 \
@@ -39,11 +51,11 @@ ENV NODE_ENV=production \
   MAX_JOB_RETRIES=3 \
   RETRY_BACKOFF_MS=5000 \
   COPILOT_TIMEOUT_MS=180000 \
-  COPILOT_CLI_PATH=/usr/local/bin/copilot
+  COPILOT_CLI_PATH=/pnpm/copilot
 
 RUN apt-get update \
   && apt-get install --yes --no-install-recommends ca-certificates git \
-  && npm install --global @github/copilot@1.0.70 \
+  && pnpm add --global --global-bin-dir /pnpm @github/copilot@1.0.70 \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
