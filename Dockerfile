@@ -1,23 +1,13 @@
-FROM node:24-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS package-manager
-
-ENV COREPACK_HOME=/opt/corepack
-
-RUN corepack install --global pnpm@10.18.2
-
-FROM node:26-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb AS node-with-pnpm
+FROM node:24-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS base
 
 ENV PNPM_HOME=/pnpm \
   PATH=/pnpm/bin:/pnpm:$PATH \
   COREPACK_HOME=/opt/corepack
 
-COPY --from=package-manager /usr/local/lib/node_modules/corepack /usr/local/lib/node_modules/corepack
-COPY --from=package-manager /opt/corepack /opt/corepack
+RUN corepack enable \
+  && corepack install --global pnpm@10.18.2
 
-RUN ln -s ../lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack \
-  && corepack enable --install-directory /usr/local/bin
-
-FROM node-with-pnpm AS build
-
+FROM base AS build
 
 ARG REVIEWPHIN_BUILD_HOMEPAGE=false
 ARG REVIEWPHIN_POSTHOG_KEY=
@@ -40,7 +30,7 @@ RUN pnpm install --frozen-lockfile \
   && pnpm docs:build:container \
   && pnpm prune --prod
 
-FROM node-with-pnpm AS runtime
+FROM base AS runtime
 
 ENV NODE_ENV=production \
   HOST=0.0.0.0 \

@@ -32,3 +32,8 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      # Keep the production image on Node 24 LTS until a major upgrade is intentional.
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major
