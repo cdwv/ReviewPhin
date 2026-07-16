@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `metrics sessions` now reports from configured storage, separates unlike usage units, and supports connection and UTC date filters.
+- Metrics reports show unit-aware totals and charts by tenant and platform connection.
 - Custom storage adapters must implement the breaking `storage-v006` contract.
 
 ## v1.4.3 - 2026-07-15

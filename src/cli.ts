@@ -3600,8 +3600,111 @@ function formatMetricsUnitGroup(
         ]),
       ),
     )}`,
+    ...(canRenderMetricsBreakdownChart(group.tenants)
+      ? [
+          formatMetricsBreakdownChart(
+            group,
+            "tenant",
+            group.tenants.map((row) => ({
+              label: row.tenantKey,
+              sessions: row.sessions,
+              usageAmount: row.usageAmount,
+            })),
+          ),
+        ]
+      : []),
+    `${prettyHeading(`${unit} by tenant`)}\n${decorateTable(
+      formatTable(
+        ["tenant", "reviews", "sessions", "usage"],
+        group.tenants.map((row) => [
+          row.tenantKey,
+          row.reviews,
+          row.sessions,
+          formatUsageAmount(group.unit, row.usageAmount),
+        ]),
+      ),
+    )}`,
+    ...(canRenderMetricsBreakdownChart(group.connections)
+      ? [
+          formatMetricsBreakdownChart(
+            group,
+            "connection",
+            group.connections.map((row) => ({
+              label: row.connectionName,
+              sessions: row.sessions,
+              usageAmount: row.usageAmount,
+            })),
+          ),
+        ]
+      : []),
+    `${prettyHeading(`${unit} by connection`)}\n${decorateTable(
+      formatTable(
+        ["connection", "reviews", "sessions", "usage"],
+        group.connections.map((row) => [
+          row.connectionName,
+          row.reviews,
+          row.sessions,
+          formatUsageAmount(group.unit, row.usageAmount),
+        ]),
+      ),
+    )}`,
   ];
   return sections.join("\n\n");
+}
+
+function canRenderMetricsBreakdownChart(rows: readonly unknown[]): boolean {
+  return (
+    rows.length > 0 &&
+    output().mode === "pretty" &&
+    output().stdoutIsTTY &&
+    output().unicode &&
+    output().columns >= 72
+  );
+}
+
+function formatMetricsBreakdownChart(
+  group: MetricsUnitGroup,
+  dimension: "tenant" | "connection",
+  rows: Array<{
+    label: string;
+    sessions: number;
+    usageAmount: number | null;
+  }>,
+): string {
+  const displayUnit = displayUsageUnit(group.unit);
+  const values = rows.map((row) =>
+    group.unit === null ? row.sessions : (row.usageAmount ?? 0),
+  );
+  const formattedValues = rows.map((row) =>
+    group.unit === null
+      ? String(row.sessions)
+      : formatUsageAmount(group.unit, row.usageAmount),
+  );
+  const maximumValue = Math.max(...values, 1);
+  const labelWidth = Math.min(
+    32,
+    Math.max(...rows.map((row) => row.label.length), dimension.length),
+  );
+  const valueWidth = Math.max(...formattedValues.map((value) => value.length));
+  const barWidth = Math.max(
+    10,
+    Math.min(40, output().columns - labelWidth - valueWidth - 3),
+  );
+  const lines = rows.map((row, index) => {
+    const value = values[index] ?? 0;
+    const length = Math.round((value / maximumValue) * barWidth);
+    const bar = "█".repeat(length);
+    const styledBar = output().color ? `\u001B[36m${bar}\u001B[0m` : bar;
+    const label = truncateMetricsChartLabel(row.label, labelWidth);
+    return `${label.padEnd(labelWidth)} ${styledBar}${" ".repeat(barWidth - length)} ${(formattedValues[index] ?? "").padStart(valueWidth)}`;
+  });
+  const measure = group.unit === null ? "sessions" : "usage";
+  return `${prettyHeading(`${displayUnit} ${measure} by ${dimension}`)}\n${lines.join("\n")}`;
+}
+
+function truncateMetricsChartLabel(value: string, width: number): string {
+  if (value.length <= width) return value;
+  return `${value.slice(0, Math.max(0, width - 1))}…`;
 }
 
 function canRenderMetricsChart(group: MetricsUnitGroup): boolean {

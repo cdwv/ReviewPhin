@@ -506,7 +506,7 @@ reviewphin metrics sessions
 | `--sqlite-database-path`    | No       | Override the SQLite path.                                                       |
 | `--storage-provider-module` | No       | Override the storage module.                                                    |
 
-By default, human-readable output shows the summary, model, and session-type tables without the potentially long per-run list. Add `--all-sessions` when you need that detailed table. Structured output always includes per-run rows, distribution summaries, model totals, monthly model series, and session-type totals for every unit. Human-readable output converts GitHub nano-AI units to AI credits for display. Stored values remain exact.
+By default, human-readable output shows the summary, model, session-type, tenant, and platform-connection tables without the potentially long per-run list. On capable terminals, it also charts monthly model usage plus usage by tenant and connection; sessions without reported usage are charted by session count. Add `--all-sessions` when you need the detailed per-run table. Structured output always includes per-run rows, distribution summaries, model totals, monthly model series, session-type totals, tenant totals, and connection totals for every unit. Human-readable output converts GitHub nano-AI units to AI credits for display. Stored values remain exact.
 
 ### `metrics collect`
 

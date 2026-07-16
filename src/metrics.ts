@@ -11,6 +11,8 @@ import type { HarnessRunLogRecord } from "./harness/run-log.js";
 import type {
   InteractionRunMetricsRecord,
   InteractionRunRecord,
+  PlatformConnectionRecord,
+  TenantRecord,
   UsageByModelMetric,
 } from "./storage/contract/index.js";
 import { listAll, type StorageHelpers } from "./storage/storage-helpers.js";
@@ -67,6 +69,22 @@ export interface MetricsSessionTypeRow {
   durationMs: number;
 }
 
+export interface MetricsTenantRow {
+  tenantId: string;
+  tenantKey: string;
+  reviews: number;
+  sessions: number;
+  usageAmount: number | null;
+}
+
+export interface MetricsConnectionRow {
+  connectionId: string;
+  connectionName: string;
+  reviews: number;
+  sessions: number;
+  usageAmount: number | null;
+}
+
 export interface MetricsUnitGroup {
   unit: string | null;
   runs: MetricsRunRow[];
@@ -74,6 +92,8 @@ export interface MetricsUnitGroup {
   models: MetricsModelRow[];
   monthly: MetricsMonthlyModelRow[];
   sessionTypes: MetricsSessionTypeRow[];
+  tenants: MetricsTenantRow[];
+  connections: MetricsConnectionRow[];
 }
 
 export interface MetricsSessionsResult {
@@ -144,6 +164,13 @@ export async function loadMetricsSessions(
     return { filters, units: [] };
   }
 
+  const tenants = await storage.stores.tenants.getMany([
+    ...new Set(runs.map((run) => run.tenantId)),
+  ]);
+  const connections = await storage.stores.platformConnections.getMany([
+    ...new Set(tenants.map((tenant) => tenant.platformConnectionId)),
+  ]);
+
   const metrics: InteractionRunMetricsRecord[] = [];
   for (let offset = 0; offset < runs.length; offset += 100) {
     metrics.push(
@@ -161,7 +188,10 @@ export async function loadMetricsSessions(
     );
   }
 
-  return { filters, units: buildUnitGroups(runs, metrics) };
+  return {
+    filters,
+    units: buildUnitGroups(runs, metrics, tenants, connections),
+  };
 }
 
 export async function collectMetrics(
@@ -313,8 +343,14 @@ export function displayUsageUnit(unit: string | null): string {
 function buildUnitGroups(
   runs: InteractionRunRecord[],
   metrics: InteractionRunMetricsRecord[],
+  tenants: TenantRecord[],
+  connections: PlatformConnectionRecord[],
 ): MetricsUnitGroup[] {
   const runById = new Map(runs.map((run) => [run.id, run]));
+  const tenantById = new Map(tenants.map((tenant) => [tenant.id, tenant]));
+  const connectionById = new Map(
+    connections.map((connection) => [connection.id, connection]),
+  );
   const byUnit = new Map<string | null, InteractionRunMetricsRecord[]>();
   for (const metric of metrics) {
     const values = byUnit.get(metric.usageUnit) ?? [];
@@ -325,13 +361,17 @@ function buildUnitGroups(
     .sort(([left], [right]) =>
       left === null ? 1 : right === null ? -1 : left.localeCompare(right),
     )
-    .map(([unit, unitMetrics]) => buildUnitGroup(unit, unitMetrics, runById));
+    .map(([unit, unitMetrics]) =>
+      buildUnitGroup(unit, unitMetrics, runById, tenantById, connectionById),
+    );
 }
 
 function buildUnitGroup(
   unit: string | null,
   metrics: InteractionRunMetricsRecord[],
   runById: Map<string, InteractionRunRecord>,
+  tenantById: Map<string, TenantRecord>,
+  connectionById: Map<string, PlatformConnectionRecord>,
 ): MetricsUnitGroup {
   const groupedRuns = new Map<string, InteractionRunMetricsRecord[]>();
   for (const metric of metrics) {
@@ -368,7 +408,114 @@ function buildUnitGroup(
     models: buildModels(metrics),
     monthly: buildMonthly(metrics, runById),
     sessionTypes: buildSessionTypes(metrics),
+    tenants: buildTenantBreakdown(metrics, unit, runById, tenantById),
+    connections: buildConnectionBreakdown(
+      metrics,
+      unit,
+      runById,
+      tenantById,
+      connectionById,
+    ),
   };
+}
+
+function buildTenantBreakdown(
+  metrics: InteractionRunMetricsRecord[],
+  unit: string | null,
+  runById: Map<string, InteractionRunRecord>,
+  tenantById: Map<string, TenantRecord>,
+): MetricsTenantRow[] {
+  return buildOwnerBreakdown(metrics, unit, (metric) => {
+    const tenantId = runById.get(metric.interactionRunId)?.tenantId;
+    if (!tenantId) return null;
+    return {
+      id: tenantId,
+      name: tenantById.get(tenantId)?.key ?? tenantId,
+    };
+  }).map((row) => ({
+    tenantId: row.id,
+    tenantKey: row.name,
+    reviews: row.reviews,
+    sessions: row.sessions,
+    usageAmount: row.usageAmount,
+  }));
+}
+
+function buildConnectionBreakdown(
+  metrics: InteractionRunMetricsRecord[],
+  unit: string | null,
+  runById: Map<string, InteractionRunRecord>,
+  tenantById: Map<string, TenantRecord>,
+  connectionById: Map<string, PlatformConnectionRecord>,
+): MetricsConnectionRow[] {
+  return buildOwnerBreakdown(metrics, unit, (metric) => {
+    const tenantId = runById.get(metric.interactionRunId)?.tenantId;
+    if (!tenantId) return null;
+    const connectionId = tenantById.get(tenantId)?.platformConnectionId;
+    if (!connectionId) return null;
+    return {
+      id: connectionId,
+      name: connectionById.get(connectionId)?.name ?? connectionId,
+    };
+  }).map((row) => ({
+    connectionId: row.id,
+    connectionName: row.name,
+    reviews: row.reviews,
+    sessions: row.sessions,
+    usageAmount: row.usageAmount,
+  }));
+}
+
+function buildOwnerBreakdown(
+  metrics: InteractionRunMetricsRecord[],
+  unit: string | null,
+  identify: (
+    metric: InteractionRunMetricsRecord,
+  ) => { id: string; name: string } | null,
+): Array<{
+  id: string;
+  name: string;
+  reviews: number;
+  sessions: number;
+  usageAmount: number | null;
+}> {
+  const groups = new Map<
+    string,
+    {
+      name: string;
+      interactionRunIds: Set<string>;
+      sessions: number;
+      usageAmount: number;
+    }
+  >();
+  for (const metric of metrics) {
+    const identity = identify(metric);
+    if (!identity) continue;
+    const group = groups.get(identity.id) ?? {
+      name: identity.name,
+      interactionRunIds: new Set<string>(),
+      sessions: 0,
+      usageAmount: 0,
+    };
+    group.interactionRunIds.add(metric.interactionRunId);
+    group.sessions += 1;
+    group.usageAmount += metric.usageAmount ?? 0;
+    groups.set(identity.id, group);
+  }
+  return [...groups.entries()]
+    .map(([id, group]) => ({
+      id,
+      name: group.name,
+      reviews: group.interactionRunIds.size,
+      sessions: group.sessions,
+      usageAmount: unit === null ? null : group.usageAmount,
+    }))
+    .sort(
+      (left, right) =>
+        (right.usageAmount ?? right.sessions) -
+          (left.usageAmount ?? left.sessions) ||
+        left.name.localeCompare(right.name),
+    );
 }
 
 function buildSummary(rows: MetricsRunRow[]): MetricsSummaryRow[] {

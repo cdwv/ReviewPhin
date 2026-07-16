@@ -9,7 +9,10 @@ import type {
   MetricsCollectResult,
   MetricsSessionsResult,
 } from "../src/metrics.js";
-import { createGitLabTenantInput } from "./helpers/gitlab-tenant.js";
+import {
+  createGitLabConnectionRecord,
+  createGitLabTenantInput,
+} from "./helpers/gitlab-tenant.js";
 import { openSqliteTestStorage } from "./helpers/storage.js";
 
 describe("metrics CLI", () => {
@@ -23,6 +26,14 @@ describe("metrics CLI", () => {
     const databasePath = join(workspace, "metrics.sqlite");
     const storage = await openSqliteTestStorage(databasePath);
     const run = await createRun(storage, "2026-06-15T12:00:00.000Z");
+    await storage.stores.platformConnections.upsert(
+      createGitLabConnectionRecord({ platformConnectionId: "connection-2" }),
+    );
+    const secondConnectionRun = await createRun(
+      storage,
+      "2026-06-20T12:00:00.000Z",
+      { platformConnectionId: "connection-2", projectId: 456 },
+    );
     const before = await createRun(storage, "2026-05-31T23:59:59.999Z");
     const after = await createRun(storage, "2026-07-01T00:00:00.000Z");
     await addMetrics(
@@ -33,6 +44,13 @@ describe("metrics CLI", () => {
       1_000_000_000,
     );
     await addMetrics(storage, run.id, "reply-session", "reply", 500_000_000);
+    await addMetrics(
+      storage,
+      secondConnectionRun.id,
+      "second-connection-session",
+      "review",
+      250_000_000,
+    );
     await addMetrics(storage, before.id, "before-session", "review", 10);
     await addMetrics(storage, after.id, "after-session", "review", 10);
     await storage.close();
@@ -74,6 +92,22 @@ describe("metrics CLI", () => {
     expect(result.units[0]?.sessionTypes.map((row) => row.sessionType)).toEqual(
       ["reply", "review"],
     );
+    expect(result.units[0]?.tenants).toEqual([
+      expect.objectContaining({
+        tenantKey: "https://gitlab.example.com::123",
+        reviews: 1,
+        sessions: 2,
+        usageAmount: 1_500_000_000,
+      }),
+    ]);
+    expect(result.units[0]?.connections).toEqual([
+      expect.objectContaining({
+        connectionName: "test-connection-1",
+        reviews: 1,
+        sessions: 2,
+        usageAmount: 1_500_000_000,
+      }),
+    ]);
 
     vi.restoreAllMocks();
     const chart = captureStdout();
@@ -97,6 +131,10 @@ describe("metrics CLI", () => {
     );
     expect(chart.value()).toContain("monthly by model");
     expect(chart.value()).toContain("█ gpt-5.4");
+    expect(chart.value()).toContain("usage by tenant");
+    expect(chart.value()).toContain("usage by connection");
+    expect(chart.value()).toContain("https://gitlab.example.com::456");
+    expect(chart.value()).toContain("test-connection-2");
     expect(chart.value()).not.toContain(run.id);
 
     vi.restoreAllMocks();
@@ -120,7 +158,11 @@ describe("metrics CLI", () => {
       },
     );
     expect(narrow.value()).not.toContain("monthly by model");
+    expect(narrow.value()).not.toContain("usage by tenant");
+    expect(narrow.value()).not.toContain("usage by connection");
     expect(narrow.value()).toContain("by session type");
+    expect(narrow.value()).toContain("by tenant");
+    expect(narrow.value()).toContain("by connection");
     expect(narrow.value()).not.toContain(run.id);
 
     vi.restoreAllMocks();
@@ -305,12 +347,13 @@ describe("metrics CLI", () => {
 async function createRun(
   storage: Awaited<ReturnType<typeof openSqliteTestStorage>>,
   startedAt: string,
+  options: { platformConnectionId?: string; projectId?: number } = {},
 ) {
-  const tenant = await storage.upsertTenant(createGitLabTenantInput());
+  const tenant = await storage.upsertTenant(createGitLabTenantInput(options));
   const { job } = await storage.createOrGetInteractionJob({
     tenantId: tenant.id,
-    dedupeKey: `metrics-${startedAt}`,
-    codeReviewId: 7,
+    dedupeKey: `metrics-${tenant.key}-${startedAt}`,
+    codeReviewId: options.projectId ?? 7,
     commentId: 1,
     triggerJson: JSON.stringify({ kind: "comment", commentId: 1 }),
     headSha: "abc123",

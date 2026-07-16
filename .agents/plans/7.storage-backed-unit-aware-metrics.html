@@ -260,6 +260,18 @@
                 </td>
               </tr>
               <tr>
+                <td>
+                  Operators cannot see which tenants or connections use the
+                  most.
+                </td>
+                <td>
+                  Add complete tenant and platform-connection tables inside
+                  every unit section. On capable terminals, pair each table with
+                  a horizontal usage chart. For sessions without reported usage,
+                  chart session counts instead.
+                </td>
+              </tr>
+              <tr>
                 <td>Historical files still contain useful measurements.</td>
                 <td>
                   Add <code>metrics collect</code>. It scans a chosen run-log
@@ -383,9 +395,10 @@
                 unit as an independent report section. Calculate model cost per
                 distinct review, group review usage into UTC calendar months,
                 and add a capability-aware stacked-bar renderer for pretty
-                terminals without adding charts to plain or machine-readable
-                output. Add a session-type breakdown only when it does not crowd
-                out the required unit and model summaries.
+                terminals. Add tenant and platform-connection totals with
+                horizontal charts, without adding charts to plain or
+                machine-readable output. Add a session-type breakdown only when
+                it does not crowd out the required unit and model summaries.
               </div>
             </li>
             <li>
@@ -451,10 +464,11 @@
                 Change <code>MetricsSessionsResult</code> to expose unit groups
                 rather than parallel mixed-unit arrays. Each unit group should
                 include run rows, distribution summaries, model summaries, and
-                monthly model series. Every session row must expose
+                monthly model series. It should also include totals by tenant
+                and platform connection, with distinct review counts, session
+                counts, and unit-aware usage. Every session row must expose
                 <code>sessionType</code>, and structured output should include
-                session-type totals even when the pretty renderer omits that
-                optional table. Build a model’s
+                session-type totals. Build a model’s
                 <code>averageCostPerReview</code> by aggregating its session
                 usage per <code>interactionRunId</code> first, then averaging
                 those per-review amounts. A review using the same model in three
@@ -680,6 +694,11 @@
               Every unit’s model table shows total usage, distinct review count,
               and average cost per review. Reusing a model in several sessions
               of one review does not inflate that count.
+            </li>
+            <li>
+              Every unit includes tenant and platform-connection tables with
+              distinct review counts, session counts, and usage totals. Capable
+              terminals add matching horizontal charts without mixing units.
             </li>
             <li>
               Pretty output on a capable terminal shows one chronological
