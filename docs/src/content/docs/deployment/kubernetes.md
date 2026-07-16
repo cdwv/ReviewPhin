@@ -8,7 +8,7 @@ For cluster deployments, use the published Helm chart from GHCR. It deploys one 
 ## 1. Install the chart
 
 ```bash
-REVIEWPHIN_VERSION=1.4.4
+REVIEWPHIN_VERSION=1.5.0
 REVIEWPHIN_CHART=oci://ghcr.io/cdwv/charts/reviewphin
 
 kubectl create namespace reviewphin

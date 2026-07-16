@@ -3,6 +3,29 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v1.5.0 - 2026-07-16
+### Added
+- Administrators can report stored review usage by unit, model, session
+type, tenant, and platform connection, with optional detailed sessions
+and terminal charts.
+- Administrators can import historical metrics from session logs without
+moving or deleting the source files.
+
+### Changed
+- Metrics are now stored separately for every harness session, including
+sessions that fail after producing usage information.
+- Administrators must stop older ReviewPhin processes before the
+automatic storage migration, and custom storage adapters must implement
+`storage-v006` before upgrading.
+
+### Fixed
+- Bring-your-own-key sessions no longer report unavailable zero cost as
+premium-request usage.
+- Legacy premium-request usage remains included in model and monthly
+totals after migration.
+- Flotiq migrations retain metrics field descriptions for administrators
+browsing the content type.
+
 ## Unreleased
 
 ### Added
