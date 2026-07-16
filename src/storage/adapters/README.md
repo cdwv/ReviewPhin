@@ -17,7 +17,7 @@ The app loads the module from `STORAGE_PROVIDER_MODULE` when set, otherwise it u
 ## Compatibility rules
 
 - Your adapter must report an exact storage contract revision match.
-- The current required revision is `storage-v005`.
+- The current required revision is `storage-v006`.
 - Adapters must expose `platformConnections`; every tenant requires
   `platformConnectionId`.
 - Connection names are globally unique. SQLite migration
@@ -48,6 +48,15 @@ The app loads the module from `STORAGE_PROVIDER_MODULE` when set, otherwise it u
   nullable reasoning-effort fields on model profiles and runs, the run claim-token
   snapshot, and nullable `interactionRunId` on code-review snapshots; stop all
   v004 processes before migrating.
+- `storage-v006` (breaking) stores one metrics record per harness session.
+  Session identity is the interaction run, open-string harness name, and stable
+  harness session key. `sessionType` and `usageUnit` remain open strings so
+  custom harnesses do not require a contract revision to introduce values.
+  `usageUnit` and `usageAmount` are both present or both absent, and
+  `usageByModelJson` uses the same unit. Migrations preserve old counters and
+  timestamps while mapping `premiumRequests` to
+  `github.copilot.premium-request`. Store filters also support `gte` and `lt`;
+  providers must implement inclusive lower and exclusive upper boundaries.
 - The app validates compatibility in two phases:
   1. `getSupportedStorageContract()` is checked before `prepare()` is called.
   2. `prepare()` must return a `StoragePreparationResult` whose `storageContractRevision` is also checked after `prepare()` returns.

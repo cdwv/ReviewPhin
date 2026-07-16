@@ -122,6 +122,10 @@ describe("SqliteStorage review findings", () => {
         adapter_name: "sqlite",
         migration_id: "sqlite:0011_v5_job_claims_and_reasoning_effort",
       },
+      {
+        adapter_name: "sqlite",
+        migration_id: "sqlite:0012_v6_session_metrics",
+      },
     ]);
     expect(columnNames.has("anchor_json")).toBe(true);
     expect(columnNames.has("interaction_run_id")).toBe(true);
@@ -390,7 +394,7 @@ describe("SqliteStorage review findings", () => {
         "updated_at",
       ]),
     );
-    expect(migrations.count).toBe(11);
+    expect(migrations.count).toBe(12);
     await storage.close();
   });
 
@@ -687,12 +691,18 @@ describe("SqliteStorage review findings", () => {
     expect(
       verifiedDb
         .prepare(
-          "SELECT prompt_context_prior_discussions, prompt_context_comments FROM interaction_run_metrics WHERE id = ?",
+          "SELECT prompt_context_prior_discussions, prompt_context_comments, harness, harness_session_key, session_type, usage_unit, usage_amount, usage_by_model_json FROM interaction_run_metrics WHERE id = ?",
         )
         .get("metrics_1"),
     ).toEqual({
       prompt_context_prior_discussions: 3,
       prompt_context_comments: 4,
+      harness: "github.copilot-sdk",
+      harness_session_key: "legacy:metrics_1",
+      session_type: "unknown",
+      usage_unit: "github.copilot.premium-request",
+      usage_amount: 1,
+      usage_by_model_json: "[]",
     });
     expect(
       verifiedDb
@@ -724,6 +734,7 @@ describe("SqliteStorage review findings", () => {
       { migration_id: "sqlite:0009_v3_provider_triggers" },
       { migration_id: "sqlite:0010_v4_project_memories" },
       { migration_id: "sqlite:0011_v5_job_claims_and_reasoning_effort" },
+      { migration_id: "sqlite:0012_v6_session_metrics" },
     ]);
     verifiedDb.close();
   });
@@ -912,6 +923,7 @@ describe("SqliteStorage review findings", () => {
       { migration_id: "sqlite:0009_v3_provider_triggers" },
       { migration_id: "sqlite:0010_v4_project_memories" },
       { migration_id: "sqlite:0011_v5_job_claims_and_reasoning_effort" },
+      { migration_id: "sqlite:0012_v6_session_metrics" },
     ]);
   });
 
@@ -1166,6 +1178,9 @@ describe("SqliteStorage tenants", () => {
     ]);
     await storage.upsertInteractionRunMetrics({
       interactionRunId: reviewRun.id,
+      harness: "github.copilot-sdk",
+      harnessSessionKey: "session-delete-tenant",
+      sessionType: "review",
       triggerKind: "note",
       promptMode: "full",
       promptChars: 10,
@@ -1183,7 +1198,9 @@ describe("SqliteStorage tenants", () => {
       cacheWriteTokens: 0,
       reasoningTokens: 0,
       apiDurationMs: 100,
-      premiumRequests: 1,
+      usageUnit: "github.copilot.premium-request",
+      usageAmount: 1,
+      usageByModelJson: "[]",
       repeatedViewReads: 0,
       repeatedViewPathsJson: "[]",
     });

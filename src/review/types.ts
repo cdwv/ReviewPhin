@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { ProjectMemoryContext } from "../memory/types.js";
+import type { HarnessRunLoggingContext } from "../harness/types.js";
 import type {
   ReviewFindingStatus,
   TenantRecord,
@@ -172,9 +173,7 @@ export type ChatterMemoryOutcome = z.infer<typeof chatterMemoryOutcomeSchema>;
 export type ChatterReply = z.infer<typeof chatterReplySchema>;
 export type ChatterBatchResult = z.infer<typeof chatterBatchResultSchema>;
 export type ReviewMode =
-  | "first-pass-full"
-  | "incremental-rereview"
-  | "follow-up-discussion";
+  "first-pass-full" | "incremental-rereview" | "follow-up-discussion";
 export type ReplyStyle =
   | "none"
   | "direct-answer"
@@ -238,8 +237,7 @@ export interface CodeReviewDiscussion {
 }
 
 export type ReviewAttachmentSourceKind =
-  | "trigger-comment"
-  | "code-review-description";
+  "trigger-comment" | "code-review-description";
 
 export interface ReviewAttachment {
   contentType: string;
@@ -300,9 +298,7 @@ export type TriggerCommentReference =
     };
 
 export type CommentReviewTriggerKind =
-  | "direct-mention"
-  | "follow-up-comment"
-  | "summary-follow-up";
+  "direct-mention" | "follow-up-comment" | "summary-follow-up";
 
 export type ReviewTriggerKind = CommentReviewTriggerKind | "manual-review";
 
@@ -327,8 +323,7 @@ export interface ManualReviewTriggerContext {
 }
 
 export type ReviewTriggerContext =
-  | CommentReviewTriggerContext
-  | ManualReviewTriggerContext;
+  CommentReviewTriggerContext | ManualReviewTriggerContext;
 
 export type WebhookReviewTrigger =
   | {
@@ -409,5 +404,6 @@ export interface ReviewContext {
     interactionJobId: string;
     tenantId: string;
     runDirectory?: string | undefined;
+    onMetrics?: HarnessRunLoggingContext["onMetrics"];
   };
 }

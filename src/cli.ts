@@ -1,4 +1,4 @@
-import { access, readFile, readdir, rm } from "node:fs/promises";
+import { access, readFile, rm } from "node:fs/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -14,9 +14,15 @@ import {
 import { loadLocalEnvFile } from "./env.js";
 import { maskSecret } from "./review/model-profiles.js";
 import {
-  readHarnessRunMetrics,
-  type PremiumRequestsByModelMetric,
-} from "./harness/run-metrics.js";
+  collectMetrics,
+  displayUsageUnit,
+  formatUsageAmount,
+  loadMetricsSessions,
+  parseMetricsDateRange,
+  type MetricsCollectResult,
+  type MetricsSessionsResult,
+  type MetricsUnitGroup,
+} from "./metrics.js";
 import {
   initializeStorageRuntime,
   type InitializedStorageRuntime,
@@ -69,44 +75,7 @@ interface ParsedCliArgs {
   readonly options: Record<string, string | boolean>;
 }
 
-export interface RunMetricsRow {
-  readonly run: string;
-  readonly premiumRequests: number;
-  readonly premiumRequestsByModel: PremiumRequestsByModelMetric[];
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly toolCalls: number;
-  readonly durationMs: number;
-}
-
-export interface SummaryMetricsRow {
-  readonly stat: string;
-  readonly premiumRequests: number;
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly toolCalls: number;
-  readonly durationMs: number;
-}
-
-export interface ModelPremiumRequestsStatsRow {
-  readonly model: string;
-  readonly runs: number;
-  readonly premiumRequests: number;
-  readonly min: number;
-  readonly max: number;
-  readonly avg: number;
-  readonly p25: number;
-  readonly p50: number;
-  readonly p75: number;
-  readonly p90: number;
-}
-
-export interface MetricsSessionsResult {
-  readonly runLogDirectory: string;
-  readonly runs: readonly RunMetricsRow[];
-  readonly summary: readonly SummaryMetricsRow[];
-  readonly models: readonly ModelPremiumRequestsStatsRow[];
-}
+export type { MetricsCollectResult, MetricsSessionsResult } from "./metrics.js";
 
 export interface TenantCliResult {
   readonly id: string;
@@ -1437,49 +1406,44 @@ async function runCliCommand(argv: string[]): Promise<number> {
 
   if (resource === "metrics" && action === "sessions") {
     const config = loadConfig();
-    const runLogDir =
-      typeof options["run-log-dir"] === "string"
-        ? resolve(options["run-log-dir"])
-        : config.runLogDir;
-    const runRows = await loadRunMetricsRows(runLogDir);
-
-    if (runRows.length === 0) {
-      const result: MetricsSessionsResult = {
-        runLogDirectory: runLogDir,
-        runs: [],
-        summary: [],
-        models: [],
-      };
+    return withStorage(options, config, async (storage) => {
+      const range = parseMetricsDateRange({
+        from: options.from,
+        to: options.to,
+      });
+      const result = await loadMetricsSessions(storage, {
+        connection:
+          typeof options.connection === "string" ? options.connection : null,
+        ...range,
+      });
+      const allSessions = options["all-sessions"] === true;
       output().result(result, {
-        pretty: output().style(
-          "muted",
-          `No readable Copilot session logs found in ${runLogDir}.`,
-        ),
+        pretty:
+          result.units.length === 0
+            ? output().style("muted", "No stored harness metrics found.")
+            : formatMetricsSessionsResult(result, true, allSessions),
+        plain: formatMetricsSessionsResult(result, false, allSessions),
       });
       return 0;
-    }
-
-    const modelPremiumRequestsRows =
-      buildModelPremiumRequestsStatsRows(runRows);
-    const summaryRows = buildSummaryMetricsRows(runRows);
-    const result: MetricsSessionsResult = {
-      runLogDirectory: runLogDir,
-      runs: runRows,
-      summary: summaryRows,
-      models: modelPremiumRequestsRows,
-    };
-    output().result(result, {
-      pretty: [
-        `${prettyHeading("Runs")}\n${decorateTable(formatRunMetricsTable(runRows))}`,
-        `${prettyHeading("Summary")}\n${decorateTable(formatSummaryMetricsTable(summaryRows))}`,
-        ...(modelPremiumRequestsRows.length > 0
-          ? [
-              `${prettyHeading("Premium requests by model")}\n${decorateTable(formatModelPremiumRequestsStatsTable(modelPremiumRequestsRows))}`,
-            ]
-          : []),
-      ].join("\n\n"),
     });
-    return 0;
+  }
+
+  if (resource === "metrics" && action === "collect") {
+    const config = loadConfig();
+    return withStorage(options, config, async (storage) => {
+      const runLogDirectory =
+        typeof options["run-log-dir"] === "string"
+          ? resolve(options["run-log-dir"])
+          : config.runLogDir;
+      const result = await collectMetrics(storage, {
+        runLogDirectory,
+        dryRun: options["dry-run"] === true,
+      });
+      output().result(result, {
+        pretty: formatMetricsCollectResult(result),
+      });
+      return 0;
+    });
   }
 
   if (output().mode === "json") {
@@ -1660,7 +1624,8 @@ function printHelp(
     "storage migrate --from-storage-provider-module <module> [--from-sqlite-database-path <path>] --to-storage-provider-module <module> [--to-sqlite-database-path <path>]",
     "mr describe (--tenant-id <id> | --key <key>) --code-review-id <id> [--current-interaction-job-id <id>] [--trigger-comment-id <id> --trigger-comment-action <create|update> [--trigger-comment-updated-at <iso>] [--trigger-comment-body <text>]] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "mr review (--tenant-id <id> | --key <tenant-key>) (--trigger-comment-url <url> | --trigger-comment-id <id> | --trigger-text <text> | --trigger-text-file <path>) [--code-review-id <id>] [--force-new] [--watch | --no-watch] [--sqlite-database-path <path>] [--storage-provider-module <module>] [--run-log-dir <path>]",
-    "metrics sessions [--run-log-dir <path>]",
+    "metrics sessions [--connection <name>] [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--all-sessions] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "metrics collect [--run-log-dir <path>] [--dry-run] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
   );
 
   const positionalPrefix = positionals.join(" ");
@@ -3532,250 +3497,198 @@ async function deleteTenantArtifactsForSummary(
   ]);
 }
 
-async function loadRunMetricsRows(runLogDir: string): Promise<RunMetricsRow[]> {
-  try {
-    const entries = await readdir(runLogDir, { withFileTypes: true });
-    const runDirectories = entries
-      .filter((entry) => entry.isDirectory())
-      .sort((left, right) => left.name.localeCompare(right.name));
-    const rows: RunMetricsRow[] = [];
-
-    for (const entry of runDirectories) {
-      const metrics = await loadRunMetrics(join(runLogDir, entry.name));
-      if (!metrics) {
-        continue;
-      }
-
-      rows.push({
-        run: entry.name,
-        premiumRequests: metrics.premiumRequests,
-        premiumRequestsByModel: metrics.premiumRequestsByModel,
-        inputTokens: metrics.inputTokens,
-        outputTokens: metrics.outputTokens,
-        toolCalls: metrics.toolExecutions,
-        durationMs: metrics.apiDurationMs,
-      });
-    }
-
-    return rows;
-  } catch {
-    return [];
-  }
-}
-
-async function loadRunMetrics(runDirectory: string) {
-  const candidateLogPaths = [
-    join(runDirectory, "copilot", "reviewer", "session.json"),
-    join(runDirectory, "copilot", "session.json"),
-  ];
-
-  for (const candidateLogPath of candidateLogPaths) {
-    const metrics = await readHarnessRunMetrics(candidateLogPath);
-    if (metrics) {
-      return metrics;
-    }
-  }
-
-  return null;
-}
-
-function buildModelPremiumRequestsStatsRows(
-  rows: RunMetricsRow[],
-): ModelPremiumRequestsStatsRow[] {
-  const statsByModel = new Map<string, number[]>();
-
-  for (const row of rows) {
-    for (const metric of row.premiumRequestsByModel) {
-      const current = statsByModel.get(metric.model) ?? [];
-      current.push(metric.premiumRequests);
-      statsByModel.set(metric.model, current);
-    }
-  }
-
-  return [...statsByModel.entries()]
-    .sort((left, right) =>
-      sum(left[1]) - sum(right[1]) === 0
-        ? left[0].localeCompare(right[0])
-        : sum(right[1]) - sum(left[1]),
-    )
-    .map(([model, premiumRequests]) => ({
-      model,
-      runs: premiumRequests.length,
-      premiumRequests: sum(premiumRequests),
-      min: minimum(premiumRequests),
-      max: maximum(premiumRequests),
-      avg: average(premiumRequests),
-      p25: percentile(premiumRequests, 25),
-      p50: percentile(premiumRequests, 50),
-      p75: percentile(premiumRequests, 75),
-      p90: percentile(premiumRequests, 90),
-    }));
-}
-
-function buildSummaryMetricsRows(rows: RunMetricsRow[]): SummaryMetricsRow[] {
-  const premiumRequests = rows.map((row) => row.premiumRequests);
-  const inputTokens = rows.map((row) => row.inputTokens);
-  const outputTokens = rows.map((row) => row.outputTokens);
-  const toolCalls = rows.map((row) => row.toolCalls);
-  const durationMs = rows.map((row) => row.durationMs);
-
-  return [
-    createSummaryMetricsRow(
-      "min",
-      premiumRequests,
-      inputTokens,
-      outputTokens,
-      toolCalls,
-      durationMs,
-      minimum,
-    ),
-    createSummaryMetricsRow(
-      "max",
-      premiumRequests,
-      inputTokens,
-      outputTokens,
-      toolCalls,
-      durationMs,
-      maximum,
-    ),
-    createSummaryMetricsRow(
-      "avg",
-      premiumRequests,
-      inputTokens,
-      outputTokens,
-      toolCalls,
-      durationMs,
-      average,
-    ),
-    createSummaryMetricsRow(
-      "p50",
-      premiumRequests,
-      inputTokens,
-      outputTokens,
-      toolCalls,
-      durationMs,
-      (values) => percentile(values, 50),
-    ),
-    createSummaryMetricsRow(
-      "p25",
-      premiumRequests,
-      inputTokens,
-      outputTokens,
-      toolCalls,
-      durationMs,
-      (values) => percentile(values, 25),
-    ),
-    createSummaryMetricsRow(
-      "p75",
-      premiumRequests,
-      inputTokens,
-      outputTokens,
-      toolCalls,
-      durationMs,
-      (values) => percentile(values, 75),
-    ),
-    createSummaryMetricsRow(
-      "p90",
-      premiumRequests,
-      inputTokens,
-      outputTokens,
-      toolCalls,
-      durationMs,
-      (values) => percentile(values, 90),
-    ),
-  ];
-}
-
-function createSummaryMetricsRow(
-  stat: string,
-  premiumRequests: number[],
-  inputTokens: number[],
-  outputTokens: number[],
-  toolCalls: number[],
-  durationMs: number[],
-  aggregate: (values: number[]) => number,
-): SummaryMetricsRow {
-  return {
-    stat,
-    premiumRequests: aggregate(premiumRequests),
-    inputTokens: aggregate(inputTokens),
-    outputTokens: aggregate(outputTokens),
-    toolCalls: aggregate(toolCalls),
-    durationMs: aggregate(durationMs),
-  };
-}
-
-function formatRunMetricsTable(rows: RunMetricsRow[]): string {
-  return formatTable(
-    [
-      "run",
-      "premiumRequests",
-      "inputTokens",
-      "outputTokens",
-      "toolCalls",
-      "durationMs",
-    ],
-    rows.map((row) => [
-      row.run,
-      row.premiumRequests,
-      row.inputTokens,
-      row.outputTokens,
-      row.toolCalls,
-      row.durationMs,
-    ]),
-  );
-}
-
-function formatSummaryMetricsTable(rows: SummaryMetricsRow[]): string {
-  return formatTable(
-    [
-      "stat",
-      "premiumRequests",
-      "inputTokens",
-      "outputTokens",
-      "toolCalls",
-      "durationMs",
-    ],
-    rows.map((row) => [
-      row.stat,
-      row.premiumRequests,
-      row.inputTokens,
-      row.outputTokens,
-      row.toolCalls,
-      row.durationMs,
-    ]),
-  );
-}
-
-function formatModelPremiumRequestsStatsTable(
-  rows: ModelPremiumRequestsStatsRow[],
+function formatMetricsSessionsResult(
+  result: MetricsSessionsResult,
+  includeCharts: boolean,
+  allSessions: boolean,
 ): string {
-  return formatTable(
-    [
-      "model",
-      "runs",
-      "premiumRequests",
-      "min",
-      "max",
-      "avg",
-      "p25",
-      "p50",
-      "p75",
-      "p90",
-    ],
-    rows.map((row) => [
-      row.model,
-      row.runs,
-      row.premiumRequests,
-      row.min,
-      row.max,
-      row.avg,
-      row.p25,
-      row.p50,
-      row.p75,
-      row.p90,
-    ]),
+  return result.units
+    .map((group) => formatMetricsUnitGroup(group, includeCharts, allSessions))
+    .join("\n\n");
+}
+
+function formatMetricsUnitGroup(
+  group: MetricsUnitGroup,
+  includeCharts: boolean,
+  allSessions: boolean,
+): string {
+  const unit = displayUsageUnit(group.unit);
+  const sections = [
+    ...(allSessions
+      ? [
+          `${prettyHeading(`${unit} sessions`)}\n${decorateTable(
+            formatTable(
+              [
+                "run",
+                "startedAt",
+                "sessions",
+                "usage",
+                "inputTokens",
+                "outputTokens",
+                "toolCalls",
+                "durationMs",
+              ],
+              group.runs.map((row) => [
+                row.interactionRunId,
+                row.startedAt,
+                row.sessions,
+                formatUsageAmount(group.unit, row.usageAmount),
+                row.inputTokens,
+                row.outputTokens,
+                row.toolCalls,
+                row.durationMs,
+              ]),
+            ),
+          )}`,
+        ]
+      : []),
+    ...(includeCharts && canRenderMetricsChart(group)
+      ? [formatMetricsChart(group)]
+      : []),
+    `${prettyHeading(`${unit} summary`)}\n${decorateTable(
+      formatTable(
+        [
+          "stat",
+          "usage",
+          "inputTokens",
+          "outputTokens",
+          "toolCalls",
+          "durationMs",
+        ],
+        group.summary.map((row) => [
+          row.stat,
+          formatUsageAmount(group.unit, row.usageAmount),
+          row.inputTokens,
+          row.outputTokens,
+          row.toolCalls,
+          row.durationMs,
+        ]),
+      ),
+    )}`,
+    ...(group.models.length > 0
+      ? [
+          `${prettyHeading(`${unit} by model`)}\n${decorateTable(
+            formatTable(
+              ["model", "reviews", "usage", "averagePerReview"],
+              group.models.map((row) => [
+                row.model,
+                row.reviews,
+                formatUsageAmount(group.unit, row.usageAmount),
+                formatUsageAmount(group.unit, row.averageCostPerReview),
+              ]),
+            ),
+          )}`,
+        ]
+      : []),
+    `${prettyHeading(`${unit} by session type`)}\n${decorateTable(
+      formatTable(
+        [
+          "sessionType",
+          "sessions",
+          "usage",
+          "inputTokens",
+          "outputTokens",
+          "durationMs",
+        ],
+        group.sessionTypes.map((row) => [
+          row.sessionType,
+          row.sessions,
+          formatUsageAmount(group.unit, row.usageAmount),
+          row.inputTokens,
+          row.outputTokens,
+          row.durationMs,
+        ]),
+      ),
+    )}`,
+  ];
+  return sections.join("\n\n");
+}
+
+function canRenderMetricsChart(group: MetricsUnitGroup): boolean {
+  return (
+    group.unit !== null &&
+    group.monthly.length > 0 &&
+    output().mode === "pretty" &&
+    output().stdoutIsTTY &&
+    output().unicode &&
+    output().columns >= 72
   );
+}
+
+function formatMetricsChart(group: MetricsUnitGroup): string {
+  const modelTotals = new Map<string, number>();
+  for (const month of group.monthly) {
+    for (const model of month.models) {
+      modelTotals.set(
+        model.model,
+        (modelTotals.get(model.model) ?? 0) + model.amount,
+      );
+    }
+  }
+  const topModels = [...modelTotals.entries()]
+    .sort(
+      (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
+    )
+    .slice(0, 8)
+    .map(([model]) => model);
+  const shades = ["█", "▓", "▒", "░", "▰", "▱", "■", "□"];
+  const colors = [31, 32, 33, 34, 35, 36, 91, 95];
+  const styleSegment = (value: string, index: number) =>
+    output().color
+      ? `\u001B[${colors[index % colors.length]}m${value}\u001B[0m`
+      : value;
+  const max = Math.max(...group.monthly.map((month) => month.total), 1);
+  const width = Math.min(40, output().columns - 30);
+  const rows = group.monthly.map((month) => {
+    const amounts = new Map(
+      month.models.map((model) => [model.model, model.amount]),
+    );
+    let visualLength = 0;
+    const segments = topModels.map((model, index) => {
+      const length = Math.round(((amounts.get(model) ?? 0) / max) * width);
+      visualLength += length;
+      const character = output().color
+        ? "█"
+        : (shades[index % shades.length] ?? "█");
+      return styleSegment(character.repeat(length), index);
+    });
+    const other = month.models
+      .filter((model) => !topModels.includes(model.model))
+      .reduce((total, model) => total + model.amount, 0);
+    if (other > 0) {
+      const length = Math.round((other / max) * width);
+      visualLength += length;
+      segments.push("·".repeat(length));
+    }
+    return `${month.month} ${segments.join("")}${" ".repeat(Math.max(0, width - visualLength))} ${formatUsageAmount(group.unit, month.total)}`;
+  });
+  const legend = topModels.map((model, index) => {
+    const marker = output().color
+      ? "■"
+      : (shades[index % shades.length] ?? "■");
+    return `${styleSegment(marker, index)} ${model}`;
+  });
+  if (
+    group.monthly.some((month) =>
+      month.models.some((model) => !topModels.includes(model.model)),
+    )
+  ) {
+    legend.push("· other");
+  }
+  return `${prettyHeading(`${displayUsageUnit(group.unit)} monthly by model`)}\n${rows.join("\n")}\n${legend.join("  ")}`;
+}
+
+function formatMetricsCollectResult(result: MetricsCollectResult): string {
+  return formatKeyValues([
+    ["Run log directory", result.runLogDirectory],
+    ["Dry run", result.dryRun],
+    ["Files", result.files],
+    ["Imported", result.imported],
+    ["Updated", result.updated],
+    ["Unchanged", result.unchanged],
+    ["Skipped", result.skipped],
+    ["Invalid", result.invalid],
+  ]);
 }
 
 function formatTable(
@@ -3817,41 +3730,6 @@ function formatCellValue(value: string | number): string {
     .toFixed(2)
     .replace(/\.00$/, "")
     .replace(/(\.\d*[1-9])0+$/, "$1");
-}
-
-function minimum(values: number[]): number {
-  return Math.min(...values);
-}
-
-function maximum(values: number[]): number {
-  return Math.max(...values);
-}
-
-function average(values: number[]): number {
-  return values.reduce((total, value) => total + value, 0) / values.length;
-}
-
-function sum(values: number[]): number {
-  return values.reduce((total, value) => total + value, 0);
-}
-
-function percentile(values: number[], percentileRank: number): number {
-  const sorted = [...values].sort((left, right) => left - right);
-  const index = (percentileRank / 100) * (sorted.length - 1);
-  const lowerIndex = Math.floor(index);
-  const upperIndex = Math.ceil(index);
-  const lowerValue = sorted[lowerIndex];
-  const upperValue = sorted[upperIndex];
-
-  if (lowerValue === undefined || upperValue === undefined) {
-    return Number.NaN;
-  }
-
-  if (lowerIndex === upperIndex) {
-    return lowerValue;
-  }
-
-  return lowerValue + (upperValue - lowerValue) * (index - lowerIndex);
 }
 
 export async function runCliEntry(

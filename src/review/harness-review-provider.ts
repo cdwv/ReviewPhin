@@ -67,6 +67,7 @@ export class HarnessReviewProvider implements ReviewProvider {
         runDirectory: effectiveContext.logging?.runDirectory,
         pathSegments: ["copilot", "reviewer"],
         sessionKind: "review",
+        onMetrics: effectiveContext.logging?.onMetrics,
       },
       metadata: {
         codeReviewId: effectiveContext.codeReview.id,
@@ -145,6 +146,7 @@ export class HarnessReviewProvider implements ReviewProvider {
           runDirectory: context.logging?.runDirectory,
           pathSegments: ["copilot"],
           sessionKind: "review",
+          onMetrics: context.logging?.onMetrics,
         },
         coalesceInput: input,
       });

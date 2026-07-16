@@ -638,6 +638,15 @@ declare module "@flotiq/flotiq-api-sdk" {
       | Array<InteractionRunHydratedTwice>
       | Array<InteractionRunBase>;
 
+    /** Harness implementation that produced this session. */
+    harness: string;
+
+    /** Stable harness-native session identity. */
+    harnessSessionKey: string;
+
+    /** Open session type reported by the harness. */
+    sessionType: string;
+
     /**
      * Kind of event that initiated the measured run. Editing changes reporting metadata.
      */
@@ -723,10 +732,14 @@ declare module "@flotiq/flotiq-api-sdk" {
      */
     apiDurationMs: number;
 
-    /**
-     * Provider-reported premium request count.
-     */
-    premiumRequests: number;
+    /** Open namespaced unit key reported by the harness. */
+    usageUnit?: string;
+
+    /** Amount expressed in usageUnit. */
+    usageAmount?: number;
+
+    /** Per-model usage amounts encoded as JSON. */
+    usageByModelJson: string;
 
     /**
      * Number of repeated file reads detected during the run.
@@ -756,6 +769,9 @@ declare module "@flotiq/flotiq-api-sdk" {
       | "interactionRunId"
       | "interactionRunId[*].type"
       | "interactionRunId[*].dataUrl"
+      | "harness"
+      | "harnessSessionKey"
+      | "sessionType"
       | "triggerKind"
       | "promptMode"
       | "promptChars"
@@ -773,7 +789,9 @@ declare module "@flotiq/flotiq-api-sdk" {
       | "cacheWriteTokens"
       | "reasoningTokens"
       | "apiDurationMs"
-      | "premiumRequests"
+      | "usageUnit"
+      | "usageAmount"
+      | "usageByModelJson"
       | "repeatedViewReads"
       | "repeatedViewPathsJson"
     >;

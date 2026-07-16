@@ -491,12 +491,36 @@ If you provide `--trigger-comment-action`, `--trigger-comment-updated-at`, or `-
 
 ### `metrics sessions`
 
-Print aggregated metrics from run-log files: token counts, tool calls, premium request counts, and durations.
+Print metrics from configured storage. Sessions are grouped by their reported usage unit, so AI credits, legacy premium requests, custom harness units, and sessions without billable usage are never added together.
 
 ```bash
 reviewphin metrics sessions
 ```
 
-| Flag            | Required | Description                                                     |
-| --------------- | -------- | --------------------------------------------------------------- |
-| `--run-log-dir` | No       | Override the run-log root (default: `RUN_LOG_DIR` from `.env`). |
+| Flag                        | Required | Description                                                                     |
+| --------------------------- | -------- | ------------------------------------------------------------------------------- |
+| `--connection`              | No       | Include only tenants assigned to this globally unique platform connection name. |
+| `--from`                    | No       | Include runs started on or after this UTC calendar date (`YYYY-MM-DD`).         |
+| `--to`                      | No       | Include runs started on or before this UTC calendar date (`YYYY-MM-DD`).        |
+| `--all-sessions`            | No       | Show the detailed per-run session table in human-readable output.               |
+| `--sqlite-database-path`    | No       | Override the SQLite path.                                                       |
+| `--storage-provider-module` | No       | Override the storage module.                                                    |
+
+By default, human-readable output shows the summary, model, and session-type tables without the potentially long per-run list. Add `--all-sessions` when you need that detailed table. Structured output always includes per-run rows, distribution summaries, model totals, monthly model series, and session-type totals for every unit. Human-readable output converts GitHub nano-AI units to AI credits for display. Stored values remain exact.
+
+### `metrics collect`
+
+Import supported historical session files into configured storage.
+
+```bash
+reviewphin metrics collect --run-log-dir ./data/run-logs
+```
+
+| Flag                        | Required | Description                                                     |
+| --------------------------- | -------- | --------------------------------------------------------------- |
+| `--run-log-dir`             | No       | Override the run-log root (default: `RUN_LOG_DIR` from `.env`). |
+| `--dry-run`                 | No       | Count imports and updates without writing them.                 |
+| `--sqlite-database-path`    | No       | Override the SQLite path.                                       |
+| `--storage-provider-module` | No       | Override the storage module.                                    |
+
+Collection upserts by interaction run, harness, and harness-native session key. A matching stored record is updated from the file. Unknown interaction runs and files without usable session identity are skipped. Collection never moves or deletes source files, and collecting unchanged files again makes no data changes.

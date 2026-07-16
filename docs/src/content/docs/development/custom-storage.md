@@ -19,7 +19,7 @@ Adapters must report the current storage contract revision:
 
 ```ts
 getSupportedStorageContract(): string {
-  return "storage-v005";
+  return "storage-v006";
 }
 ```
 
@@ -28,7 +28,7 @@ They must implement all stores required by the current contract and return a val
 ```ts
 return {
   providerId: "my-adapter",
-  storageContractRevision: "storage-v005",
+  storageContractRevision: "storage-v006",
   appliedMigrationIds: [],
 };
 ```
@@ -55,6 +55,8 @@ Pick a claim mode by what your backend can guarantee:
 The claim token fences an abandoned attempt after its lease expires. Because a third-party provider request cannot be made transactional with the storage lease, an in-flight external call may still finish after lease loss; exactly-once external side effects remain outside the fencing guarantee. Project-memory writes are also outside claim fencing by design.
 
 ## Contract revision notes
+
+- `storage-v006` (breaking) changes interaction-run metrics from one record per run to one record per harness session. Adapters identify a session by interaction run, harness, and harness-native session key. `sessionType` and `usageUnit` are open strings, not enumerations. `usageUnit` and `usageAmount` must either both be present or both be absent. Per-model usage JSON uses the same unit. Existing premium-request rows must keep their timestamps and counters while receiving deterministic legacy session identity. Filters add inclusive `gte` and exclusive `lt` range operators; adapters must return the same boundary behavior.
 
 - `storage-v003` added provider-owned interaction trigger identity through `InteractionJobRecord.triggerJson` and made `commentId` nullable. Built-in migrations preserve existing GitLab jobs and synthesize trigger JSON from the existing comment id.
 - `storage-v004` added `ProjectMemoryRecord` and the `projectMemories` store. There is at most one project memory record per tenant, with the record id equal to the tenant id. Built-in adapters delete that row during tenant deletion and include it in tenant deletion summaries.

@@ -74,7 +74,15 @@ Set the module path or package name:
 STORAGE_PROVIDER_MODULE=@my-org/reviewphin-postgres
 ```
 
-A custom adapter must report the current storage contract revision, `storage-v005`, and implement claim-aware interaction-job operations. Implementation details are in [custom storage adapters](../../development/custom-storage/).
+A custom adapter must report the current storage contract revision, `storage-v006`, implement claim-aware interaction-job operations, and store one metrics record per harness session. Implementation details are in [custom storage adapters](../../development/custom-storage/).
+
+### Upgrading to storage-v006
+
+`storage-v006` is a breaking revision for interaction-run metrics. Stop older processes before migrating. Built-in adapters preserve every existing metrics row, its timestamps, and its operational counters. Legacy premium-request values receive a deterministic session identity and the open unit key `github.copilot.premium-request`.
+
+SQLite rebuilds only the metrics table and copies all existing rows before replacing it. Flotiq first adds the new identity fields as optional, backfills every metrics object, and only then installs the final required shape. Do not mark a custom-provider migration complete until its backfill succeeds.
+
+After upgrading, use [`metrics collect`](../../management/cli-reference/#metrics-collect) to import supported historical session files. Collection does not remove those files. Keep run logs until stored counts have been checked for the deployment.
 
 ### Upgrading to storage-v005
 

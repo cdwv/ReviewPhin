@@ -20,6 +20,7 @@ import {
 import { parseHarnessStructuredResponse } from "./response-format.js";
 import { resolveHarnessSubagents, resolveHarnessTools } from "./registry.js";
 import { HarnessRunLog } from "./run-log.js";
+import { COPILOT_HARNESS, summarizeHarnessRunLog } from "./run-metrics.js";
 import type {
   HarnessRunAttachment,
   HarnessRunResult,
@@ -32,13 +33,7 @@ interface HarnessSessionRuntimeOptions {
   timeoutMs: number;
   maxPromptMemoryChars: number;
   sdkLogLevel?:
-    | "none"
-    | "error"
-    | "warning"
-    | "info"
-    | "debug"
-    | "all"
-    | undefined;
+    "none" | "error" | "warning" | "info" | "debug" | "all" | undefined;
   cliPath?: string | undefined;
 }
 
@@ -95,6 +90,7 @@ export class HarnessSessionRuntime {
 
     let caughtError: unknown = null;
     const events: SessionEvent[] = [];
+    let harnessSessionKey: string | null = null;
 
     try {
       await client.start();
@@ -121,6 +117,7 @@ export class HarnessSessionRuntime {
         customAgents: resolveHarnessSubagents(spec.subagents, enabledToolIds),
         ...(spec.agent ? { agent: spec.agent } : {}),
       });
+      harnessSessionKey = session.sessionId;
       runLog.setSessionId(session.sessionId);
 
       const unsubscribe = session.on((event: SessionEvent) => {
@@ -164,6 +161,25 @@ export class HarnessSessionRuntime {
       runLog.setError(error);
       throw error;
     } finally {
+      if (harnessSessionKey && spec.logging?.onMetrics) {
+        try {
+          await spec.logging.onMetrics({
+            harness: COPILOT_HARNESS,
+            harnessSessionKey,
+            sessionType: spec.logging.sessionKind?.trim() || "unknown",
+            metrics: summarizeHarnessRunLog({ prompt: spec.prompt, events }),
+          });
+        } catch (metricsError) {
+          this.logger.warn(
+            {
+              err: metricsError,
+              interactionRunId: spec.logging.interactionRunId,
+              harnessSessionKey,
+            },
+            "failed to persist harness session metrics",
+          );
+        }
+      }
       const logPath = await flushRunLog(runLog, this.logger);
       if (caughtError) {
         this.logger.error(

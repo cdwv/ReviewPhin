@@ -83,6 +83,9 @@ describe("storage migrate CLI", () => {
 
       await sourceStorage.upsertInteractionRunMetrics({
         interactionRunId: interactionRun.id,
+        harness: "github.copilot-sdk",
+        harnessSessionKey: "session-migrate",
+        sessionType: "review",
         triggerKind: "note",
         promptMode: "full",
         promptChars: 10,
@@ -100,7 +103,9 @@ describe("storage migrate CLI", () => {
         cacheWriteTokens: 0,
         reasoningTokens: 0,
         apiDurationMs: 100,
-        premiumRequests: 1,
+        usageUnit: "github.copilot.premium-request",
+        usageAmount: 1,
+        usageByModelJson: "[]",
         repeatedViewReads: 0,
         repeatedViewPathsJson: "[]",
       });

@@ -158,6 +158,34 @@ export function createFlotiqEntityStore<
     page?: number;
     pageSize?: number;
   }): Promise<TEntity[]> {
+    if (hasRangeFilter(input?.filters)) {
+      const records: TEntity[] = [];
+      const pageSize = GET_MANY_PAGE_SIZE;
+      for (let page = 1; ; page += 1) {
+        const remoteObjects = await fetchRemoteObjects({
+          ...(input?.filters ? { filters: input.filters } : {}),
+          ...(input?.order ? { order: input.order } : {}),
+          ...(input?.ids ? { ids: input.ids } : {}),
+          page,
+          pageSize,
+        });
+        records.push(
+          ...remoteObjects.map((object) => options.toRecord(object)),
+        );
+        if (remoteObjects.length < pageSize) {
+          break;
+        }
+      }
+
+      const filtered = records.filter((record) =>
+        matchesRangeFilters(record, input?.filters),
+      );
+      const requestedPage = input?.page ?? 1;
+      const requestedPageSize = input?.pageSize ?? filtered.length;
+      const offset = (requestedPage - 1) * requestedPageSize;
+      return filtered.slice(offset, offset + requestedPageSize);
+    }
+
     const remoteInput: {
       filters?: Partial<
         Record<keyof TEntity & string, StoreValueFilter<unknown>>
@@ -409,6 +437,10 @@ function translateStoreFilter(
 ): Filter | null {
   const operators = getDefinedOperators(filter);
 
+  if (operators.includes("gte") || operators.includes("lt")) {
+    return null;
+  }
+
   if (operators.length !== 1) {
     return null;
   }
@@ -509,7 +541,47 @@ function getDefinedOperators(filter: StoreValueFilter<unknown>): string[] {
     Array.isArray(filter.in) ? "in" : null,
     Array.isArray(filter.notIn) ? "notIn" : null,
     filter.isNull === undefined ? null : "isNull",
+    filter.gte === undefined ? null : "gte",
+    filter.lt === undefined ? null : "lt",
   ].filter((value): value is string => value !== null);
+}
+
+function hasRangeFilter(
+  filters: Partial<Record<string, StoreValueFilter<unknown>>> | undefined,
+): boolean {
+  return Object.values(filters ?? {}).some(
+    (filter) => filter?.gte !== undefined || filter?.lt !== undefined,
+  );
+}
+
+function matchesRangeFilters<TEntity extends object>(
+  record: TEntity,
+  filters: Partial<Record<string, StoreValueFilter<unknown>>> | undefined,
+): boolean {
+  const values = record as Record<string, unknown>;
+  return Object.entries(filters ?? {}).every(([field, filter]) => {
+    if (!filter) {
+      return true;
+    }
+    const value = values[field];
+    if (filter.gte !== undefined && compareRangeValue(value, filter.gte) < 0) {
+      return false;
+    }
+    if (filter.lt !== undefined && compareRangeValue(value, filter.lt) >= 0) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function compareRangeValue(left: unknown, right: unknown): number {
+  if (typeof left === "string" && typeof right === "string") {
+    return left < right ? -1 : left > right ? 1 : 0;
+  }
+  if (typeof left === "number" && typeof right === "number") {
+    return left < right ? -1 : left > right ? 1 : 0;
+  }
+  return Number.NaN;
 }
 
 function translateEqualsFilter(value: unknown): Filter {

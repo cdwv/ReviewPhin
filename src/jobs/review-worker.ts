@@ -16,7 +16,7 @@ import type {
 } from "../reconcile/discussion-reconciler.js";
 import type { HarnessChatterRunnerFactory } from "../review/harness-chatter.js";
 import { buildInteractionPlan } from "../review/interaction-plan.js";
-import { readHarnessRunMetrics } from "../harness/run-metrics.js";
+import type { HarnessSessionMetricsEnvelope } from "../harness/types.js";
 import {
   ModelProfileConfigurationError,
   resolveReviewProviderConfig,
@@ -71,8 +71,7 @@ interface ReviewWorkerOptions {
   retryBackoffMs: number;
   platformResolver?: ((platformSlug: string) => IPlatform | null) | undefined;
   reviewRuntimeFactory?:
-    | ((input: ReviewRuntimeFactoryInput) => PlatformReviewRuntime)
-    | undefined;
+    ((input: ReviewRuntimeFactoryInput) => PlatformReviewRuntime) | undefined;
 }
 
 export class ReviewWorker {
@@ -272,17 +271,9 @@ export class ReviewWorker {
     let interactionRunId: string | null = null;
     let runArtifacts: InteractionRunArtifacts | null = null;
     const workspacesToCleanup: PlatformMaterializedWorkspace[] = [];
-    let metricsContext: {
-      sessionLogPath: string;
-      triggerKind: string | null;
-      promptMode: string | null;
-      promptContextChangedFiles: number;
-      promptContextPriorDiscussions: number;
-      promptContextComments: number;
-    } | null = null;
     let cleanupWorkspace:
-      | ((workspace: PlatformMaterializedWorkspace) => Promise<void>)
-      | null = null;
+      ((workspace: PlatformMaterializedWorkspace) => Promise<void>) | null =
+      null;
 
     try {
       const runtime = this.reviewRuntimeFactory({
@@ -495,6 +486,15 @@ export class ReviewWorker {
               interactionJobId: job.id,
               tenantId: tenant.id,
               runDirectory: runArtifacts.runDirectory,
+              onMetrics: this.createMetricsSink(jobStore, context, {
+                interactionRunId: interactionRun.id,
+                triggerKind: trigger.kind,
+                promptMode: "memory",
+                promptContextChangedFiles: chatterContext.changes.length,
+                promptContextPriorDiscussions:
+                  chatterContext.priorDiscussions.length,
+                promptContextComments: chatterContext.comments.length,
+              }),
             },
           },
           {
@@ -506,6 +506,15 @@ export class ReviewWorker {
               interactionJobId: job.id,
               runDirectory: runArtifacts.runDirectory,
               memoryEnabled: routingContext.projectMemory.enabled,
+              onMetrics: this.createMetricsSink(jobStore, context, {
+                interactionRunId: interactionRun.id,
+                triggerKind: trigger.kind,
+                promptMode: "memory-consolidation",
+                promptContextChangedFiles: chatterContext.changes.length,
+                promptContextPriorDiscussions:
+                  chatterContext.priorDiscussions.length,
+                promptContextComments: chatterContext.comments.length,
+              }),
             }),
           },
         );
@@ -513,18 +522,6 @@ export class ReviewWorker {
           join("orchestration", "memory-result.json"),
           memoryResult,
         );
-        context.assertOwned();
-        metricsContext = {
-          sessionLogPath: runArtifacts.getCopilotSessionLogPath(
-            chatterRunner.sessionPaths.memory,
-          ),
-          triggerKind: trigger.kind,
-          promptMode: "memory",
-          promptContextChangedFiles: chatterContext.changes.length,
-          promptContextPriorDiscussions: chatterContext.priorDiscussions.length,
-          promptContextComments: chatterContext.comments.length,
-        };
-
         context.assertOwned();
         routingContext = await this.loadRoutingContext({
           runtime: runRuntime,
@@ -586,6 +583,25 @@ export class ReviewWorker {
           priorFindings,
           previousInteraction,
         });
+        reviewContext = {
+          ...reviewContext,
+          logging: {
+            ...reviewContext.logging,
+            interactionRunId: interactionRun.id,
+            interactionJobId: job.id,
+            tenantId: tenant.id,
+            runDirectory: runArtifacts.runDirectory,
+            onMetrics: this.createMetricsSink(jobStore, context, {
+              interactionRunId: interactionRun.id,
+              triggerKind: reviewContext.trigger.kind,
+              promptMode: reviewContext.scope.mode,
+              promptContextChangedFiles: reviewContext.changes.length,
+              promptContextPriorDiscussions:
+                reviewContext.priorDiscussions.length,
+              promptContextComments: reviewContext.comments.length,
+            }),
+          },
+        };
 
         await this.logRunEvent(
           runArtifacts,
@@ -612,6 +628,15 @@ export class ReviewWorker {
             interactionJobId: job.id,
             runDirectory: runArtifacts.runDirectory,
             memoryEnabled: hydratedContext.projectMemory.enabled,
+            onMetrics: this.createMetricsSink(jobStore, context, {
+              interactionRunId: interactionRun.id,
+              triggerKind: reviewContext.trigger.kind,
+              promptMode: "memory-consolidation",
+              promptContextChangedFiles: reviewContext.changes.length,
+              promptContextPriorDiscussions:
+                reviewContext.priorDiscussions.length,
+              promptContextComments: reviewContext.comments.length,
+            }),
           }),
         });
         await runArtifacts.writeJsonArtifact(
@@ -675,18 +700,6 @@ export class ReviewWorker {
         });
         context.assertOwned();
 
-        metricsContext = {
-          sessionLogPath: runArtifacts.getCopilotSessionLogPath([
-            "copilot",
-            "reviewer",
-          ]),
-          triggerKind: reviewContext.trigger.kind,
-          promptMode: reviewContext.scope.mode,
-          promptContextChangedFiles: reviewContext.changes.length,
-          promptContextPriorDiscussions: reviewContext.priorDiscussions.length,
-          promptContextComments: reviewContext.comments.length,
-        };
-
         await this.logRunEvent(
           runArtifacts,
           "info",
@@ -717,6 +730,20 @@ export class ReviewWorker {
               interactionJobId: job.id,
               tenantId: tenant.id,
               runDirectory: runArtifacts.runDirectory,
+              onMetrics: this.createMetricsSink(jobStore, context, {
+                interactionRunId: interactionRun.id,
+                triggerKind: trigger.kind,
+                promptMode: "reply",
+                promptContextChangedFiles:
+                  reviewContext?.changes.length ??
+                  chatterContext.changes.length,
+                promptContextPriorDiscussions:
+                  reviewContext?.priorDiscussions.length ??
+                  chatterContext.priorDiscussions.length,
+                promptContextComments:
+                  reviewContext?.comments.length ??
+                  chatterContext.comments.length,
+              }),
             },
           },
           {
@@ -730,6 +757,20 @@ export class ReviewWorker {
               memoryEnabled:
                 reviewContext?.projectMemory.enabled ??
                 routingContext.projectMemory.enabled,
+              onMetrics: this.createMetricsSink(jobStore, context, {
+                interactionRunId: interactionRun.id,
+                triggerKind: trigger.kind,
+                promptMode: "memory-consolidation",
+                promptContextChangedFiles:
+                  reviewContext?.changes.length ??
+                  chatterContext.changes.length,
+                promptContextPriorDiscussions:
+                  reviewContext?.priorDiscussions.length ??
+                  chatterContext.priorDiscussions.length,
+                promptContextComments:
+                  reviewContext?.comments.length ??
+                  chatterContext.comments.length,
+              }),
             }),
           },
         );
@@ -767,33 +808,11 @@ export class ReviewWorker {
             },
           );
         }
-
-        metricsContext = {
-          sessionLogPath: runArtifacts.getCopilotSessionLogPath(
-            chatterRunner.sessionPaths.reply,
-          ),
-          triggerKind: trigger.kind,
-          promptMode: "reply",
-          promptContextChangedFiles:
-            reviewContext?.changes.length ?? chatterContext.changes.length,
-          promptContextPriorDiscussions:
-            reviewContext?.priorDiscussions.length ??
-            chatterContext.priorDiscussions.length,
-          promptContextComments:
-            reviewContext?.comments.length ?? chatterContext.comments.length,
-        };
       }
 
       // Commit order: findings/metrics, run terminal transition, then job
       // transition. Never transition the job first because clearing its claim
       // would make the run transition unverifiable.
-      if (interactionRunId && runArtifacts && metricsContext) {
-        await this.persistInteractionRunMetrics(jobStore, context, {
-          interactionRunId,
-          ...metricsContext,
-        });
-      }
-
       context.assertOwned();
       await scoped.completeInteractionRun(
         interactionRun.id,
@@ -812,10 +831,10 @@ export class ReviewWorker {
         phase: "completed",
         update: () =>
           triggerLifecycle.completed(
-          runRuntime.buildTriggerOutcome({
-            reviewResult,
-            reconcileSummary,
-          }),
+            runRuntime.buildTriggerOutcome({
+              reviewResult,
+              reconcileSummary,
+            }),
           ),
       });
       if (!this.claimIsOwned(context, job, "completed", interactionRunId)) {
@@ -852,20 +871,19 @@ export class ReviewWorker {
       const isAbandonedReview = error instanceof AbandonedReviewError;
 
       if (runArtifacts) {
-        await this.logRunEvent(runArtifacts, "error", "interaction job failed", {
-          interactionJobId: job.id,
-          interactionRunId,
-          error: serializeError(error),
-        });
+        await this.logRunEvent(
+          runArtifacts,
+          "error",
+          "interaction job failed",
+          {
+            interactionJobId: job.id,
+            interactionRunId,
+            error: serializeError(error),
+          },
+        );
       }
 
       if (interactionRunId) {
-        if (metricsContext) {
-          await this.persistInteractionRunMetrics(jobStore, context, {
-            interactionRunId,
-            ...metricsContext,
-          });
-        }
         await jobStore.replaceReviewFindingsForClaim({
           jobId: context.jobId,
           claimToken: context.claimToken,
@@ -1061,31 +1079,29 @@ export class ReviewWorker {
     }
   }
 
-  private async persistInteractionRunMetrics(
+  private createMetricsSink(
     jobStore: StorageHelpers["stores"]["interactionJobs"],
     context: JobClaimContext,
     input: {
       interactionRunId: string;
-      sessionLogPath: string;
       triggerKind: string | null;
       promptMode: string | null;
       promptContextChangedFiles: number;
       promptContextPriorDiscussions: number;
       promptContextComments: number;
     },
-  ): Promise<void> {
-    try {
-      const metrics = await readHarnessRunMetrics(input.sessionLogPath);
-      if (!metrics) {
-        return;
-      }
-
-      await jobStore.upsertInteractionRunMetricsForClaim({
+  ): (envelope: HarnessSessionMetricsEnvelope) => Promise<void> {
+    return async (envelope) => {
+      const metrics = envelope.metrics;
+      const saved = await jobStore.upsertInteractionRunMetricsForClaim({
         jobId: context.jobId,
         claimToken: context.claimToken,
         interactionRunId: input.interactionRunId,
         metrics: {
           interactionRunId: input.interactionRunId,
+          harness: envelope.harness,
+          harnessSessionKey: envelope.harnessSessionKey,
+          sessionType: envelope.sessionType,
           triggerKind: input.triggerKind,
           promptMode: input.promptMode,
           promptChars: metrics.promptChars,
@@ -1103,17 +1119,17 @@ export class ReviewWorker {
           cacheWriteTokens: metrics.cacheWriteTokens,
           reasoningTokens: metrics.reasoningTokens,
           apiDurationMs: metrics.apiDurationMs,
-          premiumRequests: metrics.premiumRequests,
+          usageUnit: metrics.usageUnit,
+          usageAmount: metrics.usageAmount,
+          usageByModelJson: JSON.stringify(metrics.usageByModel),
           repeatedViewReads: metrics.repeatedViewReads,
           repeatedViewPathsJson: JSON.stringify(metrics.repeatedViewPaths),
         },
       });
-    } catch (error) {
-      this.logger.warn(
-        { err: error, interactionRunId: input.interactionRunId },
-        "failed to persist interaction run metrics",
-      );
-    }
+      if (!saved) {
+        throw new LeaseLostError();
+      }
+    };
   }
 
   private async loadRoutingContext(input: {
@@ -1151,6 +1167,8 @@ export class ReviewWorker {
     interactionJobId: string;
     runDirectory: string;
     memoryEnabled: boolean;
+    onMetrics?:
+      ((metrics: HarnessSessionMetricsEnvelope) => Promise<void>) | undefined;
   }) {
     return input.platform.buildHarnessTenantContext({
       resolvedTenant: {
@@ -1168,10 +1186,10 @@ export class ReviewWorker {
         interactionJobId: input.interactionJobId,
         tenantId: input.tenant.id,
         runDirectory: input.runDirectory,
+        onMetrics: input.onMetrics,
       },
     });
   }
-
 }
 
 function getErrorMessage(error: unknown): string {

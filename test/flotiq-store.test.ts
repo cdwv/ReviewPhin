@@ -36,6 +36,10 @@ interface RemoteInteractionRun extends BaseObject<"interaction_run"> {
   provider?: string;
 }
 
+interface RemoteTimestamped extends BaseObject<"timestamped"> {
+  startedAt: string;
+}
+
 class InMemoryFlotiqCollection<TObject extends BaseObject<string>> {
   public readonly listCalls: Array<Partial<ListParams<TObject, string>>> = [];
   public readonly createCalls: Array<Record<string, unknown>> = [];
@@ -350,6 +354,59 @@ describe("Flotiq entity store adapter", () => {
         limit: 5,
       },
     ]);
+  });
+
+  it("applies inclusive lower and exclusive upper range boundaries", async () => {
+    const timestamps = [
+      "2026-05-31T23:59:59.999Z",
+      "2026-06-01T00:00:00.000Z",
+      "2026-06-30T23:59:59.999Z",
+      "2026-07-01T00:00:00.000Z",
+    ];
+    const api = new InMemoryFlotiqCollection<RemoteTimestamped>(
+      timestamps.map((startedAt, index) => ({
+        id: `run-${index}`,
+        startedAt,
+        internal: {
+          contentType: "timestamped",
+          createdAt: startedAt,
+          updatedAt: startedAt,
+          deletedAt: "",
+          objectTitle: `run-${index}`,
+          latestVersion: 1,
+          status: "public",
+          publishedAt: startedAt,
+          publicVersion: 1,
+        },
+      })),
+    );
+    const store = createFlotiqEntityStore<
+      { id: string; startedAt: string },
+      { startedAt?: { gte?: string; lt?: string } },
+      "startedAt",
+      RemoteTimestamped,
+      string
+    >({
+      ctdName: "timestamped",
+      api: api as unknown as TestFlotiqApi<RemoteTimestamped>,
+      toRecord: ({ id, startedAt }) => ({ id, startedAt }),
+      toRemote: (value) => value,
+    });
+
+    const rows = await store.list({
+      filters: {
+        startedAt: {
+          gte: "2026-06-01T00:00:00.000Z",
+          lt: "2026-07-01T00:00:00.000Z",
+        },
+      },
+      order: [{ field: "startedAt", direction: "asc" }],
+      page: 1,
+      pageSize: 10,
+    });
+
+    expect(rows.map((row) => row.startedAt)).toEqual(timestamps.slice(1, 3));
+    expect(api.listCalls[0]?.filters).toBeUndefined();
   });
 
   it("uses Flotiq ids and maps supported server filters", async () => {

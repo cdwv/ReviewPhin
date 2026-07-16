@@ -1,4 +1,4 @@
-export const CURRENT_STORAGE_CONTRACT_REVISION = "storage-v005";
+export const CURRENT_STORAGE_CONTRACT_REVISION = "storage-v006";
 
 export type {
   StorageContractRevisionId,
@@ -74,5 +74,6 @@ export type {
   TenantStore,
   UpsertDiscussionMappingInput,
   UpsertInteractionRunMetricsInput,
+  UsageByModelMetric,
   UpsertModelProfileInput,
 } from "./current.js";

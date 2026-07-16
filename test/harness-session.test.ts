@@ -228,6 +228,68 @@ describe("HarnessSessionRuntime", () => {
     ).rejects.toThrow('does not support reasoning effort "xhigh"');
   });
 
+  it("emits best-effort in-memory metrics on success and session failure", async () => {
+    const onSuccess = vi.fn(async () => {});
+    createSessionMock.mockResolvedValueOnce(createSession());
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    await runtime.run({
+      prompt: "Review this.",
+      modelConfig: createModelConfig(),
+      tools: [],
+      subagents: [],
+      logging: {
+        interactionRunId: "run_1",
+        interactionJobId: "job_1",
+        tenantId: "tenant_1",
+        sessionKind: "review",
+        onMetrics: onSuccess,
+      },
+    });
+    expect(onSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harness: "github.copilot-sdk",
+        harnessSessionKey: "session_1",
+        sessionType: "review",
+      }),
+    );
+
+    const onFailure = vi.fn(async () => {});
+    const failedSession = createSession();
+    failedSession.sendAndWait.mockRejectedValueOnce(
+      new Error("session failed"),
+    );
+    createSessionMock.mockResolvedValueOnce(failedSession);
+    await expect(
+      runtime.run({
+        prompt: "Review this.",
+        modelConfig: createModelConfig(),
+        tools: [],
+        subagents: [],
+        logging: {
+          interactionRunId: "run_1",
+          interactionJobId: "job_1",
+          tenantId: "tenant_1",
+          sessionKind: "reply",
+          onMetrics: onFailure,
+        },
+      }),
+    ).rejects.toThrow("session failed");
+    expect(onFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harnessSessionKey: "session_1",
+        sessionType: "reply",
+      }),
+    );
+  });
+
   it("passes a native auth token only when no custom provider is configured", async () => {
     createSessionMock.mockResolvedValue(createSession());
     startMock.mockResolvedValue(undefined);

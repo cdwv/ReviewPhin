@@ -139,15 +139,16 @@ describe("Copilot run metrics", () => {
     expect(metrics.cacheWriteTokens).toBe(5);
     expect(metrics.reasoningTokens).toBe(10);
     expect(metrics.apiDurationMs).toBe(4_000);
-    expect(metrics.premiumRequests).toBe(2);
-    expect(metrics.premiumRequestsByModel).toEqual([
+    expect(metrics.usageUnit).toBe("github.copilot.premium-request");
+    expect(metrics.usageAmount).toBe(2);
+    expect(metrics.usageByModel).toEqual([
       {
         model: "claude-sonnet-4",
-        premiumRequests: 1,
+        amount: 1,
       },
       {
         model: "gpt-5.4",
-        premiumRequests: 1,
+        amount: 1,
       },
     ]);
     expect(metrics.repeatedViewReads).toBe(1);
@@ -157,5 +158,47 @@ describe("Copilot run metrics", () => {
         count: 2,
       },
     ]);
+  });
+
+  it("prefers exact nano-AI-unit usage when the current field is present", () => {
+    const metrics = summarizeHarnessRunLog({
+      prompt: "Review",
+      events: [
+        {
+          type: "assistant.usage",
+          data: {
+            model: "gpt-5.4",
+            cost: 2,
+            copilotUsage: { totalNanoAiu: 1_250_000_000 },
+          },
+        },
+      ] as never,
+    });
+
+    expect(metrics.usageUnit).toBe("github.copilot.nano-ai-unit");
+    expect(metrics.usageAmount).toBe(1_250_000_000);
+    expect(metrics.usageByModel).toEqual([
+      { model: "gpt-5.4", amount: 1_250_000_000 },
+    ]);
+  });
+
+  it("distinguishes missing billable usage from reported zero", () => {
+    expect(
+      summarizeHarnessRunLog({ prompt: "Review", events: [] }).usageAmount,
+    ).toBeNull();
+    expect(
+      summarizeHarnessRunLog({
+        prompt: "Review",
+        events: [
+          {
+            type: "assistant.usage",
+            data: { model: "gpt-5.4", cost: 0 },
+          },
+        ] as never,
+      }),
+    ).toMatchObject({
+      usageUnit: "github.copilot.premium-request",
+      usageAmount: 0,
+    });
   });
 });
