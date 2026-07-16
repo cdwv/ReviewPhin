@@ -4,6 +4,10 @@ Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-change
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 
+## v1.4.4 - 2026-07-16
+### Changed
+- Improve support for posthog tracking through custom proxy
+
 ## v1.4.3 - 2026-07-15
 ### Fixed
 - Container images now use the working Docker configuration from
