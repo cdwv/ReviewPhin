@@ -4,6 +4,7 @@ import type { HarnessSessionRuntime } from "../harness/session.js";
 import type {
   HarnessModelConfig,
   HarnessRunAttachments,
+  HarnessRunLoggingContext,
   HarnessTenantContext,
 } from "../harness/types.js";
 import type {
@@ -33,6 +34,7 @@ export interface ChatterRunContext {
         interactionJobId: string;
         tenantId: string;
         runDirectory?: string | undefined;
+        onMetrics?: HarnessRunLoggingContext["onMetrics"];
       }
     | undefined;
 }
@@ -86,6 +88,7 @@ export class HarnessChatterRunner {
         runDirectory: context.logging?.runDirectory,
         pathSegments: ["copilot", "chatter", context.phase],
         sessionKind: context.phase === "memory" ? "memory" : "reply",
+        onMetrics: context.logging?.onMetrics,
       },
       metadata: {
         codeReviewId: context.reviewContext?.codeReview.id ?? null,
@@ -107,13 +110,6 @@ export class HarnessChatterRunner {
     }
 
     return chatterBatchResultSchema.parse(response.parsed);
-  }
-
-  public get sessionPaths(): { memory: string[]; reply: string[] } {
-    return {
-      memory: ["copilot", "chatter", "memory"],
-      reply: ["copilot", "chatter", "reply"],
-    };
   }
 }
 

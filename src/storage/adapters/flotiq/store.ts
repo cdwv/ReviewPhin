@@ -34,6 +34,7 @@ interface FlotiqEntityStoreOptions<
   readonly toRecord: (object: TObject) => TEntity;
   readonly toRemote: (entity: TEntity) => JsonRecord;
   readonly emptyStringNullFields?: readonly (keyof TEntity & string)[];
+  readonly explicitNullFields?: readonly (keyof TEntity & string)[];
   readonly relationFields?: Partial<
     Record<keyof TEntity & string, FlotiqRelationField>
   >;
@@ -60,7 +61,14 @@ export function createFlotiqEntityStore<
     TFilterField
   >,
 ): EntityStore<TEntity, TFilters, TOrder> {
-  const emptyStringNullFields = new Set(options.emptyStringNullFields ?? []);
+  const nullWriteValues = new Map<string, "" | null>([
+    ...(options.emptyStringNullFields ?? []).map(
+      (field) => [field, ""] as const,
+    ),
+    ...(options.explicitNullFields ?? []).map(
+      (field) => [field, null] as const,
+    ),
+  ]);
   const relationFields = new Map<string, FlotiqRelationField>(
     Object.entries(options.relationFields ?? {}) as Array<
       [string, FlotiqRelationField]
@@ -158,6 +166,34 @@ export function createFlotiqEntityStore<
     page?: number;
     pageSize?: number;
   }): Promise<TEntity[]> {
+    if (hasUnsupportedRangeFilter(input?.filters, relationFields)) {
+      const records: TEntity[] = [];
+      const pageSize = GET_MANY_PAGE_SIZE;
+      for (let page = 1; ; page += 1) {
+        const remoteObjects = await fetchRemoteObjects({
+          ...(input?.filters ? { filters: input.filters } : {}),
+          ...(input?.order ? { order: input.order } : {}),
+          ...(input?.ids ? { ids: input.ids } : {}),
+          page,
+          pageSize,
+        });
+        records.push(
+          ...remoteObjects.map((object) => options.toRecord(object)),
+        );
+        if (remoteObjects.length < pageSize) {
+          break;
+        }
+      }
+
+      const filtered = records.filter((record) =>
+        matchesRangeFilters(record, input?.filters),
+      );
+      const requestedPage = input?.page ?? 1;
+      const requestedPageSize = input?.pageSize ?? filtered.length;
+      const offset = (requestedPage - 1) * requestedPageSize;
+      return filtered.slice(offset, offset + requestedPageSize);
+    }
+
     const remoteInput: {
       filters?: Partial<
         Record<keyof TEntity & string, StoreValueFilter<unknown>>
@@ -191,13 +227,13 @@ export function createFlotiqEntityStore<
   function toSanitizedRemote(entity: TEntity): JsonRecord {
     return sanitizeWritePayload(
       options.toRemote(entity),
-      emptyStringNullFields,
+      nullWriteValues,
       relationFields,
     );
   }
 
   function toSanitizedPatchRemote(value: Partial<TEntity>): JsonRecord {
-    return sanitizeWritePayload(value, emptyStringNullFields, relationFields);
+    return sanitizeWritePayload(value, nullWriteValues, relationFields);
   }
 
   async function loadRecordsByIds(ids: readonly string[]): Promise<TEntity[]> {
@@ -409,6 +445,10 @@ function translateStoreFilter(
 ): Filter | null {
   const operators = getDefinedOperators(filter);
 
+  if (operators.includes("gte") || operators.includes("lt")) {
+    return relationField ? null : translateRangeFilter(filter, operators);
+  }
+
   if (operators.length !== 1) {
     return null;
   }
@@ -440,9 +480,62 @@ function translateStoreFilter(
   }
 }
 
+function translateRangeFilter(
+  filter: StoreValueFilter<unknown>,
+  operators: readonly string[],
+): Filter | null {
+  if (operators.some((operator) => operator !== "gte" && operator !== "lt")) {
+    return null;
+  }
+  if (filter.gte !== undefined && filter.lt !== undefined) {
+    const inclusiveUpper = makeExclusiveUpperBoundInclusive(filter.lt);
+    return inclusiveUpper === null
+      ? null
+      : {
+          type: "inRange",
+          filter: toRemoteScalar(filter.gte),
+          filter2: inclusiveUpper,
+        };
+  }
+  if (filter.gte !== undefined) {
+    return {
+      type: "greaterThanOrEqual",
+      filter: toRemoteScalar(filter.gte),
+    };
+  }
+  if (filter.lt !== undefined) {
+    return { type: "lessThan", filter: toRemoteScalar(filter.lt) };
+  }
+  return null;
+}
+
+function makeExclusiveUpperBoundInclusive(
+  value: unknown,
+): string | number | null {
+  if (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value > Number.MIN_SAFE_INTEGER
+  ) {
+    return value - 1;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.valueOf()) || timestamp.toISOString() !== value) {
+    return null;
+  }
+  const inclusiveUpper = new Date(timestamp.valueOf() - 1);
+  return Number.isNaN(inclusiveUpper.valueOf())
+    ? null
+    : inclusiveUpper.toISOString();
+}
+
 function sanitizeWritePayload(
   value: JsonRecord,
-  emptyStringNullFields: ReadonlySet<string>,
+  nullWriteValues: ReadonlyMap<string, "" | null>,
   relationFields: ReadonlyMap<string, FlotiqRelationField>,
 ): JsonRecord {
   const entries = Object.entries(value)
@@ -454,7 +547,7 @@ function sanitizeWritePayload(
           sanitizeWriteValue(
             key,
             normalizeRelationWriteValue(key, entryValue, relationFields),
-            emptyStringNullFields,
+            nullWriteValues,
             relationFields,
           ),
         ] as const,
@@ -467,7 +560,7 @@ function sanitizeWritePayload(
 function sanitizeWriteValue(
   key: string,
   value: unknown,
-  emptyStringNullFields: ReadonlySet<string>,
+  nullWriteValues: ReadonlyMap<string, "" | null>,
   relationFields: ReadonlyMap<string, FlotiqRelationField>,
 ): unknown {
   if (key === "createdAt" || key === "updatedAt") {
@@ -475,7 +568,7 @@ function sanitizeWriteValue(
   }
 
   if (value === null) {
-    return emptyStringNullFields.has(key) ? "" : undefined;
+    return nullWriteValues.get(key);
   }
 
   if (value === undefined) {
@@ -485,18 +578,14 @@ function sanitizeWriteValue(
   if (Array.isArray(value)) {
     const sanitizedItems = value
       .map((item) =>
-        sanitizeWriteValue("", item, emptyStringNullFields, relationFields),
+        sanitizeWriteValue("", item, nullWriteValues, relationFields),
       )
       .filter((item) => item !== undefined);
     return sanitizedItems;
   }
 
   if (typeof value === "object") {
-    return sanitizeWritePayload(
-      value as JsonRecord,
-      emptyStringNullFields,
-      new Map(),
-    );
+    return sanitizeWritePayload(value as JsonRecord, nullWriteValues, new Map());
   }
 
   return value;
@@ -509,7 +598,51 @@ function getDefinedOperators(filter: StoreValueFilter<unknown>): string[] {
     Array.isArray(filter.in) ? "in" : null,
     Array.isArray(filter.notIn) ? "notIn" : null,
     filter.isNull === undefined ? null : "isNull",
+    filter.gte === undefined ? null : "gte",
+    filter.lt === undefined ? null : "lt",
   ].filter((value): value is string => value !== null);
+}
+
+function hasUnsupportedRangeFilter(
+  filters: Partial<Record<string, StoreValueFilter<unknown>>> | undefined,
+  relationFields: ReadonlyMap<string, FlotiqRelationField>,
+): boolean {
+  return Object.entries(filters ?? {}).some(([field, filter]) => {
+    if (!filter || (filter.gte === undefined && filter.lt === undefined)) {
+      return false;
+    }
+    return translateStoreFilter(filter, relationFields.get(field)) === null;
+  });
+}
+
+function matchesRangeFilters<TEntity extends object>(
+  record: TEntity,
+  filters: Partial<Record<string, StoreValueFilter<unknown>>> | undefined,
+): boolean {
+  const values = record as Record<string, unknown>;
+  return Object.entries(filters ?? {}).every(([field, filter]) => {
+    if (!filter) {
+      return true;
+    }
+    const value = values[field];
+    if (filter.gte !== undefined && compareRangeValue(value, filter.gte) < 0) {
+      return false;
+    }
+    if (filter.lt !== undefined && compareRangeValue(value, filter.lt) >= 0) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function compareRangeValue(left: unknown, right: unknown): number {
+  if (typeof left === "string" && typeof right === "string") {
+    return left < right ? -1 : left > right ? 1 : 0;
+  }
+  if (typeof left === "number" && typeof right === "number") {
+    return left < right ? -1 : left > right ? 1 : 0;
+  }
+  return Number.NaN;
 }
 
 function translateEqualsFilter(value: unknown): Filter {
@@ -605,6 +738,17 @@ function toRemoteScalarArray(
   throw new TypeError(
     "Flotiq array filters must contain values of one scalar type",
   );
+}
+
+function toRemoteScalar(value: unknown): string | number | boolean {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  throw new TypeError("Flotiq range filters require a scalar value");
 }
 
 function mapFieldName(field: string): string {

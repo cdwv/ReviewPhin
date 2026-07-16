@@ -1000,6 +1000,9 @@ describe("tenant CLI", () => {
     ]);
     await storage.upsertInteractionRunMetrics({
       interactionRunId: reviewRun.id,
+      harness: "github.copilot-sdk",
+      harnessSessionKey: "session-tenant-remove",
+      sessionType: "review",
       triggerKind: "note",
       promptMode: "full",
       promptChars: 10,
@@ -1017,7 +1020,9 @@ describe("tenant CLI", () => {
       cacheWriteTokens: 0,
       reasoningTokens: 0,
       apiDurationMs: 100,
-      premiumRequests: 1,
+      usageUnit: "github.copilot.premium-request",
+      usageAmount: 1,
+      usageByModelJson: "[]",
       repeatedViewReads: 0,
       repeatedViewPathsJson: "[]",
     });

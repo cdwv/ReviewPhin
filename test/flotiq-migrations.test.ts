@@ -7,6 +7,7 @@ import ensureV002CtdsExist, {
 import ensureV003CtdsExist, {
   V003_CTDS,
 } from "../src/storage/adapters/flotiq/migrations/v003.js";
+import ensureV006CtdsExist from "../src/storage/adapters/flotiq/migrations/v006.js";
 
 type FieldMeta = {
   helpText: string;
@@ -106,9 +107,9 @@ describe("Flotiq v003 provider trigger schema", () => {
   });
 
   it("pages through legacy jobs and backfills only missing trigger JSON in batches", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(null, { status: 200 }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 200 }));
     const jobs = [
       ...Array.from({ length: 101 }, (_, index) =>
         createInteractionJob(`job-${index + 1}`, index + 1),
@@ -244,6 +245,110 @@ describe("Flotiq CTD migration logging", () => {
     expect(consoleLogSpy).not.toHaveBeenCalled();
     expect(consoleWarnSpy).not.toHaveBeenCalled();
     expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("Flotiq v006 session metrics migration", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("adds optional identity, backfills rows, then requires the final shape", async () => {
+    const writtenCtds: Array<{
+      schemaDefinition: {
+        required: string[];
+        allOf: Array<{ properties: Record<string, unknown> }>;
+      };
+      metaDefinition: {
+        propertiesConfig: Record<string, { helpText?: string }>;
+      };
+    }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (init?.method === "GET") {
+        return new Response(null, { status: 404 });
+      }
+      if (init?.method === "POST") {
+        writtenCtds.push(
+          JSON.parse(String(init.body)) as (typeof writtenCtds)[number],
+        );
+        return new Response(null, { status: 201 });
+      }
+      throw new Error(
+        `Unexpected fetch ${init?.method ?? "GET"} ${String(input)}`,
+      );
+    });
+    const batchUpdate = vi.fn(async (batch: Record<string, unknown>[]) => ({
+      batch_total_count: batch.length,
+      batch_success_count: batch.length,
+      batch_error_count: 0,
+      errors: [],
+    }));
+    const list = vi.fn(async () => ({
+      data: [
+        {
+          id: "metrics-1",
+          internal: { contentType: "interaction_run_metrics" },
+          premiumRequests: 2,
+        },
+      ],
+      total_count: 1,
+      count: 1,
+      total_pages: 1,
+      current_page: 1,
+    }));
+
+    await ensureV006CtdsExist("test-api-key", {
+      content: { interaction_run_metrics: { list, batchUpdate } },
+    } as never);
+
+    expect(writtenCtds).toHaveLength(2);
+    expect(writtenCtds[0]?.schemaDefinition.required).not.toContain(
+      "harnessSessionKey",
+    );
+    expect(
+      writtenCtds[0]?.schemaDefinition.allOf[1]?.properties,
+    ).toHaveProperty("premiumRequests");
+    expect(batchUpdate).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: "metrics-1",
+        harness: "github.copilot-sdk",
+        harnessSessionKey: "legacy:metrics-1",
+        sessionType: "unknown",
+        usageUnit: "github.copilot.premium-request",
+        usageAmount: 2,
+        usageByModelJson: '[{"model":"unknown","amount":2}]',
+      }),
+    ]);
+    expect(writtenCtds[1]?.schemaDefinition.required).toContain(
+      "harnessSessionKey",
+    );
+    expect(
+      writtenCtds[1]?.schemaDefinition.allOf[1]?.properties,
+    ).not.toHaveProperty("premiumRequests");
+    expect(writtenCtds[1]?.metaDefinition.propertiesConfig).toMatchObject({
+      interactionRunId: {
+        helpText: "Interaction run measured by this record.",
+      },
+      harness: {
+        helpText: "Harness implementation that produced this session.",
+      },
+      promptChars: { helpText: "Prompt size in characters." },
+      usageAmount: { helpText: "Amount expressed in usageUnit." },
+      repeatedViewPathsJson: {
+        helpText:
+          "Repeatedly viewed file paths encoded as JSON for diagnostics.",
+      },
+    });
+    const legacyMetricsCtd = V002_CTDS.find(
+      (candidate) => candidate.name === "interaction_run_metrics",
+    );
+    const finalFieldMeta = writtenCtds[1]?.metaDefinition.propertiesConfig;
+    for (const [field, meta] of Object.entries(
+      legacyMetricsCtd?.metaDefinition.propertiesConfig ?? {},
+    )) {
+      if (field === "premiumRequests") continue;
+      expect(finalFieldMeta?.[field]?.helpText, field).toBe(meta.helpText);
+    }
   });
 });
 

@@ -1,49 +1,38 @@
-import { readFile } from "node:fs/promises";
-
 import type { HarnessRunLogRecord } from "./run-log.js";
+import type {
+  HarnessRunMetricsSummary,
+  HarnessSessionMetricsEnvelope,
+  HarnessUsageByModelMetric,
+} from "./types.js";
 
-export interface RepeatedViewPathMetric {
-  path: string;
-  count: number;
-}
+export const COPILOT_HARNESS = "github.copilot-sdk";
+export const COPILOT_NANO_AI_UNIT = "github.copilot.nano-ai-unit";
+export const COPILOT_PREMIUM_REQUEST_UNIT = "github.copilot.premium-request";
 
-export interface PremiumRequestsByModelMetric {
-  model: string;
-  premiumRequests: number;
-}
-
-export interface HarnessRunMetricsSummary {
-  promptChars: number;
-  assistantTurns: number;
-  assistantCalls: number;
-  toolExecutions: number;
-  viewToolCalls: number;
-  globToolCalls: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  reasoningTokens: number;
-  apiDurationMs: number;
-  premiumRequests: number;
-  premiumRequestsByModel: PremiumRequestsByModelMetric[];
-  repeatedViewReads: number;
-  repeatedViewPaths: RepeatedViewPathMetric[];
-}
-
-export async function readHarnessRunMetrics(
-  logPath: string,
-): Promise<HarnessRunMetricsSummary | null> {
-  try {
-    const raw = await readFile(logPath, "utf8");
-    return summarizeHarnessRunLog(JSON.parse(raw) as HarnessRunLogRecord);
-  } catch {
+export function summarizeHarnessSession(
+  record: HarnessRunLogRecord,
+  options?: SummarizeHarnessMetricsOptions,
+): HarnessSessionMetricsEnvelope | null {
+  if (!record.sessionId) {
     return null;
   }
+  return {
+    harness: COPILOT_HARNESS,
+    harnessSessionKey: record.sessionId,
+    sessionType: record.metadata.sessionKind?.trim() || "unknown",
+    metrics: summarizeHarnessRunLog(record, options),
+  };
+}
+
+export interface SummarizeHarnessMetricsOptions {
+  readonly includeLegacyPremiumRequestCost?: boolean;
 }
 
 export function summarizeHarnessRunLog(
-  record: Pick<HarnessRunLogRecord, "prompt" | "events" | "metadata">,
+  record: Pick<HarnessRunLogRecord, "prompt" | "events"> & {
+    metadata?: Partial<HarnessRunLogRecord["metadata"]> | undefined;
+  },
+  options?: SummarizeHarnessMetricsOptions,
 ): HarnessRunMetricsSummary {
   const assistantUsages = record.events.filter(
     (event) => event.type === "assistant.usage",
@@ -78,6 +67,11 @@ export function summarizeHarnessRunLog(
     .slice(0, 10)
     .map(([path, count]) => ({ path, count }));
 
+  const usage = summarizeUsage(
+    assistantUsages,
+    record.metadata?.requestedModel,
+    options?.includeLegacyPremiumRequestCost ?? true,
+  );
   return {
     promptChars: record.prompt.length,
     assistantTurns:
@@ -92,11 +86,7 @@ export function summarizeHarnessRunLog(
     cacheWriteTokens: sumUsageMetric(assistantUsages, "cacheWriteTokens"),
     reasoningTokens: sumUsageMetric(assistantUsages, "reasoningTokens"),
     apiDurationMs: sumUsageMetric(assistantUsages, "duration"),
-    premiumRequests: sumUsageMetric(assistantUsages, "cost"),
-    premiumRequestsByModel: summarizePremiumRequestsByModel(
-      assistantUsages,
-      record.metadata.requestedModel,
-    ),
+    ...usage,
     repeatedViewReads: repeatedViewPaths.reduce(
       (total, entry) => total + (entry.count - 1),
       0,
@@ -105,33 +95,78 @@ export function summarizeHarnessRunLog(
   };
 }
 
-function summarizePremiumRequestsByModel(
+function summarizeUsage(
   usages: Array<{
-    data?: { model?: string | null; cost?: number | undefined };
+    data?: {
+      model?: string | null;
+      cost?: number | undefined;
+      copilotUsage?: { totalNanoAiu: number } | undefined;
+    };
   }>,
-  fallbackModel: string | null,
-): PremiumRequestsByModelMetric[] {
+  fallbackModel: string | null | undefined,
+  includeLegacyPremiumRequestCost: boolean,
+): Pick<
+  HarnessRunMetricsSummary,
+  "usageUnit" | "usageAmount" | "usageByModel"
+> {
+  const hasNanoAiu = usages.some(
+    (usage) => typeof usage.data?.copilotUsage?.totalNanoAiu === "number",
+  );
+  if (hasNanoAiu) {
+    return summarizeUsageUnit(
+      usages,
+      COPILOT_NANO_AI_UNIT,
+      (usage) => usage.data?.copilotUsage?.totalNanoAiu,
+      fallbackModel,
+    );
+  }
+  const hasPremiumRequests =
+    includeLegacyPremiumRequestCost &&
+    usages.some((usage) => typeof usage.data?.cost === "number");
+  if (hasPremiumRequests) {
+    return summarizeUsageUnit(
+      usages,
+      COPILOT_PREMIUM_REQUEST_UNIT,
+      (usage) => usage.data?.cost,
+      fallbackModel,
+    );
+  }
+  return { usageUnit: null, usageAmount: null, usageByModel: [] };
+}
+
+function summarizeUsageUnit<
+  TUsage extends { data?: { model?: string | null } },
+>(
+  usages: TUsage[],
+  usageUnit: string,
+  getAmount: (usage: TUsage) => number | undefined,
+  fallbackModel: string | null | undefined,
+): Pick<
+  HarnessRunMetricsSummary,
+  "usageUnit" | "usageAmount" | "usageByModel"
+> {
   const totals = new Map<string, number>();
+  let usageAmount = 0;
 
   for (const usage of usages) {
-    const premiumRequests =
-      typeof usage.data?.cost === "number" ? usage.data.cost : 0;
-    if (premiumRequests <= 0) {
+    const amount = getAmount(usage);
+    if (typeof amount !== "number") {
       continue;
     }
-
+    usageAmount += amount;
     const model =
       normalizeModel(usage.data?.model) ??
       normalizeModel(fallbackModel) ??
       "unknown";
-    totals.set(model, (totals.get(model) ?? 0) + premiumRequests);
+    totals.set(model, (totals.get(model) ?? 0) + amount);
   }
 
-  return [...totals.entries()]
+  const usageByModel: HarnessUsageByModelMetric[] = [...totals.entries()]
     .sort(
       (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
     )
-    .map(([model, premiumRequests]) => ({ model, premiumRequests }));
+    .map(([model, amount]) => ({ model, amount }));
+  return { usageUnit, usageAmount, usageByModel };
 }
 
 function normalizeModel(model: string | null | undefined): string | null {

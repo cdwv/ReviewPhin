@@ -9,10 +9,7 @@ import type { ProjectMemoryBackend } from "../memory/backend.js";
 import type { ModelReasoningEffort } from "../storage/contract/index.js";
 
 export type HarnessSelectionSource =
-  | "code-review-override"
-  | "tenant"
-  | "default"
-  | "fallback";
+  "code-review-override" | "tenant" | "default" | "fallback";
 export type HarnessProviderType = "openai" | "azure" | "anthropic" | null;
 export type HarnessToolId = "glob" | "rg" | "view" | "add_memory_entry";
 export type HarnessSubagentId = "context-analyst" | "review-author";
@@ -48,6 +45,45 @@ export interface HarnessRunLoggingContext {
   runDirectory?: string | undefined;
   pathSegments?: string[] | undefined;
   sessionKind?: string | null | undefined;
+  onMetrics?:
+    ((metrics: HarnessSessionMetricsEnvelope) => Promise<void>) | undefined;
+}
+
+export interface RepeatedViewPathMetric {
+  path: string;
+  count: number;
+}
+
+export interface HarnessUsageByModelMetric {
+  model: string;
+  amount: number;
+}
+
+export interface HarnessRunMetricsSummary {
+  promptChars: number;
+  assistantTurns: number;
+  assistantCalls: number;
+  toolExecutions: number;
+  viewToolCalls: number;
+  globToolCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+  apiDurationMs: number;
+  usageUnit: string | null;
+  usageAmount: number | null;
+  usageByModel: HarnessUsageByModelMetric[];
+  repeatedViewReads: number;
+  repeatedViewPaths: RepeatedViewPathMetric[];
+}
+
+export interface HarnessSessionMetricsEnvelope {
+  harness: string;
+  harnessSessionKey: string;
+  sessionType: string;
+  metrics: HarnessRunMetricsSummary;
 }
 
 export interface HarnessRunMetadata {

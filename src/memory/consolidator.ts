@@ -63,6 +63,7 @@ export class ProjectMemoryConsolidator {
           createId("session"),
         ],
         sessionKind: "memory-consolidation",
+        onMetrics: input.logging?.onMetrics,
       },
       responseFormat: {
         schema: coalescedEntriesResponseSchema,

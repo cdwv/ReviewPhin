@@ -36,6 +36,10 @@ interface RemoteInteractionRun extends BaseObject<"interaction_run"> {
   provider?: string;
 }
 
+interface RemoteTimestamped extends BaseObject<"timestamped"> {
+  startedAt: string;
+}
+
 class InMemoryFlotiqCollection<TObject extends BaseObject<string>> {
   public readonly listCalls: Array<Partial<ListParams<TObject, string>>> = [];
   public readonly createCalls: Array<Record<string, unknown>> = [];
@@ -350,6 +354,99 @@ describe("Flotiq entity store adapter", () => {
         limit: 5,
       },
     ]);
+  });
+
+  it("applies inclusive lower and exclusive upper range boundaries", async () => {
+    const timestamps = [
+      "2026-05-31T23:59:59.999Z",
+      "2026-06-01T00:00:00.000Z",
+      "2026-06-30T23:59:59.999Z",
+      "2026-07-01T00:00:00.000Z",
+    ];
+    const api = new InMemoryFlotiqCollection<RemoteTimestamped>(
+      timestamps.map((startedAt, index) => ({
+        id: `run-${index}`,
+        startedAt,
+        internal: {
+          contentType: "timestamped",
+          createdAt: startedAt,
+          updatedAt: startedAt,
+          deletedAt: "",
+          objectTitle: `run-${index}`,
+          latestVersion: 1,
+          status: "public",
+          publishedAt: startedAt,
+          publicVersion: 1,
+        },
+      })),
+    );
+    const store = createFlotiqEntityStore<
+      { id: string; startedAt: string },
+      { startedAt?: { gte?: string; lt?: string } },
+      "startedAt",
+      RemoteTimestamped,
+      string
+    >({
+      ctdName: "timestamped",
+      api: api as unknown as TestFlotiqApi<RemoteTimestamped>,
+      toRecord: ({ id, startedAt }) => ({ id, startedAt }),
+      toRemote: (value) => value,
+    });
+
+    const rows = await store.list({
+      filters: {
+        startedAt: {
+          gte: "2026-06-01T00:00:00.000Z",
+          lt: "2026-07-01T00:00:00.000Z",
+        },
+      },
+      order: [{ field: "startedAt", direction: "asc" }],
+      page: 1,
+      pageSize: 10,
+    });
+
+    expect(rows.map((row) => row.startedAt)).toEqual(timestamps.slice(1, 3));
+    expect(api.listCalls).toHaveLength(1);
+    expect(api.listCalls[0]).toMatchObject({
+      filters: {
+        startedAt: {
+          type: "inRange",
+          filter: "2026-06-01T00:00:00.000Z",
+          filter2: "2026-06-30T23:59:59.999Z",
+        },
+      },
+      limit: 10,
+      page: 1,
+    });
+
+    expect(
+      (
+        await store.list({
+          filters: { startedAt: { gte: timestamps[2]! } },
+          page: 1,
+          pageSize: 10,
+        })
+      ).map((row) => row.startedAt),
+    ).toEqual(timestamps.slice(2));
+    expect(api.listCalls.at(-1)?.filters).toEqual({
+      startedAt: {
+        type: "greaterThanOrEqual",
+        filter: timestamps[2],
+      },
+    });
+
+    expect(
+      (
+        await store.list({
+          filters: { startedAt: { lt: timestamps[1]! } },
+          page: 1,
+          pageSize: 10,
+        })
+      ).map((row) => row.startedAt),
+    ).toEqual(timestamps.slice(0, 1));
+    expect(api.listCalls.at(-1)?.filters).toEqual({
+      startedAt: { type: "lessThan", filter: timestamps[1] },
+    });
   });
 
   it("uses Flotiq ids and maps supported server filters", async () => {
@@ -892,6 +989,19 @@ function matchesFilterValue(value: unknown, filter: Filter): boolean {
       return value === null || value === undefined || value === "";
     case "notEmpty":
       return value !== null && value !== undefined && value !== "";
+    case "lessThan":
+      return compareFilterValues(value, filter.filter) < 0;
+    case "lessThanOrEqual":
+      return compareFilterValues(value, filter.filter) <= 0;
+    case "greaterThan":
+      return compareFilterValues(value, filter.filter) > 0;
+    case "greaterThanOrEqual":
+      return compareFilterValues(value, filter.filter) >= 0;
+    case "inRange":
+      return (
+        compareFilterValues(value, filter.filter) >= 0 &&
+        compareFilterValues(value, filter.filter2) <= 0
+      );
     case "includes":
       return Array.isArray(value) && value.includes(filter.filter);
     case "overlaps":
@@ -907,6 +1017,16 @@ function matchesFilterValue(value: unknown, filter: Filter): boolean {
     default:
       throw new Error(`Unsupported test filter ${filter.type}`);
   }
+}
+
+function compareFilterValues(left: unknown, right: unknown): number {
+  if (typeof left === "string" && typeof right === "string") {
+    return left.localeCompare(right);
+  }
+  if (typeof left === "number" && typeof right === "number") {
+    return left - right;
+  }
+  return Number.NaN;
 }
 
 function matchesContainsFilter(value: unknown, filterValue: unknown): boolean {

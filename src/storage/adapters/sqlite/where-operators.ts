@@ -29,6 +29,12 @@ export const WHERE_OPERATORS: Record<
       return { clause: `${column} != ?`, params: [toSqlValue(filter.neq)] };
     }
   },
+  gte: (filter: StoreValueFilter<unknown>, column: string) => {
+    return { clause: `${column} >= ?`, params: [toSqlValue(filter.gte)] };
+  },
+  lt: (filter: StoreValueFilter<unknown>, column: string) => {
+    return { clause: `${column} < ?`, params: [toSqlValue(filter.lt)] };
+  },
   in: (filter: StoreValueFilter<unknown>, column: string) => {
     if (!Array.isArray(filter.in) || filter.in.length === 0) {
       return { clause: "1 = 0" };

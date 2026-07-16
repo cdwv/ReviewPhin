@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan [NUMBER] — [SHORT PLAIN TITLE]</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="[critical|high|medium|low]">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan [TWO-DIGIT NUMBER]</p>
+          <p class="rail-value">[SHORT OUTCOME]</p>
+          <p class="rail-label">[IMPORTANT FACT LABEL]</p>
+          <p class="rail-value">[IMPORTANT FACT VALUE]</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a>
+            <a href="#goal">What do we want?</a>
+            <a href="#fix">How do we fix it?</a>
+            <a href="#steps">Work steps</a>
+            <a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan [NUMBER] · [PLAIN TOPIC]</p>
+          <h1>[ONE-SENTENCE DESIRED CHANGE]</h1>
+          <p class="lede">
+            [Explain the current problem and the desired direction in two or
+            three short sentences.]
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>[PRIORITY]</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>[PEOPLE AFFECTED]</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main area</span><strong>[PLAIN PRODUCT AREA]</strong>
+            </div>
+            <div class="meta-item">
+              <span>Stored data</span><strong>[PLAIN DATA EFFECT]</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> [Describe the visible end state in
+            one or two sentences.]
+          </div>
+        </header>
+
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>[CURRENT PROBLEM]</h3>
+              <p>[Give a concrete example and explain why it matters.]</p>
+            </article>
+            <article class="card">
+              <h3>[CURRENT PROBLEM]</h3>
+              <p>[Give a concrete example and explain why it matters.]</p>
+            </article>
+            <article class="card">
+              <h3>[CURRENT PROBLEM]</h3>
+              <p>[Give a concrete example and explain why it matters.]</p>
+            </article>
+            <article class="card">
+              <h3>[CURRENT PROBLEM]</h3>
+              <p>[Give a concrete example and explain why it matters.]</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="[PLAIN DESCRIPTION OF THE FLOW]">
+            <div>
+              <strong>1. [FIRST STAGE]</strong
+              ><span>[What happens in this stage.]</span>
+            </div>
+            <div>
+              <strong>2. [SECOND STAGE]</strong
+              ><span>[What happens in this stage.]</span>
+            </div>
+            <div>
+              <strong>3. [THIRD STAGE]</strong
+              ><span>[What happens in this stage.]</span>
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>[A clear rule or desired outcome.]</li>
+            <li>[A clear rule or desired outcome.]</li>
+            <li>[A clear rule or desired outcome.]</li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Problem</th>
+                <th>Planned change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>[Describe one problem in ordinary language.]</td>
+                <td>[Describe the proposed behavior without code names.]</td>
+              </tr>
+              <tr>
+                <td>[Describe one problem in ordinary language.]</td>
+                <td>[Describe the proposed behavior without code names.]</td>
+              </tr>
+              <tr>
+                <td>[Describe one problem in ordinary language.]</td>
+                <td>[Describe the proposed behavior without code names.]</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            <strong>[IMPORTANT RULE]:</strong> [Explain the rule and why it
+            matters. Remove this callout if the plan has no single warning.]
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>[PLAIN STEP NAME].</strong> [Explain the change, its
+                order, and any user-visible failure behavior.]
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>[PLAIN STEP NAME].</strong> [Explain the change, its
+                order, and any user-visible failure behavior.]
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>[PLAIN STEP NAME].</strong> [Explain the change, its
+                order, and any user-visible failure behavior.]
+              </div>
+            </li>
+          </ol>
+
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                [Link exact files and name the symbols, methods, types, schemas,
+                or contracts that the implementation must change.]
+              </li>
+              <li>
+                [Record technical boundaries, compatibility needs, migrations,
+                and focused tests.]
+              </li>
+              <li>
+                [Keep code references here; keep essential product decisions in
+                the main plan.]
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>[Describe one observable success condition.]</li>
+            <li>[Describe one important failure or recovery condition.]</li>
+            <li>[Describe one safety, compatibility, or data condition.]</li>
+            <li>[Describe one user-visible result.]</li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> [List focused checks],
+            <code>npm test</code>, and <code>npm run build</code>.
+          </p>
+        </section>
+
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="[PREVIOUS PLAN OR INDEX].html">← [PREVIOUS LABEL]</a
+          ><a href="[NEXT PLAN OR INDEX].html">[NEXT LABEL] →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

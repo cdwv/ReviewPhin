@@ -60,13 +60,13 @@ function makeJob(
 
 const QUEUED_AFTER = "2020-01-01T00:00:00.000Z";
 
-describe("storage-v005 contract history", () => {
-  it("reports storage-v005 as the current breaking revision", () => {
-    expect(CURRENT_STORAGE_CONTRACT_REVISION).toBe("storage-v005");
+describe("storage-v006 contract history", () => {
+  it("reports storage-v006 as the current breaking revision", () => {
+    expect(CURRENT_STORAGE_CONTRACT_REVISION).toBe("storage-v006");
     const last = STORAGE_CONTRACT_HISTORY.at(-1);
-    expect(last?.id).toBe("storage-v005");
+    expect(last?.id).toBe("storage-v006");
     expect(last?.changeKind).toBe("breaking");
-    expect(last?.affectedSurfaces).toContain("interaction-jobs");
+    expect(last?.affectedSurfaces).toContain("interaction-run-metrics");
   });
 
   it("keeps historical revisions unchanged", () => {
@@ -77,16 +77,17 @@ describe("storage-v005 contract history", () => {
       "storage-v003",
       "storage-v004",
       "storage-v005",
+      "storage-v006",
     ]);
   });
 });
 
 describe("sqlite adapter revision", () => {
-  it("reports storage-v005", () => {
+  it("reports storage-v006", () => {
     const provider = new SqliteStorageProvider({
       databasePath: ":memory:",
     });
-    expect(provider.getSupportedStorageContract()).toBe("storage-v005");
+    expect(provider.getSupportedStorageContract()).toBe("storage-v006");
   });
 });
 
@@ -283,9 +284,8 @@ describe("sqlite reasoning-effort mapper roundtrip", () => {
       await storage.upsertModelProfile({
         name: "profile-null",
       });
-      const nullProfile = await storage.stores.modelProfiles.get(
-        "profile-null",
-      );
+      const nullProfile =
+        await storage.stores.modelProfiles.get("profile-null");
       expect(nullProfile?.reviewReasoningEffort).toBeNull();
       expect(nullProfile?.textGenerationReasoningEffort).toBeNull();
     } finally {
@@ -488,8 +488,8 @@ describe("sqlite claim-aware interaction job store", () => {
         }),
       ).toBe(true);
 
-      const transitioned =
-        await storage.stores.interactionJobs.transitionClaim({
+      const transitioned = await storage.stores.interactionJobs.transitionClaim(
+        {
           jobId: "job-r",
           claimToken: "token-1",
           status: "completed",
@@ -497,7 +497,8 @@ describe("sqlite claim-aware interaction job store", () => {
           lastError: null,
           availableAt: "2099-06-01T00:00:00.000Z",
           finishedAt: "2099-06-01T01:04:00.000Z",
-        });
+        },
+      );
       expect(transitioned).toBe(true);
       const job = await storage.stores.interactionJobs.get("job-r");
       expect(job?.status).toBe("completed");
@@ -851,12 +852,11 @@ describe("sqlite claim-aware interaction job store", () => {
         },
       ]);
 
-      const previous =
-        await storage.getLatestCompletedInteractionForCodeReview(
-          tenantId,
-          7,
-          "current-job",
-        );
+      const previous = await storage.getLatestCompletedInteractionForCodeReview(
+        tenantId,
+        7,
+        "current-job",
+      );
       expect(previous?.interactionRunId).toBe(latestRun.id);
       expect(previous?.snapshot.id).toBe(latestSnapshot.id);
     } finally {
@@ -973,16 +973,15 @@ describe("sqlite claim-aware interaction job store", () => {
       // ...but the job completion lost the lease and the job was requeued under
       // the same token (simulating a lost-lease requeue). latestInteractionRunId
       // still points at the completed run.
-      const requeued =
-        await storage.stores.interactionJobs.transitionClaim({
-          jobId: "job-false",
-          claimToken: "token-1",
-          status: "queued",
-          retryCount: 1,
-          lastError: "lease lost",
-          availableAt: "2026-06-01T02:00:00.000Z",
-          finishedAt: null,
-        });
+      const requeued = await storage.stores.interactionJobs.transitionClaim({
+        jobId: "job-false",
+        claimToken: "token-1",
+        status: "queued",
+        retryCount: 1,
+        lastError: "lease lost",
+        availableAt: "2026-06-01T02:00:00.000Z",
+        finishedAt: null,
+      });
       expect(requeued).toBe(true);
 
       const reconciled =
@@ -1069,14 +1068,13 @@ describe("sqlite claim-aware interaction job store", () => {
 });
 
 describe("flotiq adapter revision", () => {
-  it("reports storage-v005 without touching the network", async () => {
+  it("reports storage-v006 without touching the network", async () => {
     // Import lazily so the SDK mock in other suites does not interfere.
-    const { createStorageProvider } = await import(
-      "../src/storage/adapters/flotiq/entrypoint.js"
-    );
+    const { createStorageProvider } =
+      await import("../src/storage/adapters/flotiq/entrypoint.js");
     const provider = createStorageProvider({
       env: { FLOTIQ_API_KEY: "test-key" },
     });
-    expect(provider.getSupportedStorageContract()).toBe("storage-v005");
+    expect(provider.getSupportedStorageContract()).toBe("storage-v006");
   });
 });

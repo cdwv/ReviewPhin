@@ -1,0 +1,4 @@
+interface:
+  display_name: "HTML Plan"
+  short_description: "Create clear, visual implementation plans"
+  default_prompt: "Use $html-plan to create or update an HTML implementation plan."

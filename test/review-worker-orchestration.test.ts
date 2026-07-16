@@ -529,10 +529,6 @@ describe("ReviewWorker orchestration", () => {
       chatterRunnerFactory: {
         createRunner: vi.fn(() => ({
           run: chatterRun,
-          sessionPaths: {
-            memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"],
-          },
         })),
       } as never,
       reconciler: {
@@ -764,10 +760,6 @@ describe("ReviewWorker orchestration", () => {
       chatterRunnerFactory: {
         createRunner: vi.fn(() => ({
           run: chatterRun,
-          sessionPaths: {
-            memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"],
-          },
         })),
       } as never,
       reconciler: {
@@ -977,10 +969,6 @@ describe("ReviewWorker orchestration", () => {
               },
             ],
           })),
-          sessionPaths: {
-            memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"],
-          },
         })),
       } as never,
       reconciler: {
@@ -1202,10 +1190,6 @@ describe("ReviewWorker orchestration", () => {
               },
             ],
           })),
-          sessionPaths: {
-            memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"],
-          },
         })),
       } as never,
       reconciler: {
@@ -1526,10 +1510,6 @@ describe("ReviewWorker orchestration", () => {
             },
             replies: [],
           })),
-          sessionPaths: {
-            memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"],
-          },
         })),
       } as never,
       reconciler: {
@@ -1875,10 +1855,6 @@ describe("ReviewWorker orchestration", () => {
             },
             replies: [],
           })),
-          sessionPaths: {
-            memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"],
-          },
         })),
       } as never,
       reconciler: {

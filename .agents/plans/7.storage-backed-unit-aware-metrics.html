@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 7 — Store metrics with their usage unit</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="low">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 07</p>
+          <p class="rail-value">Report from stored sessions</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">Breaking revision</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a>
+            <a href="#goal">What do we want?</a>
+            <a href="#fix">How do we fix it?</a>
+            <a href="#steps">Work steps</a>
+            <a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 07 · usage metrics</p>
+          <h1>Store every harness session with the unit it actually uses.</h1>
+          <p class="lede">
+            The metrics report still reads session files and treats premium
+            requests as the universal cost measure. GitHub moved most Copilot
+            plans to artificial intelligence (AI) credits in June 2026, and
+            future harnesses may report other units. Metrics need to become
+            stored records with explicit units, while files become an import
+            source and optional diagnostic artifact.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>Lower</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Operators and maintainers</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main area</span><strong>Metrics and storage</strong>
+            </div>
+            <div class="meta-item">
+              <span>Stored data</span
+              ><strong>New session identity and unit</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> new harness sessions save their
+            metrics without reopening a log file, the metrics report reads only
+            from configured storage, and a separate collection command can
+            import old session files before those files are cleaned up.
+          </div>
+        </header>
+
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>The cost label is no longer universal</h3>
+              <p>
+                The report calls the provider cost “premium requests.”
+                <a
+                  href="https://github.blog/news-insights/company-news/github-copilot-is-moving-to-usage-based-billing/"
+                  >GitHub changed most Copilot plans to AI credits on 1 June
+                  2026</a
+                >, while some legacy annual plans still use premium requests. A
+                single fixed label can now be wrong for two sessions produced by
+                the same harness.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The report depends on files</h3>
+              <p>
+                The session report walks the run-log directory and parses
+                selected files. It does not use metrics that live reviews have
+                already saved. Deleting old run files would therefore erase
+                reporting even when the related runs remain in storage.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Live collection also reopens a file</h3>
+              <p>
+                A harness already returns its events in memory, but the worker
+                waits for the session file and reads it back before saving
+                metrics. A missing or unreadable file silently prevents the
+                stored row from being written.
+              </p>
+            </article>
+            <article class="card">
+              <h3>One run can contain several sessions</h3>
+              <p>
+                A single interaction can run memory, review, and reply sessions.
+                The database permits only one metrics row for that interaction,
+                and the worker keeps only the last selected session. This loses
+                usage before a second harness is even introduced.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="Storage-backed metrics flow">
+            <div>
+              <strong>1. Measure the session</strong
+              ><span
+                >Each harness turns its native events into common counters,
+                session identity, and a native usage unit and amount.</span
+              >
+            </div>
+            <div>
+              <strong>2. Save before finishing the run</strong
+              ><span
+                >The worker saves every completed session while it still owns
+                the job. A metrics write failure is reported but does not fail
+                an otherwise successful review. Log writing remains
+                independent.</span
+              >
+            </div>
+            <div>
+              <strong>3. Report from storage</strong
+              ><span
+                >Reports group usage by unit. A collection command imports
+                historical files through the same normalization rules.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>
+              Store one metrics record for every harness session—memory, review,
+              reply, maintenance, and future session types—not one for whichever
+              session happened to run last.
+            </li>
+            <li>
+              Store the harness name, a stable session key, an explicit session
+              type, and the associated interaction run. Keep the session type
+              open to future harness-specific values.
+            </li>
+            <li>
+              Always include session type in machine-readable results. If the
+              human summary remains readable, add a compact breakdown of review,
+              memory, reply, and other session types after the required unit and
+              model summaries.
+            </li>
+            <li>
+              Treat usage unit and amount as a pair: both are present or both
+              are absent. Absence means “the harness did not report billable
+              usage,” not zero usage.
+            </li>
+            <li>
+              Use open, namespaced unit names so adding a harness or billing
+              unit does not require a database revision just to extend an
+              enumeration.
+            </li>
+            <li>
+              Never add unlike units. Show one row per run and unit, and build
+              summaries separately for AI credits, premium requests, currency,
+              or any later unit.
+            </li>
+            <li>
+              Let operators filter by one connection name and an optional date
+              range. Use <code>--from YYYY-MM-DD</code> and
+              <code>--to YYYY-MM-DD</code> as inclusive calendar dates in
+              Coordinated Universal Time (UTC); either end may be omitted.
+            </li>
+            <li>
+              In human-readable output, give each usage unit its own run,
+              summary, and model tables. Put sessions with no reported billable
+              unit in a separate “usage not reported” section.
+            </li>
+            <li>
+              Show average model cost per review after first combining all
+              sessions for the same model, unit, and interaction run. Count one
+              review once even when that model handled several sessions in it.
+            </li>
+            <li>
+              When the terminal supports it, add one monthly stacked-bar chart
+              per usage unit in pretty output. Each month is one bar, with model
+              contributions stacked inside it and a clear model legend.
+            </li>
+            <li>
+              Keep token, duration, tool, prompt, and repeated-read measures
+              available even when billable usage is unavailable.
+            </li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Problem</th>
+                <th>Planned change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>One stored row hides earlier sessions in the same run.</td>
+                <td>
+                  Change metrics to a one-to-many session history. Give every
+                  session a stable identity so retries and imports update the
+                  same record instead of creating duplicates.
+                </td>
+              </tr>
+              <tr>
+                <td>Premium requests are embedded in the data shape.</td>
+                <td>
+                  Replace that field with a nullable usage unit and amount.
+                  Preserve old values by marking migrated rows as legacy GitHub
+                  premium-request usage.
+                </td>
+              </tr>
+              <tr>
+                <td>The worker rereads its own output file.</td>
+                <td>
+                  Make each harness emit a normalized metrics envelope from its
+                  in-memory events before it returns or throws. Pass it back to
+                  the worker and save it on success and failure paths before the
+                  run becomes terminal.
+                </td>
+              </tr>
+              <tr>
+                <td>The report scans a hard-coded file layout.</td>
+                <td>
+                  Make <code>metrics sessions</code> use configured storage and
+                  its normal storage flags. Add connection-name and inclusive
+                  UTC date filters. Aggregate operational measures across
+                  sessions, but group billable usage by unit.
+                </td>
+              </tr>
+              <tr>
+                <td>Mixed-unit tables would still be hard to read.</td>
+                <td>
+                  Render a complete report section for each unit. Show compact
+                  distribution and model summaries by default. Put the
+                  potentially long per-review detail behind an explicit
+                  <code>--all-sessions</code> flag.
+                </td>
+              </tr>
+              <tr>
+                <td>Tables do not make monthly model trends obvious.</td>
+                <td>
+                  In pretty terminal output, draw horizontal monthly bars with
+                  model segments stacked within each bar. Scale each unit’s
+                  chart independently, show its totals and legend, and omit the
+                  chart cleanly when terminal capabilities or width are not
+                  sufficient.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Operators cannot see which tenants or connections use the
+                  most.
+                </td>
+                <td>
+                  Add complete tenant and platform-connection tables inside
+                  every unit section. On capable terminals, pair each table with
+                  a horizontal usage chart. For sessions without reported usage,
+                  chart session counts instead.
+                </td>
+              </tr>
+              <tr>
+                <td>Historical files still contain useful measurements.</td>
+                <td>
+                  Add <code>metrics collect</code>. It scans a chosen run-log
+                  root, lets the matching harness parser normalize every known
+                  session file, and upserts only records tied to an existing
+                  interaction run. Matching records are updated from the
+                  collected source. A dry run previews the result, and
+                  collection never moves or deletes a source file.
+                </td>
+              </tr>
+              <tr>
+                <td>The current report can show usage by model.</td>
+                <td>
+                  Preserve the harness-provided model breakdown in storage and
+                  label every breakdown with the same unit. Do not reconstruct
+                  historical prices from token counts because rates and account
+                  rules can change.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="callout">
+            <strong>Chart fallback:</strong> summary tables are always present.
+            The detailed per-review table appears only with
+            <code>--all-sessions</code>. Charts are an extra pretty-mode view
+            only. Show at most the eight highest-usage models as separate
+            segments and combine the remaining models into “other”; the model
+            table still lists every model. Use color when available and
+            distinguish segments with Unicode shading when color is disabled.
+            Skip charts for redirected, plain, machine-readable, non-Unicode, or
+            very narrow output.
+          </div>
+
+          <div class="callout">
+            <strong>Resolved data policy:</strong> save one nullable primary
+            billable unit and amount per session. Unit keys are open strings,
+            not a database enumeration, so custom harnesses can introduce their
+            own namespaced units. Store GitHub’s exact nano-AI-unit amount and
+            convert it to AI credits only for display. Historical collection
+            updates matching records but never removes its source files. The
+            session report may make one intentional breaking output change.
+            Metrics writes are best-effort and cannot turn an otherwise
+            successful review into a failed review.
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Encode the resolved data policy in examples.</strong>
+                Cover a current Copilot AI-credit session, a legacy
+                premium-request session, a bring-your-own-key session with no
+                Copilot cost, two session types in one run, and a future harness
+                with its own namespaced unit. Keep unit keys open rather than
+                defining a storage enumeration.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Revise the storage contract.</strong> Add session and
+                harness identity plus an explicit session type, remove the
+                one-row-per-run rule, add the usage pair and model breakdown,
+                and extend filters needed for bounded reports and collection.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Migrate both built-in storage providers.</strong>
+                Preserve every old metrics row and all operational counters.
+                Give it a deterministic legacy session key, mark its old
+                premium-request amount with the matching unit, and attribute
+                that amount to an unknown model. SQLite keeps both timestamps;
+                Flotiq keeps creation time while its managed update time
+                advances during backfill. Re-running preparation must make no
+                further changes.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Emit metrics directly from harness runs.</strong>
+                Normalize native usage inside the harness adapter, not in the
+                core worker. Produce metrics even when response parsing fails,
+                and distinguish an unavailable usage value from a reported zero.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Persist every live session safely.</strong> Carry the
+                envelope through review, memory, and reply execution. Use the
+                existing job-ownership guard for live writes, upsert by stable
+                session identity, and record all completed sessions before the
+                interaction run is completed or failed. Log a metrics write
+                failure clearly, but do not fail an otherwise successful review.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add historical collection.</strong> Discover supported
+                session files without assuming that every harness uses the
+                Copilot directory layout. Report imported, updated, unchanged,
+                skipped, and invalid counts. Update a matching stored session
+                from the collected file, never move or delete source files, and
+                make a second collection of unchanged files a no-op.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Move reporting to storage.</strong> Keep per-run rows
+                and percentiles, but show the long per-run detail only when
+                <code>--all-sessions</code> is requested. Add the harness and
+                unit where needed, merge sessions only when units match, and
+                keep machine-readable output unambiguous when one run has
+                several units. Resolve an optional connection name before
+                loading its tenants. Apply inclusive UTC date bounds to the run
+                start time, not to the time metrics were collected.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add unit tables and monthly charts.</strong> Render each
+                unit as an independent report section. Calculate model cost per
+                distinct review, group review usage into UTC calendar months,
+                and add a capability-aware stacked-bar renderer for pretty
+                terminals. Add tenant and platform-connection totals with
+                horizontal charts, without adding charts to plain or
+                machine-readable output. Add a session-type breakdown only when
+                it does not crowd out the required unit and model summaries.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Document the migration and cleanup gate.</strong> Update
+                command help, operator guidance, custom adapter requirements,
+                and release notes. Do not begin deleting historical run logs
+                until collection coverage and stored record counts have been
+                checked in a real deployment.
+              </div>
+            </li>
+          </ol>
+
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                The file-backed report and its exported result types are in
+                <a href="../../src/cli.ts"><code>src/cli.ts</code></a
+                >: <code>MetricsSessionsResult</code>,
+                <code>loadRunMetricsRows</code>,
+                <code>buildSummaryMetricsRows</code>, and the
+                <code>metrics sessions</code> command branch. Replace
+                <code>--run-log-dir</code> there with normal storage flags; use
+                that file option on the new <code>metrics collect</code>
+                command. The report syntax should include
+                <code>--connection &lt;name&gt;</code>,
+                <code>--from &lt;YYYY-MM-DD&gt;</code>, and
+                <code>--to &lt;YYYY-MM-DD&gt;</code>. Add
+                <code>--all-sessions</code> for the human-readable per-run
+                table; keep complete run rows in structured output. Parse dates
+                strictly; map <code>--from</code> to an inclusive UTC midnight
+                and <code>--to</code> to the exclusive midnight after the
+                supplied date. Reject invalid dates and reversed ranges.
+              </li>
+              <li>
+                Resolve <code>--connection</code> by the immutable, globally
+                unique <code>PlatformConnectionRecord.name</code>, list tenants
+                by <code>platformConnectionId</code>, then list runs by those
+                tenant ids and the requested <code>startedAt</code> range. Do
+                not filter on metric <code>createdAt</code> or
+                <code>updatedAt</code>, because collection can happen much later
+                than the measured review. Existing tenant upserts preserve the
+                original connection assignment, so this join does not require
+                duplicating the connection on every metric.
+              </li>
+              <li>
+                The current <code>StoreValueFilter</code> has no range
+                operators. Add the smallest shared range support needed for ISO
+                timestamps—prefer inclusive <code>gte</code> and exclusive
+                <code>lt</code>—and implement it in
+                <a href="../../src/storage/adapters/sqlite/where-operators.ts"
+                  ><code
+                    >src/storage/adapters/sqlite/where-operators.ts</code
+                  ></a
+                >
+                and
+                <a href="../../src/storage/adapters/flotiq/store.ts"
+                  ><code>src/storage/adapters/flotiq/store.ts</code></a
+                >. Add adapter tests proving the same boundary behavior.
+                Translate supported Flotiq ranges into server filters before
+                pagination so large reports do not repeatedly fetch the full
+                collection.
+              </li>
+              <li>
+                Change <code>MetricsSessionsResult</code> to expose unit groups
+                rather than parallel mixed-unit arrays. Each unit group should
+                include run rows, distribution summaries, model summaries, and
+                monthly model series. It should also include totals by tenant
+                and platform connection, with distinct review counts, session
+                counts, and unit-aware usage. Every session row must expose
+                <code>sessionType</code>, and structured output should include
+                session-type totals. Build a model’s
+                <code>averageCostPerReview</code> by aggregating its session
+                usage per <code>interactionRunId</code> first, then averaging
+                those per-review amounts. A review using the same model in three
+                sessions contributes once to the denominator.
+              </li>
+              <li>
+                Use <code>CliOutput.stdoutIsTTY</code>, <code>unicode</code>,
+                <code>color</code>, and <code>columns</code> from
+                <a href="../../src/cli/output.ts"
+                  ><code>src/cli/output.ts</code></a
+                >
+                to decide whether a stacked chart is viable. Keep the chart
+                renderer deterministic: month keys are <code>YYYY-MM</code> in
+                UTC and chronological; the eight models with the largest total
+                usage get stable segments, the rest become <code>other</code>;
+                each row ends with the unscaled monthly total. The structured
+                monthly series belongs in JSON output even though the rendered
+                chart does not.
+              </li>
+              <li>
+                Current parsing lives in
+                <a href="../../src/harness/run-metrics.ts"
+                  ><code>src/harness/run-metrics.ts</code></a
+                >. Split file input from normalization so live events and
+                historical records use the same Copilot extractor. The installed
+                Copilot event type exposes legacy <code>cost</code> and current
+                <code>copilotUsage.totalNanoAiu</code>; do not continue naming
+                <code>cost</code> as premium requests when the current field is
+                present. For a bring-your-own-key run, a legacy
+                <code>cost</code> value of zero means usage is unavailable, not
+                a reported zero premium-request amount. Current run logs already
+                carry <code>metadata.sessionKind</code>; map that to the stored
+                <code>sessionType</code>. For older files without it, use a
+                recognized session path when unambiguous and otherwise store
+                <code>unknown</code> rather than dropping the session.
+              </li>
+              <li>
+                <a href="../../src/harness/session.ts"
+                  ><code>src/harness/session.ts</code></a
+                >
+                already collects <code>SessionEvent[]</code> in memory, and
+                <a href="../../src/harness/types.ts"
+                  ><code>src/harness/types.ts</code></a
+                >
+                defines <code>HarnessRunResult</code>. Add the metrics envelope
+                at this boundary and populate its <code>sessionType</code> from
+                <code>HarnessRunLoggingContext.sessionKind</code>. Keep
+                <a href="../../src/harness/run-log.ts"
+                  ><code>src/harness/run-log.ts</code></a
+                >
+                as best-effort diagnostics rather than a prerequisite for a live
+                write.
+              </li>
+              <li>
+                The worker overwrites <code>metricsContext</code> as memory,
+                review, and reply sessions finish, then
+                <code>persistInteractionRunMetrics</code> rereads one selected
+                file in
+                <a href="../../src/jobs/review-worker.ts"
+                  ><code>src/jobs/review-worker.ts</code></a
+                >. Replace that single context with session envelopes and keep
+                the claim-fenced
+                <code>upsertInteractionRunMetricsForClaim</code> path. Check the
+                review provider, chatter runner, and project-memory consolidator
+                because each can start a harness session.
+              </li>
+              <li>
+                Create <code>storage-v006</code> from the current contract in
+                <a href="../../src/storage/contract/history/storage-v005.d.ts"
+                  ><code
+                    >src/storage/contract/history/storage-v005.d.ts</code
+                  ></a
+                >; do not edit older snapshots. Update
+                <a href="../../src/storage/contract/current.d.ts"
+                  ><code>current.d.ts</code></a
+                >,
+                <a href="../../src/storage/contract/index.ts"
+                  ><code>index.ts</code></a
+                >, and
+                <a href="../../src/storage/contract/history/index.ts"
+                  ><code>history/index.ts</code></a
+                >. The revision is breaking because record identity and the
+                <code>premiumRequests</code> field change. Add an open string
+                <code>sessionType</code> field rather than a closed enumeration,
+                so new harness session types do not force another contract
+                revision.
+              </li>
+              <li>
+                Update the generic upsert in
+                <a href="../../src/storage/storage-helpers.ts"
+                  ><code>src/storage/storage-helpers.ts</code></a
+                >, the reusable single-worker claim implementation in
+                <a
+                  href="../../src/storage/adapters/single-worker-interaction-job-store.ts"
+                  ><code>single-worker-interaction-job-store.ts</code></a
+                >, and tenant deletion and cross-adapter migration assumptions.
+                A stable uniqueness key should include the interaction run,
+                harness, and harness-session key.
+              </li>
+              <li>
+                Add an ordered SQLite migration beside
+                <a
+                  href="../../src/storage/adapters/sqlite/migrations/0011-v5-job-claims-and-reasoning-effort.ts"
+                  ><code>0011-v5-job-claims-and-reasoning-effort.ts</code></a
+                >. Rebuild <code>interaction_run_metrics</code>, copy every row,
+                backfill its deterministic session identity and legacy unit, and
+                only then replace the old table. Update row mapping, filter
+                maps, and upsert conflict handling in
+                <a href="../../src/storage/adapters/sqlite/database.ts"
+                  ><code>src/storage/adapters/sqlite/database.ts</code></a
+                >
+                and report <code>storage-v006</code> from the provider.
+              </li>
+              <li>
+                Add a Flotiq v006 migration beside
+                <a href="../../src/storage/adapters/flotiq/migrations/v005.ts"
+                  ><code
+                    >src/storage/adapters/flotiq/migrations/v005.ts</code
+                  ></a
+                >. First add the new fields as optional, then page through old
+                metric objects and write the backfill. Only after the backfill
+                succeeds should the final required fields replace the legacy
+                shape and the migration be recorded. Update mappings and
+                generated declarations in
+                <a href="../../src/storage/adapters/flotiq/entrypoint.ts"
+                  ><code>entrypoint.ts</code></a
+                >
+                and
+                <a href="../../src/storage/adapters/flotiq/flotiq-api.d.ts"
+                  ><code>flotiq-api.d.ts</code></a
+                >, then report <code>storage-v006</code>.
+              </li>
+              <li>
+                Extend
+                <a href="../../test/harness-run-metrics.test.ts"
+                  ><code>test/harness-run-metrics.test.ts</code></a
+                >,
+                <a href="../../test/metrics-cli.test.ts"
+                  ><code>test/metrics-cli.test.ts</code></a
+                >,
+                <a href="../../test/sqlite-storage.test.ts"
+                  ><code>test/sqlite-storage.test.ts</code></a
+                >,
+                <a href="../../test/flotiq-migrations.test.ts"
+                  ><code>test/flotiq-migrations.test.ts</code></a
+                >, storage migration tests, worker success/failure/lease-loss
+                tests, and tenant deletion tests. Include mixed units, missing
+                usage, zero usage, several sessions, repeat collection, updates
+                to matching records, preserved source files, malformed files,
+                old-database upgrades, unknown connections, single-ended and
+                closed date ranges, UTC boundary timestamps, repeated model
+                sessions in one review, empty months, more than eight models,
+                fixed-width chart output, and every chart fallback. Verify that
+                every session type survives live collection, file collection,
+                both adapter migrations, and structured reporting.
+              </li>
+              <li>
+                Update
+                <a
+                  href="../../docs/src/content/docs/management/cli-reference.md"
+                  ><code>docs/.../management/cli-reference.md</code></a
+                >,
+                <a href="../../docs/src/content/docs/deployment/storage.md"
+                  ><code>docs/.../deployment/storage.md</code></a
+                >,
+                <a
+                  href="../../docs/src/content/docs/development/custom-storage.md"
+                  ><code>docs/.../development/custom-storage.md</code></a
+                >, and
+                <a href="../../src/storage/adapters/README.md"
+                  ><code>src/storage/adapters/README.md</code></a
+                >
+                with the new command behavior, compatibility revision, migration
+                rules, and custom-adapter fields.
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              A new Copilot AI-credit session creates a stored metrics record
+              with the current native unit and never reopens a log file to do
+              so.
+            </li>
+            <li>
+              A legacy premium-request session and a bring-your-own-key session
+              are distinguishable; missing billable usage is not saved as zero.
+            </li>
+            <li>
+              Memory, review, reply, and maintenance sessions in one interaction
+              run each retain their own metrics and explicit session type after
+              success or handled failure.
+            </li>
+            <li>
+              Structured output always exposes session types and their totals.
+              Pretty output may show a compact session-type breakdown when it
+              fits, but omitting that optional view never removes the unit or
+              model tables.
+            </li>
+            <li>
+              The report succeeds after the matching run-log directory has been
+              removed, because it reads configured storage only.
+            </li>
+            <li>
+              A mixed-unit report never adds AI credits to premium requests or
+              any future harness unit. Pretty and plain output show separate
+              run, summary, and model tables for every unit, with unreported
+              usage kept separate. The long run table is absent by default and
+              appears for every unit when <code>--all-sessions</code> is used.
+            </li>
+            <li>
+              Filtering by an existing connection name includes only reviews
+              belonging to tenants on that connection. An unknown name fails
+              with a clear error.
+            </li>
+            <li>
+              <code>--from 2026-06-01 --to 2026-06-30</code> includes runs that
+              started anywhere in June UTC, excludes the surrounding boundary
+              instants, and may be combined with the connection filter.
+            </li>
+            <li>
+              Every unit’s model table shows total usage, distinct review count,
+              and average cost per review. Reusing a model in several sessions
+              of one review does not inflate that count.
+            </li>
+            <li>
+              Every unit includes tenant and platform-connection tables with
+              distinct review counts, session counts, and usage totals. Capable
+              terminals add matching horizontal charts without mixing units.
+            </li>
+            <li>
+              Pretty output on a capable terminal shows one chronological
+              monthly stacked-bar chart per unit, with models represented by
+              stable segments and overflow models combined as “other.” Tables
+              remain unchanged when charts are unavailable.
+            </li>
+            <li>
+              Collection imports known historical files, skips orphaned
+              sessions, updates matching records, never removes source files,
+              and changes nothing on an identical second run.
+            </li>
+            <li>
+              Upgrading old SQLite and Flotiq data preserves record counts,
+              counters, creation times, and premium-request values while both
+              adapters report the new storage contract. SQLite also preserves
+              update times; Flotiq records the backfill as an update. Moving
+              between storage providers may assign new provider-managed
+              timestamps, which is a documented limitation.
+            </li>
+            <li>
+              Existing claim fencing, tenant deletion, and cross-adapter storage
+              migration continue to cover every metrics record.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> focused harness and metrics command
+            tests, worker success/failure/lease-loss tests, SQLite and Flotiq
+            migration tests, storage migration and tenant deletion tests,
+            <code>npm run typecheck</code>, <code>npm test</code>,
+            <code>npm run build</code>, and <code>npm run docs:build</code>.
+          </p>
+        </section>
+
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="6.provider-runtime-and-hydration.html">← Platform data</a
+          ><a href="index.html">All plans →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

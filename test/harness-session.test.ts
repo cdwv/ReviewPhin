@@ -26,6 +26,7 @@ vi.mock("@github/copilot-sdk", () => ({
 }));
 
 import { CopilotClient } from "@github/copilot-sdk";
+import type { SessionEvent } from "@github/copilot-sdk";
 import { HarnessSessionRuntime } from "../src/harness/session.js";
 import type {
   HarnessModelConfig,
@@ -226,6 +227,133 @@ describe("HarnessSessionRuntime", () => {
         subagents: [],
       }),
     ).rejects.toThrow('does not support reasoning effort "xhigh"');
+  });
+
+  it("emits best-effort in-memory metrics on success and session failure", async () => {
+    const onSuccess = vi.fn(async () => {});
+    createSessionMock.mockResolvedValueOnce(
+      createSession({
+        events: [
+          {
+            type: "assistant.usage",
+            data: { cost: 1 },
+          } as SessionEvent,
+        ],
+      }),
+    );
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    await runtime.run({
+      prompt: "Review this.",
+      modelConfig: createModelConfig(),
+      model: "gpt-5.4",
+      tools: [],
+      subagents: [],
+      logging: {
+        interactionRunId: "run_1",
+        interactionJobId: "job_1",
+        tenantId: "tenant_1",
+        sessionKind: "review",
+        onMetrics: onSuccess,
+      },
+    });
+    expect(onSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harness: "github.copilot-sdk",
+        harnessSessionKey: "session_1",
+        sessionType: "review",
+        metrics: expect.objectContaining({
+          usageByModel: [{ model: "gpt-5.4", amount: 1 }],
+        }),
+      }),
+    );
+
+    const onFailure = vi.fn(async () => {});
+    const failedSession = createSession();
+    failedSession.sendAndWait.mockRejectedValueOnce(
+      new Error("session failed"),
+    );
+    createSessionMock.mockResolvedValueOnce(failedSession);
+    await expect(
+      runtime.run({
+        prompt: "Review this.",
+        modelConfig: createModelConfig(),
+        tools: [],
+        subagents: [],
+        logging: {
+          interactionRunId: "run_1",
+          interactionJobId: "job_1",
+          tenantId: "tenant_1",
+          sessionKind: "reply",
+          onMetrics: onFailure,
+        },
+      }),
+    ).rejects.toThrow("session failed");
+    expect(onFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harnessSessionKey: "session_1",
+        sessionType: "reply",
+      }),
+    );
+  });
+
+  it("treats BYOK zero cost as unavailable usage", async () => {
+    const onMetrics = vi.fn(async () => {});
+    createSessionMock.mockResolvedValueOnce(
+      createSession({
+        events: [
+          {
+            type: "assistant.usage",
+            data: { model: "custom-model", cost: 0 },
+          } as SessionEvent,
+        ],
+      }),
+    );
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    await runtime.run({
+      prompt: "Review this.",
+      modelConfig: {
+        ...createModelConfig(),
+        provider: { baseUrl: "http://llm.internal/v1", type: "openai" },
+        providerBaseUrl: "http://llm.internal/v1",
+        providerType: "openai",
+      },
+      model: "custom-model",
+      tools: [],
+      subagents: [],
+      logging: {
+        interactionRunId: "run_byok",
+        interactionJobId: "job_byok",
+        tenantId: "tenant_1",
+        sessionKind: "review",
+        onMetrics,
+      },
+    });
+
+    expect(onMetrics).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metrics: expect.objectContaining({
+          usageUnit: null,
+          usageAmount: null,
+          usageByModel: [],
+        }),
+      }),
+    );
   });
 
   it("passes a native auth token only when no custom provider is configured", async () => {
@@ -688,7 +816,9 @@ describe("HarnessSessionRuntime", () => {
 function createSession(input?: {
   currentModelId?: string;
   responseContent?: string;
+  events?: SessionEvent[];
 }) {
+  let eventHandler: ((event: SessionEvent) => void) | undefined;
   return {
     sessionId: "session_1",
     rpc: {
@@ -698,21 +828,29 @@ function createSession(input?: {
         })),
       },
     },
-    on: vi.fn(() => () => {}),
-    sendAndWait: vi.fn(async () => ({
-      data: {
-        content:
-          input?.responseContent ??
-          JSON.stringify({
-            overview: {
-              summary: "Looks good",
-              overallSeverity: "low",
-            },
-            findings: [],
-            priorDispositions: [],
-          }),
-      },
-    })),
+    on: vi.fn((handler: (event: SessionEvent) => void) => {
+      eventHandler = handler;
+      return () => {};
+    }),
+    sendAndWait: vi.fn(async () => {
+      for (const event of input?.events ?? []) {
+        eventHandler?.(event);
+      }
+      return {
+        data: {
+          content:
+            input?.responseContent ??
+            JSON.stringify({
+              overview: {
+                summary: "Looks good",
+                overallSeverity: "low",
+              },
+              findings: [],
+              priorDispositions: [],
+            }),
+        },
+      };
+    }),
     disconnect: vi.fn(async () => {}),
   };
 }

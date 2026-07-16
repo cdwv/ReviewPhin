@@ -98,6 +98,18 @@ export const STORAGE_CONTRACT_HISTORY = [
       "Runs snapshot the owning claim token and both reasoning-effort values; profiles and snapshots add matching fields.",
     ],
   },
+  {
+    id: "storage-v006",
+    summary:
+      "Session-scoped harness metrics with open usage-unit keys and storage-backed reporting.",
+    changeKind: "breaking",
+    affectedSurfaces: ["interaction-run-metrics"],
+    providerNotes: [
+      "Adapters store one metrics record per harness session instead of one per interaction run.",
+      "The premiumRequests field is replaced by a nullable usageUnit and usageAmount pair plus a unit-matched model breakdown.",
+      "Existing metrics rows retain their counters, receive deterministic legacy session identity, and allocate legacy usage to the unknown model; provider-managed update timestamps may advance during migration.",
+    ],
+  },
 ] as const satisfies readonly StorageContractRevisionMetadata[];
 
 export type StorageContractRevisionId =

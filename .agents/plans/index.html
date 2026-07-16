@@ -15,9 +15,9 @@
             ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
           >
           <p class="rail-label">Checked</p>
-          <p class="rail-value">14 July 2026</p>
+          <p class="rail-value">16 July 2026</p>
           <p class="rail-label">Database format</p>
-          <p class="rail-value">storage-v005</p>
+          <p class="rail-value">storage-v006</p>
           <nav class="toc" aria-label="On this page">
             <a href="#order">What to do first</a>
             <a href="#data">Database changes</a>
@@ -29,19 +29,19 @@
       <main id="content">
         <header class="hero">
           <p class="eyebrow">Work we want to do</p>
-          <h1>Five plans, in the order that matters most.</h1>
+          <h1>Six plans, in the order that matters most.</h1>
           <p class="lede">
             Start at the top. The first plans fix things that can confuse users
             or produce bad review results. The last plans improve the code and
             make ReviewPhin cheaper to run.
           </p>
           <div class="meta-grid">
-            <div class="meta-item"><span>Plans</span><strong>5</strong></div>
+            <div class="meta-item"><span>Plans</span><strong>6</strong></div>
             <div class="meta-item">
               <span>Most urgent</span><strong>Safe publication</strong>
             </div>
             <div class="meta-item">
-              <span>Plans needing new database data</span><strong>1</strong>
+              <span>Plans needing new database data</span><strong>2</strong>
             </div>
             <div class="meta-item">
               <span>First place to start</span><strong>Plan 2</strong>
@@ -117,6 +117,19 @@
                 needed, and make GitHub and GitLab code easier to follow.
               </p>
             </article>
+            <article class="card">
+              <span class="badge schema">7 · usage data</span>
+              <h3>
+                <a href="7.storage-backed-unit-aware-metrics.html"
+                  >Store metrics with their real usage unit</a
+                >
+              </h3>
+              <p>
+                Save every harness session in storage, report AI credits and
+                other units without mixing them, and import historical files
+                before cleaning them up.
+              </p>
+            </article>
           </div>
         </section>
 
@@ -163,6 +176,14 @@
                 <td>
                   No database change. This work changes API loading and code
                   types.
+                </td>
+              </tr>
+              <tr>
+                <td>7. Usage metrics</td>
+                <td>
+                  Replace one premium-request row per interaction with
+                  unit-aware records for every harness session. Migrate old rows
+                  without losing their counters or timestamps.
                 </td>
               </tr>
             </tbody>

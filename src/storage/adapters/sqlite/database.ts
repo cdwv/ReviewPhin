@@ -2180,6 +2180,9 @@ export class SqliteStoreDatabase {
   ): Promise<InteractionRunMetricsRecord> {
     return this.upsertInteractionRunMetrics({
       interactionRunId: entity.interactionRunId,
+      harness: entity.harness,
+      harnessSessionKey: entity.harnessSessionKey,
+      sessionType: entity.sessionType,
       triggerKind: entity.triggerKind,
       promptMode: entity.promptMode,
       promptChars: entity.promptChars,
@@ -2197,7 +2200,9 @@ export class SqliteStoreDatabase {
       cacheWriteTokens: entity.cacheWriteTokens,
       reasoningTokens: entity.reasoningTokens,
       apiDurationMs: entity.apiDurationMs,
-      premiumRequests: entity.premiumRequests,
+      usageUnit: entity.usageUnit,
+      usageAmount: entity.usageAmount,
+      usageByModelJson: entity.usageByModelJson,
       repeatedViewReads: entity.repeatedViewReads,
       repeatedViewPathsJson: entity.repeatedViewPathsJson,
     });
@@ -2609,10 +2614,7 @@ const tenantOrderColumns: Record<TenantOrderField, string> = {
   updatedAt: "updated_at",
 };
 
-const projectMemoryFilterColumns: Record<
-  keyof ProjectMemoryFilters,
-  string
-> = {
+const projectMemoryFilterColumns: Record<keyof ProjectMemoryFilters, string> = {
   id: "id",
   tenantId: "tenant_id",
   createdAt: "created_at",
@@ -2694,6 +2696,10 @@ const interactionRunMetricsFilterColumns: Record<
 > = {
   id: "id",
   interactionRunId: "interaction_run_id",
+  harness: "harness",
+  harnessSessionKey: "harness_session_key",
+  sessionType: "session_type",
+  usageUnit: "usage_unit",
   createdAt: "created_at",
   updatedAt: "updated_at",
 };
@@ -2703,6 +2709,10 @@ const interactionRunMetricsOrderColumns: Record<
   string
 > = {
   interactionRunId: "interaction_run_id",
+  harness: "harness",
+  harnessSessionKey: "harness_session_key",
+  sessionType: "session_type",
+  usageUnit: "usage_unit",
   createdAt: "created_at",
   updatedAt: "updated_at",
   id: "id",
@@ -2973,7 +2983,9 @@ function mapModelProfileRow(row: Row): ModelProfileRecord {
     authToken: asNullableString(row.auth_token),
     reviewModel: asNullableString(row.review_model),
     textGenerationModel: asNullableString(row.text_generation_model),
-    reviewReasoningEffort: asNullableReasoningEffort(row.review_reasoning_effort),
+    reviewReasoningEffort: asNullableReasoningEffort(
+      row.review_reasoning_effort,
+    ),
     textGenerationReasoningEffort: asNullableReasoningEffort(
       row.text_generation_reasoning_effort,
     ),
@@ -3160,6 +3172,9 @@ function mapInteractionRunMetricsRow(row: Row): InteractionRunMetricsRecord {
   return {
     id: asString(row.id),
     interactionRunId: asString(row.interaction_run_id),
+    harness: asString(row.harness),
+    harnessSessionKey: asString(row.harness_session_key),
+    sessionType: asString(row.session_type),
     triggerKind: asNullableString(row.trigger_kind),
     promptMode: asNullableString(row.prompt_mode),
     promptChars: asNumber(row.prompt_chars),
@@ -3179,7 +3194,12 @@ function mapInteractionRunMetricsRow(row: Row): InteractionRunMetricsRecord {
     cacheWriteTokens: asNumber(row.cache_write_tokens),
     reasoningTokens: asNumber(row.reasoning_tokens),
     apiDurationMs: asNumber(row.api_duration_ms),
-    premiumRequests: asNumber(row.premium_requests),
+    usageUnit: asNullableString(row.usage_unit),
+    usageAmount:
+      row.usage_amount === null || row.usage_amount === undefined
+        ? null
+        : asNumber(row.usage_amount),
+    usageByModelJson: asString(row.usage_by_model_json),
     repeatedViewReads: asNumber(row.repeated_view_reads),
     repeatedViewPathsJson: asString(row.repeated_view_paths_json),
     createdAt: asString(row.created_at),
@@ -3242,11 +3262,18 @@ function upsertInteractionRunMetricsRow(
   database: DatabaseSync,
   input: UpsertInteractionRunMetricsInput,
 ): InteractionRunMetricsRecord {
+  if ((input.usageUnit === null) !== (input.usageAmount === null)) {
+    throw new Error(
+      "Metrics usageUnit and usageAmount must be present together",
+    );
+  }
   const existing = database
     .prepare(
-      "SELECT * FROM interaction_run_metrics WHERE interaction_run_id = ?",
+      `SELECT * FROM interaction_run_metrics
+       WHERE interaction_run_id = ? AND harness = ? AND harness_session_key = ?`,
     )
-    .get(input.interactionRunId) as Row | undefined;
+    .get(input.interactionRunId, input.harness, input.harnessSessionKey) as
+    Row | undefined;
   const id = existing ? asString(existing.id) : createId("metrics");
   const now = new Date().toISOString();
 
@@ -3256,6 +3283,9 @@ function upsertInteractionRunMetricsRow(
       INSERT INTO interaction_run_metrics (
         id,
         interaction_run_id,
+        harness,
+        harness_session_key,
+        session_type,
         trigger_kind,
         prompt_mode,
         prompt_chars,
@@ -3273,14 +3303,17 @@ function upsertInteractionRunMetricsRow(
         cache_write_tokens,
         reasoning_tokens,
         api_duration_ms,
-        premium_requests,
+        usage_unit,
+        usage_amount,
+        usage_by_model_json,
         repeated_view_reads,
         repeated_view_paths_json,
         created_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(interaction_run_id) DO UPDATE SET
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(interaction_run_id, harness, harness_session_key) DO UPDATE SET
+        session_type = excluded.session_type,
         trigger_kind = excluded.trigger_kind,
         prompt_mode = excluded.prompt_mode,
         prompt_chars = excluded.prompt_chars,
@@ -3298,7 +3331,9 @@ function upsertInteractionRunMetricsRow(
         cache_write_tokens = excluded.cache_write_tokens,
         reasoning_tokens = excluded.reasoning_tokens,
         api_duration_ms = excluded.api_duration_ms,
-        premium_requests = excluded.premium_requests,
+        usage_unit = excluded.usage_unit,
+        usage_amount = excluded.usage_amount,
+        usage_by_model_json = excluded.usage_by_model_json,
         repeated_view_reads = excluded.repeated_view_reads,
         repeated_view_paths_json = excluded.repeated_view_paths_json,
         updated_at = excluded.updated_at
@@ -3307,6 +3342,9 @@ function upsertInteractionRunMetricsRow(
     .run(
       id,
       input.interactionRunId,
+      input.harness,
+      input.harnessSessionKey,
+      input.sessionType,
       input.triggerKind,
       input.promptMode,
       input.promptChars,
@@ -3324,7 +3362,9 @@ function upsertInteractionRunMetricsRow(
       input.cacheWriteTokens,
       input.reasoningTokens,
       input.apiDurationMs,
-      input.premiumRequests,
+      input.usageUnit,
+      input.usageAmount,
+      input.usageByModelJson,
       input.repeatedViewReads,
       input.repeatedViewPathsJson,
       existing ? asString(existing.created_at) : now,
@@ -3333,9 +3373,11 @@ function upsertInteractionRunMetricsRow(
 
   const row = database
     .prepare(
-      "SELECT * FROM interaction_run_metrics WHERE interaction_run_id = ?",
+      `SELECT * FROM interaction_run_metrics
+       WHERE interaction_run_id = ? AND harness = ? AND harness_session_key = ?`,
     )
-    .get(input.interactionRunId) as Row | undefined;
+    .get(input.interactionRunId, input.harness, input.harnessSessionKey) as
+    Row | undefined;
   if (!row) {
     throw new Error(
       `Failed to persist metrics for interaction run ${input.interactionRunId}`,
@@ -3354,8 +3396,7 @@ function upsertDiscussionMappingRow(
       "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND code_review_id = ? AND platform_discussion_id = ?",
     )
     .get(input.tenantId, input.codeReviewId, input.platformDiscussionId) as
-    | Row
-    | undefined;
+    Row | undefined;
 
   const id = existing ? String(existing.id) : (input.id ?? createId("mapping"));
   const now = new Date().toISOString();
@@ -3435,8 +3476,7 @@ function upsertDiscussionMappingRow(
       "SELECT * FROM discussion_mappings WHERE tenant_id = ? AND code_review_id = ? AND platform_discussion_id = ?",
     )
     .get(input.tenantId, input.codeReviewId, input.platformDiscussionId) as
-    | Row
-    | undefined;
+    Row | undefined;
 
   if (!row) {
     throw new Error(
@@ -3511,7 +3551,9 @@ function asNullableWireApi(value: unknown): "completions" | "responses" | null {
   throw new Error(`Expected wire api row value, received ${parsed}`);
 }
 
-function asNullableReasoningEffort(value: unknown): ModelReasoningEffort | null {
+function asNullableReasoningEffort(
+  value: unknown,
+): ModelReasoningEffort | null {
   const parsed = asNullableString(value);
   if (parsed === null) {
     return null;
@@ -3559,7 +3601,9 @@ function mapInteractionRunRow(row: Row): InteractionRunRecord {
     startedAt: asString(row.started_at),
     finishedAt: asNullableString(row.finished_at),
     interactionJobClaimToken: asNullableString(row.interaction_job_claim_token),
-    reviewReasoningEffort: asNullableReasoningEffort(row.review_reasoning_effort),
+    reviewReasoningEffort: asNullableReasoningEffort(
+      row.review_reasoning_effort,
+    ),
     textGenerationReasoningEffort: asNullableReasoningEffort(
       row.text_generation_reasoning_effort,
     ),

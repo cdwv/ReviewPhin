@@ -695,7 +695,8 @@ export class StoreBackedStorage implements StorageHelpers {
       finishedAt: null,
       interactionJobClaimToken: input.interactionJobClaimToken ?? null,
       reviewReasoningEffort: input.reviewReasoningEffort ?? null,
-      textGenerationReasoningEffort: input.textGenerationReasoningEffort ?? null,
+      textGenerationReasoningEffort:
+        input.textGenerationReasoningEffort ?? null,
     });
 
     return getRequiredRecord(
@@ -852,8 +853,11 @@ export class StoreBackedStorage implements StorageHelpers {
   public async upsertInteractionRunMetrics(
     input: UpsertInteractionRunMetricsInput,
   ): Promise<InteractionRunMetricsRecord> {
+    assertMetricsUsage(input.usageUnit, input.usageAmount);
     const existing = await this.stores.interactionRunMetrics.find({
       interactionRunId: { eq: input.interactionRunId },
+      harness: { eq: input.harness },
+      harnessSessionKey: { eq: input.harnessSessionKey },
     });
     const now = new Date().toISOString();
     const metricsId = existing?.id ?? createId("metrics");
@@ -861,6 +865,9 @@ export class StoreBackedStorage implements StorageHelpers {
     await this.stores.interactionRunMetrics.upsert({
       id: metricsId,
       interactionRunId: input.interactionRunId,
+      harness: input.harness,
+      harnessSessionKey: input.harnessSessionKey,
+      sessionType: input.sessionType,
       triggerKind: input.triggerKind,
       promptMode: input.promptMode,
       promptChars: input.promptChars,
@@ -878,7 +885,9 @@ export class StoreBackedStorage implements StorageHelpers {
       cacheWriteTokens: input.cacheWriteTokens,
       reasoningTokens: input.reasoningTokens,
       apiDurationMs: input.apiDurationMs,
-      premiumRequests: input.premiumRequests,
+      usageUnit: input.usageUnit,
+      usageAmount: input.usageAmount,
+      usageByModelJson: input.usageByModelJson,
       repeatedViewReads: input.repeatedViewReads,
       repeatedViewPathsJson: input.repeatedViewPathsJson,
       createdAt: existing?.createdAt ?? now,
@@ -887,6 +896,8 @@ export class StoreBackedStorage implements StorageHelpers {
 
     const metrics = await this.stores.interactionRunMetrics.find({
       interactionRunId: { eq: input.interactionRunId },
+      harness: { eq: input.harness },
+      harnessSessionKey: { eq: input.harnessSessionKey },
     });
     if (!metrics) {
       throw new Error(`Failed to persist interaction run metrics ${metricsId}`);
@@ -1217,6 +1228,20 @@ export class StoreBackedStorage implements StorageHelpers {
   }
 }
 
+function assertMetricsUsage(unit: string | null, amount: number | null): void {
+  if ((unit === null) !== (amount === null)) {
+    throw new Error(
+      "Metrics usageUnit and usageAmount must be present together",
+    );
+  }
+  if (unit !== null && unit.trim().length === 0) {
+    throw new Error("Metrics usageUnit must not be empty");
+  }
+  if (amount !== null && !Number.isFinite(amount)) {
+    throw new Error("Metrics usageAmount must be finite");
+  }
+}
+
 /**
  * Raised when a claim-aware storage operation reports that the current claim
  * token no longer owns the interaction job or its run. The worker treats this as
@@ -1354,6 +1379,8 @@ export class ClaimScopedStorage extends StoreBackedStorage {
     }
     const metrics = await this.stores.interactionRunMetrics.find({
       interactionRunId: { eq: input.interactionRunId },
+      harness: { eq: input.harness },
+      harnessSessionKey: { eq: input.harnessSessionKey },
     });
     if (!metrics) {
       throw new Error(

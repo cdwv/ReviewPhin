@@ -73,6 +73,7 @@ import ensureV002CtdsExist from "./migrations/v002.js";
 import ensureV003CtdsExist from "./migrations/v003.js";
 import ensureV004CtdsExist from "./migrations/v004.js";
 import ensureV005CtdsExist from "./migrations/v005.js";
+import ensureV006CtdsExist from "./migrations/v006.js";
 import { createFlotiqEntityStore } from "./store.js";
 import { createSingleWorkerInteractionJobStore } from "../single-worker-interaction-job-store.js";
 import type { Logger } from "pino";
@@ -135,7 +136,7 @@ export function createStorageProvider(
       return "flotiq";
     },
     getSupportedStorageContract() {
-      return "storage-v005";
+      return "storage-v006";
     },
     async open() {
       // Flotiq is accessed over HTTP, so there is no persistent connection.
@@ -160,6 +161,12 @@ export function createStorageProvider(
           ),
         v005: () =>
           ensureV005CtdsExist(
+            parsedEnv.FLOTIQ_API_KEY,
+            flotiqClient,
+            logger?.child({ component: "migrations" }),
+          ),
+        v006: () =>
+          ensureV006CtdsExist(
             parsedEnv.FLOTIQ_API_KEY,
             flotiqClient,
             logger?.child({ component: "migrations" }),
@@ -370,7 +377,8 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
     ctdName: "interaction_run_metrics",
     toRecord: mapInteractionRunMetricsRecord,
     toRemote: mapIdentityEntity,
-    emptyStringNullFields: ["triggerKind", "promptMode"],
+    emptyStringNullFields: ["triggerKind", "promptMode", "usageUnit"],
+    explicitNullFields: ["usageAmount"],
     relationFields: interactionRunMetricsRelationFields,
   });
   const reviewFindings = createFlotiqEntityStore<
@@ -635,6 +643,9 @@ function mapInteractionRunMetricsRecord(
   return {
     id: readRequiredString(entity, "id"),
     interactionRunId: readRequiredRelationId(entity, "interactionRunId"),
+    harness: readRequiredString(entity, "harness"),
+    harnessSessionKey: readRequiredString(entity, "harnessSessionKey"),
+    sessionType: readRequiredString(entity, "sessionType"),
     triggerKind: readNullableString(entity, "triggerKind"),
     promptMode: readNullableString(entity, "promptMode"),
     promptChars: readRequiredNumber(entity, "promptChars"),
@@ -658,7 +669,9 @@ function mapInteractionRunMetricsRecord(
     cacheWriteTokens: readRequiredNumber(entity, "cacheWriteTokens"),
     reasoningTokens: readRequiredNumber(entity, "reasoningTokens"),
     apiDurationMs: readRequiredNumber(entity, "apiDurationMs"),
-    premiumRequests: readRequiredNumber(entity, "premiumRequests"),
+    usageUnit: readNullableString(entity, "usageUnit"),
+    usageAmount: readNullableNumber(entity, "usageAmount"),
+    usageByModelJson: readRequiredString(entity, "usageByModelJson"),
     repeatedViewReads: readRequiredNumber(entity, "repeatedViewReads"),
     repeatedViewPathsJson: readRequiredString(entity, "repeatedViewPathsJson"),
     createdAt: readInternalTimestamp(entity, "createdAt"),
