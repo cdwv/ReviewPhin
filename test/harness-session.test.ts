@@ -304,6 +304,58 @@ describe("HarnessSessionRuntime", () => {
     );
   });
 
+  it("treats BYOK zero cost as unavailable usage", async () => {
+    const onMetrics = vi.fn(async () => {});
+    createSessionMock.mockResolvedValueOnce(
+      createSession({
+        events: [
+          {
+            type: "assistant.usage",
+            data: { model: "custom-model", cost: 0 },
+          } as SessionEvent,
+        ],
+      }),
+    );
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    await runtime.run({
+      prompt: "Review this.",
+      modelConfig: {
+        ...createModelConfig(),
+        provider: { baseUrl: "http://llm.internal/v1", type: "openai" },
+        providerBaseUrl: "http://llm.internal/v1",
+        providerType: "openai",
+      },
+      model: "custom-model",
+      tools: [],
+      subagents: [],
+      logging: {
+        interactionRunId: "run_byok",
+        interactionJobId: "job_byok",
+        tenantId: "tenant_1",
+        sessionKind: "review",
+        onMetrics,
+      },
+    });
+
+    expect(onMetrics).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metrics: expect.objectContaining({
+          usageUnit: null,
+          usageAmount: null,
+          usageByModel: [],
+        }),
+      }),
+    );
+  });
+
   it("passes a native auth token only when no custom provider is configured", async () => {
     createSessionMock.mockResolvedValue(createSession());
     startMock.mockResolvedValue(undefined);

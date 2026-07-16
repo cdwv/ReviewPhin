@@ -279,6 +279,88 @@ describe("metrics CLI", () => {
     await expect(access(sessionPath)).resolves.toBeUndefined();
   });
 
+  it("collects BYOK zero cost as unavailable usage", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "reviewphin-byok-metrics-"));
+    const databasePath = join(workspace, "metrics.sqlite");
+    const runLogDir = join(workspace, "run-logs");
+    const storage = await openSqliteTestStorage(databasePath);
+    const run = await createRun(storage, "2026-06-15T12:00:00.000Z", {
+      providerBaseUrl: "https://llm.example.com/v1",
+      providerType: "openai",
+    });
+    await storage.close();
+    await writeCostSessionLog(runLogDir, run.id, 0);
+
+    captureStdout();
+    await runCli([
+      "metrics",
+      "collect",
+      "--sqlite-database-path",
+      databasePath,
+      "--run-log-dir",
+      runLogDir,
+      "--output",
+      "json",
+    ]);
+
+    const verified = await openSqliteTestStorage(databasePath);
+    expect(
+      await verified.stores.interactionRunMetrics.find({
+        harnessSessionKey: { eq: "collected-byok-session" },
+      }),
+    ).toMatchObject({
+      usageUnit: null,
+      usageAmount: null,
+      usageByModelJson: "[]",
+    });
+    await verified.close();
+  });
+
+  it("attributes legacy usage without a model breakdown to unknown", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "reviewphin-legacy-metrics-"),
+    );
+    const databasePath = join(workspace, "metrics.sqlite");
+    const storage = await openSqliteTestStorage(databasePath);
+    const run = await createRun(storage, "2026-06-15T12:00:00.000Z");
+    await addMetrics(storage, run.id, "legacy-session", "unknown", 5);
+    const metric = await storage.stores.interactionRunMetrics.find({
+      harnessSessionKey: { eq: "legacy-session" },
+    });
+    await storage.stores.interactionRunMetrics.patch({
+      id: metric!.id,
+      value: { usageByModelJson: "[]" },
+    });
+    await storage.close();
+
+    const stdout = captureStdout();
+    await runCli([
+      "metrics",
+      "sessions",
+      "--sqlite-database-path",
+      databasePath,
+      "--output",
+      "json",
+    ]);
+
+    const result = JSON.parse(stdout.value()) as MetricsSessionsResult;
+    expect(result.units[0]?.models).toEqual([
+      {
+        model: "unknown",
+        reviews: 1,
+        usageAmount: 5,
+        averageCostPerReview: 5,
+      },
+    ]);
+    expect(result.units[0]?.monthly).toEqual([
+      {
+        month: "2026-06",
+        total: 5,
+        models: [{ model: "unknown", amount: 5 }],
+      },
+    ]);
+  });
+
   it("keeps custom and unreported usage in separate unit groups", async () => {
     const workspace = await mkdtemp(
       join(tmpdir(), "reviewphin-mixed-metrics-"),
@@ -347,7 +429,12 @@ describe("metrics CLI", () => {
 async function createRun(
   storage: Awaited<ReturnType<typeof openSqliteTestStorage>>,
   startedAt: string,
-  options: { platformConnectionId?: string; projectId?: number } = {},
+  options: {
+    platformConnectionId?: string;
+    projectId?: number;
+    providerBaseUrl?: string;
+    providerType?: "openai" | "azure" | "anthropic";
+  } = {},
 ) {
   const tenant = await storage.upsertTenant(createGitLabTenantInput(options));
   const { job } = await storage.createOrGetInteractionJob({
@@ -365,8 +452,8 @@ async function createRun(
     provider: "copilot-sdk",
     model: "gpt-5.4",
     modelProfileName: null,
-    providerBaseUrl: null,
-    providerType: null,
+    providerBaseUrl: options.providerBaseUrl ?? null,
+    providerType: options.providerType ?? null,
     textGenerationModel: null,
   });
   await storage.stores.interactionRuns.patch({
@@ -460,6 +547,34 @@ async function writeSessionLog(
     "utf8",
   );
   return path;
+}
+
+async function writeCostSessionLog(
+  runLogDir: string,
+  interactionRunId: string,
+  cost: number,
+): Promise<void> {
+  const directory = join(runLogDir, interactionRunId, "copilot", "reviewer");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, "session.json"),
+    JSON.stringify({
+      sessionId: "collected-byok-session",
+      metadata: {
+        interactionRunId,
+        requestedModel: "custom-model",
+        sessionKind: "review",
+      },
+      prompt: "Review",
+      events: [
+        {
+          type: "assistant.usage",
+          data: { model: "custom-model", cost },
+        },
+      ],
+    }),
+    "utf8",
+  );
 }
 
 function captureStdout(): { value: () => string } {

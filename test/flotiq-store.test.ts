@@ -406,7 +406,47 @@ describe("Flotiq entity store adapter", () => {
     });
 
     expect(rows.map((row) => row.startedAt)).toEqual(timestamps.slice(1, 3));
-    expect(api.listCalls[0]?.filters).toBeUndefined();
+    expect(api.listCalls).toHaveLength(1);
+    expect(api.listCalls[0]).toMatchObject({
+      filters: {
+        startedAt: {
+          type: "inRange",
+          filter: "2026-06-01T00:00:00.000Z",
+          filter2: "2026-06-30T23:59:59.999Z",
+        },
+      },
+      limit: 10,
+      page: 1,
+    });
+
+    expect(
+      (
+        await store.list({
+          filters: { startedAt: { gte: timestamps[2]! } },
+          page: 1,
+          pageSize: 10,
+        })
+      ).map((row) => row.startedAt),
+    ).toEqual(timestamps.slice(2));
+    expect(api.listCalls.at(-1)?.filters).toEqual({
+      startedAt: {
+        type: "greaterThanOrEqual",
+        filter: timestamps[2],
+      },
+    });
+
+    expect(
+      (
+        await store.list({
+          filters: { startedAt: { lt: timestamps[1]! } },
+          page: 1,
+          pageSize: 10,
+        })
+      ).map((row) => row.startedAt),
+    ).toEqual(timestamps.slice(0, 1));
+    expect(api.listCalls.at(-1)?.filters).toEqual({
+      startedAt: { type: "lessThan", filter: timestamps[1] },
+    });
   });
 
   it("uses Flotiq ids and maps supported server filters", async () => {
@@ -949,6 +989,19 @@ function matchesFilterValue(value: unknown, filter: Filter): boolean {
       return value === null || value === undefined || value === "";
     case "notEmpty":
       return value !== null && value !== undefined && value !== "";
+    case "lessThan":
+      return compareFilterValues(value, filter.filter) < 0;
+    case "lessThanOrEqual":
+      return compareFilterValues(value, filter.filter) <= 0;
+    case "greaterThan":
+      return compareFilterValues(value, filter.filter) > 0;
+    case "greaterThanOrEqual":
+      return compareFilterValues(value, filter.filter) >= 0;
+    case "inRange":
+      return (
+        compareFilterValues(value, filter.filter) >= 0 &&
+        compareFilterValues(value, filter.filter2) <= 0
+      );
     case "includes":
       return Array.isArray(value) && value.includes(filter.filter);
     case "overlaps":
@@ -964,6 +1017,16 @@ function matchesFilterValue(value: unknown, filter: Filter): boolean {
     default:
       throw new Error(`Unsupported test filter ${filter.type}`);
   }
+}
+
+function compareFilterValues(left: unknown, right: unknown): number {
+  if (typeof left === "string" && typeof right === "string") {
+    return left.localeCompare(right);
+  }
+  if (typeof left === "number" && typeof right === "number") {
+    return left - right;
+  }
+  return Number.NaN;
 }
 
 function matchesContainsFilter(value: unknown, filterValue: unknown): boolean {

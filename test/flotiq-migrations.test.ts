@@ -259,6 +259,9 @@ describe("Flotiq v006 session metrics migration", () => {
         required: string[];
         allOf: Array<{ properties: Record<string, unknown> }>;
       };
+      metaDefinition: {
+        propertiesConfig: Record<string, { helpText?: string }>;
+      };
     }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       if (init?.method === "GET") {
@@ -313,7 +316,7 @@ describe("Flotiq v006 session metrics migration", () => {
         sessionType: "unknown",
         usageUnit: "github.copilot.premium-request",
         usageAmount: 2,
-        usageByModelJson: "[]",
+        usageByModelJson: '[{"model":"unknown","amount":2}]',
       }),
     ]);
     expect(writtenCtds[1]?.schemaDefinition.required).toContain(
@@ -322,6 +325,30 @@ describe("Flotiq v006 session metrics migration", () => {
     expect(
       writtenCtds[1]?.schemaDefinition.allOf[1]?.properties,
     ).not.toHaveProperty("premiumRequests");
+    expect(writtenCtds[1]?.metaDefinition.propertiesConfig).toMatchObject({
+      interactionRunId: {
+        helpText: "Interaction run measured by this record.",
+      },
+      harness: {
+        helpText: "Harness implementation that produced this session.",
+      },
+      promptChars: { helpText: "Prompt size in characters." },
+      usageAmount: { helpText: "Amount expressed in usageUnit." },
+      repeatedViewPathsJson: {
+        helpText:
+          "Repeatedly viewed file paths encoded as JSON for diagnostics.",
+      },
+    });
+    const legacyMetricsCtd = V002_CTDS.find(
+      (candidate) => candidate.name === "interaction_run_metrics",
+    );
+    const finalFieldMeta = writtenCtds[1]?.metaDefinition.propertiesConfig;
+    for (const [field, meta] of Object.entries(
+      legacyMetricsCtd?.metaDefinition.propertiesConfig ?? {},
+    )) {
+      if (field === "premiumRequests") continue;
+      expect(finalFieldMeta?.[field]?.helpText, field).toBe(meta.helpText);
+    }
   });
 });
 

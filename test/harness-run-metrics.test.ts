@@ -215,5 +215,23 @@ describe("Copilot run metrics", () => {
       usageUnit: "github.copilot.premium-request",
       usageAmount: 0,
     });
+    expect(
+      summarizeHarnessRunLog(
+        {
+          prompt: "Review",
+          events: [
+            {
+              type: "assistant.usage",
+              data: { model: "custom-model", cost: 0 },
+            },
+          ] as never,
+        },
+        { includeLegacyPremiumRequestCost: false },
+      ),
+    ).toMatchObject({
+      usageUnit: null,
+      usageAmount: null,
+      usageByModel: [],
+    });
   });
 });

@@ -343,10 +343,13 @@
             <li>
               <div>
                 <strong>Migrate both built-in storage providers.</strong>
-                Preserve every old metrics row, its timestamps, and all
-                operational counters. Give it a deterministic legacy session key
-                and mark its old premium-request amount with the matching unit.
-                Re-running preparation must make no further changes.
+                Preserve every old metrics row and all operational counters.
+                Give it a deterministic legacy session key, mark its old
+                premium-request amount with the matching unit, and attribute
+                that amount to an unknown model. SQLite keeps both timestamps;
+                Flotiq keeps creation time while its managed update time
+                advances during backfill. Re-running preparation must make no
+                further changes.
               </div>
             </li>
             <li>
@@ -459,6 +462,9 @@
                 <a href="../../src/storage/adapters/flotiq/store.ts"
                   ><code>src/storage/adapters/flotiq/store.ts</code></a
                 >. Add adapter tests proving the same boundary behavior.
+                Translate supported Flotiq ranges into server filters before
+                pagination so large reports do not repeatedly fetch the full
+                collection.
               </li>
               <li>
                 Change <code>MetricsSessionsResult</code> to expose unit groups
@@ -497,8 +503,10 @@
                 Copilot event type exposes legacy <code>cost</code> and current
                 <code>copilotUsage.totalNanoAiu</code>; do not continue naming
                 <code>cost</code> as premium requests when the current field is
-                present. Current run logs already carry
-                <code>metadata.sessionKind</code>; map that to the stored
+                present. For a bring-your-own-key run, a legacy
+                <code>cost</code> value of zero means usage is unavailable, not
+                a reported zero premium-request amount. Current run logs already
+                carry <code>metadata.sessionKind</code>; map that to the stored
                 <code>sessionType</code>. For older files without it, use a
                 recognized session path when unambiguous and otherwise store
                 <code>unknown</code> rather than dropping the session.
@@ -713,8 +721,11 @@
             </li>
             <li>
               Upgrading old SQLite and Flotiq data preserves record counts,
-              counters, timestamps, and premium-request values while both
-              adapters report the new storage contract.
+              counters, creation times, and premium-request values while both
+              adapters report the new storage contract. SQLite also preserves
+              update times; Flotiq records the backfill as an update. Moving
+              between storage providers may assign new provider-managed
+              timestamps, which is a documented limitation.
             </li>
             <li>
               Existing claim fencing, tenant deletion, and cross-adapter storage

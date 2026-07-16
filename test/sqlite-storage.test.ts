@@ -702,7 +702,7 @@ describe("SqliteStorage review findings", () => {
       session_type: "unknown",
       usage_unit: "github.copilot.premium-request",
       usage_amount: 1,
-      usage_by_model_json: "[]",
+      usage_by_model_json: '[{"model":"unknown","amount":1}]',
     });
     expect(
       verifiedDb

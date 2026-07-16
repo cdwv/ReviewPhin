@@ -225,20 +225,29 @@ export async function collectMetrics(
       result.invalid += 1;
       continue;
     }
+    const interactionRunId = record.metadata?.interactionRunId;
+    if (!interactionRunId) {
+      result.skipped += 1;
+      continue;
+    }
+    const interactionRun =
+      await storage.stores.interactionRuns.get(interactionRunId);
+    if (!interactionRun) {
+      result.skipped += 1;
+      continue;
+    }
     let envelope;
-    let interactionRunId: string | null | undefined;
     try {
-      envelope = summarizeHarnessSession(record);
-      interactionRunId = record.metadata?.interactionRunId;
+      envelope = summarizeHarnessSession(record, {
+        includeLegacyPremiumRequestCost:
+          interactionRun.providerBaseUrl === null &&
+          interactionRun.providerType === null,
+      });
     } catch {
       result.invalid += 1;
       continue;
     }
-    if (!envelope || !interactionRunId) {
-      result.skipped += 1;
-      continue;
-    }
-    if (!(await storage.stores.interactionRuns.get(interactionRunId))) {
+    if (!envelope) {
       result.skipped += 1;
       continue;
     }
@@ -545,7 +554,7 @@ function buildModels(
 ): MetricsModelRow[] {
   const amounts = new Map<string, Map<string, number>>();
   for (const metric of metrics) {
-    for (const model of parseModelUsage(metric.usageByModelJson)) {
+    for (const model of reconcileModelUsage(metric)) {
       const byRun = amounts.get(model.model) ?? new Map<string, number>();
       byRun.set(
         metric.interactionRunId,
@@ -580,7 +589,7 @@ function buildMonthly(
     const month = runById.get(metric.interactionRunId)?.startedAt.slice(0, 7);
     if (!month) continue;
     const values = months.get(month) ?? new Map<string, number>();
-    for (const model of parseModelUsage(metric.usageByModelJson)) {
+    for (const model of reconcileModelUsage(metric)) {
       values.set(model.model, (values.get(model.model) ?? 0) + model.amount);
     }
     months.set(month, values);
@@ -636,6 +645,32 @@ function parseModelUsage(value: string): UsageByModelMetric[] {
   } catch {
     return [];
   }
+}
+
+function reconcileModelUsage(
+  metric: InteractionRunMetricsRecord,
+): UsageByModelMetric[] {
+  const byModel = parseModelUsage(metric.usageByModelJson);
+  if (metric.usageAmount === null) {
+    return byModel;
+  }
+
+  const attributed = sum(byModel.map((entry) => entry.amount));
+  const remainder = metric.usageAmount - attributed;
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(metric.usageAmount));
+  if (remainder <= tolerance) {
+    return byModel;
+  }
+
+  const unknown = byModel.find((entry) => entry.model === "unknown");
+  if (unknown) {
+    return byModel.map((entry) =>
+      entry === unknown
+        ? { ...entry, amount: entry.amount + remainder }
+        : entry,
+    );
+  }
+  return [...byModel, { model: "unknown", amount: remainder }];
 }
 
 function metricsRecordEquals(

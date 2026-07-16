@@ -78,9 +78,9 @@ A custom adapter must report the current storage contract revision, `storage-v00
 
 ### Upgrading to storage-v006
 
-`storage-v006` is a breaking revision for interaction-run metrics. Stop older processes before migrating. Built-in adapters preserve every existing metrics row, its timestamps, and its operational counters. Legacy premium-request values receive a deterministic session identity and the open unit key `github.copilot.premium-request`.
+`storage-v006` is a breaking revision for interaction-run metrics. Stop older processes before migrating. Built-in adapters preserve every existing metrics row and its operational counters. Legacy premium-request values receive a deterministic session identity, the open unit key `github.copilot.premium-request`, and an `unknown` model allocation so model and monthly totals still include that usage.
 
-SQLite rebuilds only the metrics table and copies all existing rows before replacing it. Flotiq first adds the new identity fields as optional, backfills every metrics object, and only then installs the final required shape. Do not mark a custom-provider migration complete until its backfill succeeds.
+SQLite rebuilds only the metrics table and copies all existing rows, including `createdAt` and `updatedAt`, before replacing it. Flotiq first adds the new identity fields as optional, backfills every metrics object, and only then installs the final required shape. The Flotiq update retains each object's `createdAt`, while Flotiq advances its provider-managed `updatedAt` to the backfill time. The migration also retains the existing field help text. Do not mark a custom-provider migration complete until its backfill succeeds.
 
 After upgrading, use [`metrics collect`](../../management/cli-reference/#metrics-collect) to import supported historical session files. Collection does not remove those files. Keep run logs until stored counts have been checked for the deployment.
 
@@ -109,3 +109,5 @@ reviewphin storage migrate \
 ```
 
 `sqlite` and `flotiq` are built-in storage module shorthands. `source-*` is an alias for `from-*`, and `destination-*` is an alias for `to-*`. Full flags are in the [CLI reference](../../management/cli-reference/#storage-migrate). Stop the worker (or run during a quiet window) so no new writes land in the source mid-migration, then switch `STORAGE_PROVIDER_MODULE` to the target before restarting.
+
+Cross-adapter migration preserves the application data used for historical reporting, such as a run's `startedAt`. Provider-managed `createdAt` and `updatedAt` values may be assigned again by the destination adapter, especially when migrating to Flotiq. Treat timestamp equality across adapters as unsupported and do not use those provider-managed values as the historical event time.

@@ -11,6 +11,7 @@ export const COPILOT_PREMIUM_REQUEST_UNIT = "github.copilot.premium-request";
 
 export function summarizeHarnessSession(
   record: HarnessRunLogRecord,
+  options?: SummarizeHarnessMetricsOptions,
 ): HarnessSessionMetricsEnvelope | null {
   if (!record.sessionId) {
     return null;
@@ -19,14 +20,19 @@ export function summarizeHarnessSession(
     harness: COPILOT_HARNESS,
     harnessSessionKey: record.sessionId,
     sessionType: record.metadata.sessionKind?.trim() || "unknown",
-    metrics: summarizeHarnessRunLog(record),
+    metrics: summarizeHarnessRunLog(record, options),
   };
+}
+
+export interface SummarizeHarnessMetricsOptions {
+  readonly includeLegacyPremiumRequestCost?: boolean;
 }
 
 export function summarizeHarnessRunLog(
   record: Pick<HarnessRunLogRecord, "prompt" | "events"> & {
     metadata?: Partial<HarnessRunLogRecord["metadata"]> | undefined;
   },
+  options?: SummarizeHarnessMetricsOptions,
 ): HarnessRunMetricsSummary {
   const assistantUsages = record.events.filter(
     (event) => event.type === "assistant.usage",
@@ -64,6 +70,7 @@ export function summarizeHarnessRunLog(
   const usage = summarizeUsage(
     assistantUsages,
     record.metadata?.requestedModel,
+    options?.includeLegacyPremiumRequestCost ?? true,
   );
   return {
     promptChars: record.prompt.length,
@@ -97,6 +104,7 @@ function summarizeUsage(
     };
   }>,
   fallbackModel: string | null | undefined,
+  includeLegacyPremiumRequestCost: boolean,
 ): Pick<
   HarnessRunMetricsSummary,
   "usageUnit" | "usageAmount" | "usageByModel"
@@ -112,9 +120,9 @@ function summarizeUsage(
       fallbackModel,
     );
   }
-  const hasPremiumRequests = usages.some(
-    (usage) => typeof usage.data?.cost === "number",
-  );
+  const hasPremiumRequests =
+    includeLegacyPremiumRequestCost &&
+    usages.some((usage) => typeof usage.data?.cost === "number");
   if (hasPremiumRequests) {
     return summarizeUsageUnit(
       usages,

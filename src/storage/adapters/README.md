@@ -53,10 +53,14 @@ The app loads the module from `STORAGE_PROVIDER_MODULE` when set, otherwise it u
   harness session key. `sessionType` and `usageUnit` remain open strings so
   custom harnesses do not require a contract revision to introduce values.
   `usageUnit` and `usageAmount` are both present or both absent, and
-  `usageByModelJson` uses the same unit. Migrations preserve old counters and
-  timestamps while mapping `premiumRequests` to
-  `github.copilot.premium-request`. Store filters also support `gte` and `lt`;
-  providers must implement inclusive lower and exclusive upper boundaries.
+  `usageByModelJson` uses the same unit. Migrations preserve old counters,
+  allocate legacy usage to the `unknown` model, and map `premiumRequests` to
+  `github.copilot.premium-request`. SQLite preserves both timestamps; Flotiq
+  preserves `createdAt` while its backfill advances provider-managed
+  `updatedAt`. Cross-adapter migration may assign destination timestamps. Store
+  filters also support `gte` and `lt`; providers must implement inclusive lower
+  and exclusive upper boundaries, preferably in backend filters before
+  pagination.
 - The app validates compatibility in two phases:
   1. `getSupportedStorageContract()` is checked before `prepare()` is called.
   2. `prepare()` must return a `StoragePreparationResult` whose `storageContractRevision` is also checked after `prepare()` returns.

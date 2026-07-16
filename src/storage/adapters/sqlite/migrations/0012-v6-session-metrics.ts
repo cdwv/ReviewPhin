@@ -83,7 +83,9 @@ function migrateInteractionRunMetrics(database: DatabaseSync): void {
         tool_executions, view_tool_calls, glob_tool_calls, input_tokens,
         output_tokens, cache_read_tokens, cache_write_tokens,
         reasoning_tokens, api_duration_ms, 'github.copilot.premium-request',
-        premium_requests, '[]', repeated_view_reads,
+        premium_requests,
+        '[{"model":"unknown","amount":' || premium_requests || '}]',
+        repeated_view_reads,
         repeated_view_paths_json, created_at, updated_at
       FROM interaction_run_metrics;
 

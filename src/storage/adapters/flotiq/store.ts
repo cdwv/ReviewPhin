@@ -158,7 +158,7 @@ export function createFlotiqEntityStore<
     page?: number;
     pageSize?: number;
   }): Promise<TEntity[]> {
-    if (hasRangeFilter(input?.filters)) {
+    if (hasUnsupportedRangeFilter(input?.filters, relationFields)) {
       const records: TEntity[] = [];
       const pageSize = GET_MANY_PAGE_SIZE;
       for (let page = 1; ; page += 1) {
@@ -438,7 +438,7 @@ function translateStoreFilter(
   const operators = getDefinedOperators(filter);
 
   if (operators.includes("gte") || operators.includes("lt")) {
-    return null;
+    return relationField ? null : translateRangeFilter(filter, operators);
   }
 
   if (operators.length !== 1) {
@@ -470,6 +470,59 @@ function translateStoreFilter(
     default:
       return null;
   }
+}
+
+function translateRangeFilter(
+  filter: StoreValueFilter<unknown>,
+  operators: readonly string[],
+): Filter | null {
+  if (operators.some((operator) => operator !== "gte" && operator !== "lt")) {
+    return null;
+  }
+  if (filter.gte !== undefined && filter.lt !== undefined) {
+    const inclusiveUpper = makeExclusiveUpperBoundInclusive(filter.lt);
+    return inclusiveUpper === null
+      ? null
+      : {
+          type: "inRange",
+          filter: toRemoteScalar(filter.gte),
+          filter2: inclusiveUpper,
+        };
+  }
+  if (filter.gte !== undefined) {
+    return {
+      type: "greaterThanOrEqual",
+      filter: toRemoteScalar(filter.gte),
+    };
+  }
+  if (filter.lt !== undefined) {
+    return { type: "lessThan", filter: toRemoteScalar(filter.lt) };
+  }
+  return null;
+}
+
+function makeExclusiveUpperBoundInclusive(
+  value: unknown,
+): string | number | null {
+  if (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value > Number.MIN_SAFE_INTEGER
+  ) {
+    return value - 1;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.valueOf()) || timestamp.toISOString() !== value) {
+    return null;
+  }
+  const inclusiveUpper = new Date(timestamp.valueOf() - 1);
+  return Number.isNaN(inclusiveUpper.valueOf())
+    ? null
+    : inclusiveUpper.toISOString();
 }
 
 function sanitizeWritePayload(
@@ -546,12 +599,16 @@ function getDefinedOperators(filter: StoreValueFilter<unknown>): string[] {
   ].filter((value): value is string => value !== null);
 }
 
-function hasRangeFilter(
+function hasUnsupportedRangeFilter(
   filters: Partial<Record<string, StoreValueFilter<unknown>>> | undefined,
+  relationFields: ReadonlyMap<string, FlotiqRelationField>,
 ): boolean {
-  return Object.values(filters ?? {}).some(
-    (filter) => filter?.gte !== undefined || filter?.lt !== undefined,
-  );
+  return Object.entries(filters ?? {}).some(([field, filter]) => {
+    if (!filter || (filter.gte === undefined && filter.lt === undefined)) {
+      return false;
+    }
+    return translateStoreFilter(filter, relationFields.get(field)) === null;
+  });
 }
 
 function matchesRangeFilters<TEntity extends object>(
@@ -677,6 +734,17 @@ function toRemoteScalarArray(
   throw new TypeError(
     "Flotiq array filters must contain values of one scalar type",
   );
+}
+
+function toRemoteScalar(value: unknown): string | number | boolean {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  throw new TypeError("Flotiq range filters require a scalar value");
 }
 
 function mapFieldName(field: string): string {

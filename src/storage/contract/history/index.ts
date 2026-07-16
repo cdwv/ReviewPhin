@@ -107,7 +107,7 @@ export const STORAGE_CONTRACT_HISTORY = [
     providerNotes: [
       "Adapters store one metrics record per harness session instead of one per interaction run.",
       "The premiumRequests field is replaced by a nullable usageUnit and usageAmount pair plus a unit-matched model breakdown.",
-      "Existing metrics rows retain their counters and timestamps with deterministic legacy session identity.",
+      "Existing metrics rows retain their counters, receive deterministic legacy session identity, and allocate legacy usage to the unknown model; provider-managed update timestamps may advance during migration.",
     ],
   },
 ] as const satisfies readonly StorageContractRevisionMetadata[];
