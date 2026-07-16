@@ -111,13 +111,6 @@ export class HarnessChatterRunner {
 
     return chatterBatchResultSchema.parse(response.parsed);
   }
-
-  public get sessionPaths(): { memory: string[]; reply: string[] } {
-    return {
-      memory: ["copilot", "chatter", "memory"],
-      reply: ["copilot", "chatter", "reply"],
-    };
-  }
 }
 
 interface HarnessChatterRunnerFactoryOptions {

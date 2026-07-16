@@ -313,10 +313,6 @@ describe("ReviewWorker cleanup", () => {
             },
             replies: [],
           })),
-          sessionPaths: {
-            memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"],
-          },
         })),
       } as never,
       reconciler: {

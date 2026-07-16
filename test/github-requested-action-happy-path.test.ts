@@ -92,10 +92,6 @@ describe("GitHub requested-action happy path", () => {
       chatterRunnerFactory: {
         createRunner: vi.fn(() => ({
           run: vi.fn(),
-          sessionPaths: {
-            memory: ["copilot", "chatter", "memory"],
-            reply: ["copilot", "chatter", "reply"],
-          },
         })),
       } as never,
       reconciler,

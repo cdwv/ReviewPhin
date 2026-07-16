@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-
 import type { HarnessRunLogRecord } from "./run-log.js";
 import type {
   HarnessRunMetricsSummary,
@@ -10,17 +8,6 @@ import type {
 export const COPILOT_HARNESS = "github.copilot-sdk";
 export const COPILOT_NANO_AI_UNIT = "github.copilot.nano-ai-unit";
 export const COPILOT_PREMIUM_REQUEST_UNIT = "github.copilot.premium-request";
-
-export async function readHarnessRunMetrics(
-  logPath: string,
-): Promise<HarnessRunMetricsSummary | null> {
-  try {
-    const raw = await readFile(logPath, "utf8");
-    return summarizeHarnessRunLog(JSON.parse(raw) as HarnessRunLogRecord);
-  } catch {
-    return null;
-  }
-}
 
 export function summarizeHarnessSession(
   record: HarnessRunLogRecord,

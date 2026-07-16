@@ -897,10 +897,6 @@ function createWorker(input: {
           },
           replies: [],
         })),
-        sessionPaths: {
-          memory: ["copilot", "chatter", "memory"],
-          reply: ["copilot", "chatter", "reply"],
-        },
       })),
     } as never,
     reconciler: {
