@@ -34,6 +34,7 @@ interface FlotiqEntityStoreOptions<
   readonly toRecord: (object: TObject) => TEntity;
   readonly toRemote: (entity: TEntity) => JsonRecord;
   readonly emptyStringNullFields?: readonly (keyof TEntity & string)[];
+  readonly explicitNullFields?: readonly (keyof TEntity & string)[];
   readonly relationFields?: Partial<
     Record<keyof TEntity & string, FlotiqRelationField>
   >;
@@ -60,7 +61,14 @@ export function createFlotiqEntityStore<
     TFilterField
   >,
 ): EntityStore<TEntity, TFilters, TOrder> {
-  const emptyStringNullFields = new Set(options.emptyStringNullFields ?? []);
+  const nullWriteValues = new Map<string, "" | null>([
+    ...(options.emptyStringNullFields ?? []).map(
+      (field) => [field, ""] as const,
+    ),
+    ...(options.explicitNullFields ?? []).map(
+      (field) => [field, null] as const,
+    ),
+  ]);
   const relationFields = new Map<string, FlotiqRelationField>(
     Object.entries(options.relationFields ?? {}) as Array<
       [string, FlotiqRelationField]
@@ -219,13 +227,13 @@ export function createFlotiqEntityStore<
   function toSanitizedRemote(entity: TEntity): JsonRecord {
     return sanitizeWritePayload(
       options.toRemote(entity),
-      emptyStringNullFields,
+      nullWriteValues,
       relationFields,
     );
   }
 
   function toSanitizedPatchRemote(value: Partial<TEntity>): JsonRecord {
-    return sanitizeWritePayload(value, emptyStringNullFields, relationFields);
+    return sanitizeWritePayload(value, nullWriteValues, relationFields);
   }
 
   async function loadRecordsByIds(ids: readonly string[]): Promise<TEntity[]> {
@@ -527,7 +535,7 @@ function makeExclusiveUpperBoundInclusive(
 
 function sanitizeWritePayload(
   value: JsonRecord,
-  emptyStringNullFields: ReadonlySet<string>,
+  nullWriteValues: ReadonlyMap<string, "" | null>,
   relationFields: ReadonlyMap<string, FlotiqRelationField>,
 ): JsonRecord {
   const entries = Object.entries(value)
@@ -539,7 +547,7 @@ function sanitizeWritePayload(
           sanitizeWriteValue(
             key,
             normalizeRelationWriteValue(key, entryValue, relationFields),
-            emptyStringNullFields,
+            nullWriteValues,
             relationFields,
           ),
         ] as const,
@@ -552,7 +560,7 @@ function sanitizeWritePayload(
 function sanitizeWriteValue(
   key: string,
   value: unknown,
-  emptyStringNullFields: ReadonlySet<string>,
+  nullWriteValues: ReadonlyMap<string, "" | null>,
   relationFields: ReadonlyMap<string, FlotiqRelationField>,
 ): unknown {
   if (key === "createdAt" || key === "updatedAt") {
@@ -560,7 +568,7 @@ function sanitizeWriteValue(
   }
 
   if (value === null) {
-    return emptyStringNullFields.has(key) ? "" : undefined;
+    return nullWriteValues.get(key);
   }
 
   if (value === undefined) {
@@ -570,18 +578,14 @@ function sanitizeWriteValue(
   if (Array.isArray(value)) {
     const sanitizedItems = value
       .map((item) =>
-        sanitizeWriteValue("", item, emptyStringNullFields, relationFields),
+        sanitizeWriteValue("", item, nullWriteValues, relationFields),
       )
       .filter((item) => item !== undefined);
     return sanitizedItems;
   }
 
   if (typeof value === "object") {
-    return sanitizeWritePayload(
-      value as JsonRecord,
-      emptyStringNullFields,
-      new Map(),
-    );
+    return sanitizeWritePayload(value as JsonRecord, nullWriteValues, new Map());
   }
 
   return value;

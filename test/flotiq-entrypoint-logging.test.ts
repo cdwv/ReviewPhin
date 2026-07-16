@@ -9,6 +9,7 @@ const {
   ensureV006CtdsExistMock,
   listMigrationsMock,
   createMigrationMock,
+  patchMetricsMock,
 } = vi.hoisted(() => ({
   ensureV002CtdsExistMock: vi.fn(),
   ensureV003CtdsExistMock: vi.fn(),
@@ -17,6 +18,7 @@ const {
   ensureV006CtdsExistMock: vi.fn(),
   listMigrationsMock: vi.fn(),
   createMigrationMock: vi.fn(),
+  patchMetricsMock: vi.fn(),
 }));
 
 vi.mock("@flotiq/flotiq-api-sdk", () => ({
@@ -26,6 +28,9 @@ vi.mock("@flotiq/flotiq-api-sdk", () => ({
         migrations: {
           list: listMigrationsMock,
           create: createMigrationMock,
+        },
+        interaction_run_metrics: {
+          patch: patchMetricsMock,
         },
       },
     };
@@ -63,6 +68,7 @@ describe("Flotiq storage provider logging", () => {
     ensureV006CtdsExistMock.mockReset();
     listMigrationsMock.mockReset();
     createMigrationMock.mockReset();
+    patchMetricsMock.mockReset();
   });
 
   it("uses the injected logger while preparing migrations", async () => {
@@ -121,6 +127,23 @@ describe("Flotiq storage provider logging", () => {
 
     await expect(provider.prepare()).resolves.toMatchObject({
       appliedMigrationIds: ["v002", "v003", "v004", "v005", "v006"],
+    });
+  });
+
+  it("explicitly clears nullable metric usage amounts", async () => {
+    patchMetricsMock.mockResolvedValue(undefined);
+    const provider = createStorageProvider({
+      env: { FLOTIQ_API_KEY: "test-api-key" },
+    });
+
+    await provider.createStores().interactionRunMetrics.patch({
+      id: "metrics-1",
+      value: { usageUnit: null, usageAmount: null },
+    });
+
+    expect(patchMetricsMock).toHaveBeenCalledWith("metrics-1", {
+      usageUnit: "",
+      usageAmount: null,
     });
   });
 });

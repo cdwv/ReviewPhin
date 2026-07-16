@@ -378,6 +378,7 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
     toRecord: mapInteractionRunMetricsRecord,
     toRemote: mapIdentityEntity,
     emptyStringNullFields: ["triggerKind", "promptMode", "usageUnit"],
+    explicitNullFields: ["usageAmount"],
     relationFields: interactionRunMetricsRelationFields,
   });
   const reviewFindings = createFlotiqEntityStore<
