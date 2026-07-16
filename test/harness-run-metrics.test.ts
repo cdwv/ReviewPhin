@@ -182,6 +182,21 @@ describe("Copilot run metrics", () => {
     ]);
   });
 
+  it("uses the requested model when usage events omit their model", () => {
+    const metrics = summarizeHarnessRunLog({
+      metadata: { requestedModel: "gpt-5.4" },
+      prompt: "Review",
+      events: [
+        {
+          type: "assistant.usage",
+          data: { cost: 1 },
+        },
+      ] as never,
+    });
+
+    expect(metrics.usageByModel).toEqual([{ model: "gpt-5.4", amount: 1 }]);
+  });
+
   it("distinguishes missing billable usage from reported zero", () => {
     expect(
       summarizeHarnessRunLog({ prompt: "Review", events: [] }).usageAmount,

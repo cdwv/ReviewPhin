@@ -24,8 +24,9 @@ export function summarizeHarnessSession(
 }
 
 export function summarizeHarnessRunLog(
-  record: Pick<HarnessRunLogRecord, "prompt" | "events"> &
-    Partial<Pick<HarnessRunLogRecord, "metadata">>,
+  record: Pick<HarnessRunLogRecord, "prompt" | "events"> & {
+    metadata?: Partial<HarnessRunLogRecord["metadata"]> | undefined;
+  },
 ): HarnessRunMetricsSummary {
   const assistantUsages = record.events.filter(
     (event) => event.type === "assistant.usage",
@@ -60,7 +61,10 @@ export function summarizeHarnessRunLog(
     .slice(0, 10)
     .map(([path, count]) => ({ path, count }));
 
-  const usage = summarizeUsage(assistantUsages);
+  const usage = summarizeUsage(
+    assistantUsages,
+    record.metadata?.requestedModel,
+  );
   return {
     promptChars: record.prompt.length,
     assistantTurns:
@@ -92,6 +96,7 @@ function summarizeUsage(
       copilotUsage?: { totalNanoAiu: number } | undefined;
     };
   }>,
+  fallbackModel: string | null | undefined,
 ): Pick<
   HarnessRunMetricsSummary,
   "usageUnit" | "usageAmount" | "usageByModel"
@@ -104,6 +109,7 @@ function summarizeUsage(
       usages,
       COPILOT_NANO_AI_UNIT,
       (usage) => usage.data?.copilotUsage?.totalNanoAiu,
+      fallbackModel,
     );
   }
   const hasPremiumRequests = usages.some(
@@ -114,6 +120,7 @@ function summarizeUsage(
       usages,
       COPILOT_PREMIUM_REQUEST_UNIT,
       (usage) => usage.data?.cost,
+      fallbackModel,
     );
   }
   return { usageUnit: null, usageAmount: null, usageByModel: [] };
@@ -125,6 +132,7 @@ function summarizeUsageUnit<
   usages: TUsage[],
   usageUnit: string,
   getAmount: (usage: TUsage) => number | undefined,
+  fallbackModel: string | null | undefined,
 ): Pick<
   HarnessRunMetricsSummary,
   "usageUnit" | "usageAmount" | "usageByModel"
@@ -138,7 +146,10 @@ function summarizeUsageUnit<
       continue;
     }
     usageAmount += amount;
-    const model = normalizeModel(usage.data?.model) ?? "unknown";
+    const model =
+      normalizeModel(usage.data?.model) ??
+      normalizeModel(fallbackModel) ??
+      "unknown";
     totals.set(model, (totals.get(model) ?? 0) + amount);
   }
 

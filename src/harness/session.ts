@@ -167,7 +167,11 @@ export class HarnessSessionRuntime {
             harness: COPILOT_HARNESS,
             harnessSessionKey,
             sessionType: spec.logging.sessionKind?.trim() || "unknown",
-            metrics: summarizeHarnessRunLog({ prompt: spec.prompt, events }),
+            metrics: summarizeHarnessRunLog({
+              prompt: spec.prompt,
+              events,
+              metadata: { requestedModel: spec.model ?? null },
+            }),
           });
         } catch (metricsError) {
           this.logger.warn(

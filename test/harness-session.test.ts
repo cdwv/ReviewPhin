@@ -26,6 +26,7 @@ vi.mock("@github/copilot-sdk", () => ({
 }));
 
 import { CopilotClient } from "@github/copilot-sdk";
+import type { SessionEvent } from "@github/copilot-sdk";
 import { HarnessSessionRuntime } from "../src/harness/session.js";
 import type {
   HarnessModelConfig,
@@ -230,7 +231,16 @@ describe("HarnessSessionRuntime", () => {
 
   it("emits best-effort in-memory metrics on success and session failure", async () => {
     const onSuccess = vi.fn(async () => {});
-    createSessionMock.mockResolvedValueOnce(createSession());
+    createSessionMock.mockResolvedValueOnce(
+      createSession({
+        events: [
+          {
+            type: "assistant.usage",
+            data: { cost: 1 },
+          } as SessionEvent,
+        ],
+      }),
+    );
     startMock.mockResolvedValue(undefined);
     stopMock.mockResolvedValue(undefined);
     const runtime = new HarnessSessionRuntime({
@@ -243,6 +253,7 @@ describe("HarnessSessionRuntime", () => {
     await runtime.run({
       prompt: "Review this.",
       modelConfig: createModelConfig(),
+      model: "gpt-5.4",
       tools: [],
       subagents: [],
       logging: {
@@ -258,6 +269,9 @@ describe("HarnessSessionRuntime", () => {
         harness: "github.copilot-sdk",
         harnessSessionKey: "session_1",
         sessionType: "review",
+        metrics: expect.objectContaining({
+          usageByModel: [{ model: "gpt-5.4", amount: 1 }],
+        }),
       }),
     );
 
@@ -750,7 +764,9 @@ describe("HarnessSessionRuntime", () => {
 function createSession(input?: {
   currentModelId?: string;
   responseContent?: string;
+  events?: SessionEvent[];
 }) {
+  let eventHandler: ((event: SessionEvent) => void) | undefined;
   return {
     sessionId: "session_1",
     rpc: {
@@ -760,21 +776,29 @@ function createSession(input?: {
         })),
       },
     },
-    on: vi.fn(() => () => {}),
-    sendAndWait: vi.fn(async () => ({
-      data: {
-        content:
-          input?.responseContent ??
-          JSON.stringify({
-            overview: {
-              summary: "Looks good",
-              overallSeverity: "low",
-            },
-            findings: [],
-            priorDispositions: [],
-          }),
-      },
-    })),
+    on: vi.fn((handler: (event: SessionEvent) => void) => {
+      eventHandler = handler;
+      return () => {};
+    }),
+    sendAndWait: vi.fn(async () => {
+      for (const event of input?.events ?? []) {
+        eventHandler?.(event);
+      }
+      return {
+        data: {
+          content:
+            input?.responseContent ??
+            JSON.stringify({
+              overview: {
+                summary: "Looks good",
+                overallSeverity: "low",
+              },
+              findings: [],
+              priorDispositions: [],
+            }),
+        },
+      };
+    }),
     disconnect: vi.fn(async () => {}),
   };
 }
