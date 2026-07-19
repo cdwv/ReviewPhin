@@ -102,6 +102,7 @@ describe("StorageBackedJobRunner (sqlite)", () => {
         },
       ),
       reconcileOrphanLifecycle: vi.fn(async () => {}),
+      reconcileTriggerLifecycle: vi.fn(async () => {}),
     };
   }
 
@@ -163,7 +164,8 @@ describe("StorageBackedJobRunner (sqlite)", () => {
       }),
     );
     const processed: InteractionJobRecord[] = [];
-    const runner = createRunner(completingWorker(processed));
+    const worker = completingWorker(processed);
+    const runner = createRunner(worker);
 
     await runner.runOnce();
 
@@ -171,6 +173,9 @@ describe("StorageBackedJobRunner (sqlite)", () => {
     const job = await harness.storage.stores.interactionJobs.get("job-old");
     expect(job?.status).toBe("expired");
     expect(job?.lastError).toContain("maximum age");
+    expect(worker.reconcileTriggerLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "job-old", status: "expired" }),
+    );
   });
 
   it("reconciles orphaned runs even when no new job can be claimed", async () => {

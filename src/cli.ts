@@ -51,7 +51,7 @@ import {
   initializePlatformRegistry,
 } from "./platforms/platform-registry.js";
 import type { LocalReviewSelector } from "./platforms/IPlatform.js";
-import { syncPlatformTriggerLifecycle } from "./platforms/trigger-lifecycle.js";
+import { syncPlatformTriggerLifecycleForJob } from "./platforms/trigger-lifecycle.js";
 import { TenantRegistry } from "./tenants/tenant-registry.js";
 import {
   buildReviewWatchSummary,
@@ -1921,17 +1921,16 @@ async function runMergeRequestReviewCommand(
       ...interactionJob,
       tenantId: resolvedTenant.tenant.id,
     });
-    if (submitted.created) {
+    if (submitted.created || submitted.job.commentId !== null) {
       const lifecycle = platform.createTriggerLifecycle({
         resolvedTenant,
         job: submitted.job,
         logger,
       });
-      await syncPlatformTriggerLifecycle({
+      await syncPlatformTriggerLifecycleForJob({
         logger,
         job: submitted.job,
-        phase: "queued",
-        update: () => lifecycle.queued(),
+        lifecycle,
       });
     }
 

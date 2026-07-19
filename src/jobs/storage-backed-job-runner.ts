@@ -132,12 +132,28 @@ export class StorageBackedJobRunner {
       maintenanceNowMs - this.maxQueuedJobAgeMs,
     ).toISOString();
 
-    await this.storage.stores.interactionJobs.expireQueued({
-      now: maintenanceNow,
-      queuedBefore,
-      reason: `Queued job expired after exceeding the maximum age of ${this.maxQueuedJobAgeMs}ms.`,
-      limit: this.expireBatchLimit,
-    });
+    const expiredCount = await this.storage.stores.interactionJobs.expireQueued(
+      {
+        now: maintenanceNow,
+        queuedBefore,
+        reason: `Queued job expired after exceeding the maximum age of ${this.maxQueuedJobAgeMs}ms.`,
+        limit: this.expireBatchLimit,
+      },
+    );
+    if (expiredCount > 0) {
+      const expiredJobs = await this.storage.stores.interactionJobs.list({
+        filters: {
+          status: { eq: "expired" },
+          finishedAt: { eq: maintenanceNow },
+        },
+        order: [{ field: "id", direction: "asc" }],
+        page: 1,
+        pageSize: this.expireBatchLimit,
+      });
+      for (const expiredJob of expiredJobs) {
+        await this.worker.reconcileTriggerLifecycle(expiredJob);
+      }
+    }
 
     await this.reconcileOrphans();
 

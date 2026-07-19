@@ -9,6 +9,80 @@ import type {
 import { createClaimContext } from "./helpers/claim.js";
 
 describe("ReviewWorker provider trigger lifecycle", () => {
+  it("reapplies the terminal reaction when a duplicate comment webhook finds a completed job", async () => {
+    const lifecycle: PlatformTriggerLifecycle = {
+      queued: vi.fn(async () => {}),
+      inProgress: vi.fn(async () => {}),
+      completed: vi.fn(async () => {}),
+      retry: vi.fn(async () => {}),
+      failed: vi.fn(async () => {}),
+    };
+    const job = {
+      id: "job-duplicate",
+      tenantId: "tenant-github",
+      dedupeKey: "dedupe-comment",
+      codeReviewId: 42,
+      commentId: 555,
+      triggerJson: '{"kind":"github-comment"}',
+      headSha: "abc123",
+      status: "completed" as const,
+      payloadJson: "{}",
+      retryCount: 0,
+      lastError: null,
+      enqueuedAt: "2026-06-11T00:00:00.000Z",
+      availableAt: "2026-06-11T00:00:00.000Z",
+      startedAt: "2026-06-11T00:00:01.000Z",
+      finishedAt: "2026-06-11T00:01:00.000Z",
+      claimToken: null,
+      claimedBy: null,
+      claimExpiresAt: null,
+      latestInteractionRunId: "run-1",
+    };
+    const platform = {
+      createInteractionJob: vi.fn(async () => ({
+        dedupeKey: job.dedupeKey,
+        codeReviewId: job.codeReviewId,
+        commentId: job.commentId,
+        triggerJson: job.triggerJson,
+        headSha: job.headSha,
+        payloadJson: job.payloadJson,
+      })),
+      createTriggerLifecycle: vi.fn(() => lifecycle),
+    } as unknown as IPlatform;
+    const worker = new ReviewWorker({
+      storage: {
+        createOrGetInteractionJob: vi.fn(async () => ({
+          job,
+          created: false,
+        })),
+      } as never,
+      tenantRegistry: {} as never,
+      reviewProviderFactory: {} as never,
+      chatterRunnerFactory: {} as never,
+      reconciler: {} as never,
+      logger: createLogger("silent"),
+      runLogDir: "tmp/test-trigger-lifecycle",
+      maxJobRetries: 3,
+      retryBackoffMs: 1000,
+      platformResolver: () => platform,
+    });
+
+    await worker.createInteractionJobFromWebhook(
+      {},
+      {
+        tenant: { id: job.tenantId, platform: "github" } as never,
+        connection: { id: "connection-github" } as never,
+      },
+      {
+        kind: "direct-mention",
+        comment: { kind: "code-review-comment", commentId: job.commentId },
+      },
+    );
+
+    expect(lifecycle.completed).toHaveBeenCalledTimes(1);
+    expect(lifecycle.queued).not.toHaveBeenCalled();
+  });
+
   it("processes commentless jobs and keeps lifecycle failures out of job retry logic", async () => {
     const lifecycle: PlatformTriggerLifecycle = {
       queued: vi.fn(async () => {}),

@@ -37,3 +37,47 @@ export async function syncPlatformTriggerLifecycle(input: {
     );
   }
 }
+
+export async function syncPlatformTriggerLifecycleForJob(input: {
+  logger: Logger;
+  job: InteractionJobRecord;
+  lifecycle: PlatformTriggerLifecycle;
+}): Promise<void> {
+  const error =
+    input.job.lastError ?? "ReviewPhin could not complete the requested work.";
+  switch (input.job.status) {
+    case "queued":
+      await syncPlatformTriggerLifecycle({
+        logger: input.logger,
+        job: input.job,
+        phase: "queued",
+        update: () => input.lifecycle.queued(),
+      });
+      return;
+    case "in_progress":
+      await syncPlatformTriggerLifecycle({
+        logger: input.logger,
+        job: input.job,
+        phase: "in_progress",
+        update: () => input.lifecycle.inProgress(),
+      });
+      return;
+    case "completed":
+      await syncPlatformTriggerLifecycle({
+        logger: input.logger,
+        job: input.job,
+        phase: "completed",
+        update: () => input.lifecycle.completed(),
+      });
+      return;
+    case "failed":
+    case "cancelled":
+    case "expired":
+      await syncPlatformTriggerLifecycle({
+        logger: input.logger,
+        job: input.job,
+        phase: input.job.status,
+        update: () => input.lifecycle.failed(error),
+      });
+  }
+}

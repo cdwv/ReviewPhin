@@ -87,10 +87,6 @@ export class GitLabTriggerLifecycle implements PlatformTriggerLifecycle {
 
   private async ensureReaction(reactionName: string): Promise<void> {
     const comment = await this.resolveComment();
-    if (comment.kind === "discussion-comment") {
-      return;
-    }
-
     const tenantConfig = getGitLabTenantConfig(this.resolvedTenant.tenant);
     const existing = await this.client.listTriggerNoteAwardEmojis(
       tenantConfig.projectId,

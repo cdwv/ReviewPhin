@@ -846,6 +846,40 @@ export class GitHubClient {
     );
   }
 
+  public async listPullRequestReviewCommentReactions(
+    repositoryFullName: string,
+    commentId: number,
+  ): Promise<GitHubReaction[]> {
+    return this.paginate(
+      repositoryFullName,
+      "GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions",
+      { comment_id: commentId },
+      reactionSchema,
+      `reactions for GitHub pull request review comment ${commentId}`,
+    );
+  }
+
+  public async createPullRequestReviewCommentReaction(input: {
+    repositoryFullName: string;
+    commentId: number;
+    content: GitHubReaction["content"];
+  }): Promise<GitHubReaction> {
+    const { owner, repository } = splitRepositoryFullName(
+      input.repositoryFullName,
+    );
+    return this.requestParsed(
+      "POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions",
+      {
+        owner,
+        repo: repository,
+        comment_id: input.commentId,
+        content: input.content,
+      },
+      reactionSchema,
+      `reaction for GitHub pull request review comment ${input.commentId}`,
+    );
+  }
+
   public async downloadRepositoryArchive(
     repositoryFullName: string,
     ref: string,
