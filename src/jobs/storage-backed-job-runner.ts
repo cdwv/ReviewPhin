@@ -51,6 +51,7 @@ export class StorageBackedJobRunner {
   private stopping = false;
   private timer: NodeJS.Timeout | null = null;
   private inFlight: Promise<void> = Promise.resolve();
+  private triggerLifecycleReconciliation: Promise<void> = Promise.resolve();
 
   public constructor(options: StorageBackedJobRunnerOptions) {
     this.storage = options.storage;
@@ -90,6 +91,7 @@ export class StorageBackedJobRunner {
       this.timer = null;
     }
     await this.inFlight.catch(() => undefined);
+    await this.triggerLifecycleReconciliation.catch(() => undefined);
     this.started = false;
   }
 
@@ -150,9 +152,7 @@ export class StorageBackedJobRunner {
         page: 1,
         pageSize: this.expireBatchLimit,
       });
-      for (const expiredJob of expiredJobs) {
-        await this.worker.reconcileTriggerLifecycle(expiredJob);
-      }
+      this.queueTriggerLifecycleReconciliation(expiredJobs);
     }
 
     await this.reconcileOrphans();
@@ -236,6 +236,24 @@ export class StorageBackedJobRunner {
     for (const run of runs) {
       await this.worker.reconcileOrphanLifecycle(run);
     }
+  }
+
+  private queueTriggerLifecycleReconciliation(
+    jobs: readonly InteractionJobRecord[],
+  ): void {
+    this.triggerLifecycleReconciliation =
+      this.triggerLifecycleReconciliation
+        .then(async () => {
+          for (const job of jobs) {
+            await this.worker.reconcileTriggerLifecycle(job);
+          }
+        })
+        .catch((error: unknown) => {
+          this.logger.warn(
+            { err: error },
+            "failed to reconcile expired job trigger lifecycle",
+          );
+        });
   }
 
   private async processClaimed(

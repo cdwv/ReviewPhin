@@ -307,6 +307,37 @@ describe("StorageBackedJobRunner heartbeat and lifecycle", () => {
     expect(processClaimedJob).toHaveBeenCalledTimes(1);
   });
 
+  it("does not delay job claiming while expired trigger feedback is pending", async () => {
+    const expiredJob = { id: "job-expired", status: "expired" };
+    const claimNext = vi.fn(async () => null);
+    const store = fakeStore({
+      expireQueued: vi.fn(async () => 1),
+      list: vi.fn(async () => [expiredJob]),
+      claimNext,
+    });
+    const worker = {
+      processClaimedJob: vi.fn(),
+      reconcileOrphanLifecycle: vi.fn(),
+      reconcileTriggerLifecycle: vi.fn(
+        () => new Promise<void>(() => {}),
+      ),
+    };
+    const runner = new StorageBackedJobRunner({
+      storage: { stores: { interactionJobs: store } } as never,
+      worker: worker as never,
+      logger,
+      pollIntervalMs: 2_000,
+      maxQueuedJobAgeMs: 21_600_000,
+      leaseMs: 120_000,
+      maxJobRetries: 3,
+    });
+
+    await runner.runOnce();
+
+    expect(worker.reconcileTriggerLifecycle).toHaveBeenCalledWith(expiredJob);
+    expect(claimNext).toHaveBeenCalledTimes(1);
+  });
+
   it("aborts a hung renewal at the local lease deadline without overlapping renewals", async () => {
     vi.useFakeTimers();
     try {
