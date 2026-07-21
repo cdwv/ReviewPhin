@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 12 — Document GitLab token permissions</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="medium">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 12</p>
+          <p class="rail-value">Explain GitLab permissions</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">No change</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a
+            ><a href="#goal">What do we want?</a
+            ><a href="#fix">How do we fix it?</a><a href="#steps">Work steps</a
+            ><a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 12 · GitLab setup docs</p>
+          <h1>State the exact GitLab role and scopes ReviewPhin needs.</h1>
+          <p class="lede">
+            The main setup guide says the token needs enough access, while the
+            README is more explicit about Developer membership. Operators should
+            not have to infer the minimum role or discover missing resolve
+            permission during a review.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>Medium</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>GitLab operators</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main area</span><strong>Platform setup docs</strong>
+            </div>
+            <div class="meta-item">
+              <span>Stored data</span><strong>No change</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> GitLab setup names Developer as
+            the minimum project role, explains why ReviewPhin needs it, gives
+            accurate scope requirements for each supported token kind, and
+            provides a short verification checklist before tenant registration.
+          </div>
+        </header>
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>“Enough access” is not actionable</h3>
+              <p>
+                An operator needs a role name they can select in GitLab, not a
+                summary of operations the token should somehow permit.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The role rule is split across pages</h3>
+              <p>
+                The README names Developer, but the canonical platform
+                connection page does not state that minimum directly.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Token kind affects scopes</h3>
+              <p>
+                Personal, project, and group access tokens do not always receive
+                Git-over-HTTPS access from identical scope selections.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Failure can arrive after setup</h3>
+              <p>
+                Connection registration identifies the token owner, but it does
+                not prove that every tenant project grants discussion resolve
+                and repository clone access.
+              </p>
+            </article>
+          </div>
+        </section>
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="GitLab token setup checks">
+            <div>
+              <strong>1. Choose token kind</strong
+              ><span
+                >Personal, project, or group token with a dedicated bot
+                identity.</span
+              >
+            </div>
+            <div>
+              <strong>2. Grant role and scopes</strong
+              ><span
+                >Developer or higher plus API and repository access required for
+                that token kind.</span
+              >
+            </div>
+            <div>
+              <strong>3. Verify project access</strong
+              ><span
+                >Confirm identity, read access, clone access, and discussion
+                resolve capability.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>Developer is the documented minimum project role.</li>
+            <li>
+              The reason is concrete: ReviewPhin resolves its review
+              discussions.
+            </li>
+            <li>
+              The API scope and repository-read requirements are stated per
+              token kind.
+            </li>
+            <li>
+              The docs recommend least privilege without promising unsupported
+              narrower access.
+            </li>
+            <li>README and canonical docs use the same terminology.</li>
+          </ul>
+        </section>
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Token setup concern</th>
+                <th>Planned documentation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Project role</td>
+                <td>
+                  Require Developer or higher for the token identity on every
+                  registered project.
+                </td>
+              </tr>
+              <tr>
+                <td>API operations</td>
+                <td>
+                  Require <code>api</code> access for merge-request reads,
+                  comments, updates, and resolving discussions.
+                </td>
+              </tr>
+              <tr>
+                <td>Repository clone</td>
+                <td>
+                  Explain the Git-over-HTTPS read scope required by personal,
+                  project, and group tokens instead of assuming one scope
+                  behaves identically for all types.
+                </td>
+              </tr>
+              <tr>
+                <td>Reusable connections</td>
+                <td>
+                  Remind operators that a group or personal token must have the
+                  minimum role on every tenant project attached to that
+                  connection.
+                </td>
+              </tr>
+              <tr>
+                <td>Troubleshooting</td>
+                <td>
+                  Map common permission errors to missing membership, API scope,
+                  repository scope, expired token, or instance policy.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            <strong>Fact-check token types separately:</strong> do not preserve
+            the current “API is the only scope” wording unless it is verified
+            for Git-over-HTTPS cloning with every supported GitLab token kind
+            and supported GitLab version.
+          </div>
+        </section>
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Inventory real operations.</strong> List every GitLab
+                API mutation and repository operation ReviewPhin performs during
+                setup, review, follow-up, retry, and cleanup.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Verify GitLab requirements.</strong> Check current
+                official role and scope documentation for personal, project, and
+                group access tokens, including self-managed differences.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Rewrite the canonical setup section.</strong> Lead with
+                the minimum role and a token-kind table, then explain why each
+                permission is needed.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Align shorter guides.</strong> Update README and
+                deployment walkthroughs to link to the canonical requirements
+                rather than duplicating incomplete wording.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add troubleshooting checks.</strong> Give operators a
+                short, non-destructive checklist for identity, project
+                membership, API access, and clone access.
+              </div>
+            </li>
+          </ol>
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                The canonical target is
+                <a
+                  href="../../docs/src/content/docs/management/platform-connections.md"
+                  >Platform connections</a
+                >; align the GitLab setup section in
+                <a href="../../README.md">README</a>.
+              </li>
+              <li>
+                Review actual operations in
+                <a href="../../src/platforms/gitlab/client.ts"
+                  >the GitLab client</a
+                >, especially repository cloning, discussion creation and
+                update, and discussion resolution.
+              </li>
+              <li>
+                <a
+                  href="../../src/platforms/gitlab/review-publication-adapter.ts"
+                  >The publication adapter</a
+                >
+                confirms that resolving bot-owned discussions is part of normal
+                behavior, which is why Developer is the product minimum.
+              </li>
+              <li>
+                Use official GitLab access-token scope, role and permissions,
+                Discussions API, and token-type pages as primary sources. Record
+                GitLab version caveats when behavior differs.
+              </li>
+              <li>
+                This plan is documentation-only. Runtime permission preflight
+                would be a separate implementation plan if desired later.
+              </li>
+            </ul>
+          </details>
+        </section>
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              The canonical page says “Developer or higher” without vague
+              substitutes.
+            </li>
+            <li>
+              The page explains that resolving review discussions requires that
+              role.
+            </li>
+            <li>
+              Personal, project, and group token instructions identify the
+              correct API and repository-read scopes.
+            </li>
+            <li>
+              A reusable connection warning covers access to every attached
+              tenant project.
+            </li>
+            <li>README and platform setup no longer contradict each other.</li>
+            <li>
+              Every permission claim links to current official GitLab
+              documentation and matches the operations in code.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> GitLab operation inventory,
+            official-source fact pass, repository-wide permission wording
+            search, docs links, <code>pnpm docs:build</code>,
+            <code>pnpm lint</code>, and <code>pnpm build</code>.
+          </p>
+        </section>
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="11.copilot-token-documentation.html">← Copilot token docs</a
+          ><a href="index.html">All plans →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 11 — Standardize Copilot token documentation</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="medium">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 11</p>
+          <p class="rail-value">One clear Copilot token</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">No change</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a
+            ><a href="#goal">What do we want?</a
+            ><a href="#fix">How do we fix it?</a><a href="#steps">Work steps</a
+            ><a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 11 · authentication docs</p>
+          <h1>Use one recommended Copilot token name everywhere.</h1>
+          <p class="lede">
+            Setup examples alternate between <code>GH_TOKEN</code> and
+            <code>COPILOT_GITHUB_TOKEN</code>. Readers cannot tell whether both
+            are required or whether the names serve different purposes. The docs
+            should recommend one, explain the aliases, and show their real
+            precedence.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>Medium</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Operators</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main area</span><strong>Setup documentation</strong>
+            </div>
+            <div class="meta-item">
+              <span>Stored data</span><strong>No change</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> every ReviewPhin setup starts with
+            <code>COPILOT_GITHUB_TOKEN</code>, states that only one supported
+            variable is needed, explains which variable wins when several exist,
+            and separates model authentication from GitHub App platform access.
+          </div>
+        </header>
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Examples choose different names</h3>
+              <p>
+                Local, Docker, Kubernetes, model-profile, and environment pages
+                do not lead with the same variable.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Aliases look like separate secrets</h3>
+              <p>
+                Showing three assignments without an explicit rule can make an
+                operator set all three to the same or different tokens.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Precedence is missing</h3>
+              <p>
+                If several variables are inherited from a shell or CI system,
+                the operator cannot predict which credentials Copilot uses.
+              </p>
+            </article>
+            <article class="card">
+              <h3>GitHub has two unrelated roles</h3>
+              <p>
+                A token used to call Copilot is easy to confuse with the
+                generated GitHub App that reads and writes pull-request data.
+              </p>
+            </article>
+          </div>
+        </section>
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="Copilot token selection precedence">
+            <div>
+              <strong>1. COPILOT_GITHUB_TOKEN</strong
+              ><span
+                >Recommended for ReviewPhin and checked first by Copilot
+                CLI.</span
+              >
+            </div>
+            <div>
+              <strong>2. GH_TOKEN</strong
+              ><span
+                >Supported compatibility alias used only when the first variable
+                is unset.</span
+              >
+            </div>
+            <div>
+              <strong>3. GITHUB_TOKEN</strong
+              ><span
+                >Final fallback, often already present in CI environments.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>Operators are told to set exactly one variable.</li>
+            <li>
+              <code>COPILOT_GITHUB_TOKEN</code> is the canonical ReviewPhin
+              example.
+            </li>
+            <li>
+              The precedence order is stated once on the canonical page and
+              summarized elsewhere.
+            </li>
+            <li>
+              The token owner’s Copilot entitlement and policy requirements
+              remain documented.
+            </li>
+            <li>
+              GitHub App credentials are clearly described as separate platform
+              authentication.
+            </li>
+          </ul>
+        </section>
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Documentation problem</th>
+                <th>Planned change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Setup snippets use different variables.</td>
+                <td>
+                  Change runtime examples to
+                  <code>COPILOT_GITHUB_TOKEN</code> unless a page specifically
+                  teaches aliases.
+                </td>
+              </tr>
+              <tr>
+                <td>The environment reference lists names without behavior.</td>
+                <td>
+                  State that one variable is enough and document the exact
+                  precedence order.
+                </td>
+              </tr>
+              <tr>
+                <td>Generic “GitHub API token” wording is ambiguous.</td>
+                <td>
+                  Call it a Copilot authentication token and explain that
+                  per-profile tokens select model credentials, not platform
+                  credentials.
+                </td>
+              </tr>
+              <tr>
+                <td>GitHub platform setup is nearby.</td>
+                <td>
+                  Add a short comparison between Copilot authentication, GitHub
+                  App credentials, and the temporary App setup link.
+                </td>
+              </tr>
+              <tr>
+                <td>Examples can drift again.</td>
+                <td>
+                  Add a documentation check that flags non-canonical runtime
+                  snippets while allowing deliberate CI and release examples.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            <strong>Do not rename runtime support:</strong> all three variables
+            remain accepted by Copilot CLI. This is a documentation
+            standardization, not a breaking configuration change.
+          </div>
+        </section>
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Write the canonical explanation.</strong> Explain
+                purpose, recommendation, aliases, precedence, entitlement, and
+                GitHub App separation on the model authentication page.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Normalize setup examples.</strong> Update local, Docker,
+                Kubernetes, README, and environment examples to lead with the
+                canonical name.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Fix misleading wording.</strong> Replace “GitHub API
+                token” where the value actually authenticates Copilot or a
+                custom model profile.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Preserve intentional exceptions.</strong> Keep release
+                workflow documentation about CI-provided
+                <code>GITHUB_TOKEN</code> because it describes a different use.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Check every path.</strong> Build docs, search for all
+                three names, and verify that each remaining occurrence either
+                follows the recommendation or explains an exception.
+              </div>
+            </li>
+          </ol>
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                The canonical explanation belongs in
+                <a
+                  href="../../docs/src/content/docs/management/model-profiles.md"
+                  >Model profiles</a
+                >
+                and the compact reference belongs in
+                <a
+                  href="../../docs/src/content/docs/deployment/environment-variables.md"
+                  >Environment variables</a
+                >.
+              </li>
+              <li>
+                Normalize examples in <a href="../../README.md">README</a>,
+                <a href="../../docs/src/content/docs/deployment/run-locally.md"
+                  >Run locally</a
+                >,
+                <a href="../../docs/src/content/docs/deployment/docker.md"
+                  >Docker</a
+                >, and
+                <a href="../../docs/src/content/docs/deployment/kubernetes.md"
+                  >Kubernetes</a
+                >.
+              </li>
+              <li>
+                Cross-link
+                <a
+                  href="../../docs/src/content/docs/management/platform-connections.md"
+                  >Platform connections</a
+                >
+                for the GitHub App distinction.
+              </li>
+              <li>
+                The current Copilot CLI reports precedence as
+                <code>COPILOT_GITHUB_TOKEN</code>, then <code>GH_TOKEN</code>,
+                then <code>GITHUB_TOKEN</code>. Verify this again with the
+                bundled CLI help before publishing.
+              </li>
+              <li>
+                <a href="../../src/harness/session.ts"
+                  >Harness session construction</a
+                >
+                passes a profile token directly when one is configured; the
+                fallback Copilot path inherits the CLI environment.
+              </li>
+            </ul>
+          </details>
+        </section>
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              A new operator sees one token assignment, not three competing
+              assignments, in every setup walkthrough.
+            </li>
+            <li>
+              The docs say explicitly that only one supported token variable is
+              required.
+            </li>
+            <li>
+              The documented precedence matches the bundled Copilot CLI help.
+            </li>
+            <li>
+              Readers can explain the difference between Copilot authentication
+              and the GitHub App connection.
+            </li>
+            <li>
+              CI release documentation keeps its intentional use of the
+              workflow-provided <code>GITHUB_TOKEN</code>.
+            </li>
+            <li>
+              A repository-wide search finds no unexplained conflicting example.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> repository-wide token-name search,
+            docs link checks, <code>copilot help environment</code>,
+            <code>pnpm docs:build</code>, <code>pnpm lint</code>, and
+            <code>pnpm build</code>.
+          </p>
+        </section>
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="10.model-availability-discovery.html">← Available models</a
+          ><a href="12.gitlab-token-permissions-documentation.html"
+            >Next: GitLab token permissions →</a
+          >
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

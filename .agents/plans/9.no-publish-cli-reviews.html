@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 9 — Review without remote writes</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="medium">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 09</p>
+          <p class="rail-value">Review without publishing</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">Reuse run results</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a
+            ><a href="#goal">What do we want?</a
+            ><a href="#fix">How do we fix it?</a><a href="#steps">Work steps</a
+            ><a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 09 · local CLI</p>
+          <h1>Review a remote change without writing back to its platform.</h1>
+          <p class="lede">
+            The CLI can submit a review of an existing merge request or pull
+            request, but a successful run follows the normal publication path.
+            Operators need a mode that reads remote context, runs the model, and
+            shows the result locally while guaranteeing zero remote mutations.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>Medium</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Reviewers and operators</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main area</span><strong>Review CLI and worker</strong>
+            </div>
+            <div class="meta-item">
+              <span>Stored data</span><strong>Local job and run records</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong>
+            <code>mr review --no-publish</code> reads an existing remote review,
+            performs the full analysis, saves local diagnostics, and prints a
+            readable report without creating or updating anything on GitLab or
+            GitHub.
+          </div>
+        </header>
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Local submission still publishes</h3>
+              <p>
+                The command originates locally, but the worker reconciles
+                findings into remote discussions and summaries.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The result is hidden behind job status</h3>
+              <p>
+                The watch view reports progress and counts. It does not present
+                the completed review as a useful local report.
+              </p>
+            </article>
+            <article class="card">
+              <h3>“Dry run” would be misleading</h3>
+              <p>
+                The operation still reads the remote platform, calls a model
+                that may incur cost, and writes local database and run-log
+                records.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Pretty output needs Markdown semantics</h3>
+              <p>
+                Finding bodies contain headings, lists, code, and suggestions.
+                Printing raw markers produces a poor terminal experience.
+              </p>
+            </article>
+          </div>
+        </section>
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="No-publish review flow">
+            <div>
+              <strong>1. Read remotely</strong
+              ><span
+                >Load the selected merge request or pull request and hydrate its
+                workspace.</span
+              >
+            </div>
+            <div>
+              <strong>2. Analyze locally</strong
+              ><span
+                >Run the normal reviewer and save its checked result and
+                diagnostics.</span
+              >
+            </div>
+            <div>
+              <strong>3. Render locally</strong
+              ><span
+                >Skip all publication and print the report in the requested CLI
+                format.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>The default command keeps its current publication behavior.</li>
+            <li>
+              <code>--no-publish</code> means zero remote writes, not zero
+              remote reads.
+            </li>
+            <li>Pretty output renders Markdown for a terminal.</li>
+            <li>
+              Plain output is valid Markdown suitable for redirection to a file.
+            </li>
+            <li>JSON output returns stable structured review data.</li>
+          </ul>
+        </section>
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Area</th>
+                <th>Planned behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Command option</td>
+                <td>
+                  Add <code>--no-publish</code>. Do not call it a dry run
+                  because model and local persistence work still happen.
+                </td>
+              </tr>
+              <tr>
+                <td>Queued execution</td>
+                <td>
+                  Store the publication choice with the submitted local request
+                  so another runner process sees it.
+                </td>
+              </tr>
+              <tr>
+                <td>Remote safety</td>
+                <td>
+                  Skip discussion reconciliation, summaries, replies, reactions,
+                  check updates, and any project-memory write.
+                </td>
+              </tr>
+              <tr>
+                <td>Local persistence</td>
+                <td>
+                  Complete the interaction run with the checked review result
+                  and retain normal logs and metrics.
+                </td>
+              </tr>
+              <tr>
+                <td>CLI report</td>
+                <td>
+                  Build one canonical Markdown report, then render it for pretty
+                  mode or emit it directly for plain mode.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            <strong>Zero remote writes is a contract:</strong> tests must fail
+            if any GitLab or GitHub mutation endpoint is called, even for
+            progress feedback, cleanup, memory, or an error path.
+          </div>
+        </section>
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Persist the publication choice.</strong> Extend the
+                local review request with a backward-compatible publication mode
+                and expose <code>--no-publish</code> in help.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Fence remote mutations.</strong> Decide publication once
+                in the worker and bypass every mutation path while retaining
+                remote reads and workspace hydration.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Keep local results useful.</strong> Save the completed
+                result and make the watcher load it after terminal job
+                completion.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Create one report formatter.</strong> Convert overview,
+                readiness, findings, anchors, explanations, and suggestions into
+                canonical Markdown.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Render by output mode.</strong> Use terminal styling and
+                width-aware wrapping for pretty mode, raw Markdown for plain
+                mode, and structured data for JSON mode. Respect color settings
+                and non-terminal output.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Prove the safety boundary.</strong> Run successful,
+                failed, retried, GitLab, and GitHub no-publish jobs against
+                clients that reject every mutation call.
+              </div>
+            </li>
+          </ol>
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                Extend
+                <a href="../../src/review/local-trigger.ts"
+                  ><code>localReviewTriggerSchema</code></a
+                >
+                with a backward-compatible publication mode. Existing stored
+                triggers must continue to mean normal publication.
+              </li>
+              <li>
+                The CLI submission and wait path lives in
+                <a href="../../src/cli.ts"
+                  ><code>runMergeRequestReviewCommand</code></a
+                >
+                and
+                <a href="../../src/cli/review-watch.ts"
+                  ><code>watchReviewJob</code></a
+                >.
+              </li>
+              <li>
+                The main mutation boundary is
+                <a href="../../src/jobs/review-worker.ts">the review worker</a>,
+                especially discussion reconciliation and chatter publication.
+                Local triggers already use
+                <a href="../../src/platforms/trigger-lifecycle.ts"
+                  ><code>NoOpPlatformTriggerLifecycle</code></a
+                >.
+              </li>
+              <li>
+                Parse the stored result with
+                <a href="../../src/review/types.ts"
+                  ><code>reviewResultSchema</code></a
+                >. Add a dedicated report module rather than coupling terminal
+                rendering to platform summary comments.
+              </li>
+              <li>
+                Add any Markdown parser/renderer as a direct production
+                dependency. Do not rely on documentation-tool transitive
+                dependencies.
+              </li>
+              <li>
+                No new storage column is expected because the trigger JSON and
+                existing interaction result are sufficient.
+              </li>
+            </ul>
+          </details>
+        </section>
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              The same remote change can be reviewed with and without
+              publication, and the default remains unchanged.
+            </li>
+            <li>
+              A no-publish run makes remote read calls but no remote mutation
+              calls in success, retry, or failure paths.
+            </li>
+            <li>
+              Pretty output has readable headings, lists, code blocks, severity,
+              and file anchors at narrow and wide terminal widths.
+            </li>
+            <li>
+              Plain output can be redirected to a file and remains valid
+              Markdown without ANSI escapes.
+            </li>
+            <li>
+              JSON output contains the checked review result and job identity
+              without mixed progress text.
+            </li>
+            <li>
+              The run result, metrics, and diagnostic artifacts remain available
+              locally.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> merge-request review CLI tests,
+            review-watch tests, worker orchestration and lifecycle tests, GitLab
+            and GitHub runtime tests, CLI output snapshot tests,
+            <code>pnpm test</code>, <code>pnpm typecheck</code>, and
+            <code>pnpm build</code>.
+          </p>
+        </section>
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="8.tenant-connection-reassignment.html"
+            >← Tenant reassignment</a
+          ><a href="10.model-availability-discovery.html"
+            >Next: available models →</a
+          >
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

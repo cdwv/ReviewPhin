@@ -15,7 +15,7 @@
             ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
           >
           <p class="rail-label">Checked</p>
-          <p class="rail-value">19 July 2026</p>
+          <p class="rail-value">21 July 2026</p>
           <p class="rail-label">Database format</p>
           <p class="rail-value">storage-v006</p>
           <nav class="toc" aria-label="On this page">
@@ -29,14 +29,14 @@
       <main id="content">
         <header class="hero">
           <p class="eyebrow">Work we want to do</p>
-          <h1>Five plans, in the order that matters most.</h1>
+          <h1>Eleven plans, in the order that matters most.</h1>
           <p class="lede">
             Start at the top. The first plans fix things that can confuse users
-            or produce bad review results. The last plans improve the code and
-            make ReviewPhin cheaper to run.
+            or produce bad review results. Later plans improve operator tools,
+            documentation, and code health.
           </p>
           <div class="meta-grid">
-            <div class="meta-item"><span>Plans</span><strong>5</strong></div>
+            <div class="meta-item"><span>Plans</span><strong>11</strong></div>
             <div class="meta-item">
               <span>Most urgent</span><strong>Safe publication</strong>
             </div>
@@ -117,6 +117,78 @@
                 needed, and make GitHub and GitLab code easier to follow.
               </p>
             </article>
+            <article class="card">
+              <span class="badge contract">7 · model reliability</span>
+              <h3>
+                <a href="7.structured-output-recovery.html"
+                  >Recover malformed model output</a
+                >
+              </h3>
+              <p>
+                Invalid structured output should receive a small number of
+                focused correction attempts before the whole review fails.
+              </p>
+            </article>
+            <article class="card">
+              <span class="badge no-schema">8 · tenant safety</span>
+              <h3>
+                <a href="8.tenant-connection-reassignment.html"
+                  >Make tenant reassignment explicit</a
+                >
+              </h3>
+              <p>
+                Registering one project through another connection must ask for
+                a decision and always report the assignment actually saved.
+              </p>
+            </article>
+            <article class="card">
+              <span class="badge no-schema">9 · local review</span>
+              <h3>
+                <a href="9.no-publish-cli-reviews.html"
+                  >Review without writing remotely</a
+                >
+              </h3>
+              <p>
+                Analyze an existing merge request or pull request, make no
+                remote changes, and render the result clearly in the CLI.
+              </p>
+            </article>
+            <article class="card">
+              <span class="badge no-schema">10 · model setup</span>
+              <h3>
+                <a href="10.model-availability-discovery.html"
+                  >Show available models</a
+                >
+              </h3>
+              <p>
+                List models for the current credentials, check profiles, and
+                fail early when a trustworthy catalog proves a model missing.
+              </p>
+            </article>
+            <article class="card">
+              <span class="badge no-schema">11 · authentication docs</span>
+              <h3>
+                <a href="11.copilot-token-documentation.html"
+                  >Use one clear Copilot token name</a
+                >
+              </h3>
+              <p>
+                Recommend one environment variable, document alias precedence,
+                and separate model authentication from GitHub App access.
+              </p>
+            </article>
+            <article class="card">
+              <span class="badge no-schema">12 · GitLab docs</span>
+              <h3>
+                <a href="12.gitlab-token-permissions-documentation.html"
+                  >Explain GitLab token permissions</a
+                >
+              </h3>
+              <p>
+                State the Developer minimum, accurate scopes by token kind, and
+                the checks operators should complete before registration.
+              </p>
+            </article>
           </div>
         </section>
 
@@ -164,6 +236,39 @@
                   No database change. This work changes API loading and code
                   types.
                 </td>
+              </tr>
+              <tr>
+                <td>7. Model output recovery</td>
+                <td>
+                  No new field. Record correction attempts in existing run logs
+                  and save only the validated result.
+                </td>
+              </tr>
+              <tr>
+                <td>8. Tenant reassignment</td>
+                <td>
+                  No new field. Update the existing connection assignment only
+                  after an explicit choice.
+                </td>
+              </tr>
+              <tr>
+                <td>9. No-publish review</td>
+                <td>
+                  No new field expected. Store the mode in the existing request
+                  JSON and use the current run result.
+                </td>
+              </tr>
+              <tr>
+                <td>10. Available models</td>
+                <td>No database change. Query the live model catalog.</td>
+              </tr>
+              <tr>
+                <td>11. Copilot token docs</td>
+                <td>No database change. Documentation only.</td>
+              </tr>
+              <tr>
+                <td>12. GitLab permission docs</td>
+                <td>No database change. Documentation only.</td>
               </tr>
             </tbody>
           </table>

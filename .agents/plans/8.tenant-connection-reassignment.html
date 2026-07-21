@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 8 — Make tenant reassignment explicit</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="high">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 08</p>
+          <p class="rail-value">Reassign tenants safely</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">Reuse assignment field</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a
+            ><a href="#goal">What do we want?</a
+            ><a href="#fix">How do we fix it?</a><a href="#steps">Work steps</a
+            ><a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 08 · tenant management</p>
+          <h1>Never change or retain a tenant connection silently.</h1>
+          <p class="lede">
+            A remote project has one stable tenant key. Adding that project with
+            another connection currently keeps the old assignment but can report
+            the new connection. ReviewPhin must detect this conflict and require
+            an explicit choice.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>High</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Operators</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main area</span><strong>Tenant CLI</strong>
+            </div>
+            <div class="meta-item">
+              <span>Stored data</span
+              ><strong>Existing assignment changes</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> repeated registration on the same
+            connection stays idempotent. A different connection triggers a
+            prompt or an explicit flag, and command output always shows the
+            assignment actually stored.
+          </div>
+        </header>
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>The key cannot distinguish connections</h3>
+              <p>
+                The key represents the remote project, so the same project
+                produces the same key even when another credential connection is
+                supplied.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The existing assignment silently wins</h3>
+              <p>
+                The save path deliberately preserves the first connection. An
+                operator asking to use a second connection is not told that the
+                request was ignored.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The success output can be false</h3>
+              <p>
+                The command can print the newly supplied connection name even
+                though the stored tenant still points to the old connection.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Automation has no safe choice</h3>
+              <p>
+                A script cannot currently say “move this tenant” or “treat a
+                different connection as an error.”
+              </p>
+            </article>
+          </div>
+        </section>
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="Tenant connection conflict flow">
+            <div>
+              <strong>1. Find the tenant</strong
+              ><span
+                >Compute the project key and load any existing assignment.</span
+              >
+            </div>
+            <div>
+              <strong>2. Compare connections</strong
+              ><span
+                >Continue normally when they match; otherwise require a
+                decision.</span
+              >
+            </div>
+            <div>
+              <strong>3. Apply one choice</strong
+              ><span>Reassign completely or make no change at all.</span>
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>One remote project remains one tenant.</li>
+            <li>Interactive use asks before reassignment.</li>
+            <li>Automation can explicitly accept or reject reassignment.</li>
+            <li>Rejecting the conflict performs no partial update.</li>
+            <li>Every output mode reports the stored connection.</li>
+          </ul>
+        </section>
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Situation</th>
+                <th>Planned behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>No tenant exists.</td>
+                <td>Create it with the requested connection.</td>
+              </tr>
+              <tr>
+                <td>The tenant already uses that connection.</td>
+                <td>
+                  Perform the existing idempotent update without prompting.
+                </td>
+              </tr>
+              <tr>
+                <td>A different connection is supplied interactively.</td>
+                <td>
+                  Show old and new connection names and ask whether to reassign.
+                </td>
+              </tr>
+              <tr>
+                <td><code>--reassign-connection</code> is supplied.</td>
+                <td>
+                  Move the existing tenant to the requested ready connection
+                  without prompting.
+                </td>
+              </tr>
+              <tr>
+                <td><code>--no-reassign-connection</code> is supplied.</td>
+                <td>
+                  Make no change, report the conflict, and return a non-success
+                  exit code.
+                </td>
+              </tr>
+              <tr>
+                <td>No decision flag is supplied without a terminal.</td>
+                <td>
+                  Make no change and explain which explicit flag is required.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            <strong>Atomic choice:</strong> declining or rejecting reassignment
+            must preserve the connection, tenant configuration, profile
+            assignment, timestamps, and history exactly as they were.
+          </div>
+        </section>
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Detect conflicts before saving.</strong> Resolve both
+                connection records and compare stable IDs before any tenant
+                field is updated.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add explicit CLI choices.</strong> Reject contradictory
+                flags, prompt only in pretty interactive mode, and provide a
+                useful non-interactive error.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add a real reassignment operation.</strong> Validate
+                platform and readiness, then update the assignment in one
+                storage operation while preserving the tenant identity and
+                history.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Make output truthful.</strong> Resolve the connection
+                name from the saved tenant instead of copying the input value
+                into the result.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Document the rule.</strong> Explain
+                one-tenant-per-project behavior, interactive prompts, and both
+                automation flags.
+              </div>
+            </li>
+          </ol>
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                The conflict begins in
+                <a href="../../src/cli.ts">the tenant add command</a>, where the
+                result currently copies the requested connection name.
+              </li>
+              <li>
+                <a href="../../src/storage/storage-helpers.ts"
+                  ><code>StorageHelpers.upsertTenant</code></a
+                >
+                intentionally preserves an existing connection. Keep ordinary
+                upsert semantics and add a clearly named reassignment path
+                rather than changing every caller implicitly.
+              </li>
+              <li>
+                GitLab and GitHub keys come from
+                <a href="../../src/platforms/gitlab/platform.ts"
+                  >GitLab platform key generation</a
+                >
+                and
+                <a href="../../src/platforms/github/platform.ts"
+                  >GitHub platform key generation</a
+                >. Do not add connection identity to those keys because webhook
+                lookup identifies the remote project.
+              </li>
+              <li>
+                Extend
+                <a href="../../test/platform-connections.test.ts"
+                  >platform connection tests</a
+                >, <a href="../../test/tenant-cli.test.ts">tenant CLI tests</a>,
+                CLI help, and JSON/plain output tests.
+              </li>
+              <li>
+                No storage schema migration is expected; the current tenant
+                assignment field is sufficient.
+              </li>
+            </ul>
+          </details>
+        </section>
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              Adding a new tenant and repeating it on the same connection remain
+              idempotent.
+            </li>
+            <li>
+              An interactive conflict names both connections and defaults to no
+              reassignment.
+            </li>
+            <li>
+              Both explicit flags work in non-interactive pretty, plain, and
+              JSON modes.
+            </li>
+            <li>Rejecting the conflict changes no tenant field.</li>
+            <li>
+              Reassignment preserves tenant ID, review history, and model
+              profile unless another option explicitly changes the profile.
+            </li>
+            <li>
+              The displayed connection always matches a fresh read from storage.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> tenant CLI tests, platform
+            connection tests, webhook tenant-resolution tests, CLI help and
+            output tests, SQLite and Flotiq adapter tests,
+            <code>pnpm test</code>, <code>pnpm typecheck</code>, and
+            <code>pnpm build</code>.
+          </p>
+        </section>
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="7.structured-output-recovery.html">← Model output recovery</a
+          ><a href="9.no-publish-cli-reviews.html"
+            >Next: review without publishing →</a
+          >
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

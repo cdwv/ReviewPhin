@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 7 — Recover malformed model output</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="high">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 07</p>
+          <p class="rail-value">Recover model output</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">No new fields</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a>
+            <a href="#goal">What do we want?</a>
+            <a href="#fix">How do we fix it?</a>
+            <a href="#steps">Work steps</a>
+            <a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 07 · model reliability</p>
+          <h1>Ask the model to correct an invalid review before failing.</h1>
+          <p class="lede">
+            A model can return text that resembles the requested review but is
+            not valid structured data. ReviewPhin currently fails that attempt
+            and may repeat the whole job. It should make a small number of
+            focused correction attempts first.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>High</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Review requesters</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main area</span><strong>Model sessions</strong>
+            </div>
+            <div class="meta-item">
+              <span>Stored data</span><strong>Attempts in run logs</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> when a model returns malformed or
+            schema-invalid review data, ReviewPhin asks it to return a corrected
+            object, validates the correction, records each attempt, and fails
+            clearly only after the correction limit is exhausted.
+          </div>
+        </header>
+
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Useful content can be rejected</h3>
+              <p>
+                One missing escape or required field makes the entire response
+                unusable even when most of the review is present.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The retry is too broad</h3>
+              <p>
+                A normal job retry reloads context and asks for a new review.
+                That costs more and can produce different findings instead of
+                repairing the response already produced.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The error lacks repair context</h3>
+              <p>
+                Operators see that no object matched the expected shape, but
+                cannot easily tell how many corrections were attempted or why
+                the last one still failed.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Blind text cleanup is unsafe</h3>
+              <p>
+                Replacing quotes or punctuation in arbitrary model text can
+                silently alter code examples and finding content. Validation,
+                not guesswork, must decide whether a response is usable.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="Structured output correction flow">
+            <div>
+              <strong>1. Validate</strong
+              ><span
+                >Parse the first response and check the full review shape.</span
+              >
+            </div>
+            <div>
+              <strong>2. Correct</strong
+              ><span
+                >Give the model the failure details and request only a corrected
+                object.</span
+              >
+            </div>
+            <div>
+              <strong>3. Accept or fail</strong
+              ><span
+                >Use the first valid correction or stop after the fixed
+                limit.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>Correction attempts happen inside the review attempt.</li>
+            <li>Every candidate passes the same parser and schema.</li>
+            <li>No heuristic quote replacement is used as a success path.</li>
+            <li>The correction limit is small, deterministic, and tested.</li>
+            <li>Logs distinguish the original response from corrections.</li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Problem</th>
+                <th>Planned change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>The first response is malformed.</td>
+                <td>
+                  Keep the session open and ask for a corrected object using the
+                  parser failure.
+                </td>
+              </tr>
+              <tr>
+                <td>The object parses but has the wrong fields.</td>
+                <td>
+                  Summarize the validation failures without exposing secrets or
+                  excessive prompt content.
+                </td>
+              </tr>
+              <tr>
+                <td>A correction is still invalid.</td>
+                <td>
+                  Repeat only up to the configured internal limit, then return
+                  one clear terminal error.
+                </td>
+              </tr>
+              <tr>
+                <td>A later publication retry starts.</td>
+                <td>
+                  Reuse the already validated saved result; do not enter
+                  correction again.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            <strong>Boundary with Plan 2:</strong> this plan ends when a valid
+            review result exists. Plan 2 owns retries after that result has been
+            saved and publication has begun.
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Define correction behavior.</strong> Set the attempt
+                limit, the eligible parse failures, the correction prompt, and
+                the final error format.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Keep the model session available.</strong> Allow another
+                message after an invalid response without rebuilding the entire
+                review context.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Validate every answer identically.</strong> Send
+                original and corrected candidates through the same extraction
+                and schema checks.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Record each attempt safely.</strong> Add attempt
+                numbers, failure reasons, duration, and model usage to the
+                existing run artifacts and metrics without logging secrets.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Cover all exit paths.</strong> Test
+                valid-first-response, repaired JSON, repaired schema, exhausted
+                attempts, timeout, and a later publication retry.
+              </div>
+            </li>
+          </ol>
+
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                Start with
+                <a href="../../src/harness/session.ts"
+                  ><code>HarnessSessionRuntime.run</code></a
+                >
+                and
+                <a href="../../src/harness/response-format.ts"
+                  ><code>parseHarnessStructuredResponse</code></a
+                >.
+              </li>
+              <li>
+                The review consumer is
+                <a href="../../src/review/harness-review-provider.ts"
+                  ><code>HarnessReviewProvider.review</code></a
+                >. Chatter and memory sessions use the same harness contract and
+                need an explicit decision about whether correction applies to
+                them.
+              </li>
+              <li>
+                Keep
+                <a href="../../src/jobs/review-worker.ts"
+                  >whole-job retry handling</a
+                >
+                as the outer recovery boundary. A failed correction may still be
+                retried there.
+              </li>
+              <li>
+                Add focused cases to
+                <a href="../../test/harness-session.test.ts"
+                  >harness session tests</a
+                >
+                and
+                <a href="../../test/harness-review-provider.test.ts"
+                  >review provider tests</a
+                >.
+              </li>
+              <li>
+                This work should not change the storage contract. Use existing
+                per-session logs and the existing completed result field.
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              A response with one JSON escaping error is corrected without
+              restarting the review job.
+            </li>
+            <li>
+              A schema-invalid response receives concise, useful validation
+              guidance.
+            </li>
+            <li>A valid first response causes no correction call.</li>
+            <li>
+              Exhausted correction attempts produce one stable error and follow
+              normal job retry rules.
+            </li>
+            <li>
+              No test accepts content because of blind quote or punctuation
+              replacement.
+            </li>
+            <li>
+              A saved valid result is reused during publication recovery without
+              another model call.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> harness session tests, review
+            provider tests, worker retry tests, run-log and metrics tests,
+            <code>pnpm test</code>, <code>pnpm typecheck</code>, and
+            <code>pnpm build</code>.
+          </p>
+        </section>
+
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="6.provider-runtime-and-hydration.html"
+            >← Load platform data</a
+          ><a href="8.tenant-connection-reassignment.html"
+            >Next: tenant reassignment →</a
+          >
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

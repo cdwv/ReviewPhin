@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 10 — Show available models</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="medium">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 10</p>
+          <p class="rail-value">Discover available models</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">No change</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a
+            ><a href="#goal">What do we want?</a
+            ><a href="#fix">How do we fix it?</a><a href="#steps">Work steps</a
+            ><a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 10 · model configuration</p>
+          <h1>Show which models the current credentials can actually use.</h1>
+          <p class="lede">
+            A model profile accepts any non-empty model name. The first proof
+            that a Copilot account cannot use that model may arrive during a
+            paid review attempt. Operators need discovery and preflight tools
+            that reflect the credentials in use.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>Medium</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Operators</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main area</span><strong>Model profile CLI</strong>
+            </div>
+            <div class="meta-item">
+              <span>Stored data</span><strong>No change</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> an operator can list the models
+            available to the active Copilot identity, inspect useful
+            capabilities, check a saved profile, and receive an actionable error
+            before an unavailable model consumes a full review attempt.
+          </div>
+        </header>
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Saved does not mean usable</h3>
+              <p>
+                The CLI checks that a name exists as text, not that the account
+                or provider recognizes it.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Availability belongs to credentials</h3>
+              <p>
+                Two accounts can receive different model catalogs. A static list
+                in documentation would become wrong for some operators.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Provider discovery is uneven</h3>
+              <p>
+                Native Copilot exposes a catalog, while custom providers do not
+                all implement the same model-list endpoint or metadata.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Errors arrive too late</h3>
+              <p>
+                A review can spend time hydrating the repository before session
+                creation finally reports that the model is unavailable.
+              </p>
+            </article>
+          </div>
+        </section>
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="Model discovery and preflight flow">
+            <div>
+              <strong>1. Select credentials</strong
+              ><span
+                >Use the fallback Copilot identity or a named saved
+                profile.</span
+              >
+            </div>
+            <div>
+              <strong>2. Discover or check</strong
+              ><span
+                >Ask the provider when supported and show capabilities it
+                reports.</span
+              >
+            </div>
+            <div>
+              <strong>3. Configure safely</strong
+              ><span
+                >Choose an available model or receive a clear
+                unsupported-discovery message.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>
+              The catalog is live and credential-specific, not hard-coded.
+            </li>
+            <li>
+              Native Copilot model listing works in pretty, plain, and JSON
+              output.
+            </li>
+            <li>A saved profile can be checked without starting a review.</li>
+            <li>Saving a profile remains possible without network access.</li>
+            <li>
+              Providers without discovery say so honestly and preserve the
+              provider’s runtime error.
+            </li>
+          </ul>
+        </section>
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Need</th>
+                <th>Planned change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>See native Copilot models.</td>
+                <td>
+                  Add <code>model-profile available-models</code> using the
+                  current Copilot authentication environment.
+                </td>
+              </tr>
+              <tr>
+                <td>Inspect capabilities.</td>
+                <td>
+                  Show model ID, display name, supported reasoning effort,
+                  vision support, and other stable advertised fields.
+                </td>
+              </tr>
+              <tr>
+                <td>Check a profile.</td>
+                <td>
+                  Add an optional profile name to test its review and
+                  text-generation models against the selected provider when
+                  discovery is supported.
+                </td>
+              </tr>
+              <tr>
+                <td>Run with a missing model.</td>
+                <td>
+                  Fail before expensive hydration when a trustworthy catalog
+                  proves the selected model unavailable, and point to the
+                  discovery command.
+                </td>
+              </tr>
+              <tr>
+                <td>Use a provider without discovery.</td>
+                <td>
+                  Report that availability cannot be checked; do not pretend the
+                  configured name is valid or invalid.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            <strong>Do not make saving depend on a live provider:</strong>
+            profiles may be prepared offline, migrated between environments, or
+            configured before credentials are attached. Discovery is a preflight
+            capability, not a universal storage rule.
+          </div>
+        </section>
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Define the command contract.</strong> Set selection
+                rules, output fields, secret handling, exit codes, and the
+                response for unsupported discovery.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Expose the Copilot catalog.</strong> Start the existing
+                client with the same authentication and CLI settings as reviews,
+                list models, then stop it cleanly.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add profile checks.</strong> Resolve the profile exactly
+                as a review would and validate both configured roles when the
+                provider has a trustworthy catalog.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Preflight review startup.</strong> Check availability
+                before repository hydration where possible, while avoiding
+                duplicate catalog calls and rate-limit pressure.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Document limitations.</strong> Explain that catalogs
+                vary by account and time, and that custom-provider discovery may
+                be unavailable.
+              </div>
+            </li>
+          </ol>
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                The installed SDK exposes
+                <code>CopilotClient.listModels()</code>; current production use
+                is visible in
+                <a href="../../src/harness/session.ts"
+                  >harness session image capability checks</a
+                >.
+              </li>
+              <li>
+                Add the command alongside existing
+                <a href="../../src/cli.ts">model-profile CLI commands</a> and
+                reuse the safe output layer in
+                <a href="../../src/cli/output.ts"><code>CliOutput</code></a
+                >.
+              </li>
+              <li>
+                Profile resolution and provider construction live in
+                <a href="../../src/review/model-profiles.ts"
+                  >model profile resolution</a
+                >. Keep stored secrets masked in all output and errors.
+              </li>
+              <li>
+                Use a small service shared by the CLI and review preflight
+                rather than creating separate catalog logic in both paths.
+              </li>
+              <li>
+                Extend <a href="../../test/cli-help.test.ts">CLI help tests</a>,
+                <a href="../../test/cli-output.test.ts">CLI output tests</a>,
+                harness client tests, and model profile tests.
+              </li>
+              <li>
+                Track the original request in
+                <a href="https://github.com/cdwv/ReviewPhin/issues/28"
+                  >GitHub issue 28</a
+                >.
+              </li>
+            </ul>
+          </details>
+        </section>
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              The command lists only models returned for the current Copilot
+              credentials.
+            </li>
+            <li>
+              Pretty output is readable, plain output has no ANSI escapes, and
+              JSON output is stable and machine-readable.
+            </li>
+            <li>
+              Review and text-generation models are checked independently.
+            </li>
+            <li>
+              An unavailable native Copilot model fails before workspace
+              hydration and suggests the discovery command.
+            </li>
+            <li>
+              An offline profile save still succeeds, and unsupported
+              custom-provider discovery is not reported as model absence.
+            </li>
+            <li>
+              No authentication token appears in normal output, JSON, logs, or
+              errors.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> model profile tests, harness client
+            tests, CLI help and output tests, review startup tests,
+            secret-redaction tests, <code>pnpm test</code>,
+            <code>pnpm typecheck</code>, and <code>pnpm build</code>.
+          </p>
+        </section>
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="9.no-publish-cli-reviews.html">← Review without publishing</a
+          ><a href="11.copilot-token-documentation.html"
+            >Next: Copilot token docs →</a
+          >
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>
