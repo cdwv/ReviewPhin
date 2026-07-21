@@ -338,6 +338,49 @@ describe("StorageBackedJobRunner heartbeat and lifecycle", () => {
     expect(claimNext).toHaveBeenCalledTimes(1);
   });
 
+  it("bounds shutdown while expired trigger feedback is pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const expiredJob = { id: "job-expired", status: "expired" };
+      const store = fakeStore({
+        expireQueued: vi.fn(async () => 1),
+        list: vi.fn(async () => [expiredJob]),
+      });
+      const worker = {
+        processClaimedJob: vi.fn(),
+        reconcileOrphanLifecycle: vi.fn(),
+        reconcileTriggerLifecycle: vi.fn(
+          () => new Promise<void>(() => {}),
+        ),
+      };
+      const runner = new StorageBackedJobRunner({
+        storage: { stores: { interactionJobs: store } } as never,
+        worker: worker as never,
+        logger,
+        pollIntervalMs: 2_000,
+        maxQueuedJobAgeMs: 21_600_000,
+        leaseMs: 120_000,
+        maxJobRetries: 3,
+        triggerLifecycleShutdownGraceMs: 50,
+      });
+
+      await runner.runOnce();
+      const stopPromise = runner.stop();
+      await vi.advanceTimersByTimeAsync(49);
+      let stopped = false;
+      void stopPromise.then(() => {
+        stopped = true;
+      });
+      expect(stopped).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await stopPromise;
+      expect(stopped).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("aborts a hung renewal at the local lease deadline without overlapping renewals", async () => {
     vi.useFakeTimers();
     try {

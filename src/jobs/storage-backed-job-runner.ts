@@ -20,10 +20,12 @@ export interface StorageBackedJobRunnerOptions {
   workerId?: string | undefined;
   expireBatchLimit?: number | undefined;
   orphanReconcileLimit?: number | undefined;
+  triggerLifecycleShutdownGraceMs?: number | undefined;
 }
 
 const DEFAULT_EXPIRE_BATCH_LIMIT = 100;
 const DEFAULT_ORPHAN_RECONCILE_LIMIT = 100;
+const DEFAULT_TRIGGER_LIFECYCLE_SHUTDOWN_GRACE_MS = 5_000;
 
 /**
  * Polls the claim-aware interaction-job store and drives the {@link ReviewWorker}
@@ -44,6 +46,7 @@ export class StorageBackedJobRunner {
   private readonly maxJobRetries: number;
   private readonly expireBatchLimit: number;
   private readonly orphanReconcileLimit: number;
+  private readonly triggerLifecycleShutdownGraceMs: number;
 
   public readonly workerId: string;
 
@@ -52,6 +55,7 @@ export class StorageBackedJobRunner {
   private timer: NodeJS.Timeout | null = null;
   private inFlight: Promise<void> = Promise.resolve();
   private triggerLifecycleReconciliation: Promise<void> = Promise.resolve();
+  private triggerLifecycleReconciliationGeneration = 0;
 
   public constructor(options: StorageBackedJobRunnerOptions) {
     this.storage = options.storage;
@@ -66,6 +70,9 @@ export class StorageBackedJobRunner {
       options.expireBatchLimit ?? DEFAULT_EXPIRE_BATCH_LIMIT;
     this.orphanReconcileLimit =
       options.orphanReconcileLimit ?? DEFAULT_ORPHAN_RECONCILE_LIMIT;
+    this.triggerLifecycleShutdownGraceMs =
+      options.triggerLifecycleShutdownGraceMs ??
+      DEFAULT_TRIGGER_LIFECYCLE_SHUTDOWN_GRACE_MS;
     this.workerId = options.workerId ?? createId("worker");
   }
 
@@ -86,12 +93,13 @@ export class StorageBackedJobRunner {
    */
   public async stop(): Promise<void> {
     this.stopping = true;
+    this.triggerLifecycleReconciliationGeneration += 1;
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
     }
     await this.inFlight.catch(() => undefined);
-    await this.triggerLifecycleReconciliation.catch(() => undefined);
+    await this.waitForTriggerLifecycleReconciliation();
     this.started = false;
   }
 
@@ -241,19 +249,48 @@ export class StorageBackedJobRunner {
   private queueTriggerLifecycleReconciliation(
     jobs: readonly InteractionJobRecord[],
   ): void {
-    this.triggerLifecycleReconciliation =
-      this.triggerLifecycleReconciliation
-        .then(async () => {
-          for (const job of jobs) {
-            await this.worker.reconcileTriggerLifecycle(job);
+    if (this.stopping) {
+      return;
+    }
+    const generation = this.triggerLifecycleReconciliationGeneration;
+    this.triggerLifecycleReconciliation = this.triggerLifecycleReconciliation
+      .then(async () => {
+        for (const job of jobs) {
+          if (generation !== this.triggerLifecycleReconciliationGeneration) {
+            return;
           }
-        })
-        .catch((error: unknown) => {
-          this.logger.warn(
-            { err: error },
-            "failed to reconcile expired job trigger lifecycle",
-          );
-        });
+          await this.worker.reconcileTriggerLifecycle(job);
+        }
+      })
+      .catch((error: unknown) => {
+        this.logger.warn(
+          { err: error },
+          "failed to reconcile expired job trigger lifecycle",
+        );
+      });
+  }
+
+  private async waitForTriggerLifecycleReconciliation(): Promise<void> {
+    let timeout: NodeJS.Timeout | null = null;
+    const completed = await Promise.race([
+      this.triggerLifecycleReconciliation.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timeout = setTimeout(
+          () => resolve(false),
+          this.triggerLifecycleShutdownGraceMs,
+        );
+      }),
+    ]);
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    if (!completed) {
+      this.logger.warn(
+        { graceMs: this.triggerLifecycleShutdownGraceMs },
+        "stopped waiting for best-effort trigger lifecycle reconciliation",
+      );
+      this.triggerLifecycleReconciliation = Promise.resolve();
+    }
   }
 
   private async processClaimed(

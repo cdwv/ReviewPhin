@@ -152,18 +152,16 @@ export class ReviewWorker {
       payloadJson: interactionJob.payloadJson,
     });
 
-    if (createdJob.created || createdJob.job.commentId !== null) {
-      const lifecycle = platform.createTriggerLifecycle({
-        resolvedTenant,
-        job: createdJob.job,
-        logger: this.logger,
-      });
-      await syncPlatformTriggerLifecycleForJob({
-        logger: this.logger,
-        job: createdJob.job,
-        lifecycle,
-      });
-    }
+    const lifecycle = platform.createTriggerLifecycle({
+      resolvedTenant,
+      job: createdJob.job,
+      logger: this.logger,
+    });
+    await syncPlatformTriggerLifecycleForJob({
+      logger: this.logger,
+      job: createdJob.job,
+      lifecycle,
+    });
 
     return createdJob;
   }
