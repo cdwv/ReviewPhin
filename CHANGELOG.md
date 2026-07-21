@@ -3,6 +3,11 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v1.5.1 - 2026-07-21
+### Fixed
+- ReviewPhin now shows visual feedback for inline and follow-up comment
+requests and safely retries it when duplicate events arrive.
+
 ## v1.5.0 - 2026-07-16
 ### Added
 - Administrators can report stored review usage by unit, model, session
