@@ -296,6 +296,49 @@ describe("GitHubClient", () => {
     );
   });
 
+  it("lists and creates pull request review comment reactions", async () => {
+    const request = vi.fn(async (route: string) => {
+      if (route.startsWith("GET")) {
+        return { data: [createReaction("eyes")] };
+      }
+      return { data: createReaction("hooray") };
+    });
+    const client = createClientWithInstallationRequest(request);
+
+    await expect(
+      client.listPullRequestReviewCommentReactions("octo-org/reviewphin", 555),
+    ).resolves.toMatchObject([{ content: "eyes" }]);
+    await expect(
+      client.createPullRequestReviewCommentReaction({
+        repositoryFullName: "octo-org/reviewphin",
+        commentId: 555,
+        content: "hooray",
+      }),
+    ).resolves.toMatchObject({ content: "hooray" });
+
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      "GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions",
+      {
+        owner: "octo-org",
+        repo: "reviewphin",
+        comment_id: 555,
+        per_page: 100,
+        page: 1,
+      },
+    );
+    expect(request).toHaveBeenNthCalledWith(
+      2,
+      "POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions",
+      {
+        owner: "octo-org",
+        repo: "reviewphin",
+        comment_id: 555,
+        content: "hooray",
+      },
+    );
+  });
+
   it("downloads repository archives as buffers", async () => {
     const request = vi.fn(async () => ({
       data: Uint8Array.from([31, 139, 8, 0]),

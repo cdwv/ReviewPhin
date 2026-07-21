@@ -543,7 +543,7 @@ describe("GitLab reactions", () => {
     );
   });
 
-  it("skips reactions for follow-up discussion notes", async () => {
+  it("adds reactions to follow-up discussion notes", async () => {
     const discussions = [
       {
         id: "disc_1",
@@ -571,6 +571,7 @@ describe("GitLab reactions", () => {
       },
     ] satisfies GitLabDiscussion[];
 
+    const deliveredReactions = new Set<string>();
     const fetchMock = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
         const url = String(input);
@@ -590,10 +591,32 @@ describe("GitLab reactions", () => {
           });
         }
 
+        if (init?.method === "GET" && url.includes("/award_emoji")) {
+          return new Response(
+            JSON.stringify(
+              [...deliveredReactions].map((name, index) => ({
+                id: index + 1,
+                name,
+                user: {
+                  id: 999,
+                  username: "review-bot",
+                  name: "Review Bot",
+                },
+                created_at: new Date().toISOString(),
+              })),
+            ),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+
         const body = String(init?.body);
         const reactionName = body.includes("white_check_mark")
           ? "white_check_mark"
           : "eyes";
+        deliveredReactions.add(reactionName);
         return new Response(
           JSON.stringify({
             id: reactionName === "eyes" ? 1 : 2,
@@ -635,11 +658,18 @@ describe("GitLab reactions", () => {
     );
     await worker.processClaimedJob(job as never, createClaimContext(job.id));
 
-    const awardEmojiRequests = fetchMock.mock.calls.filter(([input]) =>
-      String(input).includes("/award_emoji"),
+    const awardEmojiPosts = fetchMock.mock.calls.filter(
+      ([input, init]) =>
+        init?.method === "POST" && String(input).includes("/award_emoji"),
     );
-
-    expect(awardEmojiRequests).toEqual([]);
+    expect(awardEmojiPosts.map(([input]) => String(input))).toEqual([
+      expect.stringContaining("/discussions/disc_1/notes/56/award_emoji"),
+      expect.stringContaining("/discussions/disc_1/notes/56/award_emoji"),
+    ]);
+    expect(awardEmojiPosts.map(([, init]) => String(init?.body))).toEqual([
+      expect.stringContaining("name=eyes"),
+      expect.stringContaining("name=white_check_mark"),
+    ]);
   });
 
   it("does not fail job creation when a lifecycle update fails", async () => {

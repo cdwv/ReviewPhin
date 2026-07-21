@@ -150,14 +150,16 @@ export class GitHubCommentTriggerLifecycle implements PlatformTriggerLifecycle {
   private async ensureReaction(
     content: GitHubReaction["content"],
   ): Promise<void> {
-    if (this.trigger.eventName !== "issue_comment") {
-      return;
-    }
-
-    const existing = await this.client.listIssueCommentReactions(
-      this.tenant.repositoryFullName,
-      this.trigger.commentId,
-    );
+    const existing =
+      this.trigger.eventName === "pull_request_review_comment"
+        ? await this.client.listPullRequestReviewCommentReactions(
+            this.tenant.repositoryFullName,
+            this.trigger.commentId,
+          )
+        : await this.client.listIssueCommentReactions(
+            this.tenant.repositoryFullName,
+            this.trigger.commentId,
+          );
     if (
       existing.some(
         (reaction) =>
@@ -168,11 +170,16 @@ export class GitHubCommentTriggerLifecycle implements PlatformTriggerLifecycle {
       return;
     }
 
-    await this.client.createIssueCommentReaction({
+    const input = {
       repositoryFullName: this.tenant.repositoryFullName,
       commentId: this.trigger.commentId,
       content,
-    });
+    };
+    if (this.trigger.eventName === "pull_request_review_comment") {
+      await this.client.createPullRequestReviewCommentReaction(input);
+    } else {
+      await this.client.createIssueCommentReaction(input);
+    }
   }
 }
 

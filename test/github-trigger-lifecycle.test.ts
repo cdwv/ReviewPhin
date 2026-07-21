@@ -170,11 +170,23 @@ describe("GitHub comment trigger lifecycle", () => {
     );
   });
 
-  it("skips inline review comment reactions like GitLab discussion comments", async () => {
-    const listIssueCommentReactions = vi.fn();
-    const createIssueCommentReaction = vi.fn();
+  it("adds reactions to inline pull request review comments", async () => {
+    const listPullRequestReviewCommentReactions = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const createPullRequestReviewCommentReaction = vi.fn(async (input) => ({
+      id: 2,
+      content: input.content,
+      user: { id: 10, login: "reviewphin-octo[bot]", type: "Bot" },
+      created_at: "2026-06-11T00:00:00.000Z",
+    }));
     const lifecycle = new GitHubCommentTriggerLifecycle(
-      { listIssueCommentReactions, createIssueCommentReaction } as never,
+      {
+        listPullRequestReviewCommentReactions,
+        createPullRequestReviewCommentReaction,
+      } as never,
       {
         repositoryId: 2468,
         repositoryFullName: "octo-org/reviewphin",
@@ -187,8 +199,16 @@ describe("GitHub comment trigger lifecycle", () => {
     await lifecycle.completed();
     await lifecycle.failed();
 
-    expect(listIssueCommentReactions).not.toHaveBeenCalled();
-    expect(createIssueCommentReaction).not.toHaveBeenCalled();
+    expect(listPullRequestReviewCommentReactions).toHaveBeenCalledTimes(3);
+    expect(createPullRequestReviewCommentReaction).toHaveBeenCalledWith(
+      expect.objectContaining({ commentId: 555, content: "eyes" }),
+    );
+    expect(createPullRequestReviewCommentReaction).toHaveBeenCalledWith(
+      expect.objectContaining({ commentId: 555, content: "hooray" }),
+    );
+    expect(createPullRequestReviewCommentReaction).toHaveBeenCalledWith(
+      expect.objectContaining({ commentId: 555, content: "confused" }),
+    );
   });
 });
 

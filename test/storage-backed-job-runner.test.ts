@@ -102,6 +102,7 @@ describe("StorageBackedJobRunner (sqlite)", () => {
         },
       ),
       reconcileOrphanLifecycle: vi.fn(async () => {}),
+      reconcileTriggerLifecycle: vi.fn(async () => {}),
     };
   }
 
@@ -163,7 +164,8 @@ describe("StorageBackedJobRunner (sqlite)", () => {
       }),
     );
     const processed: InteractionJobRecord[] = [];
-    const runner = createRunner(completingWorker(processed));
+    const worker = completingWorker(processed);
+    const runner = createRunner(worker);
 
     await runner.runOnce();
 
@@ -171,6 +173,9 @@ describe("StorageBackedJobRunner (sqlite)", () => {
     const job = await harness.storage.stores.interactionJobs.get("job-old");
     expect(job?.status).toBe("expired");
     expect(job?.lastError).toContain("maximum age");
+    expect(worker.reconcileTriggerLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "job-old", status: "expired" }),
+    );
   });
 
   it("reconciles orphaned runs even when no new job can be claimed", async () => {
@@ -300,6 +305,80 @@ describe("StorageBackedJobRunner heartbeat and lifecycle", () => {
       reconcileOrphanedInteractionRuns.mock.invocationCallOrder[0] ?? 0,
     ).toBeLessThan(claimNext.mock.invocationCallOrder[0] ?? 0);
     expect(processClaimedJob).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not delay job claiming while expired trigger feedback is pending", async () => {
+    const expiredJob = { id: "job-expired", status: "expired" };
+    const claimNext = vi.fn(async () => null);
+    const store = fakeStore({
+      expireQueued: vi.fn(async () => 1),
+      list: vi.fn(async () => [expiredJob]),
+      claimNext,
+    });
+    const worker = {
+      processClaimedJob: vi.fn(),
+      reconcileOrphanLifecycle: vi.fn(),
+      reconcileTriggerLifecycle: vi.fn(
+        () => new Promise<void>(() => {}),
+      ),
+    };
+    const runner = new StorageBackedJobRunner({
+      storage: { stores: { interactionJobs: store } } as never,
+      worker: worker as never,
+      logger,
+      pollIntervalMs: 2_000,
+      maxQueuedJobAgeMs: 21_600_000,
+      leaseMs: 120_000,
+      maxJobRetries: 3,
+    });
+
+    await runner.runOnce();
+
+    expect(worker.reconcileTriggerLifecycle).toHaveBeenCalledWith(expiredJob);
+    expect(claimNext).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds shutdown while expired trigger feedback is pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const expiredJob = { id: "job-expired", status: "expired" };
+      const store = fakeStore({
+        expireQueued: vi.fn(async () => 1),
+        list: vi.fn(async () => [expiredJob]),
+      });
+      const worker = {
+        processClaimedJob: vi.fn(),
+        reconcileOrphanLifecycle: vi.fn(),
+        reconcileTriggerLifecycle: vi.fn(
+          () => new Promise<void>(() => {}),
+        ),
+      };
+      const runner = new StorageBackedJobRunner({
+        storage: { stores: { interactionJobs: store } } as never,
+        worker: worker as never,
+        logger,
+        pollIntervalMs: 2_000,
+        maxQueuedJobAgeMs: 21_600_000,
+        leaseMs: 120_000,
+        maxJobRetries: 3,
+        triggerLifecycleShutdownGraceMs: 50,
+      });
+
+      await runner.runOnce();
+      const stopPromise = runner.stop();
+      await vi.advanceTimersByTimeAsync(49);
+      let stopped = false;
+      void stopPromise.then(() => {
+        stopped = true;
+      });
+      expect(stopped).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await stopPromise;
+      expect(stopped).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("aborts a hung renewal at the local lease deadline without overlapping renewals", async () => {

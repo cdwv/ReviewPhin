@@ -9,7 +9,10 @@ import type {
   ResolvedTenant,
 } from "../platforms/IPlatform.js";
 import { getPlatformBySlug } from "../platforms/platform-registry.js";
-import { syncPlatformTriggerLifecycle } from "../platforms/trigger-lifecycle.js";
+import {
+  syncPlatformTriggerLifecycle,
+  syncPlatformTriggerLifecycleForJob,
+} from "../platforms/trigger-lifecycle.js";
 import type {
   DiscussionReconciler,
   ReconcileSummary,
@@ -149,21 +152,50 @@ export class ReviewWorker {
       payloadJson: interactionJob.payloadJson,
     });
 
-    if (createdJob.created) {
-      const lifecycle = platform.createTriggerLifecycle({
-        resolvedTenant,
-        job: createdJob.job,
-        logger: this.logger,
-      });
-      await syncPlatformTriggerLifecycle({
-        logger: this.logger,
-        job: createdJob.job,
-        phase: "queued",
-        update: () => lifecycle.queued(),
-      });
-    }
+    const lifecycle = platform.createTriggerLifecycle({
+      resolvedTenant,
+      job: createdJob.job,
+      logger: this.logger,
+    });
+    await syncPlatformTriggerLifecycleForJob({
+      logger: this.logger,
+      job: createdJob.job,
+      lifecycle,
+    });
 
     return createdJob;
+  }
+
+  public async reconcileTriggerLifecycle(
+    job: InteractionJobRecord,
+  ): Promise<void> {
+    try {
+      const resolvedTenant = await this.tenantRegistry.getResolvedTenantById(
+        job.tenantId,
+      );
+      if (!resolvedTenant) {
+        return;
+      }
+      const platform = this.platformResolver(resolvedTenant.tenant.platform);
+      if (!platform) {
+        return;
+      }
+      const lifecycle = platform.createTriggerLifecycle({
+        resolvedTenant,
+        job,
+        logger: this.logger,
+      });
+      await syncPlatformTriggerLifecycleForJob({
+        logger: this.logger,
+        job,
+        lifecycle,
+      });
+    } catch (error) {
+      this.logger.warn(
+        { err: error, interactionJobId: job.id, status: job.status },
+        "failed to reconcile provider trigger lifecycle from job state",
+      );
+    }
   }
 
   public async classifyWebhookTrigger(

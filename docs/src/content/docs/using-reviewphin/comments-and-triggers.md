@@ -66,6 +66,22 @@ Selects a named [model profile](../../management/model-profiles/) for every run 
 
 </details>
 
+## See when ReviewPhin is working
+
+When ReviewPhin accepts a comment, it tries to add a reaction to that comment. The reaction gives you quick visual feedback while the review runs.
+
+| Status           | GitLab        | GitHub         |
+| ---------------- | ------------- | -------------- |
+| Looking at it    | 👀 Eyes       | 👀 Eyes        |
+| Finished         | ✅ Check mark | 🎉 Celebration |
+| Could not finish | 😖 Confounded | 😕 Confused    |
+
+The eyes reaction stays when ReviewPhin adds the final reaction. "Could not finish" also covers reviews that were cancelled or expired.
+
+Reactions are best-effort feedback. A reaction may be missing if the comment was deleted, permissions changed, or the platform rejected it. ReviewPhin may still process the review.
+
+This feedback applies only when there is a platform comment to react to. GitHub's **Run Review** action uses the check run status instead. A local trigger written as plain text also has no comment reaction.
+
 ## Platform notes
 
 | Command                      | GitLab                 | GitHub                                  |
