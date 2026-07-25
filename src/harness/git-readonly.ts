@@ -234,7 +234,11 @@ export async function executeGitReadonly(
       `git_readonly ${input.operation} exceeded the ${GIT_TIMEOUT_MS}ms time limit; narrow the request by path, revision, or line range`,
     );
   }
-  if (result.exitCode !== 0 && result.exitCode !== null) {
+  if (
+    !result.truncated &&
+    result.exitCode !== 0 &&
+    result.exitCode !== null
+  ) {
     const detail = (result.stderr || result.stdout).trim();
     throw new Error(
       `git_readonly ${input.operation} failed with exit code ${result.exitCode}${detail ? `: ${detail}` : ""}`,
@@ -330,7 +334,7 @@ function buildGitArgs(
         ...lineArgs,
         revision,
         "--",
-        `:(literal)${path!}`,
+        path!,
       ];
     }
   }

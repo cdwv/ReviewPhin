@@ -104,7 +104,7 @@ describe("executeGitReadonly", () => {
     const runner = vi.fn<GitReadonlyRunner>(async () => ({
       stdout: "partial",
       stderr: "",
-      exitCode: null,
+      exitCode: 1,
       timedOut: false,
       truncated: true,
     }));
@@ -112,6 +112,37 @@ describe("executeGitReadonly", () => {
     await expect(
       executeGitReadonly({ operation: "log" }, context, runner),
     ).resolves.toContain("output truncated at 102400 bytes");
+  });
+
+  it("passes a validated literal path directly to blame", async () => {
+    const runner = successfulRunner("blame output");
+
+    await executeGitReadonly(
+      {
+        operation: "blame",
+        revision: "head",
+        path: "src/index.ts",
+        lineStart: 10,
+        lineEnd: 20,
+      },
+      context,
+      runner,
+    );
+
+    expect(runner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: [
+          "--no-pager",
+          "blame",
+          "--no-progress",
+          "-L",
+          "10,20",
+          "refs/reviewphin/head",
+          "--",
+          "src/index.ts",
+        ],
+      }),
+    );
   });
 
   it("turns timeouts and failures into narrow retry guidance", async () => {
