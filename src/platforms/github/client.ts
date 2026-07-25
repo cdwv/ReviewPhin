@@ -1,5 +1,3 @@
-import { devNull } from "node:os";
-
 import { App, Octokit } from "octokit";
 import { z } from "zod";
 
@@ -10,6 +8,7 @@ import {
   readLimitedImageResponse,
   SUPPORTED_IMAGE_MIME_TYPES,
 } from "../image-attachments.js";
+import { getGitConfigNullDevice } from "../git-environment.js";
 
 import type {
   ReadyGitHubConnectionConfig,
@@ -954,7 +953,7 @@ export class GitHubClient {
       GIT_OPTIONAL_LOCKS: "0",
       GIT_PAGER: "cat",
       GIT_CONFIG_NOSYSTEM: "1",
-      GIT_CONFIG_GLOBAL: devNull,
+      GIT_CONFIG_GLOBAL: getGitConfigNullDevice(),
       GIT_ASKPASS: "",
       SSH_ASKPASS: "",
       GIT_SSH_COMMAND: "",

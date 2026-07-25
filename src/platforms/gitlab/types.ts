@@ -183,6 +183,7 @@ export interface MaterializedWorkspace {
   cleanupRoot: string;
   strategy: "git" | "archive" | "targeted-files";
   gitInspection?: GitReadonlyCapability | undefined;
+  gitPreparationError?: string | undefined;
 }
 
 export interface MaterializedMergeRequestContext {

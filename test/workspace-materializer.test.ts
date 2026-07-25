@@ -143,6 +143,7 @@ describe("WorkspaceMaterializer", () => {
     });
 
     expect(workspace.strategy).toBe("archive");
+    expect(workspace.gitPreparationError).toBe("git failed");
     expect(workspace.rootPath).toBe(join(workspace.cleanupRoot, "workspace"));
     expect(await readFile(join(workspace.rootPath, "AGENTS.md"), "utf8")).toBe(
       "# Archived instructions\n",
@@ -218,6 +219,7 @@ describe("WorkspaceMaterializer", () => {
       jobId: "job_3",
       projectId: 1085,
       codeReviewId: 7,
+      baseSha: "base123",
       headSha: "abc123",
       changes: [
         {
@@ -232,6 +234,7 @@ describe("WorkspaceMaterializer", () => {
     });
 
     expect(workspace.strategy).toBe("targeted-files");
+    expect(workspace.gitPreparationError).toBe("git failed");
     expect(
       await readFile(join(workspace.rootPath, "src", "index.ts"), "utf8"),
     ).toBe("console.log('ok');\n");

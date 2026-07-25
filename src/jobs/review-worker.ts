@@ -421,6 +421,12 @@ export class ReviewWorker {
           commentCount: routingContext.commentCount,
           discussionCount: routingContext.discussionCount,
           workspaceStrategy: routingContext.workspace.strategy,
+          ...(routingContext.workspace.gitPreparationError
+            ? {
+                gitPreparationError:
+                  routingContext.workspace.gitPreparationError,
+              }
+            : {}),
         },
       );
 

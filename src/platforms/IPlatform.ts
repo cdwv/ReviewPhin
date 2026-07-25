@@ -69,6 +69,7 @@ export interface PlatformMaterializedWorkspace {
   cleanupRoot: string;
   strategy: string;
   gitInspection?: GitReadonlyCapability | undefined;
+  gitPreparationError?: string | undefined;
 }
 
 export interface PlatformConnectionLifecycleResult {

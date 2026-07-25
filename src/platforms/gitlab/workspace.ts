@@ -71,10 +71,12 @@ export class WorkspaceMaterializer {
       ? join(this.workspaceRoot, input.jobId, this.workspaceAttemptId)
       : join(this.workspaceRoot, input.jobId);
     await resetDirectory(cleanupRoot);
+    let gitPreparationError: string | undefined;
 
     try {
       return await this.materializeFromGit(input, cleanupRoot);
     } catch (error) {
+      gitPreparationError = getErrorMessage(error);
       this.logger.warn(
         { err: error },
         "git checkout materialization failed; falling back to repository archive",
@@ -100,13 +102,18 @@ export class WorkspaceMaterializer {
         rootPath,
         cleanupRoot,
         strategy: "archive",
+        ...(gitPreparationError ? { gitPreparationError } : {}),
       };
     } catch (error) {
       this.logger.warn(
         { err: error },
         "repository archive materialization failed; falling back to targeted files",
       );
-      return this.materializeFromFiles(input, cleanupRoot);
+      const workspace = await this.materializeFromFiles(input, cleanupRoot);
+      return {
+        ...workspace,
+        ...(gitPreparationError ? { gitPreparationError } : {}),
+      };
     }
   }
 
@@ -365,6 +372,10 @@ export class WorkspaceMaterializer {
       gitInspection,
     };
   }
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function runGitCommand(input: GitRunnerInput): Promise<GitRunnerResult> {

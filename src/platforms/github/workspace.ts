@@ -63,6 +63,7 @@ export class GitHubWorkspaceMaterializer {
     const cleanupRoot = await mkdtemp(
       join(this.options.workspaceRoot, `${input.jobId}-`),
     );
+    let gitPreparationError: string | undefined;
 
     try {
       const baseSha = input.baseSha;
@@ -71,6 +72,7 @@ export class GitHubWorkspaceMaterializer {
       }
       return await this.materializeFromGit({ ...input, baseSha }, cleanupRoot);
     } catch (error) {
+      gitPreparationError = getErrorMessage(error);
       this.options.logger?.warn(
         { err: error },
         "GitHub Git workspace preparation failed; falling back to repository archive",
@@ -78,7 +80,11 @@ export class GitHubWorkspaceMaterializer {
     }
 
     try {
-      return await this.materializeFromArchive(input, cleanupRoot);
+      return await this.materializeFromArchive(
+        input,
+        cleanupRoot,
+        gitPreparationError,
+      );
     } catch (error) {
       await rm(cleanupRoot, { recursive: true, force: true });
       throw error;
@@ -243,6 +249,7 @@ export class GitHubWorkspaceMaterializer {
       headSha: string;
     },
     cleanupRoot: string,
+    gitPreparationError?: string,
   ): Promise<GitHubMaterializedWorkspace> {
     const rootPath = join(cleanupRoot, "workspace");
     const archivePath = join(cleanupRoot, "repository.tar.gz");
@@ -266,8 +273,13 @@ export class GitHubWorkspaceMaterializer {
       rootPath,
       cleanupRoot,
       strategy: "archive",
+      ...(gitPreparationError ? { gitPreparationError } : {}),
     };
   }
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function runGitCommand(input: GitRunnerInput): Promise<GitRunnerResult> {

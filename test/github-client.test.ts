@@ -15,6 +15,7 @@ import {
   githubConnectionRegistrationSchema,
   readyGitHubConnectionConfigSchema,
 } from "../src/platforms/github/config.js";
+import { getGitConfigNullDevice } from "../src/platforms/git-environment.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -393,6 +394,7 @@ describe("GitHubClient", () => {
         GIT_TERMINAL_PROMPT: "0",
         GIT_CONFIG_COUNT: "1",
         GIT_CONFIG_KEY_0: "http.extraHeader",
+        GIT_CONFIG_GLOBAL: getGitConfigNullDevice(),
       }),
     );
     expect(env.GIT_CONFIG_VALUE_0).toContain("Authorization: Basic ");

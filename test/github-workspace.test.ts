@@ -164,6 +164,9 @@ describe("GitHubWorkspaceMaterializer", () => {
       new RegExp(`^${escapeRegExp(join(workspaceRoot, "job_1-"))}`),
     );
     expect(workspace.strategy).toBe("archive");
+    expect(workspace.gitPreparationError).toBe(
+      "GitHub pull request base SHA was unavailable",
+    );
     expect(downloadRepositoryArchive).toHaveBeenCalledWith(
       "octo-org/reviewphin",
       "head-sha",

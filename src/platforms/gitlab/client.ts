@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { devNull } from "node:os";
 
 import type { Logger } from "pino";
 import type { PlatformHttpLogEntry } from "../../review/run-artifacts.js";
@@ -11,6 +10,7 @@ import {
   readLimitedImageResponse,
   SUPPORTED_IMAGE_MIME_TYPES,
 } from "../image-attachments.js";
+import { getGitConfigNullDevice } from "../git-environment.js";
 import type {
   GitLabAwardEmoji,
   GitLabDiscussion,
@@ -894,7 +894,7 @@ export class GitLabClient {
       GIT_OPTIONAL_LOCKS: "0",
       GIT_PAGER: "cat",
       GIT_CONFIG_NOSYSTEM: "1",
-      GIT_CONFIG_GLOBAL: devNull,
+      GIT_CONFIG_GLOBAL: getGitConfigNullDevice(),
       GIT_ASKPASS: "",
       SSH_ASKPASS: "",
       GIT_SSH_COMMAND: "",
