@@ -350,6 +350,28 @@ describe("GitHubClient", () => {
     ).resolves.toEqual(Buffer.from([31, 139, 8, 0]));
   });
 
+  it("builds ephemeral Git authentication without embedding the token in a URL", async () => {
+    const auth = vi.fn(async () => ({ token: "installation-token" }));
+    const client = createClientWithAppAuth(auth);
+
+    const env = await client.buildGitAuthEnv({ PATH: "git-path" });
+
+    expect(auth).toHaveBeenCalledWith({
+      type: "installation",
+      installationId: 789,
+    });
+    expect(env).toEqual(
+      expect.objectContaining({
+        PATH: "git-path",
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "http.extraHeader",
+      }),
+    );
+    expect(env.GIT_CONFIG_VALUE_0).toContain("Authorization: Basic ");
+    expect(JSON.stringify(env)).not.toContain("installation-token");
+  });
+
   it("downloads GitHub attachments with installation access and checks redirect hosts", async () => {
     const auth = vi.fn(async () => ({ token: "installation-token" }));
     const fetchMock = vi

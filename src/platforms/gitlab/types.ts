@@ -4,6 +4,7 @@ import type {
   TenantRecord,
 } from "../../storage/contract/index.js";
 import type { ProjectMemoryContext } from "../../memory/types.js";
+import type { GitReadonlyCapability } from "../../harness/git-readonly.js";
 
 export interface GitLabUser {
   id: number;
@@ -181,6 +182,7 @@ export interface MaterializedWorkspace {
   rootPath: string;
   cleanupRoot: string;
   strategy: "git" | "archive" | "targeted-files";
+  gitInspection?: GitReadonlyCapability | undefined;
 }
 
 export interface MaterializedMergeRequestContext {

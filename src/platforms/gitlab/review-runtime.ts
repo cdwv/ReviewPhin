@@ -129,8 +129,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       job: input.job,
       client: this.client,
       context: input.context?.platformContext as
-        | LightweightMergeRequestContext
-        | undefined,
+        LightweightMergeRequestContext | undefined,
     });
     return this.wrapContext(context);
   }
@@ -217,6 +216,9 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       attachments: input.attachments,
       attachmentIssues: input.attachmentIssues,
       workspacePath: context.workspace.rootPath,
+      ...(context.workspace.gitInspection
+        ? { gitInspection: context.workspace.gitInspection }
+        : {}),
       codeReview: toCodeReviewItem(context.mergeRequest),
       changes: context.changes.map(toCodeReviewChange),
       comments: context.notes.map(toCodeReviewComment),
@@ -604,8 +606,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     context: PlatformReviewRoutingContext,
   ): LightweightMergeRequestContext | HydratedMergeRequestContext {
     return context.platformContext as
-      | LightweightMergeRequestContext
-      | HydratedMergeRequestContext;
+      LightweightMergeRequestContext | HydratedMergeRequestContext;
   }
 
   private createGitLabClient(input: {

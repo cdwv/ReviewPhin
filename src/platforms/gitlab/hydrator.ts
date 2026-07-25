@@ -58,7 +58,8 @@ export class CodeReviewContextHydrator {
           (left, right) =>
             new Date(right.created_at).getTime() -
             new Date(left.created_at).getTime(),
-        )[0] ?? null;
+        )
+        .find((version) => version.head_commit_sha === job.headSha) ?? null;
 
     const snapshot = await this.storage.createCodeReviewSnapshot({
       interactionJobId: job.id,
@@ -111,21 +112,37 @@ export class CodeReviewContextHydrator {
   }): Promise<MaterializedMergeRequestContext> {
     const { tenant, job, client } = input;
     const tenantConfig = getGitLabTenantConfig(tenant);
-    const [mergeRequest, changes, notes, discussions] = await Promise.all([
-      client.getCodeReview(tenantConfig.projectId, job.codeReviewId),
-      client.getCodeReviewChanges(tenantConfig.projectId, job.codeReviewId),
-      client.listCodeReviewNotes(tenantConfig.projectId, job.codeReviewId),
-      client.listCodeReviewDiscussions(
-        tenantConfig.projectId,
-        job.codeReviewId,
-      ),
-    ]);
+    const [mergeRequest, changes, notes, discussions, versions] =
+      await Promise.all([
+        client.getCodeReview(tenantConfig.projectId, job.codeReviewId),
+        client.getCodeReviewChanges(tenantConfig.projectId, job.codeReviewId),
+        client.listCodeReviewNotes(tenantConfig.projectId, job.codeReviewId),
+        client.listCodeReviewDiscussions(
+          tenantConfig.projectId,
+          job.codeReviewId,
+        ),
+        client.listCodeReviewVersions(tenantConfig.projectId, job.codeReviewId),
+      ]);
+    const matchingVersion = versions
+      .slice()
+      .sort(
+        (left, right) =>
+          new Date(right.created_at).getTime() -
+          new Date(left.created_at).getTime(),
+      )
+      .find((version) => version.head_commit_sha === job.headSha);
+    const baseSha =
+      matchingVersion?.base_commit_sha ??
+      (mergeRequest.diff_refs?.head_sha === job.headSha
+        ? mergeRequest.diff_refs.base_sha
+        : undefined);
     const [workspace, projectMemory] = await Promise.all([
       this.workspaceMaterializer.materialize({
         client,
         jobId: job.id,
         projectId: tenantConfig.projectId,
         codeReviewId: job.codeReviewId,
+        ...(baseSha ? { baseSha } : {}),
         headSha: job.headSha,
         changes,
       }),

@@ -16,6 +16,12 @@ import type {
   GitLabMergeRequestChange,
   MaterializedWorkspace,
 } from "./types.js";
+import {
+  assertGitBoundaryMatchesPlatform,
+  createGitInspectionCapability,
+  REVIEW_BASE_REF,
+  REVIEW_HEAD_REF,
+} from "../git-workspace.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -57,6 +63,7 @@ export class WorkspaceMaterializer {
     jobId: string;
     projectId: number;
     codeReviewId: number;
+    baseSha?: string | undefined;
     headSha: string;
     changes: GitLabMergeRequestChange[];
   }): Promise<MaterializedWorkspace> {
@@ -118,6 +125,7 @@ export class WorkspaceMaterializer {
       jobId: string;
       projectId: number;
       codeReviewId: number;
+      baseSha?: string | undefined;
       headSha: string;
       changes: GitLabMergeRequestChange[];
     },
@@ -199,6 +207,7 @@ export class WorkspaceMaterializer {
       jobId: string;
       projectId: number;
       codeReviewId: number;
+      baseSha?: string | undefined;
       headSha: string;
       changes: GitLabMergeRequestChange[];
     },
@@ -209,6 +218,10 @@ export class WorkspaceMaterializer {
 
     const project = await input.client.getProject(input.projectId);
     const gitEnv = input.client.buildGitAuthEnv();
+    const baseSha = input.baseSha;
+    if (!baseSha) {
+      throw new Error("GitLab merge request base SHA was unavailable");
+    }
 
     await this.gitRunner({
       cwd: rootPath,
@@ -225,7 +238,7 @@ export class WorkspaceMaterializer {
     try {
       await this.gitRunner({
         cwd: rootPath,
-        args: ["fetch", "--depth", "1", "origin", input.headSha],
+        args: ["fetch", "--no-tags", "--depth", "1", "origin", input.headSha],
         env: gitEnv,
       });
     } catch (exactShaError) {
@@ -268,21 +281,90 @@ export class WorkspaceMaterializer {
 
     await this.gitRunner({
       cwd: rootPath,
+      args: ["update-ref", REVIEW_HEAD_REF, fetchedRef],
+      env: gitEnv,
+    });
+    await this.gitRunner({
+      cwd: rootPath,
+      args: ["fetch", "--no-tags", "--depth", "1", "origin", baseSha],
+      env: gitEnv,
+    });
+    await this.gitRunner({
+      cwd: rootPath,
+      args: ["update-ref", REVIEW_BASE_REF, "FETCH_HEAD"],
+      env: gitEnv,
+    });
+    const preparedHead = (
+      await this.gitRunner({
+        cwd: rootPath,
+        args: ["rev-parse", `${REVIEW_HEAD_REF}^{commit}`],
+        env: gitEnv,
+      })
+    ).stdout.trim();
+    const preparedBase = (
+      await this.gitRunner({
+        cwd: rootPath,
+        args: ["rev-parse", `${REVIEW_BASE_REF}^{commit}`],
+        env: gitEnv,
+      })
+    ).stdout.trim();
+    if (preparedHead && preparedHead !== input.headSha) {
+      throw new Error(
+        `Prepared review head ${preparedHead} does not match expected ${input.headSha}`,
+      );
+    }
+    if (preparedBase && preparedBase !== baseSha) {
+      throw new Error(
+        `Prepared review base ${preparedBase} does not match expected ${baseSha}`,
+      );
+    }
+    const boundary = await this.gitRunner({
+      cwd: rootPath,
+      args: [
+        "diff",
+        "--name-status",
+        "-z",
+        "--find-renames",
+        "--no-ext-diff",
+        "--no-textconv",
+        REVIEW_BASE_REF,
+        REVIEW_HEAD_REF,
+      ],
+      env: gitEnv,
+    });
+    assertGitBoundaryMatchesPlatform(
+      boundary.stdout,
+      input.changes.map((change) => ({
+        oldPath: change.old_path,
+        newPath: change.new_path,
+        newFile: change.new_file,
+        renamedFile: change.renamed_file,
+        deletedFile: change.deleted_file,
+      })),
+    );
+    await this.gitRunner({
+      cwd: rootPath,
       args: [
         "-c",
         "advice.detachedHead=false",
         "checkout",
         "--detach",
-        fetchedRef,
+        REVIEW_HEAD_REF,
       ],
       env: gitEnv,
     });
-    await rm(join(rootPath, ".git"), { recursive: true, force: true });
+    await this.gitRunner({
+      cwd: rootPath,
+      args: ["remote", "remove", "origin"],
+      env: gitEnv,
+    });
+    const gitInspection = await createGitInspectionCapability(cleanupRoot);
 
     return {
       rootPath,
       cleanupRoot,
       strategy: "git",
+      gitInspection,
     };
   }
 }

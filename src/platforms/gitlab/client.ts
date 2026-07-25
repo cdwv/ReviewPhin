@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { devNull } from "node:os";
 
 import type { Logger } from "pino";
 import type { PlatformHttpLogEntry } from "../../review/run-artifacts.js";
@@ -890,6 +891,14 @@ export class GitLabClient {
       ...baseEnv,
       GIT_TERMINAL_PROMPT: "0",
       GIT_LFS_SKIP_SMUDGE: "1",
+      GIT_OPTIONAL_LOCKS: "0",
+      GIT_PAGER: "cat",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: devNull,
+      GIT_ASKPASS: "",
+      SSH_ASKPASS: "",
+      GIT_SSH_COMMAND: "",
+      GIT_EXTERNAL_DIFF: "",
       GIT_CONFIG_COUNT: "1",
       GIT_CONFIG_KEY_0: "http.extraHeader",
       GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`oauth2:${this.apiToken}`).toString("base64")}`,

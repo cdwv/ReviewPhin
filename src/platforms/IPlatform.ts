@@ -7,6 +7,7 @@ import type {
   HarnessRunLoggingContext,
   HarnessTenantContext,
 } from "../harness/types.js";
+import type { GitReadonlyCapability } from "../harness/git-readonly.js";
 import type { ProjectMemoryBackend } from "../memory/backend.js";
 import type { InteractionRunArtifacts } from "../review/run-artifacts.js";
 import type {
@@ -67,6 +68,7 @@ export interface PlatformMaterializedWorkspace {
   rootPath: string;
   cleanupRoot: string;
   strategy: string;
+  gitInspection?: GitReadonlyCapability | undefined;
 }
 
 export interface PlatformConnectionLifecycleResult {

@@ -1,3 +1,5 @@
+import { devNull } from "node:os";
+
 import { App, Octokit } from "octokit";
 import { z } from "zod";
 
@@ -914,6 +916,28 @@ export class GitHubClient {
         error,
       );
     }
+  }
+
+  public async buildGitAuthEnv(
+    baseEnv: NodeJS.ProcessEnv = process.env,
+  ): Promise<NodeJS.ProcessEnv> {
+    const token = await this.getInstallationToken();
+    return {
+      ...baseEnv,
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_LFS_SKIP_SMUDGE: "1",
+      GIT_OPTIONAL_LOCKS: "0",
+      GIT_PAGER: "cat",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: devNull,
+      GIT_ASKPASS: "",
+      SSH_ASKPASS: "",
+      GIT_SSH_COMMAND: "",
+      GIT_EXTERNAL_DIFF: "",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "http.extraHeader",
+      GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
+    };
   }
 
   public async downloadImage(

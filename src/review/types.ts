@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { ProjectMemoryContext } from "../memory/types.js";
 import type { HarnessRunLoggingContext } from "../harness/types.js";
+import type { GitReadonlyCapability } from "../harness/git-readonly.js";
 import type {
   ReviewFindingStatus,
   TenantRecord,
@@ -187,6 +188,15 @@ export interface ReviewChangeSummary {
   newFile: boolean;
   renamedFile: boolean;
   deletedFile: boolean;
+  additions: number | null;
+  deletions: number | null;
+  changedLineRanges: Array<{
+    oldStart: number | null;
+    oldEnd: number | null;
+    newStart: number | null;
+    newEnd: number | null;
+  }>;
+  diffAvailable: boolean;
   reason?: string | undefined;
 }
 
@@ -204,6 +214,8 @@ export interface CodeReviewChange {
   oldPath: string;
   newPath: string;
   diff?: string | undefined;
+  additions?: number | undefined;
+  deletions?: number | undefined;
   newFile: boolean;
   renamedFile: boolean;
   deletedFile: boolean;
@@ -391,6 +403,7 @@ export interface ReviewContext {
   attachments: ReviewAttachment[];
   attachmentIssues: ReviewAttachmentIssue[];
   workspacePath: string;
+  gitInspection?: GitReadonlyCapability | undefined;
   codeReview: CodeReviewItem;
   changes: CodeReviewChange[];
   comments: CodeReviewComment[];

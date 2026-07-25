@@ -89,6 +89,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
     this.tenant = options.resolvedTenant.tenant;
     this.workspaceMaterializer = new GitHubWorkspaceMaterializer({
       workspaceRoot: options.workspaceRoot,
+      logger: options.logger,
     });
     const config = readyGitHubConnectionConfigSchema.parse(
       JSON.parse(
@@ -274,6 +275,9 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       attachments: input.attachments,
       attachmentIssues: input.attachmentIssues,
       workspacePath: context.workspace.rootPath,
+      ...(context.workspace.gitInspection
+        ? { gitInspection: context.workspace.gitInspection }
+        : {}),
       codeReview: toCodeReviewItem(context.pullRequest),
       changes: context.files.map(toCodeReviewChange),
       comments: this.toCodeReviewComments(context),
@@ -674,7 +678,10 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       client: this.options.client,
       jobId: job.id,
       repositoryFullName: tenantConfig.repositoryFullName,
+      codeReviewId: job.codeReviewId,
+      baseSha: pullRequest.base.sha,
       headSha: job.headSha,
+      changes: files.map(toCodeReviewChange),
     });
     return {
       tenant: this.tenant,
@@ -929,6 +936,8 @@ function toCodeReviewChange(file: GitHubPullRequestFile): CodeReviewChange {
     oldPath: file.previous_filename ?? file.filename,
     newPath: file.filename,
     ...(file.patch ? { diff: file.patch } : {}),
+    additions: file.additions,
+    deletions: file.deletions,
     newFile: file.status === "added" || file.status === "copied",
     renamedFile: file.status === "renamed",
     deletedFile: file.status === "removed",

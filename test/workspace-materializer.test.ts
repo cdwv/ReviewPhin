@@ -56,6 +56,7 @@ describe("WorkspaceMaterializer", () => {
       jobId: "job_1",
       projectId: 1085,
       codeReviewId: 7,
+      baseSha: "base123",
       headSha: "abc123",
       changes: [],
     });
@@ -66,8 +67,24 @@ describe("WorkspaceMaterializer", () => {
     );
     expect(gitRunner).toHaveBeenCalledWith(
       expect.objectContaining({
-        args: ["fetch", "--depth", "1", "origin", "abc123"],
+        args: ["fetch", "--no-tags", "--depth", "1", "origin", "abc123"],
         env: expect.objectContaining({ TEST_ENV: "1" }),
+      }),
+    );
+    expect(gitRunner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: ["fetch", "--no-tags", "--depth", "1", "origin", "base123"],
+      }),
+    );
+    expect(gitRunner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: ["remote", "remove", "origin"],
+      }),
+    );
+    expect(workspace.gitInspection).toEqual(
+      expect.objectContaining({
+        baseRef: "refs/reviewphin/base",
+        headRef: "refs/reviewphin/head",
       }),
     );
     expect(downloadRepositoryArchive).not.toHaveBeenCalled();
@@ -115,6 +132,7 @@ describe("WorkspaceMaterializer", () => {
       jobId: "job_2",
       projectId: 1085,
       codeReviewId: 7,
+      baseSha: "base123",
       headSha: "abc123",
       changes: [],
     });
@@ -212,9 +230,9 @@ describe("WorkspaceMaterializer", () => {
     expect(
       await readFile(join(workspace.rootPath, "src", "index.ts"), "utf8"),
     ).toBe("console.log('ok');\n");
-    expect(
-      await readFile(join(workspace.rootPath, "AGENTS.md"), "utf8"),
-    ).toBe("# File instructions\n");
+    expect(await readFile(join(workspace.rootPath, "AGENTS.md"), "utf8")).toBe(
+      "# File instructions\n",
+    );
     expect(
       await readFile(
         join(
@@ -274,6 +292,7 @@ describe("WorkspaceMaterializer", () => {
       jobId: "job_4",
       projectId: 1085,
       codeReviewId: 7,
+      baseSha: "base123",
       headSha: "abc123",
       changes: [],
     });
@@ -325,6 +344,7 @@ describe("WorkspaceMaterializer", () => {
       jobId: "job-shared",
       projectId: 1085,
       codeReviewId: 7,
+      baseSha: "base123",
       headSha: "abc123",
       changes: [],
     };

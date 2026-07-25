@@ -1,7 +1,7 @@
 import { renderPrompt, type PromptTemplateId } from "./instruction-renderer.js";
 import { isReviewSummaryNoteBody } from "../review/summary.js";
 import type { ChatterRunContext } from "../review/harness-chatter.js";
-import type { ReviewContext } from "../review/types.js";
+import type { ReviewAnchor, ReviewContext } from "../review/types.js";
 import { truncate } from "../utils/text.js";
 import type { ProjectMemoryCoalesceInput } from "../memory/types.js";
 
@@ -119,8 +119,7 @@ export function buildCompactReviewContext(
     reviewScope: {
       summary: context.scope.scopeSummary,
       totalChangedFiles: context.scope.allChangedFiles.length,
-      includedChangedFiles: context.changes.length,
-      omittedChangedFiles: context.scope.omittedChangedFiles.slice(0, 25),
+      focusedChangedFiles: context.changes.length,
       widenScopeHints: context.scope.widenScopeHints,
       targetDiscussion: context.scope.targetDiscussion
         ? {
@@ -174,15 +173,24 @@ export function buildCompactReviewContext(
       context.projectMemory,
       maxPromptMemoryChars,
     ),
-    changedFiles: context.changes.map((change) => ({
-      oldPath: change.oldPath,
-      newPath: change.newPath,
-      newFile: change.newFile,
-      renamedFile: change.renamedFile,
-      deletedFile: change.deletedFile,
-      diff: truncate(change.diff ?? "", 6_000),
-    })),
-    additionalChangedFiles: context.scope.omittedChangedFiles.slice(0, 40),
+    gitInspection: context.gitInspection
+      ? {
+          available: true,
+          tool: "git_readonly",
+          baseRevision: "reviewphin/base",
+          headRevision: "reviewphin/head",
+          guidance:
+            "Use the manifest as the complete platform boundary, then inspect relevant diffs, history, blame, and revisions on demand.",
+        }
+      : {
+          available: false,
+          guidance:
+            context.scope.mode === "follow-up-discussion"
+              ? "The target discussion hunk is included inline because trusted Git inspection was unavailable."
+              : "The complete platform diff is included inline because trusted Git inspection was unavailable.",
+        },
+    changedFiles: context.scope.allChangedFiles,
+    inlineDiffs: buildInlineDiffs(context),
     codeReviewComments: context.comments
       .filter((note) => !isReviewSummaryNoteBody(note.body))
       .slice(0, 50)
@@ -375,7 +383,7 @@ function buildCompactChatterContext(
       sharedReviewContext?.projectMemory ??
       buildPromptProjectMemory(context.projectMemory, maxPromptMemoryChars),
     changedFiles: sharedReviewContext?.changedFiles ?? [],
-    additionalChangedFiles: sharedReviewContext?.additionalChangedFiles ?? [],
+    inlineDiffs: sharedReviewContext?.inlineDiffs ?? [],
     codeReviewComments: sharedReviewContext?.codeReviewComments ?? [],
     priorDiscussions: sharedReviewContext?.priorDiscussions ?? [],
     reviewResult: context.reviewResult
@@ -396,6 +404,64 @@ function buildCompactChatterContext(
       : null,
     reviewerReplyHandoff: context.reviewerReplyHandoff ?? null,
   };
+}
+
+function buildInlineDiffs(context: ReviewContext) {
+  if (context.gitInspection && context.scope.mode !== "follow-up-discussion") {
+    return [];
+  }
+
+  return context.changes.map((change) => ({
+    oldPath: change.oldPath,
+    newPath: change.newPath,
+    newFile: change.newFile,
+    renamedFile: change.renamedFile,
+    deletedFile: change.deletedFile,
+    diff:
+      context.scope.mode === "follow-up-discussion"
+        ? extractTargetHunk(
+            change.diff ?? "",
+            context.scope.targetDiscussion?.anchor ?? null,
+          )
+        : (change.diff ?? ""),
+  }));
+}
+
+function extractTargetHunk(diff: string, anchor: ReviewAnchor | null): string {
+  if (!anchor || diff.length === 0) {
+    return diff;
+  }
+
+  const lines = diff.split("\n");
+  const hunkStarts: number[] = [];
+  for (const [index, line] of lines.entries()) {
+    if (line.startsWith("@@ ")) {
+      hunkStarts.push(index);
+    }
+  }
+
+  for (const [hunkIndex, start] of hunkStarts.entries()) {
+    const header = lines[start] ?? "";
+    const parsed = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(header);
+    if (!parsed) {
+      continue;
+    }
+    const oldStart = Number(parsed[1]);
+    const oldCount = Number(parsed[2] ?? 1);
+    const newStart = Number(parsed[3]);
+    const newCount = Number(parsed[4] ?? 1);
+    const rangeStart = anchor.side === "old" ? oldStart : newStart;
+    const rangeCount = anchor.side === "old" ? oldCount : newCount;
+    if (
+      rangeCount > 0 &&
+      anchor.startLine >= rangeStart &&
+      anchor.startLine <= rangeStart + rangeCount - 1
+    ) {
+      const end = hunkStarts[hunkIndex + 1] ?? lines.length;
+      return lines.slice(start, end).join("\n");
+    }
+  }
+  return diff;
 }
 
 function buildCompactTrigger(trigger: ReviewContext["trigger"]) {
@@ -427,9 +493,7 @@ function buildCompactTrigger(trigger: ReviewContext["trigger"]) {
 
 function buildAttachmentRuntimeNote(
   context:
-    | Pick<ReviewContext, "attachments" | "attachmentIssues">
-    | null
-    | undefined,
+    Pick<ReviewContext, "attachments" | "attachmentIssues"> | null | undefined,
 ): string[] {
   if (!context || context.attachmentIssues.length === 0) {
     return [];

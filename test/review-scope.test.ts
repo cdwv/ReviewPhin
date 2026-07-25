@@ -19,9 +19,7 @@ describe("buildScopedReviewContext", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
       codeReview,
-      changes: [
-        createChange("src/manual.ts", "@@ -1 +1 @@\n-old\n+new"),
-      ],
+      changes: [createChange("src/manual.ts", "@@ -1 +1 @@\n-old\n+new")],
       comments: [],
       discussions: [],
       trigger: {
@@ -51,9 +49,7 @@ describe("buildScopedReviewContext", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
       codeReview,
-      changes: [
-        createChange("src/manual.ts", "@@ -1 +1 @@\n-old\n+new"),
-      ],
+      changes: [createChange("src/manual.ts", "@@ -1 +1 @@\n-old\n+new")],
       comments: [],
       discussions: [],
       trigger: {
@@ -444,7 +440,7 @@ describe("buildScopedReviewContext", () => {
     expect(scoped.scope.omittedChangedFiles[0]?.path).toBe("src/other.ts");
   });
 
-  it("keeps first-pass direct mentions bounded for large merge requests", () => {
+  it("keeps every changed file in first-pass reviews", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
       codeReview,
@@ -477,8 +473,9 @@ describe("buildScopedReviewContext", () => {
     });
 
     expect(scoped.scope.mode).toBe("first-pass-full");
-    expect(scoped.changes).toHaveLength(12);
-    expect(scoped.scope.omittedChangedFiles).toHaveLength(4);
+    expect(scoped.changes).toHaveLength(16);
+    expect(scoped.scope.allChangedFiles).toHaveLength(16);
+    expect(scoped.scope.omittedChangedFiles).toHaveLength(0);
   });
 
   it("allows an explicit full rescan override even when previous review data exists", () => {

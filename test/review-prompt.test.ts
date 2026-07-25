@@ -10,7 +10,7 @@ import type {
   CommentReviewTriggerContext,
   ReviewContext,
 } from "../src/review/types.js";
-import { repoPath } from "./test-paths.js";
+import { repoPath, tmpPath } from "./test-paths.js";
 
 describe("buildReviewPrompt", () => {
   it("serializes provider-owned manual triggers without fake comment fields", () => {
@@ -179,6 +179,129 @@ describe("buildReviewPrompt", () => {
       "treat `resolved` and `dismissed` prior findings as inactive by default",
     );
     expect(prompt).toContain('"resolution": "optional resolved | dismissed"');
+  });
+
+  it("uses a complete compact manifest and omits full diffs when Git inspection is ready", () => {
+    const context = createContext();
+    context.gitInspection = {
+      baseRef: "refs/reviewphin/base",
+      headRef: "refs/reviewphin/head",
+      emptyGitConfigPath: tmpPath("empty-git-config"),
+    };
+    context.scope.allChangedFiles = [
+      {
+        path: "src/worker.ts",
+        oldPath: "src/old-worker.ts",
+        newFile: false,
+        renamedFile: true,
+        deletedFile: false,
+        additions: 3,
+        deletions: 1,
+        changedLineRanges: [
+          {
+            oldStart: 1,
+            oldEnd: 2,
+            newStart: 1,
+            newEnd: 4,
+          },
+        ],
+        diffAvailable: true,
+      },
+    ];
+
+    const compact = buildCompactReviewContext(context, 5_000);
+    const serialized = JSON.stringify(compact);
+
+    expect(compact.changedFiles).toHaveLength(1);
+    expect(compact.inlineDiffs).toEqual([]);
+    expect(compact.gitInspection).toEqual(
+      expect.objectContaining({
+        available: true,
+        tool: "git_readonly",
+        baseRevision: "reviewphin/base",
+        headRevision: "reviewphin/head",
+      }),
+    );
+    expect(serialized).not.toContain("export function oldWorker");
+  });
+
+  it("names every platform path beyond the former first-pass limit", () => {
+    const context = createContext();
+    context.gitInspection = {
+      baseRef: "refs/reviewphin/base",
+      headRef: "refs/reviewphin/head",
+      emptyGitConfigPath: tmpPath("empty-git-config"),
+    };
+    context.scope.allChangedFiles = Array.from({ length: 20 }, (_, index) => ({
+      path: `src/file-${index + 1}.ts`,
+      oldPath: null,
+      newFile: false,
+      renamedFile: false,
+      deletedFile: false,
+      additions: 1,
+      deletions: 1,
+      changedLineRanges: [
+        {
+          oldStart: index + 1,
+          oldEnd: index + 1,
+          newStart: index + 1,
+          newEnd: index + 1,
+        },
+      ],
+      diffAvailable: true,
+    }));
+
+    const prompt = buildReviewPrompt(context);
+
+    for (let index = 1; index <= 20; index += 1) {
+      expect(prompt).toContain(`src/file-${index}.ts`);
+    }
+    expect(prompt).not.toContain("additionalChangedFiles");
+  });
+
+  it("keeps the complete platform diff inline when Git inspection is unavailable", () => {
+    const context = createContext();
+    const compact = buildCompactReviewContext(context, 5_000);
+
+    expect(compact.inlineDiffs[0]?.diff).toBe(context.changes[0]?.diff);
+    expect(compact.gitInspection.available).toBe(false);
+  });
+
+  it("keeps only the target hunk inline for a Git-ready discussion follow-up", () => {
+    const context = createContext(
+      undefined,
+      "follow-up-comment",
+      "follow-up-discussion",
+    );
+    context.gitInspection = {
+      baseRef: "refs/reviewphin/base",
+      headRef: "refs/reviewphin/head",
+      emptyGitConfigPath: tmpPath("empty-git-config"),
+    };
+    context.changes[0]!.diff =
+      "@@ -1,2 +1,2 @@\n-old one\n+new one\n@@ -20,2 +20,3 @@\n-old target\n+new target\n+extra";
+    context.scope.targetDiscussion = {
+      discussionId: "discussion_1",
+      platformDiscussionId: "platform_1",
+      platformCommentId: 55,
+      title: "Target concern",
+      body: "Please re-check this line.",
+      anchor: {
+        path: "src/worker.ts",
+        startLine: 21,
+        endLine: 21,
+        side: "new",
+      },
+      resolvable: true,
+      resolved: false,
+      humanReplies: [],
+    };
+
+    const compact = buildCompactReviewContext(context, 5_000);
+
+    expect(compact.inlineDiffs[0]?.diff).toContain("@@ -20,2 +20,3 @@");
+    expect(compact.inlineDiffs[0]?.diff).toContain("+new target");
+    expect(compact.inlineDiffs[0]?.diff).not.toContain("old one");
   });
 
   it("uses the follow-up-discussion registered combination without the summary overlay", () => {
@@ -416,7 +539,26 @@ function createContext(
       mode,
       scopeSummary: "Full review",
       widenScopeHints: [],
-      allChangedFiles: [],
+      allChangedFiles: [
+        {
+          path: "src/worker.ts",
+          oldPath: "src/old-worker.ts",
+          newFile: false,
+          renamedFile: true,
+          deletedFile: false,
+          additions: 3,
+          deletions: 1,
+          changedLineRanges: [
+            {
+              oldStart: 1,
+              oldEnd: 2,
+              newStart: 1,
+              newEnd: 4,
+            },
+          ],
+          diffAvailable: true,
+        },
+      ],
       omittedChangedFiles: [],
       targetDiscussion: null,
       previousReview: null,

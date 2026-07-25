@@ -97,6 +97,7 @@ export class HarnessSessionRuntime {
       const { registeredTools, availableTools, enabledToolIds } =
         resolveHarnessTools(spec.tools, {
           memoryService,
+          gitReadonly: spec.gitReadonly,
         });
 
       const session = await client.createSession({

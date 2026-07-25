@@ -19,6 +19,116 @@ describe("GitHubWorkspaceMaterializer", () => {
     );
   });
 
+  it("prepares trusted Git refs, verifies the boundary, and removes the remote", async () => {
+    const workspaceRoot = await createTempRoot();
+    const gitRunner = vi.fn(
+      async ({ cwd, args }: { cwd: string; args: string[] }) => {
+        if (args[0] === "rev-parse") {
+          return {
+            stdout: args[1]?.includes("head") ? "head-sha\n" : "base-sha\n",
+            stderr: "",
+          };
+        }
+        if (args[0] === "diff") {
+          return { stdout: "M\0src.ts\0", stderr: "" };
+        }
+        if (args[0] === "-c" && args[2] === "checkout") {
+          await mkdir(join(cwd, ".git"), { recursive: true });
+          await writeFile(join(cwd, "src.ts"), "export const ready = true;\n");
+        }
+        return { stdout: "", stderr: "" };
+      },
+    );
+    const downloadRepositoryArchive = vi.fn();
+    const materializer = new GitHubWorkspaceMaterializer({
+      workspaceRoot,
+      gitRunner,
+    });
+
+    const workspace = await materializer.materialize({
+      client: {
+        buildGitAuthEnv: vi.fn(async () => ({ TEST_GIT_AUTH: "1" })),
+        downloadRepositoryArchive,
+      } as unknown as GitHubClient,
+      jobId: "job_git",
+      repositoryFullName: "octo-org/reviewphin",
+      codeReviewId: 42,
+      baseSha: "base-sha",
+      headSha: "head-sha",
+      changes: [
+        {
+          oldPath: "src.ts",
+          newPath: "src.ts",
+          newFile: false,
+          renamedFile: false,
+          deletedFile: false,
+        },
+      ],
+    });
+
+    expect(workspace.strategy).toBe("git");
+    expect(workspace.gitInspection).toEqual(
+      expect.objectContaining({
+        baseRef: "refs/reviewphin/base",
+        headRef: "refs/reviewphin/head",
+      }),
+    );
+    expect(gitRunner).toHaveBeenCalledWith(
+      expect.objectContaining({ args: ["remote", "remove", "origin"] }),
+    );
+    expect(downloadRepositoryArchive).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the pull ref for a fork head and verifies its exact SHA", async () => {
+    const workspaceRoot = await createTempRoot();
+    const gitRunner = vi.fn(async ({ args }: { args: string[] }) => {
+      if (args[0] === "fetch" && args.at(-1) === "head-sha") {
+        throw new Error("SHA is not advertised by the base repository");
+      }
+      if (args[0] === "rev-parse" && args[1] === "FETCH_HEAD") {
+        return { stdout: "head-sha\n", stderr: "" };
+      }
+      if (args[0] === "rev-parse") {
+        return {
+          stdout: args[1]?.includes("head") ? "head-sha\n" : "base-sha\n",
+          stderr: "",
+        };
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const materializer = new GitHubWorkspaceMaterializer({
+      workspaceRoot,
+      gitRunner,
+    });
+
+    const workspace = await materializer.materialize({
+      client: {
+        buildGitAuthEnv: vi.fn(async () => ({})),
+        downloadRepositoryArchive: vi.fn(),
+      } as unknown as GitHubClient,
+      jobId: "job_fork",
+      repositoryFullName: "octo-org/reviewphin",
+      codeReviewId: 42,
+      baseSha: "base-sha",
+      headSha: "head-sha",
+      changes: [],
+    });
+
+    expect(workspace.strategy).toBe("git");
+    expect(gitRunner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: [
+          "fetch",
+          "--no-tags",
+          "--depth",
+          "1",
+          "origin",
+          "refs/pull/42/head",
+        ],
+      }),
+    );
+  });
+
   it("materializes the requested head archive in an isolated job workspace", async () => {
     const workspaceRoot = await createTempRoot();
     const archiveSourceRoot = await createTempRoot();
