@@ -120,7 +120,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       codeReviewJson: JSON.stringify(context.pullRequest),
       versionsJson: JSON.stringify([
         {
-          baseSha: context.pullRequest.base.sha,
+          baseSha: context.mergeBaseSha,
           headSha: context.pullRequest.head.sha,
         },
       ]),
@@ -674,12 +674,30 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       );
     }
 
+    let mergeBaseSha: string | null = null;
+    try {
+      mergeBaseSha = await this.options.client.getPullRequestMergeBase(
+        tenantConfig.repositoryFullName,
+        pullRequest.base.sha,
+        job.headSha,
+      );
+    } catch (error) {
+      this.options.logger.warn(
+        {
+          err: error,
+          tenantId: this.tenant.id,
+          interactionJobId: job.id,
+          codeReviewId: job.codeReviewId,
+        },
+        "GitHub pull request merge base is unavailable; Git workspace preparation will use the archive fallback",
+      );
+    }
     const workspace = await this.workspaceMaterializer.materialize({
       client: this.options.client,
       jobId: job.id,
       repositoryFullName: tenantConfig.repositoryFullName,
       codeReviewId: job.codeReviewId,
-      baseSha: pullRequest.base.sha,
+      ...(mergeBaseSha ? { baseSha: mergeBaseSha } : {}),
       headSha: job.headSha,
       changes: files.map(toCodeReviewChange),
     });
@@ -688,6 +706,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       job,
       repositoryFullName: tenantConfig.repositoryFullName,
       pullRequest,
+      mergeBaseSha,
       files,
       issueComments,
       reviews,

@@ -76,6 +76,11 @@ describe("GitHubWorkspaceMaterializer", () => {
     expect(gitRunner).toHaveBeenCalledWith(
       expect.objectContaining({ args: ["remote", "remove", "origin"] }),
     );
+    expect(
+      gitRunner.mock.calls.some(([call]) =>
+        (call as { args: string[] }).args.includes("--depth"),
+      ),
+    ).toBe(false);
     expect(downloadRepositoryArchive).not.toHaveBeenCalled();
   });
 
@@ -117,14 +122,7 @@ describe("GitHubWorkspaceMaterializer", () => {
     expect(workspace.strategy).toBe("git");
     expect(gitRunner).toHaveBeenCalledWith(
       expect.objectContaining({
-        args: [
-          "fetch",
-          "--no-tags",
-          "--depth",
-          "1",
-          "origin",
-          "refs/pull/42/head",
-        ],
+        args: ["fetch", "--no-tags", "origin", "refs/pull/42/head"],
       }),
     );
   });

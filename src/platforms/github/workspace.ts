@@ -122,7 +122,7 @@ export class GitHubWorkspaceMaterializer {
     try {
       await this.gitRunner({
         cwd: rootPath,
-        args: ["fetch", "--no-tags", "--depth", "1", "origin", input.headSha],
+        args: ["fetch", "--no-tags", "origin", input.headSha],
         env: gitEnv,
       });
     } catch (exactShaError) {
@@ -134,8 +134,6 @@ export class GitHubWorkspaceMaterializer {
         args: [
           "fetch",
           "--no-tags",
-          "--depth",
-          "1",
           "origin",
           `refs/pull/${input.codeReviewId}/head`,
         ],
@@ -163,7 +161,7 @@ export class GitHubWorkspaceMaterializer {
     });
     await this.gitRunner({
       cwd: rootPath,
-      args: ["fetch", "--no-tags", "--depth", "1", "origin", input.baseSha],
+      args: ["fetch", "--no-tags", "origin", input.baseSha],
       env: gitEnv,
     });
     await this.gitRunner({

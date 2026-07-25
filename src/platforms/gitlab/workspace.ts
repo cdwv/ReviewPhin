@@ -238,7 +238,7 @@ export class WorkspaceMaterializer {
     try {
       await this.gitRunner({
         cwd: rootPath,
-        args: ["fetch", "--no-tags", "--depth", "1", "origin", input.headSha],
+        args: ["fetch", "--no-tags", "origin", input.headSha],
         env: gitEnv,
       });
     } catch (exactShaError) {
@@ -256,8 +256,6 @@ export class WorkspaceMaterializer {
         cwd: rootPath,
         args: [
           "fetch",
-          "--depth",
-          "1",
           "origin",
           `refs/merge-requests/${input.codeReviewId}/head`,
         ],
@@ -286,7 +284,7 @@ export class WorkspaceMaterializer {
     });
     await this.gitRunner({
       cwd: rootPath,
-      args: ["fetch", "--no-tags", "--depth", "1", "origin", baseSha],
+      args: ["fetch", "--no-tags", "origin", baseSha],
       env: gitEnv,
     });
     await this.gitRunner({

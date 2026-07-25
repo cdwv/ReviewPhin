@@ -67,13 +67,13 @@ describe("WorkspaceMaterializer", () => {
     );
     expect(gitRunner).toHaveBeenCalledWith(
       expect.objectContaining({
-        args: ["fetch", "--no-tags", "--depth", "1", "origin", "abc123"],
+        args: ["fetch", "--no-tags", "origin", "abc123"],
         env: expect.objectContaining({ TEST_ENV: "1" }),
       }),
     );
     expect(gitRunner).toHaveBeenCalledWith(
       expect.objectContaining({
-        args: ["fetch", "--no-tags", "--depth", "1", "origin", "base123"],
+        args: ["fetch", "--no-tags", "origin", "base123"],
       }),
     );
     expect(gitRunner).toHaveBeenCalledWith(
@@ -81,6 +81,11 @@ describe("WorkspaceMaterializer", () => {
         args: ["remote", "remove", "origin"],
       }),
     );
+    expect(
+      gitRunner.mock.calls.some(([call]) =>
+        (call as { args: string[] }).args.includes("--depth"),
+      ),
+    ).toBe(false);
     expect(workspace.gitInspection).toEqual(
       expect.objectContaining({
         baseRef: "refs/reviewphin/base",

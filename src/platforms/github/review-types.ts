@@ -19,6 +19,7 @@ export interface GitHubPullRequestContext {
   job: InteractionJobRecord;
   repositoryFullName: string;
   pullRequest: GitHubPullRequest;
+  mergeBaseSha: string | null;
   files: GitHubPullRequestFile[];
   issueComments: GitHubIssueComment[];
   reviews: GitHubPullRequestReview[];

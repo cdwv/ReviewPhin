@@ -164,6 +164,33 @@ describe("GitHubClient", () => {
     );
   });
 
+  it("resolves the pull request comparison merge base", async () => {
+    const request = vi.fn(async () => ({
+      data: {
+        merge_base_commit: {
+          sha: "merge-base-sha",
+        },
+      },
+    }));
+    const client = createClientWithInstallationRequest(request);
+
+    await expect(
+      client.getPullRequestMergeBase(
+        "octo-org/reviewphin",
+        "base-tip-sha",
+        "head-sha",
+      ),
+    ).resolves.toBe("merge-base-sha");
+    expect(request).toHaveBeenCalledWith(
+      "GET /repos/{owner}/{repo}/compare/{basehead}",
+      {
+        owner: "octo-org",
+        repo: "reviewphin",
+        basehead: "base-tip-sha...head-sha",
+      },
+    );
+  });
+
   it("paginates open pull requests", async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => ({
       ...createPullRequest(),

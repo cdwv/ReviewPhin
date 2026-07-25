@@ -141,6 +141,12 @@ const pullRequestSchema = z.object({
   }),
 });
 
+const comparisonSchema = z.object({
+  merge_base_commit: z.object({
+    sha: z.string().min(1),
+  }),
+});
+
 const pullRequestHeadSchema = z.object({
   number: z.number().int().positive(),
   head: z.object({
@@ -463,6 +469,25 @@ export class GitHubClient {
       pullRequestSchema,
       `GitHub pull request ${repositoryFullName}#${pullRequestNumber}`,
     );
+  }
+
+  public async getPullRequestMergeBase(
+    repositoryFullName: string,
+    baseSha: string,
+    headSha: string,
+  ): Promise<string> {
+    const { owner, repository } = splitRepositoryFullName(repositoryFullName);
+    const comparison = await this.requestParsed(
+      "GET /repos/{owner}/{repo}/compare/{basehead}",
+      {
+        owner,
+        repo: repository,
+        basehead: `${baseSha}...${headSha}`,
+      },
+      comparisonSchema,
+      `comparison for GitHub pull request revisions ${baseSha}...${headSha}`,
+    );
+    return comparison.merge_base_commit.sha;
   }
 
   public async listOpenPullRequests(
