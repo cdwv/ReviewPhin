@@ -114,6 +114,20 @@ describe("executeGitReadonly", () => {
     ).resolves.toContain("output truncated at 102400 bytes");
   });
 
+  it("preserves truncation guidance when process closure races the timeout", async () => {
+    const runner = vi.fn<GitReadonlyRunner>(async () => ({
+      stdout: "partial",
+      stderr: "",
+      exitCode: null,
+      timedOut: true,
+      truncated: true,
+    }));
+
+    await expect(
+      executeGitReadonly({ operation: "log" }, context, runner),
+    ).resolves.toContain("output truncated at 102400 bytes");
+  });
+
   it("passes a validated literal path directly to blame", async () => {
     const runner = successfulRunner("blame output");
 

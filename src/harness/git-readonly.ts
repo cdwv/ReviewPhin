@@ -229,7 +229,7 @@ export async function executeGitReadonly(
   });
   const durationMs = Math.round(performance.now() - startedAt);
 
-  if (result.timedOut) {
+  if (result.timedOut && !result.truncated) {
     throw new Error(
       `git_readonly ${input.operation} exceeded the ${GIT_TIMEOUT_MS}ms time limit; narrow the request by path, revision, or line range`,
     );
@@ -463,6 +463,7 @@ async function runGit(input: {
           outputBytes += remaining;
         }
         truncated = true;
+        clearTimeout(timer);
         child.kill("SIGKILL");
         return;
       }
