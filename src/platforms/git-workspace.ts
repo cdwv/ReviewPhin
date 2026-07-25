@@ -2,16 +2,35 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { GitReadonlyCapability } from "../harness/git-readonly.js";
+import type { CodeReviewChange } from "../review/types.js";
 
 export const REVIEW_BASE_REF = "refs/reviewphin/base" as const;
 export const REVIEW_HEAD_REF = "refs/reviewphin/head" as const;
 
-export interface PlatformBoundaryChange {
+export interface GitRunnerInput {
+  cwd: string;
+  args: string[];
+  env?: NodeJS.ProcessEnv;
+}
+
+export interface GitRunnerResult {
+  stdout: string;
+  stderr: string;
+}
+
+export type GitRunner = (input: GitRunnerInput) => Promise<GitRunnerResult>;
+
+interface RawGitChange {
   oldPath: string;
   newPath: string;
-  newFile: boolean;
-  renamedFile: boolean;
-  deletedFile: boolean;
+  oldObjectId: string;
+  newObjectId: string;
+  status: string;
+}
+
+interface GitDiffStats {
+  additions?: number | undefined;
+  deletions?: number | undefined;
 }
 
 export async function createGitInspectionCapability(
@@ -29,121 +48,168 @@ export async function createGitInspectionCapability(
   };
 }
 
-export function assertGitBoundaryMatchesPlatform(
-  nameStatusOutput: string,
-  platformChanges: PlatformBoundaryChange[],
-): void {
-  const gitBoundary = parseGitNameStatus(nameStatusOutput);
-  const platformBoundary = new Set(
-    platformChanges.map(toPlatformBoundarySignature),
+/**
+ * Builds the complete review boundary from the prepared Git refs. Provider
+ * change APIs are intentionally not involved: they remain available for
+ * provider-specific publication and non-Git fallbacks.
+ */
+export async function buildGitReviewChanges(input: {
+  cwd: string;
+  gitRunner: GitRunner;
+  env?: NodeJS.ProcessEnv | undefined;
+  baseRef?: string | undefined;
+  headRef?: string | undefined;
+}): Promise<CodeReviewChange[]> {
+  const baseRef = input.baseRef ?? REVIEW_BASE_REF;
+  const headRef = input.headRef ?? REVIEW_HEAD_REF;
+  const commonArgs = [
+    "-z",
+    "--find-renames",
+    "--no-ext-diff",
+    "--no-textconv",
+    baseRef,
+    headRef,
+  ];
+  const [rawResult, numstatResult] = await Promise.all([
+    input.gitRunner({
+      cwd: input.cwd,
+      args: ["diff", "--raw", "--no-abbrev", ...commonArgs],
+      ...(input.env ? { env: input.env } : {}),
+    }),
+    input.gitRunner({
+      cwd: input.cwd,
+      args: ["diff", "--numstat", ...commonArgs],
+      ...(input.env ? { env: input.env } : {}),
+    }),
+  ]);
+
+  const rawChanges = parseGitRawChanges(rawResult.stdout);
+  const statsByPath = parseGitNumstat(numstatResult.stdout);
+  const rawPaths = new Set(rawChanges.map((change) => change.newPath));
+  const missingStats = rawChanges.filter(
+    (change) => !statsByPath.has(change.newPath),
   );
-  if (
-    gitBoundary.size === platformBoundary.size &&
-    [...platformBoundary].every((entry) => gitBoundary.has(entry))
-  ) {
-    return;
+  const extraStats = [...statsByPath.keys()].filter(
+    (path) => !rawPaths.has(path),
+  );
+  if (missingStats.length > 0 || extraStats.length > 0) {
+    throw new Error(
+      `Prepared Git manifest outputs disagree (missing stats: ${formatPaths(
+        missingStats.map((change) => change.newPath),
+      )}; unexpected stats: ${formatPaths(extraStats)})`,
+    );
   }
 
-  const missingFromGit = [...platformBoundary].filter(
-    (entry) => !gitBoundary.has(entry),
-  );
-  const missingFromPlatform = [...gitBoundary].filter(
-    (entry) => !platformBoundary.has(entry),
-  );
-  throw new Error(
-    `Prepared Git boundary does not match the platform snapshot (missing from Git: ${formatBoundaryEntries(missingFromGit)}; missing from platform: ${formatBoundaryEntries(missingFromPlatform)})`,
-  );
+  return rawChanges.map((change) => {
+    const status = change.status[0];
+    if (!status) {
+      throw new Error("Prepared Git change had no status");
+    }
+    const stats = statsByPath.get(change.newPath);
+    return {
+      oldPath: change.oldPath,
+      newPath: change.newPath,
+      ...(stats?.additions !== undefined ? { additions: stats.additions } : {}),
+      ...(stats?.deletions !== undefined ? { deletions: stats.deletions } : {}),
+      newFile: status === "A" || status === "C",
+      renamedFile: status === "R",
+      deletedFile: status === "D",
+      contentSignature: `${change.oldObjectId}:${change.newObjectId}`,
+    };
+  });
 }
 
-function parseGitNameStatus(output: string): Set<string> {
-  const boundary = new Set<string>();
-  if (output.includes("\0")) {
-    const tokens = output.split("\0");
-    for (let index = 0; index < tokens.length;) {
-      const rawStatus = tokens[index++];
-      if (!rawStatus) {
-        continue;
-      }
-      const status = rawStatus[0];
-      const firstPath = tokens[index++];
-      if (!status || !firstPath) {
-        throw new Error(
-          `Could not parse prepared Git boundary status: ${rawStatus}`,
-        );
-      }
-      if (status === "R" || status === "C") {
-        const secondPath = tokens[index++];
-        if (!secondPath) {
-          throw new Error(
-            `Could not parse prepared Git boundary status: ${rawStatus}`,
-          );
-        }
-        boundary.add(
-          status === "R"
-            ? signature("R", firstPath, secondPath)
-            : signature("A", secondPath),
-        );
-      } else {
-        boundary.add(
-          signature(status === "A" || status === "D" ? status : "M", firstPath),
-        );
-      }
-    }
-    return boundary;
+export function parseGitRawChanges(output: string): RawGitChange[] {
+  if (!output) {
+    return [];
   }
 
-  for (const line of output.split(/\r?\n/)) {
-    if (!line.trim()) {
+  const tokens = output.split("\0");
+  const changes: RawGitChange[] = [];
+  for (let index = 0; index < tokens.length;) {
+    const header = tokens[index++];
+    if (!header) {
       continue;
     }
-    const [rawStatus, firstPath, secondPath] = line.split("\t");
-    const status = rawStatus?.[0];
-    if (!status || !firstPath) {
-      throw new Error(`Could not parse prepared Git boundary line: ${line}`);
+    const parsed =
+      /^:(\d{6}) (\d{6}) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])(\d*)$/i.exec(header);
+    if (!parsed) {
+      throw new Error(`Could not parse prepared Git raw change: ${header}`);
     }
-    if (status === "R") {
-      if (!secondPath) {
-        throw new Error(`Could not parse renamed Git boundary line: ${line}`);
-      }
-      boundary.add(signature("R", firstPath, secondPath));
-    } else if (status === "C") {
-      if (!secondPath) {
-        throw new Error(`Could not parse copied Git boundary line: ${line}`);
-      }
-      boundary.add(signature("A", secondPath));
-    } else if (status === "A" || status === "D" || status === "M") {
-      boundary.add(signature(status, firstPath));
-    } else if (status === "T" || status === "U" || status === "X") {
-      boundary.add(signature("M", firstPath));
-    } else {
-      throw new Error(`Unsupported prepared Git boundary status: ${rawStatus}`);
+    const firstPath = tokens[index++];
+    if (!firstPath) {
+      throw new Error(`Prepared Git raw change had no path: ${header}`);
     }
+    const status = parsed[5]!.toUpperCase();
+    if (status === "R" || status === "C") {
+      const secondPath = tokens[index++];
+      if (!secondPath) {
+        throw new Error(`Prepared Git ${status} change had no destination`);
+      }
+      changes.push({
+        oldPath: status === "C" ? secondPath : firstPath,
+        newPath: secondPath,
+        oldObjectId: parsed[3]!,
+        newObjectId: parsed[4]!,
+        status,
+      });
+      continue;
+    }
+    changes.push({
+      oldPath: firstPath,
+      newPath: firstPath,
+      oldObjectId: parsed[3]!,
+      newObjectId: parsed[4]!,
+      status,
+    });
   }
-  return boundary;
+  return changes;
 }
 
-function toPlatformBoundarySignature(change: PlatformBoundaryChange): string {
-  if (change.renamedFile) {
-    return signature("R", change.oldPath, change.newPath);
+export function parseGitNumstat(output: string): Map<string, GitDiffStats> {
+  const statsByPath = new Map<string, GitDiffStats>();
+  if (!output) {
+    return statsByPath;
   }
-  if (change.deletedFile) {
-    return signature("D", change.oldPath);
+
+  const tokens = output.split("\0");
+  for (let index = 0; index < tokens.length;) {
+    const entry = tokens[index++];
+    if (!entry) {
+      continue;
+    }
+    const firstTab = entry.indexOf("\t");
+    const secondTab = entry.indexOf("\t", firstTab + 1);
+    if (firstTab < 0 || secondTab < 0) {
+      throw new Error(`Could not parse prepared Git numstat entry: ${entry}`);
+    }
+    const additionsText = entry.slice(0, firstTab);
+    const deletionsText = entry.slice(firstTab + 1, secondTab);
+    let newPath = entry.slice(secondTab + 1);
+    if (!newPath) {
+      const oldPath = tokens[index++];
+      newPath = tokens[index++] ?? "";
+      if (!oldPath || !newPath) {
+        throw new Error("Prepared Git rename numstat had incomplete paths");
+      }
+    }
+    const binary = additionsText === "-" || deletionsText === "-";
+    statsByPath.set(newPath, {
+      ...(!binary ? { additions: parseCount(additionsText) } : {}),
+      ...(!binary ? { deletions: parseCount(deletionsText) } : {}),
+    });
   }
-  if (change.newFile) {
-    return signature("A", change.newPath);
-  }
-  return signature("M", change.newPath);
+  return statsByPath;
 }
 
-function signature(status: string, ...paths: string[]): string {
-  return [status, ...paths].join("\0");
+function parseCount(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error(`Invalid prepared Git numstat count: ${value}`);
+  }
+  return parsed;
 }
 
-function formatBoundaryEntries(entries: string[]): string {
-  return entries.length === 0
-    ? "none"
-    : entries
-        .slice(0, 10)
-        .map((entry) => entry.replaceAll("\0", " "))
-        .join(", ");
+function formatPaths(paths: string[]): string {
+  return paths.length === 0 ? "none" : paths.slice(0, 10).join(", ");
 }

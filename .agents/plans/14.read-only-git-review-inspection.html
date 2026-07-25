@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 14 — Inspect every change with read-only Git</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="high">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 14</p>
+          <p class="rail-value">Inspect every changed file</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">No change</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a>
+            <a href="#goal">What do we want?</a>
+            <a href="#fix">How do we fix it?</a>
+            <a href="#steps">Work steps</a>
+            <a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 14 · review quality</p>
+          <h1>
+            Let the reviewer inspect every change through safe, read-only Git.
+          </h1>
+          <p class="lede">
+            ReviewPhin currently chooses a small number of changed files for the
+            starting prompt. Replace that hard limit with a complete, compact
+            change list and a dedicated Git inspection tool, so the reviewer can
+            widen its work without loading every diff up front.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>High</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Teams with larger changes</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main area</span><strong>Review context and tools</strong>
+            </div>
+            <div class="meta-item">
+              <span>Stored data</span><strong>No schema change</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> every review starts with the full
+            change boundary, then reads diffs, history, blame, and files only as
+            needed. Large reviews are neither silently partial nor bloated with
+            every full diff.
+          </div>
+        </header>
+
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>A file-count limit decides the starting scope</h3>
+              <p>
+                A first review receives at most 12 detailed changes, an
+                incremental review receives 8, and a discussion follow-up
+                receives 4. The model can read the workspace, but it may never
+                learn that a later changed file deserves attention.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The fallback file list is incomplete</h3>
+              <p>
+                Only part of the omitted file list reaches the prompt. In the
+                July sample, none of the 103 findings landed on a changed path
+                beyond that visible list. That is evidence of a discovery gap,
+                not proof that later files were safe.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Existing reads compensate, but do not close the gap</h3>
+              <p>
+                Most tool calls open files or search for related symbols. Among
+                21 capped first reviews, 644 of 896 changed files started
+                outside the detailed scope and 288 were never reached by a file
+                read or search. Recent logs are the most reliable because older
+                sessions were not always stored completely.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Sending more full diffs would create a different problem</h3>
+              <p>
+                Putting every patch in the initial prompt would make ordinary
+                reviews larger and can distract the model with low-value detail.
+                The reviewer needs the whole map first and the full text on
+                demand.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="Git-backed review inspection flow">
+            <div>
+              <strong>1. Prepare trusted revisions</strong
+              ><span
+                >Materialize the exact review head and comparison base, then
+                remove credentials and remote access.</span
+              >
+            </div>
+            <div>
+              <strong>2. Start with the whole map</strong
+              ><span
+                >Derive every changed path, change kind, and size from the local
+                Git comparison without embedding patch bodies.</span
+              >
+            </div>
+            <div>
+              <strong>3. Inspect evidence on demand</strong
+              ><span
+                >Use fixed read-only Git operations together with file reads and
+                searches, then return the same focused review format.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>
+              First and incremental reviews have no numeric changed-file limit.
+            </li>
+            <li>
+              Discussion follow-ups remain focused by the target thread, not by
+              an arbitrary file count.
+            </li>
+            <li>
+              The prompt always names every file inside the exact local Git
+              comparison.
+            </li>
+            <li>
+              Git-ready sessions omit full diff bodies from their initial
+              context while retaining change kinds and sizes.
+            </li>
+            <li>
+              The reviewer gets no general shell, network access, credentials,
+              mutable Git operation, or path outside its workspace.
+            </li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Problem</th>
+                <th>Planned change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>A fixed number of files receives detailed treatment.</td>
+                <td>
+                  Remove file-count selection from full and incremental review
+                  discovery. Keep priority markers for the newest delta, open
+                  findings, and the requested discussion without hiding the rest
+                  of the review.
+                </td>
+              </tr>
+              <tr>
+                <td>Complete patches would make the prompt too large.</td>
+                <td>
+                  For Git-ready workspaces, replace inline patch bodies with one
+                  complete manifest containing paths, status, additions,
+                  deletions, object identities, and the trusted revisions.
+                  Discussion follow-ups inspect their target through the same
+                  read-only tool.
+                </td>
+              </tr>
+              <tr>
+                <td>A general shell would be too broad.</td>
+                <td>
+                  Register one dedicated tool that maps a small operation list
+                  to fixed Git commands. Each operation validates its own
+                  arguments and runs Git directly without a shell.
+                </td>
+              </tr>
+              <tr>
+                <td>Git output can still overwhelm a session.</td>
+                <td>
+                  Apply time and output limits per call. When output is cut off,
+                  return an explicit message that tells the reviewer to narrow
+                  by path, revision, or line range.
+                </td>
+              </tr>
+              <tr>
+                <td>Repository preparation can fail.</td>
+                <td>
+                  Use the complete platform diff only when it fits the fallback
+                  prompt budget. Otherwise stop the review clearly instead of
+                  publishing a result that silently skipped changes.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            <strong>Read-only must be structural:</strong> do not accept a
+            command string and do not depend on the model choosing safe flags.
+            The server owns the executable, working directory, environment,
+            operation map, revisions, argument rules, timeout, and output limit.
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Lock down the expected review boundary.</strong> Add
+                fixtures for large first reviews, large incremental reviews,
+                renamed and deleted files, binary changes, forked pull requests,
+                and focused discussion follow-ups. Preserve the current July
+                session analysis as the before-deployment comparison.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Prepare both trusted Git revisions.</strong> Update
+                GitLab and GitHub workspace creation to fetch the exact head and
+                comparison commits, create fixed local refs, check out the head
+                without a branch, remove the remote, and discard all
+                authentication data before the model session begins.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add the dedicated inspection tool.</strong> Register it
+                only for reviewer sessions. Validate every operation separately,
+                reject unsafe flags and paths, run without a shell, disable
+                pagers and external diff helpers, and make truncation visible.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Replace selection with compact discovery.</strong> Build
+                one complete manifest directly from the trusted revisions before
+                starting the reviewer. Remove numeric file limits and inline
+                diff bodies when Git inspection is available, while preserving
+                delta and discussion priorities. Keep provider patches only for
+                publication details and non-Git fallbacks.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Make degraded behavior explicit.</strong> Treat the Git
+                comparison as the main review boundary on both platforms. If Git
+                preparation or manifest parsing fails, use a complete inline
+                provider fallback only when it fits; otherwise fail before
+                review publication with a useful retry reason.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong
+                  >Deploy, then inspect real sessions after one week.</strong
+                >
+                Repeat the same log analysis by review size and mode. Compare
+                tool operations, changed paths reached, tool rounds, context
+                tokens, failures, truncations, and where findings land. Use that
+                evidence to tune prompt guidance or output limits rather than
+                adding another file cap.
+              </div>
+            </li>
+          </ol>
+
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                Add <code>git_readonly</code> to
+                <a href="../../src/harness/types.ts"
+                  ><code>HarnessToolId</code></a
+                >
+                and register it from
+                <a href="../../src/harness/registry.ts"
+                  ><code>resolveHarnessTools</code></a
+                >
+                with the Copilot SDK’s <code>parameters</code> field. Prefer a
+                separate <code>src/harness/git-readonly.ts</code> implementation
+                and focused unit test.
+              </li>
+              <li>
+                The operation enum should cover <code>status</code>,
+                <code>diff</code>, <code>log</code>, <code>show</code>,
+                <code>list-branches</code>, <code>rev-parse</code>,
+                <code>ls-files</code>, and <code>blame</code>. Do not expose
+                <code>branch</code> with arbitrary arguments because it can
+                create or delete branches. If the schema keeps a generic
+                <code>args</code> array, validate it against a separate
+                allowlist for each operation.
+              </li>
+              <li>
+                Execute Git with <code>execFile</code> or
+                <code>spawn("git", args, { shell: false })</code> in the fixed,
+                resolved workspace. Reject absolute paths, parent traversal,
+                pathspec file loading, configuration overrides, aliases,
+                <code>--exec-path</code>, <code>--no-index</code>,
+                <code>--output</code>, external diff, text conversion, and every
+                mutating operation. Resolve accepted paths and ensure they stay
+                inside the repository.
+              </li>
+              <li>
+                Build a minimal Git environment with
+                <code>GIT_TERMINAL_PROMPT=0</code>,
+                <code>GIT_OPTIONAL_LOCKS=0</code>, <code>GIT_PAGER=cat</code>,
+                <code>GIT_CONFIG_NOSYSTEM=1</code>,
+                <code>GIT_CONFIG_GLOBAL</code> pointing to a known empty file,
+                and <code>GIT_LFS_SKIP_SMUDGE=1</code>. Clear inherited Git
+                configuration injection, credential, askpass, authorization,
+                pager, and external-diff variables. Pass
+                <code>--no-ext-diff</code> and <code>--no-textconv</code> where
+                supported.
+              </li>
+              <li>
+                Extend
+                <a href="../../src/platforms/IPlatform.ts"
+                  ><code>PlatformMaterializedWorkspace</code></a
+                >
+                and <a href="../../src/review/types.ts">review context types</a>
+                with an in-memory inspection capability and fixed
+                <code>reviewphin/base</code> and
+                <code>reviewphin/head</code> refs. These are runtime values, not
+                a storage-contract revision.
+              </li>
+              <li>
+                Change
+                <a href="../../src/platforms/gitlab/workspace.ts"
+                  ><code>WorkspaceMaterializer.materializeFromGit</code></a
+                >
+                to fetch the latest merge-request version’s base and head,
+                retain <code>.git</code>, detach at the exact head, and remove
+                <code>origin</code> before returning. Keep SHA verification and
+                the archive and targeted-file fallbacks.
+              </li>
+              <li>
+                Replace archive-only preparation in
+                <a href="../../src/platforms/github/workspace.ts"
+                  ><code>GitHubWorkspaceMaterializer</code></a
+                >
+                with authenticated exact-SHA Git preparation for the pull
+                request base and head, including forks. Expose installation
+                authentication to workspace setup without logging or retaining
+                the token, then remove the remote before review.
+              </li>
+              <li>
+                In
+                <a href="../../src/review/review-scope.ts"
+                  ><code>buildScopedReviewContext</code></a
+                >, remove <code>CHANGE_LIMIT_BY_MODE</code> and file slicing.
+                Keep follow-up targeting and incremental priority rules. In
+                <a href="../../src/prompts/prompt-builders.ts"
+                  ><code>buildCompactReviewContext</code></a
+                >, replace selected and omitted file arrays with the complete
+                Git-derived manifest for Git-ready sessions and remove inline
+                <code>diff</code> bodies.
+              </li>
+              <li>
+                Enable the new tool only in
+                <a href="../../src/review/harness-review-provider.ts"
+                  ><code>HarnessReviewProvider.review</code></a
+                >. Do not add it to chatter or memory sessions. The existing
+                custom-tool permission path in
+                <a href="../../src/harness/session.ts"
+                  ><code>HarnessSessionRuntime.run</code></a
+                >
+                may approve it because the handler itself has no write path.
+              </li>
+              <li>
+                Preserve custom-tool name, operation, safe arguments, duration,
+                truncation, rejection, and failure in
+                <a href="../../src/harness/run-log.ts"
+                  ><code>HarnessRunLog</code></a
+                >
+                events, but never record environment variables, credentials, or
+                remote URLs. No new database fields are required.
+              </li>
+              <li>
+                Extend
+                <a href="../../test/workspace-materializer.test.ts"
+                  >GitLab workspace tests</a
+                >,
+                <a href="../../test/github-workspace.test.ts"
+                  >GitHub workspace tests</a
+                >, <a href="../../test/review-scope.test.ts">scope tests</a>,
+                <a href="../../test/review-prompt.test.ts">prompt tests</a>,
+                <a href="../../test/harness-review-provider.test.ts"
+                  >review provider tests</a
+                >, and
+                <a href="../../test/harness-session.test.ts">session tests</a>.
+                Add adversarial tests for every rejected operation and flag,
+                path escape, malicious repository config, external diff and
+                pager execution, timeout, output truncation, missing refs,
+                malformed Git manifest output, and Git-unavailable fallback.
+              </li>
+              <li>
+                One week after deployment, run
+                <code
+                  >pnpm cli metrics sessions --from 2026-07-01 --all-sessions
+                  --json</code
+                >
+                and analyze the corresponding recent reviewer logs. Compare
+                pre/post sessions within similar changed-file bands and review
+                modes; older logs may be incomplete.
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              A review with more than the old limit names every path found in
+              the exact base-to-head Git comparison, with no “additional files”
+              cutoff.
+            </li>
+            <li>
+              Git-ready first, incremental, and discussion-follow-up prompts
+              contain no provider patch bodies; detailed evidence is read
+              through the bounded Git tool.
+            </li>
+            <li>
+              The reviewer can compare the trusted base and head, inspect one
+              path, read history and blame, and combine those results with
+              normal file reads and searches.
+            </li>
+            <li>
+              Attempts to mutate the repository, invoke a shell or helper, write
+              output, escape the workspace, use configuration injection, contact
+              a remote, or exceed limits are rejected or stopped.
+            </li>
+            <li>
+              GitLab and GitHub verify exact revisions, remove remotes and
+              credentials before review, and clean the complete workspace after
+              success, failure, cancellation, or retry.
+            </li>
+            <li>
+              Git preparation failure never produces a silently partial review:
+              the run uses a complete bounded fallback or fails clearly before
+              publication.
+            </li>
+            <li>
+              The one-week production comparison reports Git operation mix,
+              rejected and truncated calls, changed paths reached beyond the old
+              limits, tool rounds, context use, failures, and finding locations.
+            </li>
+            <li>
+              The change uses existing run logs and adds no storage contract,
+              SQLite migration, or Flotiq migration.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> focused Git tool, workspace, scope,
+            prompt, provider, session, fallback, and cleanup tests,
+            <code>pnpm test</code>, <code>pnpm typecheck</code>,
+            <code>pnpm lint</code>, and <code>pnpm build</code>.
+          </p>
+        </section>
+
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="13.tenant-autoregistration.html"
+            >← Tenant auto-registration</a
+          ><a href="index.html">All plans →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

@@ -26,6 +26,14 @@ describe("WorkspaceMaterializer", () => {
     const getRawFile = vi.fn();
     const listRepositoryTree = vi.fn();
     const gitRunner = vi.fn(async ({ cwd, args }) => {
+      if (args[0] === "diff") {
+        return {
+          stdout: args.includes("--raw")
+            ? ":100644 100644 aaaa bbbb M\0src/index.ts\0"
+            : "5\t3\tsrc/index.ts\0",
+          stderr: "",
+        };
+      }
       if (args[0] === "-c" && args[2] === "checkout") {
         await mkdir(join(cwd, ".git"), { recursive: true });
         await writeFile(join(cwd, "AGENTS.md"), "# Root instructions\n");
@@ -92,6 +100,18 @@ describe("WorkspaceMaterializer", () => {
         headRef: "refs/reviewphin/head",
       }),
     );
+    expect(workspace.gitChanges).toEqual([
+      {
+        oldPath: "src/index.ts",
+        newPath: "src/index.ts",
+        additions: 5,
+        deletions: 3,
+        contentSignature: "aaaa:bbbb",
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      },
+    ]);
     expect(downloadRepositoryArchive).not.toHaveBeenCalled();
     expect(getRawFile).not.toHaveBeenCalled();
   });

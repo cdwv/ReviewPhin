@@ -8,28 +8,17 @@ import * as tar from "tar";
 
 import type { PlatformMaterializedWorkspace } from "../IPlatform.js";
 import {
-  assertGitBoundaryMatchesPlatform,
+  buildGitReviewChanges,
   createGitInspectionCapability,
-  type PlatformBoundaryChange,
+  type GitRunner,
+  type GitRunnerInput,
+  type GitRunnerResult,
   REVIEW_BASE_REF,
   REVIEW_HEAD_REF,
 } from "../git-workspace.js";
 import type { GitHubClient } from "./client.js";
 
 const execFileAsync = promisify(execFile);
-
-interface GitRunnerInput {
-  cwd: string;
-  args: string[];
-  env?: NodeJS.ProcessEnv;
-}
-
-interface GitRunnerResult {
-  stdout: string;
-  stderr: string;
-}
-
-type GitRunner = (input: GitRunnerInput) => Promise<GitRunnerResult>;
 
 export interface GitHubMaterializedWorkspace extends PlatformMaterializedWorkspace {
   strategy: "git" | "archive";
@@ -57,7 +46,6 @@ export class GitHubWorkspaceMaterializer {
     codeReviewId?: number | undefined;
     baseSha?: string | undefined;
     headSha: string;
-    changes?: PlatformBoundaryChange[] | undefined;
   }): Promise<GitHubMaterializedWorkspace> {
     await mkdir(this.options.workspaceRoot, { recursive: true });
     const cleanupRoot = await mkdtemp(
@@ -109,7 +97,6 @@ export class GitHubWorkspaceMaterializer {
       codeReviewId?: number | undefined;
       baseSha: string;
       headSha: string;
-      changes?: PlatformBoundaryChange[] | undefined;
     },
     cleanupRoot: string,
   ): Promise<GitHubMaterializedWorkspace> {
@@ -201,21 +188,11 @@ export class GitHubWorkspaceMaterializer {
       );
     }
 
-    const boundary = await this.gitRunner({
+    const gitChanges = await buildGitReviewChanges({
       cwd: rootPath,
-      args: [
-        "diff",
-        "--name-status",
-        "-z",
-        "--find-renames",
-        "--no-ext-diff",
-        "--no-textconv",
-        REVIEW_BASE_REF,
-        REVIEW_HEAD_REF,
-      ],
+      gitRunner: this.gitRunner,
       env: gitEnv,
     });
-    assertGitBoundaryMatchesPlatform(boundary.stdout, input.changes ?? []);
 
     await this.gitRunner({
       cwd: rootPath,
@@ -239,6 +216,7 @@ export class GitHubWorkspaceMaterializer {
       cleanupRoot,
       strategy: "git",
       gitInspection,
+      gitChanges,
     };
   }
 

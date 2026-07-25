@@ -599,7 +599,7 @@ function getChangeSignature(change: CodeReviewChange): string {
   return JSON.stringify({
     oldPath: change.oldPath,
     newPath: change.newPath,
-    diff: change.diff ?? "",
+    content: change.contentSignature ?? change.diff ?? "",
     newFile: change.newFile,
     renamedFile: change.renamedFile,
     deletedFile: change.deletedFile,

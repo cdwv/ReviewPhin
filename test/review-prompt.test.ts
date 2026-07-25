@@ -267,7 +267,7 @@ describe("buildReviewPrompt", () => {
     expect(compact.gitInspection.available).toBe(false);
   });
 
-  it("keeps only the target hunk inline for a Git-ready discussion follow-up", () => {
+  it("keeps Git-ready discussion follow-ups free of provider patch text", () => {
     const context = createContext(
       undefined,
       "follow-up-comment",
@@ -299,9 +299,8 @@ describe("buildReviewPrompt", () => {
 
     const compact = buildCompactReviewContext(context, 5_000);
 
-    expect(compact.inlineDiffs[0]?.diff).toContain("@@ -20,2 +20,3 @@");
-    expect(compact.inlineDiffs[0]?.diff).toContain("+new target");
-    expect(compact.inlineDiffs[0]?.diff).not.toContain("old one");
+    expect(compact.inlineDiffs).toEqual([]);
+    expect(compact.gitInspection.available).toBe(true);
   });
 
   it("uses the follow-up-discussion registered combination without the summary overlay", () => {

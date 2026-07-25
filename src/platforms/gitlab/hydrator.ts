@@ -6,6 +6,7 @@ import type {
   InteractionJobRecord,
 } from "../../storage/contract/index.js";
 import type { ProjectMemoryContext } from "../../memory/types.js";
+import type { CodeReviewChange } from "../../review/types.js";
 import type { GitLabClient } from "./client.js";
 import { createGitLabProjectMemoryBackend } from "./project-memory-backend.js";
 import type {
@@ -68,7 +69,7 @@ export class CodeReviewContextHydrator {
       headSha: job.headSha,
       codeReviewJson: JSON.stringify(materializedContext.mergeRequest),
       versionsJson: JSON.stringify(versions),
-      changesJson: JSON.stringify(materializedContext.changes),
+      changesJson: JSON.stringify(getReviewChanges(materializedContext)),
       commentsJson: JSON.stringify(materializedContext.notes),
       discussionsJson: JSON.stringify(materializedContext.discussions),
       instructionsJson: "[]",
@@ -81,7 +82,7 @@ export class CodeReviewContextHydrator {
         tenantId: tenant.id,
         interactionJobId: job.id,
         codeReviewId: job.codeReviewId,
-        changedFiles: materializedContext.changes.length,
+        changedFiles: getReviewChanges(materializedContext).length,
         discussionCount: materializedContext.discussions.length,
         commentCount: materializedContext.notes.length,
         workspaceStrategy: materializedContext.workspace.strategy,
@@ -158,6 +159,7 @@ export class CodeReviewContextHydrator {
       job,
       mergeRequest,
       changes,
+      reviewChanges: workspace.gitChanges ?? changes.map(toCodeReviewChange),
       notes,
       discussions,
       workspace,
@@ -199,3 +201,22 @@ export class CodeReviewContextHydrator {
 }
 
 export { CodeReviewContextHydrator as MergeRequestContextHydrator };
+
+function getReviewChanges(
+  context: MaterializedMergeRequestContext,
+): CodeReviewChange[] {
+  return context.reviewChanges ?? context.changes.map(toCodeReviewChange);
+}
+
+function toCodeReviewChange(
+  change: MaterializedMergeRequestContext["changes"][number],
+): CodeReviewChange {
+  return {
+    oldPath: change.old_path,
+    newPath: change.new_path,
+    diff: change.diff,
+    newFile: change.new_file,
+    renamedFile: change.renamed_file,
+    deletedFile: change.deleted_file,
+  };
+}

@@ -17,26 +17,16 @@ import type {
   MaterializedWorkspace,
 } from "./types.js";
 import {
-  assertGitBoundaryMatchesPlatform,
+  buildGitReviewChanges,
   createGitInspectionCapability,
+  type GitRunner,
+  type GitRunnerInput,
+  type GitRunnerResult,
   REVIEW_BASE_REF,
   REVIEW_HEAD_REF,
 } from "../git-workspace.js";
 
 const execFileAsync = promisify(execFile);
-
-interface GitRunnerInput {
-  cwd: string;
-  args: string[];
-  env?: NodeJS.ProcessEnv;
-}
-
-interface GitRunnerResult {
-  stdout: string;
-  stderr: string;
-}
-
-type GitRunner = (input: GitRunnerInput) => Promise<GitRunnerResult>;
 
 interface WorkspaceMaterializerOptions {
   workspaceRoot: string;
@@ -323,30 +313,11 @@ export class WorkspaceMaterializer {
         `Prepared review base ${preparedBase} does not match expected ${baseSha}`,
       );
     }
-    const boundary = await this.gitRunner({
+    const gitChanges = await buildGitReviewChanges({
       cwd: rootPath,
-      args: [
-        "diff",
-        "--name-status",
-        "-z",
-        "--find-renames",
-        "--no-ext-diff",
-        "--no-textconv",
-        REVIEW_BASE_REF,
-        REVIEW_HEAD_REF,
-      ],
+      gitRunner: this.gitRunner,
       env: gitEnv,
     });
-    assertGitBoundaryMatchesPlatform(
-      boundary.stdout,
-      input.changes.map((change) => ({
-        oldPath: change.old_path,
-        newPath: change.new_path,
-        newFile: change.new_file,
-        renamedFile: change.renamed_file,
-        deletedFile: change.deleted_file,
-      })),
-    );
     await this.gitRunner({
       cwd: rootPath,
       args: [
@@ -370,6 +341,7 @@ export class WorkspaceMaterializer {
       cleanupRoot,
       strategy: "git",
       gitInspection,
+      gitChanges,
     };
   }
 }

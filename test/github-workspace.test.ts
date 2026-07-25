@@ -19,7 +19,7 @@ describe("GitHubWorkspaceMaterializer", () => {
     );
   });
 
-  it("prepares trusted Git refs, verifies the boundary, and removes the remote", async () => {
+  it("prepares trusted Git refs, derives the manifest, and removes the remote", async () => {
     const workspaceRoot = await createTempRoot();
     const gitRunner = vi.fn(
       async ({ cwd, args }: { cwd: string; args: string[] }) => {
@@ -30,7 +30,12 @@ describe("GitHubWorkspaceMaterializer", () => {
           };
         }
         if (args[0] === "diff") {
-          return { stdout: "M\0src.ts\0", stderr: "" };
+          return {
+            stdout: args.includes("--raw")
+              ? ":100644 100644 aaaa bbbb M\0src.ts\0"
+              : "2\t1\tsrc.ts\0",
+            stderr: "",
+          };
         }
         if (args[0] === "-c" && args[2] === "checkout") {
           await mkdir(join(cwd, ".git"), { recursive: true });
@@ -55,15 +60,6 @@ describe("GitHubWorkspaceMaterializer", () => {
       codeReviewId: 42,
       baseSha: "base-sha",
       headSha: "head-sha",
-      changes: [
-        {
-          oldPath: "src.ts",
-          newPath: "src.ts",
-          newFile: false,
-          renamedFile: false,
-          deletedFile: false,
-        },
-      ],
     });
 
     expect(workspace.strategy).toBe("git");
@@ -73,6 +69,18 @@ describe("GitHubWorkspaceMaterializer", () => {
         headRef: "refs/reviewphin/head",
       }),
     );
+    expect(workspace.gitChanges).toEqual([
+      {
+        oldPath: "src.ts",
+        newPath: "src.ts",
+        additions: 2,
+        deletions: 1,
+        contentSignature: "aaaa:bbbb",
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      },
+    ]);
     expect(gitRunner).toHaveBeenCalledWith(
       expect.objectContaining({ args: ["remote", "remove", "origin"] }),
     );
@@ -116,7 +124,6 @@ describe("GitHubWorkspaceMaterializer", () => {
       codeReviewId: 42,
       baseSha: "base-sha",
       headSha: "head-sha",
-      changes: [],
     });
 
     expect(workspace.strategy).toBe("git");

@@ -5,7 +5,11 @@ import {
   type GitReadonlyExecutionContext,
   type GitReadonlyRunner,
 } from "../src/harness/git-readonly.js";
-import { assertGitBoundaryMatchesPlatform } from "../src/platforms/git-workspace.js";
+import {
+  buildGitReviewChanges,
+  parseGitNumstat,
+  parseGitRawChanges,
+} from "../src/platforms/git-workspace.js";
 import { repoPath, tmpPath } from "./test-paths.js";
 
 describe("executeGitReadonly", () => {
@@ -192,42 +196,86 @@ describe("executeGitReadonly", () => {
   });
 });
 
-describe("assertGitBoundaryMatchesPlatform", () => {
-  it("accepts modified, renamed, deleted, and binary path boundaries", () => {
-    expect(() =>
-      assertGitBoundaryMatchesPlatform(
-        [
-          "M\0src/index.ts\0",
-          "R100\0src/old.ts\0src/new.ts\0",
-          "D\0public/old.png\0",
-          "A\0public/new.png\0",
-        ].join(""),
-        [
-          change("src/index.ts"),
-          {
-            ...change("src/new.ts"),
-            oldPath: "src/old.ts",
-            renamedFile: true,
-          },
-          {
-            ...change("public/old.png"),
-            deletedFile: true,
-          },
-          {
-            ...change("public/new.png"),
-            newFile: true,
-          },
-        ],
-      ),
-    ).not.toThrow();
+describe("Git-derived review manifest", () => {
+  it("parses modified, renamed, deleted, copied, and binary entries", async () => {
+    const raw = [
+      ":100644 100644 aaaa bbbb M\0src/index.ts\0",
+      ":100644 100644 cccc dddd R100\0src/old.ts\0src/new.ts\0",
+      ":100644 000000 eeee 0000 D\0public/old.png\0",
+      ":000000 100644 0000 ffff A\0public/new.png\0",
+      ":100644 100644 1111 2222 C100\0src/source.ts\0src/copy.ts\0",
+    ].join("");
+    const numstat = [
+      "4\t2\tsrc/index.ts\0",
+      "1\t1\t\0src/old.ts\0src/new.ts\0",
+      "-\t-\tpublic/old.png\0",
+      "8\t0\tpublic/new.png\0",
+      "3\t0\t\0src/source.ts\0src/copy.ts\0",
+    ].join("");
+    const gitRunner = vi.fn(async ({ args }: { args: string[] }) => ({
+      stdout: args.includes("--raw") ? raw : numstat,
+      stderr: "",
+    }));
+
+    await expect(
+      buildGitReviewChanges({ cwd: "repo", gitRunner }),
+    ).resolves.toEqual([
+      {
+        ...change("src/index.ts"),
+        additions: 4,
+        deletions: 2,
+        contentSignature: "aaaa:bbbb",
+      },
+      {
+        ...change("src/new.ts"),
+        oldPath: "src/old.ts",
+        additions: 1,
+        deletions: 1,
+        renamedFile: true,
+        contentSignature: "cccc:dddd",
+      },
+      {
+        ...change("public/old.png"),
+        deletedFile: true,
+        contentSignature: "eeee:0000",
+      },
+      {
+        ...change("public/new.png"),
+        additions: 8,
+        deletions: 0,
+        newFile: true,
+        contentSignature: "0000:ffff",
+      },
+      {
+        ...change("src/copy.ts"),
+        additions: 3,
+        deletions: 0,
+        newFile: true,
+        contentSignature: "1111:2222",
+      },
+    ]);
   });
 
-  it("rejects a prepared Git boundary that differs from the platform snapshot", () => {
-    expect(() =>
-      assertGitBoundaryMatchesPlatform("M\0src/other.ts\0", [
-        change("src/index.ts"),
-      ]),
-    ).toThrow("does not match the platform snapshot");
+  it("rejects malformed Git output instead of publishing a partial manifest", () => {
+    expect(() => parseGitRawChanges("M\0src/index.ts\0")).toThrow(
+      "Could not parse prepared Git raw change",
+    );
+    expect(() => parseGitNumstat("not-numstat\0")).toThrow(
+      "Could not parse prepared Git numstat entry",
+    );
+  });
+
+  it("rejects mismatched raw and numstat output", async () => {
+    const gitRunner = vi.fn(async ({ args }: { args: string[] }) => ({
+      stdout: args.includes("--raw")
+        ? ":100644 100644 aaaa bbbb M\0src/index.ts\0"
+        : "1\t0\tsrc/other.ts\0",
+      stderr: "",
+    }));
+
+    await expect(
+      buildGitReviewChanges({ cwd: "repo", gitRunner }),
+    ).rejects.toThrow("Prepared Git manifest outputs disagree");
   });
 });
 

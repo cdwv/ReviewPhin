@@ -216,6 +216,7 @@ export interface CodeReviewChange {
   diff?: string | undefined;
   additions?: number | undefined;
   deletions?: number | undefined;
+  contentSignature?: string | undefined;
   newFile: boolean;
   renamedFile: boolean;
   deletedFile: boolean;

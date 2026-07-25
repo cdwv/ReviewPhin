@@ -12,6 +12,7 @@ import type { ProjectMemoryBackend } from "../memory/backend.js";
 import type { InteractionRunArtifacts } from "../review/run-artifacts.js";
 import type {
   ChatterBatchResult,
+  CodeReviewChange,
   ProviderDiscussionContext,
   ResponseTarget,
   ReviewContext,
@@ -69,6 +70,7 @@ export interface PlatformMaterializedWorkspace {
   cleanupRoot: string;
   strategy: string;
   gitInspection?: GitReadonlyCapability | undefined;
+  gitChanges?: CodeReviewChange[] | undefined;
   gitPreparationError?: string | undefined;
 }
 

@@ -180,7 +180,7 @@ export function buildCompactReviewContext(
           baseRevision: "reviewphin/base",
           headRevision: "reviewphin/head",
           guidance:
-            "Use the manifest as the complete platform boundary, then inspect relevant diffs, history, blame, and revisions on demand.",
+            "Use the Git-derived manifest as the complete review boundary, then inspect relevant diffs, history, blame, and revisions on demand.",
         }
       : {
           available: false,
@@ -407,7 +407,7 @@ function buildCompactChatterContext(
 }
 
 function buildInlineDiffs(context: ReviewContext) {
-  if (context.gitInspection && context.scope.mode !== "follow-up-discussion") {
+  if (context.gitInspection) {
     return [];
   }
 

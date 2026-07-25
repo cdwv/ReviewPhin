@@ -124,7 +124,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
           headSha: context.pullRequest.head.sha,
         },
       ]),
-      changesJson: JSON.stringify(context.files.map(toCodeReviewChange)),
+      changesJson: JSON.stringify(getReviewChanges(context)),
       commentsJson: JSON.stringify(this.toCodeReviewComments(context)),
       discussionsJson: JSON.stringify(this.toCodeReviewDiscussions(context)),
       instructionsJson: "[]",
@@ -137,7 +137,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
         tenantId: this.tenant.id,
         interactionJobId: input.job.id,
         codeReviewId: input.job.codeReviewId,
-        changedFiles: context.files.length,
+        changedFiles: getReviewChanges(context).length,
         discussionCount: this.toCodeReviewDiscussions(context).length,
         commentCount: this.toCodeReviewComments(context).length,
         workspaceStrategy: context.workspace.strategy,
@@ -279,7 +279,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
         ? { gitInspection: context.workspace.gitInspection }
         : {}),
       codeReview: toCodeReviewItem(context.pullRequest),
-      changes: context.files.map(toCodeReviewChange),
+      changes: getReviewChanges(context),
       comments: this.toCodeReviewComments(context),
       discussions: this.toCodeReviewDiscussions(context),
       projectMemory: context.projectMemory,
@@ -699,8 +699,8 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       codeReviewId: job.codeReviewId,
       ...(mergeBaseSha ? { baseSha: mergeBaseSha } : {}),
       headSha: job.headSha,
-      changes: files.map(toCodeReviewChange),
     });
+    const reviewChanges = workspace.gitChanges ?? files.map(toCodeReviewChange);
     return {
       tenant: this.tenant,
       job,
@@ -708,6 +708,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       pullRequest,
       mergeBaseSha,
       files,
+      reviewChanges,
       issueComments,
       reviews,
       reviewComments,
@@ -765,11 +766,11 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       codeReviewId: context.pullRequest.number,
       summaryContext: {
         codeReview: toCodeReviewItem(context.pullRequest),
-        changes: context.files.map(toCodeReviewChange),
+        changes: getReviewChanges(context),
       },
       workspace: context.workspace,
       projectMemory: context.projectMemory,
-      changedFileCount: context.files.length,
+      changedFileCount: getReviewChanges(context).length,
       commentCount: comments.length,
       discussionCount: discussions.length,
       platformContext: context,
@@ -961,6 +962,12 @@ function toCodeReviewChange(file: GitHubPullRequestFile): CodeReviewChange {
     renamedFile: file.status === "renamed",
     deletedFile: file.status === "removed",
   };
+}
+
+function getReviewChanges(
+  context: GitHubPullRequestContext,
+): CodeReviewChange[] {
+  return context.reviewChanges ?? context.files.map(toCodeReviewChange);
 }
 
 function toPlatformReviewComment(
