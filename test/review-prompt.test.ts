@@ -225,6 +225,26 @@ describe("buildReviewPrompt", () => {
     expect(serialized).not.toContain("export function oldWorker");
   });
 
+  it("starts large Git-backed reviews with path-scoped diffs in every review mode", () => {
+    const expectedGuidance =
+      "begin with path-scoped `git_readonly` diffs for the highest-risk files";
+
+    for (const [triggerKind, scopeMode] of [
+      ["direct-mention", "first-pass-full"],
+      ["direct-mention", "incremental-rereview"],
+      ["follow-up-comment", "follow-up-discussion"],
+    ] as const) {
+      const context = createContext(undefined, triggerKind, scopeMode);
+      context.gitInspection = {
+        baseRef: "refs/reviewphin/base",
+        headRef: "refs/reviewphin/head",
+        emptyGitConfigPath: tmpPath("empty-git-config"),
+      };
+
+      expect(buildReviewPrompt(context)).toContain(expectedGuidance);
+    }
+  });
+
   it("names every platform path beyond the former first-pass limit", () => {
     const context = createContext();
     context.gitInspection = {

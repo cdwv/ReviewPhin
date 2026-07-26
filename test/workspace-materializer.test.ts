@@ -1,4 +1,11 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -136,7 +143,10 @@ describe("WorkspaceMaterializer", () => {
     const materializer = new WorkspaceMaterializer({
       workspaceRoot,
       logger: createLogger("silent"),
-      gitRunner: vi.fn(async () => {
+      gitRunner: vi.fn(async ({ cwd }) => {
+        await mkdir(join(cwd, ".git"), { recursive: true });
+        await writeFile(join(cwd, ".git", "config"), "stale remote");
+        await writeFile(join(cwd, "partial-checkout.ts"), "stale checkout");
         throw new Error("git failed");
       }),
     });
@@ -168,6 +178,10 @@ describe("WorkspaceMaterializer", () => {
     expect(await readFile(join(workspace.rootPath, "AGENTS.md"), "utf8")).toBe(
       "# Archived instructions\n",
     );
+    await expect(access(join(workspace.rootPath, ".git"))).rejects.toThrow();
+    await expect(
+      access(join(workspace.rootPath, "partial-checkout.ts")),
+    ).rejects.toThrow();
   });
 
   it("falls back to targeted files when git and archive fail", async () => {

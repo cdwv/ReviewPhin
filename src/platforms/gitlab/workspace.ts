@@ -73,14 +73,15 @@ export class WorkspaceMaterializer {
       );
     }
 
+    const rootPath = join(cleanupRoot, "workspace");
+    await resetDirectory(rootPath);
+
     try {
       const archiveBuffer = await input.client.downloadRepositoryArchive(
         input.projectId,
         input.headSha,
       );
       const archivePath = join(cleanupRoot, "repository.tar.gz");
-      const rootPath = join(cleanupRoot, "workspace");
-      await mkdir(rootPath, { recursive: true });
       await writeFile(archivePath, archiveBuffer);
       await tar.x({
         cwd: rootPath,
