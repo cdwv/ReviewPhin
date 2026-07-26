@@ -19,9 +19,7 @@ describe("buildScopedReviewContext", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
       codeReview,
-      changes: [
-        createChange("src/manual.ts", "@@ -1 +1 @@\n-old\n+new"),
-      ],
+      changes: [createChange("src/manual.ts", "@@ -1 +1 @@\n-old\n+new")],
       comments: [],
       discussions: [],
       trigger: {
@@ -51,9 +49,7 @@ describe("buildScopedReviewContext", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
       codeReview,
-      changes: [
-        createChange("src/manual.ts", "@@ -1 +1 @@\n-old\n+new"),
-      ],
+      changes: [createChange("src/manual.ts", "@@ -1 +1 @@\n-old\n+new")],
       comments: [],
       discussions: [],
       trigger: {
@@ -333,6 +329,126 @@ describe("buildScopedReviewContext", () => {
     ]);
   });
 
+  it.each([
+    {
+      previousName: "provider diff",
+      previousChange: createChange(
+        "src/existing.ts",
+        "@@ -1 +1 @@\n-old\n+new",
+      ),
+    },
+    {
+      previousName: "legacy content signature",
+      previousChange: {
+        ...createChange("src/existing.ts", ""),
+        contentSignature: "aaaa:bbbb",
+      },
+    },
+  ])(
+    "uses a full-rescan baseline when the current signature replaces a $previousName",
+    ({ previousChange }) => {
+      const currentChange = {
+        ...createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+new"),
+        contentSignature: "git-raw-v2:100644:aaaa:100644:bbbb",
+      };
+      const scoped = buildScopedReviewContext({
+        workspacePath: repoPath(),
+        codeReview,
+        changes: [currentChange],
+        comments: [],
+        discussions: [],
+        trigger: {
+          kind: "manual-review",
+          provider: "github",
+          source: "check-run-requested-action",
+          instruction: null,
+          metadata: {
+            checkRunId: 1357,
+            actionIdentifier: "run_review",
+          },
+        },
+        priorDiscussions: [],
+        previousReview: {
+          reviewRunId: "run_legacy",
+          finishedAt: "2026-04-27T12:00:00.000Z",
+          headSha: "legacyhead",
+          resultJson: JSON.stringify({
+            overview: {
+              summary: "Prior pass",
+              overallSeverity: "low",
+            },
+            findings: [],
+            priorDispositions: [],
+          }),
+          changesJson: JSON.stringify([previousChange]),
+        },
+      });
+
+      expect(scoped.scope.mode).toBe("first-pass-full");
+      expect(scoped.scope.deltaSincePreviousReview).toBeNull();
+      expect(scoped.scope.allChangedFiles[0]?.reason).toBeUndefined();
+      expect(scoped.scope.scopeSummary).toContain(
+        "different change-signature format",
+      );
+    },
+  );
+
+  it("keeps versioned Git signatures incremental after the baseline", () => {
+    const existing = {
+      ...createChange("src/existing.ts", ""),
+      contentSignature: "git-raw-v2:100644:aaaa:100644:bbbb",
+    };
+    const delta = {
+      ...createChange("src/delta.ts", ""),
+      contentSignature: "git-raw-v2:100644:cccc:100755:dddd",
+    };
+    const scoped = buildScopedReviewContext({
+      workspacePath: repoPath(),
+      codeReview,
+      changes: [existing, delta],
+      comments: [],
+      discussions: [],
+      trigger: {
+        kind: "manual-review",
+        provider: "github",
+        source: "check-run-requested-action",
+        instruction: null,
+        metadata: {
+          checkRunId: 1357,
+          actionIdentifier: "run_review",
+        },
+      },
+      priorDiscussions: [],
+      previousReview: {
+        reviewRunId: "run_git",
+        finishedAt: "2026-04-27T12:00:00.000Z",
+        headSha: "githead",
+        resultJson: JSON.stringify({
+          overview: {
+            summary: "Prior pass",
+            overallSeverity: "low",
+          },
+          findings: [],
+          priorDispositions: [],
+        }),
+        changesJson: JSON.stringify([
+          existing,
+          {
+            ...delta,
+            contentSignature: "git-raw-v2:100644:cccc:100644:dddd",
+          },
+        ]),
+      },
+    });
+
+    expect(scoped.scope.mode).toBe("incremental-rereview");
+    expect(
+      scoped.scope.deltaSincePreviousReview?.changedFiles.map(
+        (change) => change.path,
+      ),
+    ).toEqual(["src/delta.ts"]);
+  });
+
   it("keeps follow-up reviews focused on the target thread and related file", () => {
     const targetDiscussion = createThread(
       "map_target",
@@ -444,7 +560,7 @@ describe("buildScopedReviewContext", () => {
     expect(scoped.scope.omittedChangedFiles[0]?.path).toBe("src/other.ts");
   });
 
-  it("keeps first-pass direct mentions bounded for large merge requests", () => {
+  it("keeps every changed file in first-pass reviews", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
       codeReview,
@@ -477,8 +593,9 @@ describe("buildScopedReviewContext", () => {
     });
 
     expect(scoped.scope.mode).toBe("first-pass-full");
-    expect(scoped.changes).toHaveLength(12);
-    expect(scoped.scope.omittedChangedFiles).toHaveLength(4);
+    expect(scoped.changes).toHaveLength(16);
+    expect(scoped.scope.allChangedFiles).toHaveLength(16);
+    expect(scoped.scope.omittedChangedFiles).toHaveLength(0);
   });
 
   it("allows an explicit full rescan override even when previous review data exists", () => {

@@ -89,6 +89,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
     this.tenant = options.resolvedTenant.tenant;
     this.workspaceMaterializer = new GitHubWorkspaceMaterializer({
       workspaceRoot: options.workspaceRoot,
+      logger: options.logger,
     });
     const config = readyGitHubConnectionConfigSchema.parse(
       JSON.parse(
@@ -119,11 +120,11 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       codeReviewJson: JSON.stringify(context.pullRequest),
       versionsJson: JSON.stringify([
         {
-          baseSha: context.pullRequest.base.sha,
+          baseSha: context.mergeBaseSha,
           headSha: context.pullRequest.head.sha,
         },
       ]),
-      changesJson: JSON.stringify(context.files.map(toCodeReviewChange)),
+      changesJson: JSON.stringify(getReviewChanges(context)),
       commentsJson: JSON.stringify(this.toCodeReviewComments(context)),
       discussionsJson: JSON.stringify(this.toCodeReviewDiscussions(context)),
       instructionsJson: "[]",
@@ -136,7 +137,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
         tenantId: this.tenant.id,
         interactionJobId: input.job.id,
         codeReviewId: input.job.codeReviewId,
-        changedFiles: context.files.length,
+        changedFiles: getReviewChanges(context).length,
         discussionCount: this.toCodeReviewDiscussions(context).length,
         commentCount: this.toCodeReviewComments(context).length,
         workspaceStrategy: context.workspace.strategy,
@@ -274,8 +275,11 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       attachments: input.attachments,
       attachmentIssues: input.attachmentIssues,
       workspacePath: context.workspace.rootPath,
+      ...(context.workspace.gitInspection
+        ? { gitInspection: context.workspace.gitInspection }
+        : {}),
       codeReview: toCodeReviewItem(context.pullRequest),
-      changes: context.files.map(toCodeReviewChange),
+      changes: getReviewChanges(context),
       comments: this.toCodeReviewComments(context),
       discussions: this.toCodeReviewDiscussions(context),
       projectMemory: context.projectMemory,
@@ -670,18 +674,41 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       );
     }
 
+    let mergeBaseSha: string | null = null;
+    try {
+      mergeBaseSha = await this.options.client.getPullRequestMergeBase(
+        tenantConfig.repositoryFullName,
+        pullRequest.base.sha,
+        job.headSha,
+      );
+    } catch (error) {
+      this.options.logger.warn(
+        {
+          err: error,
+          tenantId: this.tenant.id,
+          interactionJobId: job.id,
+          codeReviewId: job.codeReviewId,
+        },
+        "GitHub pull request merge base is unavailable; Git workspace preparation will use the archive fallback",
+      );
+    }
     const workspace = await this.workspaceMaterializer.materialize({
       client: this.options.client,
       jobId: job.id,
       repositoryFullName: tenantConfig.repositoryFullName,
+      codeReviewId: job.codeReviewId,
+      ...(mergeBaseSha ? { baseSha: mergeBaseSha } : {}),
       headSha: job.headSha,
     });
+    const reviewChanges = workspace.gitChanges ?? files.map(toCodeReviewChange);
     return {
       tenant: this.tenant,
       job,
       repositoryFullName: tenantConfig.repositoryFullName,
       pullRequest,
+      mergeBaseSha,
       files,
+      reviewChanges,
       issueComments,
       reviews,
       reviewComments,
@@ -739,11 +766,11 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       codeReviewId: context.pullRequest.number,
       summaryContext: {
         codeReview: toCodeReviewItem(context.pullRequest),
-        changes: context.files.map(toCodeReviewChange),
+        changes: getReviewChanges(context),
       },
       workspace: context.workspace,
       projectMemory: context.projectMemory,
-      changedFileCount: context.files.length,
+      changedFileCount: getReviewChanges(context).length,
       commentCount: comments.length,
       discussionCount: discussions.length,
       platformContext: context,
@@ -929,10 +956,18 @@ function toCodeReviewChange(file: GitHubPullRequestFile): CodeReviewChange {
     oldPath: file.previous_filename ?? file.filename,
     newPath: file.filename,
     ...(file.patch ? { diff: file.patch } : {}),
+    additions: file.additions,
+    deletions: file.deletions,
     newFile: file.status === "added" || file.status === "copied",
     renamedFile: file.status === "renamed",
     deletedFile: file.status === "removed",
   };
+}
+
+function getReviewChanges(
+  context: GitHubPullRequestContext,
+): CodeReviewChange[] {
+  return context.reviewChanges ?? context.files.map(toCodeReviewChange);
 }
 
 function toPlatformReviewComment(

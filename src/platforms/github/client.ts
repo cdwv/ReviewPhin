@@ -8,6 +8,7 @@ import {
   readLimitedImageResponse,
   SUPPORTED_IMAGE_MIME_TYPES,
 } from "../image-attachments.js";
+import { getGitConfigNullDevice } from "../git-environment.js";
 
 import type {
   ReadyGitHubConnectionConfig,
@@ -136,6 +137,12 @@ const pullRequestSchema = z.object({
   base: z.object({
     sha: z.string().min(1),
     ref: z.string().min(1),
+  }),
+});
+
+const comparisonSchema = z.object({
+  merge_base_commit: z.object({
+    sha: z.string().min(1),
   }),
 });
 
@@ -461,6 +468,25 @@ export class GitHubClient {
       pullRequestSchema,
       `GitHub pull request ${repositoryFullName}#${pullRequestNumber}`,
     );
+  }
+
+  public async getPullRequestMergeBase(
+    repositoryFullName: string,
+    baseSha: string,
+    headSha: string,
+  ): Promise<string> {
+    const { owner, repository } = splitRepositoryFullName(repositoryFullName);
+    const comparison = await this.requestParsed(
+      "GET /repos/{owner}/{repo}/compare/{basehead}",
+      {
+        owner,
+        repo: repository,
+        basehead: `${baseSha}...${headSha}`,
+      },
+      comparisonSchema,
+      `comparison for GitHub pull request revisions ${baseSha}...${headSha}`,
+    );
+    return comparison.merge_base_commit.sha;
   }
 
   public async listOpenPullRequests(
@@ -914,6 +940,28 @@ export class GitHubClient {
         error,
       );
     }
+  }
+
+  public async buildGitAuthEnv(
+    baseEnv: NodeJS.ProcessEnv = process.env,
+  ): Promise<NodeJS.ProcessEnv> {
+    const token = await this.getInstallationToken();
+    return {
+      ...baseEnv,
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_LFS_SKIP_SMUDGE: "1",
+      GIT_OPTIONAL_LOCKS: "0",
+      GIT_PAGER: "cat",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: getGitConfigNullDevice(),
+      GIT_ASKPASS: "",
+      SSH_ASKPASS: "",
+      GIT_SSH_COMMAND: "",
+      GIT_EXTERNAL_DIFF: "",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "http.extraHeader",
+      GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
+    };
   }
 
   public async downloadImage(

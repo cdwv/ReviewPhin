@@ -14,6 +14,8 @@ import type {
 import type { ReviewContext, ReviewResult } from "./types.js";
 import { reviewResultSchema } from "./types.js";
 
+const MAX_INLINE_FALLBACK_DIFF_CHARS = 160_000;
+
 interface HarnessReviewProviderOptions {
   logger: Logger;
   modelConfig: HarnessModelConfig;
@@ -44,6 +46,7 @@ export class HarnessReviewProvider implements ReviewProvider {
     runtime: ReviewProviderRuntimeContext,
   ): Promise<ReviewResult> {
     const effectiveContext = await this.preparePromptContext(context, runtime);
+    this.assertCompleteFallbackFits(effectiveContext);
     const prompt = buildReviewPrompt(effectiveContext, {
       maxPromptMemoryChars: this.maxPromptMemoryChars,
     });
@@ -56,8 +59,21 @@ export class HarnessReviewProvider implements ReviewProvider {
         ? { reasoningEffort: this.modelConfig.reviewReasoningEffort }
         : {}),
       workingDirectory: effectiveContext.workspacePath,
+      ...(effectiveContext.gitInspection
+        ? {
+            gitReadonly: {
+              workspacePath: effectiveContext.workspacePath,
+              ...effectiveContext.gitInspection,
+            },
+          }
+        : {}),
       tenant: runtime.tenant,
-      tools: ["glob", "rg", "view"],
+      tools: [
+        "glob",
+        "rg",
+        "view",
+        ...(effectiveContext.gitInspection ? (["git_readonly"] as const) : []),
+      ],
       subagents: ["context-analyst", "review-author"],
       agent: "review-author",
       logging: {
@@ -91,6 +107,38 @@ export class HarnessReviewProvider implements ReviewProvider {
     return reviewResultSchema.parse(
       this.normalizeOptionalReplyHandoff(response.parsed, effectiveContext),
     );
+  }
+
+  private assertCompleteFallbackFits(context: ReviewContext): void {
+    if (
+      context.gitInspection ||
+      context.scope.mode === "follow-up-discussion"
+    ) {
+      return;
+    }
+
+    const missingDiffPaths = context.changes
+      .filter((change) => change.diff === undefined)
+      .map((change) => change.newPath || change.oldPath);
+    if (missingDiffPaths.length > 0) {
+      throw new Error(
+        `Read-only Git inspection is unavailable and the platform did not provide a complete diff for ${missingDiffPaths.length} changed file(s): ${missingDiffPaths.slice(0, 10).join(", ")}; retry after Git workspace preparation succeeds`,
+      );
+    }
+
+    const inlineChars = context.changes.reduce(
+      (total, change) =>
+        total +
+        change.oldPath.length +
+        change.newPath.length +
+        (change.diff?.length ?? 0),
+      0,
+    );
+    if (inlineChars > MAX_INLINE_FALLBACK_DIFF_CHARS) {
+      throw new Error(
+        `Read-only Git inspection is unavailable and the complete platform diff (${inlineChars} characters) exceeds the ${MAX_INLINE_FALLBACK_DIFF_CHARS}-character fallback budget; retry after Git workspace preparation succeeds`,
+      );
+    }
   }
 
   private async preparePromptContext(

@@ -15,6 +15,7 @@ import {
   githubConnectionRegistrationSchema,
   readyGitHubConnectionConfigSchema,
 } from "../src/platforms/github/config.js";
+import { getGitConfigNullDevice } from "../src/platforms/git-environment.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -160,6 +161,33 @@ describe("GitHubClient", () => {
         owner: "octo-org",
         repo: "reviewphin",
         pull_number: 42,
+      },
+    );
+  });
+
+  it("resolves the pull request comparison merge base", async () => {
+    const request = vi.fn(async () => ({
+      data: {
+        merge_base_commit: {
+          sha: "merge-base-sha",
+        },
+      },
+    }));
+    const client = createClientWithInstallationRequest(request);
+
+    await expect(
+      client.getPullRequestMergeBase(
+        "octo-org/reviewphin",
+        "base-tip-sha",
+        "head-sha",
+      ),
+    ).resolves.toBe("merge-base-sha");
+    expect(request).toHaveBeenCalledWith(
+      "GET /repos/{owner}/{repo}/compare/{basehead}",
+      {
+        owner: "octo-org",
+        repo: "reviewphin",
+        basehead: "base-tip-sha...head-sha",
       },
     );
   });
@@ -348,6 +376,29 @@ describe("GitHubClient", () => {
     await expect(
       client.downloadRepositoryArchive("octo-org/reviewphin", "head-sha"),
     ).resolves.toEqual(Buffer.from([31, 139, 8, 0]));
+  });
+
+  it("builds ephemeral Git authentication without embedding the token in a URL", async () => {
+    const auth = vi.fn(async () => ({ token: "installation-token" }));
+    const client = createClientWithAppAuth(auth);
+
+    const env = await client.buildGitAuthEnv({ PATH: "git-path" });
+
+    expect(auth).toHaveBeenCalledWith({
+      type: "installation",
+      installationId: 789,
+    });
+    expect(env).toEqual(
+      expect.objectContaining({
+        PATH: "git-path",
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "http.extraHeader",
+        GIT_CONFIG_GLOBAL: getGitConfigNullDevice(),
+      }),
+    );
+    expect(env.GIT_CONFIG_VALUE_0).toContain("Authorization: Basic ");
+    expect(JSON.stringify(env)).not.toContain("installation-token");
   });
 
   it("downloads GitHub attachments with installation access and checks redirect hosts", async () => {

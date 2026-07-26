@@ -31,19 +31,6 @@ totals after migration.
 - Flotiq migrations retain metrics field descriptions for administrators
 browsing the content type.
 
-## Unreleased
-
-### Added
-
-- Harness metrics are stored per session with open, namespaced usage units.
-- `metrics collect` imports or updates historical session logs without removing source files.
-
-### Changed
-
-- `metrics sessions` now reports from configured storage, separates unlike usage units, and supports connection and UTC date filters.
-- Metrics reports show unit-aware totals and charts by tenant and platform connection.
-- Custom storage adapters must implement the breaking `storage-v006` contract.
-
 ## v1.4.4 - 2026-07-16
 ### Changed
 - Improve support for posthog tracking through custom proxy

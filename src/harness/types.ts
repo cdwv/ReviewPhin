@@ -7,11 +7,13 @@ import type {
 import type { ZodIssue, ZodType } from "zod";
 import type { ProjectMemoryBackend } from "../memory/backend.js";
 import type { ModelReasoningEffort } from "../storage/contract/index.js";
+import type { GitReadonlyExecutionContext } from "./git-readonly.js";
 
 export type HarnessSelectionSource =
   "code-review-override" | "tenant" | "default" | "fallback";
 export type HarnessProviderType = "openai" | "azure" | "anthropic" | null;
-export type HarnessToolId = "glob" | "rg" | "view" | "add_memory_entry";
+export type HarnessToolId =
+  "glob" | "rg" | "view" | "git_readonly" | "add_memory_entry";
 export type HarnessSubagentId = "context-analyst" | "review-author";
 export type HarnessRunAttachment = NonNullable<
   MessageOptions["attachments"]
@@ -109,6 +111,7 @@ export interface HarnessRunSpec<TParsed = unknown> {
   model?: string | undefined;
   reasoningEffort?: ModelReasoningEffort | undefined;
   workingDirectory?: string | undefined;
+  gitReadonly?: GitReadonlyExecutionContext | undefined;
   tenant?: HarnessTenantContext | undefined;
   tools: HarnessToolId[];
   subagents: HarnessSubagentId[];

@@ -18,6 +18,18 @@ describe("CodeReviewContextHydrator project memory", () => {
         rootPath: tmpPath("workspace"),
         cleanupRoot: tmpPath("cleanup"),
         strategy: "git" as const,
+        gitChanges: [
+          {
+            oldPath: "src/from-git.ts",
+            newPath: "src/from-git.ts",
+            additions: 2,
+            deletions: 1,
+            contentSignature: "git-raw-v2:100644:aaaa:100644:bbbb",
+            newFile: false,
+            renamedFile: false,
+            deletedFile: false,
+          },
+        ],
       })),
     };
     const hydrator = new CodeReviewContextHydrator({
@@ -109,6 +121,18 @@ describe("CodeReviewContextHydrator project memory", () => {
           entries: [],
         }),
         instructionsJson: "[]",
+        changesJson: JSON.stringify([
+          {
+            oldPath: "src/from-git.ts",
+            newPath: "src/from-git.ts",
+            additions: 2,
+            deletions: 1,
+            contentSignature: "git-raw-v2:100644:aaaa:100644:bbbb",
+            newFile: false,
+            renamedFile: false,
+            deletedFile: false,
+          },
+        ]),
       }),
     );
   });

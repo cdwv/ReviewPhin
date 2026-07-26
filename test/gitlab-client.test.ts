@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitLabClient } from "../src/platforms/gitlab/client.js";
+import { getGitConfigNullDevice } from "../src/platforms/git-environment.js";
 import { createLogger } from "../src/logger.js";
 
 function getRequestUrl(input: URL | RequestInfo): string {
@@ -35,6 +36,22 @@ describe("GitLabClient headers", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
+  });
+
+  it("builds Git authentication with a Git-compatible null config", () => {
+    const client = new GitLabClient({
+      baseUrl: "https://gitlab.example.com",
+      apiToken: "token",
+      logger: createLogger("silent"),
+    });
+
+    expect(client.buildGitAuthEnv({ PATH: "git-path" })).toEqual(
+      expect.objectContaining({
+        PATH: "git-path",
+        GIT_CONFIG_GLOBAL: getGitConfigNullDevice(),
+        GIT_CONFIG_KEY_0: "http.extraHeader",
+      }),
+    );
   });
 
   it("requests repository archives with a binary-compatible accept header", async () => {

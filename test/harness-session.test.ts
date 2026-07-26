@@ -116,6 +116,56 @@ describe("HarnessSessionRuntime", () => {
     });
   });
 
+  it("registers git_readonly only when a prepared capability is supplied", async () => {
+    createSessionMock.mockResolvedValue(createSession());
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    await runtime.run({
+      prompt: "Review this.",
+      modelConfig: createModelConfig(),
+      workingDirectory: tmpPath("workspace"),
+      gitReadonly: {
+        workspacePath: tmpPath("workspace"),
+        baseRef: "refs/reviewphin/base",
+        headRef: "refs/reviewphin/head",
+        emptyGitConfigPath: tmpPath("empty-git-config"),
+      },
+      tools: ["glob", "rg", "view", "git_readonly"],
+      subagents: ["context-analyst", "review-author"],
+      agent: "review-author",
+    });
+
+    const sessionOptions = createSessionMock.mock.calls[0]?.[0];
+    expect(sessionOptions.availableTools).toEqual([
+      "glob",
+      "rg",
+      "view",
+      "git_readonly",
+    ]);
+    expect(sessionOptions.tools).toEqual([
+      expect.objectContaining({ name: "git_readonly" }),
+    ]);
+    expect(sessionOptions.customAgents[0].tools).toEqual([
+      "glob",
+      "rg",
+      "view",
+      "git_readonly",
+    ]);
+    expect(sessionOptions.customAgents[1].tools).toEqual([
+      "glob",
+      "rg",
+      "view",
+      "git_readonly",
+    ]);
+  });
+
   it("passes explicit provider config into session creation when configured", async () => {
     createSessionMock.mockResolvedValue(createSession());
     startMock.mockResolvedValue(undefined);

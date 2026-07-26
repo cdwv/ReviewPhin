@@ -16,21 +16,17 @@ import type {
   GitLabMergeRequestChange,
   MaterializedWorkspace,
 } from "./types.js";
+import {
+  buildGitReviewChanges,
+  createGitInspectionCapability,
+  type GitRunner,
+  type GitRunnerInput,
+  type GitRunnerResult,
+  REVIEW_BASE_REF,
+  REVIEW_HEAD_REF,
+} from "../git-workspace.js";
 
 const execFileAsync = promisify(execFile);
-
-interface GitRunnerInput {
-  cwd: string;
-  args: string[];
-  env?: NodeJS.ProcessEnv;
-}
-
-interface GitRunnerResult {
-  stdout: string;
-  stderr: string;
-}
-
-type GitRunner = (input: GitRunnerInput) => Promise<GitRunnerResult>;
 
 interface WorkspaceMaterializerOptions {
   workspaceRoot: string;
@@ -57,6 +53,7 @@ export class WorkspaceMaterializer {
     jobId: string;
     projectId: number;
     codeReviewId: number;
+    baseSha?: string | undefined;
     headSha: string;
     changes: GitLabMergeRequestChange[];
   }): Promise<MaterializedWorkspace> {
@@ -64,15 +61,20 @@ export class WorkspaceMaterializer {
       ? join(this.workspaceRoot, input.jobId, this.workspaceAttemptId)
       : join(this.workspaceRoot, input.jobId);
     await resetDirectory(cleanupRoot);
+    let gitPreparationError: string | undefined;
 
     try {
       return await this.materializeFromGit(input, cleanupRoot);
     } catch (error) {
+      gitPreparationError = getErrorMessage(error);
       this.logger.warn(
         { err: error },
         "git checkout materialization failed; falling back to repository archive",
       );
     }
+
+    const rootPath = join(cleanupRoot, "workspace");
+    await resetDirectory(rootPath);
 
     try {
       const archiveBuffer = await input.client.downloadRepositoryArchive(
@@ -80,8 +82,6 @@ export class WorkspaceMaterializer {
         input.headSha,
       );
       const archivePath = join(cleanupRoot, "repository.tar.gz");
-      const rootPath = join(cleanupRoot, "workspace");
-      await mkdir(rootPath, { recursive: true });
       await writeFile(archivePath, archiveBuffer);
       await tar.x({
         cwd: rootPath,
@@ -93,13 +93,18 @@ export class WorkspaceMaterializer {
         rootPath,
         cleanupRoot,
         strategy: "archive",
+        ...(gitPreparationError ? { gitPreparationError } : {}),
       };
     } catch (error) {
       this.logger.warn(
         { err: error },
         "repository archive materialization failed; falling back to targeted files",
       );
-      return this.materializeFromFiles(input, cleanupRoot);
+      const workspace = await this.materializeFromFiles(input, cleanupRoot);
+      return {
+        ...workspace,
+        ...(gitPreparationError ? { gitPreparationError } : {}),
+      };
     }
   }
 
@@ -118,6 +123,7 @@ export class WorkspaceMaterializer {
       jobId: string;
       projectId: number;
       codeReviewId: number;
+      baseSha?: string | undefined;
       headSha: string;
       changes: GitLabMergeRequestChange[];
     },
@@ -199,6 +205,7 @@ export class WorkspaceMaterializer {
       jobId: string;
       projectId: number;
       codeReviewId: number;
+      baseSha?: string | undefined;
       headSha: string;
       changes: GitLabMergeRequestChange[];
     },
@@ -209,6 +216,10 @@ export class WorkspaceMaterializer {
 
     const project = await input.client.getProject(input.projectId);
     const gitEnv = input.client.buildGitAuthEnv();
+    const baseSha = input.baseSha;
+    if (!baseSha) {
+      throw new Error("GitLab merge request base SHA was unavailable");
+    }
 
     await this.gitRunner({
       cwd: rootPath,
@@ -225,7 +236,7 @@ export class WorkspaceMaterializer {
     try {
       await this.gitRunner({
         cwd: rootPath,
-        args: ["fetch", "--depth", "1", "origin", input.headSha],
+        args: ["fetch", "--no-tags", "origin", input.headSha],
         env: gitEnv,
       });
     } catch (exactShaError) {
@@ -243,8 +254,7 @@ export class WorkspaceMaterializer {
         cwd: rootPath,
         args: [
           "fetch",
-          "--depth",
-          "1",
+          "--no-tags",
           "origin",
           `refs/merge-requests/${input.codeReviewId}/head`,
         ],
@@ -268,23 +278,78 @@ export class WorkspaceMaterializer {
 
     await this.gitRunner({
       cwd: rootPath,
+      args: ["update-ref", REVIEW_HEAD_REF, fetchedRef],
+      env: gitEnv,
+    });
+    await this.gitRunner({
+      cwd: rootPath,
+      args: ["fetch", "--no-tags", "origin", baseSha],
+      env: gitEnv,
+    });
+    await this.gitRunner({
+      cwd: rootPath,
+      args: ["update-ref", REVIEW_BASE_REF, "FETCH_HEAD"],
+      env: gitEnv,
+    });
+    const preparedHead = (
+      await this.gitRunner({
+        cwd: rootPath,
+        args: ["rev-parse", `${REVIEW_HEAD_REF}^{commit}`],
+        env: gitEnv,
+      })
+    ).stdout.trim();
+    const preparedBase = (
+      await this.gitRunner({
+        cwd: rootPath,
+        args: ["rev-parse", `${REVIEW_BASE_REF}^{commit}`],
+        env: gitEnv,
+      })
+    ).stdout.trim();
+    if (preparedHead && preparedHead !== input.headSha) {
+      throw new Error(
+        `Prepared review head ${preparedHead} does not match expected ${input.headSha}`,
+      );
+    }
+    if (preparedBase && preparedBase !== baseSha) {
+      throw new Error(
+        `Prepared review base ${preparedBase} does not match expected ${baseSha}`,
+      );
+    }
+    const gitChanges = await buildGitReviewChanges({
+      cwd: rootPath,
+      gitRunner: this.gitRunner,
+      env: gitEnv,
+    });
+    await this.gitRunner({
+      cwd: rootPath,
       args: [
         "-c",
         "advice.detachedHead=false",
         "checkout",
         "--detach",
-        fetchedRef,
+        REVIEW_HEAD_REF,
       ],
       env: gitEnv,
     });
-    await rm(join(rootPath, ".git"), { recursive: true, force: true });
+    await this.gitRunner({
+      cwd: rootPath,
+      args: ["remote", "remove", "origin"],
+      env: gitEnv,
+    });
+    const gitInspection = await createGitInspectionCapability(cleanupRoot);
 
     return {
       rootPath,
       cleanupRoot,
       strategy: "git",
+      gitInspection,
+      gitChanges,
     };
   }
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function runGitCommand(input: GitRunnerInput): Promise<GitRunnerResult> {

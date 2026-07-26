@@ -6,6 +6,7 @@ import type {
   InteractionJobRecord,
 } from "../../storage/contract/index.js";
 import type { ProjectMemoryContext } from "../../memory/types.js";
+import type { CodeReviewChange } from "../../review/types.js";
 import type { GitLabClient } from "./client.js";
 import { createGitLabProjectMemoryBackend } from "./project-memory-backend.js";
 import type {
@@ -58,7 +59,8 @@ export class CodeReviewContextHydrator {
           (left, right) =>
             new Date(right.created_at).getTime() -
             new Date(left.created_at).getTime(),
-        )[0] ?? null;
+        )
+        .find((version) => version.head_commit_sha === job.headSha) ?? null;
 
     const snapshot = await this.storage.createCodeReviewSnapshot({
       interactionJobId: job.id,
@@ -67,7 +69,7 @@ export class CodeReviewContextHydrator {
       headSha: job.headSha,
       codeReviewJson: JSON.stringify(materializedContext.mergeRequest),
       versionsJson: JSON.stringify(versions),
-      changesJson: JSON.stringify(materializedContext.changes),
+      changesJson: JSON.stringify(getReviewChanges(materializedContext)),
       commentsJson: JSON.stringify(materializedContext.notes),
       discussionsJson: JSON.stringify(materializedContext.discussions),
       instructionsJson: "[]",
@@ -80,7 +82,7 @@ export class CodeReviewContextHydrator {
         tenantId: tenant.id,
         interactionJobId: job.id,
         codeReviewId: job.codeReviewId,
-        changedFiles: materializedContext.changes.length,
+        changedFiles: getReviewChanges(materializedContext).length,
         discussionCount: materializedContext.discussions.length,
         commentCount: materializedContext.notes.length,
         workspaceStrategy: materializedContext.workspace.strategy,
@@ -111,21 +113,37 @@ export class CodeReviewContextHydrator {
   }): Promise<MaterializedMergeRequestContext> {
     const { tenant, job, client } = input;
     const tenantConfig = getGitLabTenantConfig(tenant);
-    const [mergeRequest, changes, notes, discussions] = await Promise.all([
-      client.getCodeReview(tenantConfig.projectId, job.codeReviewId),
-      client.getCodeReviewChanges(tenantConfig.projectId, job.codeReviewId),
-      client.listCodeReviewNotes(tenantConfig.projectId, job.codeReviewId),
-      client.listCodeReviewDiscussions(
-        tenantConfig.projectId,
-        job.codeReviewId,
-      ),
-    ]);
+    const [mergeRequest, changes, notes, discussions, versions] =
+      await Promise.all([
+        client.getCodeReview(tenantConfig.projectId, job.codeReviewId),
+        client.getCodeReviewChanges(tenantConfig.projectId, job.codeReviewId),
+        client.listCodeReviewNotes(tenantConfig.projectId, job.codeReviewId),
+        client.listCodeReviewDiscussions(
+          tenantConfig.projectId,
+          job.codeReviewId,
+        ),
+        client.listCodeReviewVersions(tenantConfig.projectId, job.codeReviewId),
+      ]);
+    const matchingVersion = versions
+      .slice()
+      .sort(
+        (left, right) =>
+          new Date(right.created_at).getTime() -
+          new Date(left.created_at).getTime(),
+      )
+      .find((version) => version.head_commit_sha === job.headSha);
+    const baseSha =
+      matchingVersion?.base_commit_sha ??
+      (mergeRequest.diff_refs?.head_sha === job.headSha
+        ? mergeRequest.diff_refs.base_sha
+        : undefined);
     const [workspace, projectMemory] = await Promise.all([
       this.workspaceMaterializer.materialize({
         client,
         jobId: job.id,
         projectId: tenantConfig.projectId,
         codeReviewId: job.codeReviewId,
+        ...(baseSha ? { baseSha } : {}),
         headSha: job.headSha,
         changes,
       }),
@@ -141,6 +159,7 @@ export class CodeReviewContextHydrator {
       job,
       mergeRequest,
       changes,
+      reviewChanges: workspace.gitChanges ?? changes.map(toCodeReviewChange),
       notes,
       discussions,
       workspace,
@@ -182,3 +201,22 @@ export class CodeReviewContextHydrator {
 }
 
 export { CodeReviewContextHydrator as MergeRequestContextHydrator };
+
+function getReviewChanges(
+  context: MaterializedMergeRequestContext,
+): CodeReviewChange[] {
+  return context.reviewChanges ?? context.changes.map(toCodeReviewChange);
+}
+
+function toCodeReviewChange(
+  change: MaterializedMergeRequestContext["changes"][number],
+): CodeReviewChange {
+  return {
+    oldPath: change.old_path,
+    newPath: change.new_path,
+    diff: change.diff,
+    newFile: change.new_file,
+    renamedFile: change.renamed_file,
+    deletedFile: change.deleted_file,
+  };
+}

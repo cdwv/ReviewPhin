@@ -3,6 +3,11 @@ import { defineTool } from "@github/copilot-sdk";
 import type { ProjectMemoryService } from "../memory/service.js";
 import { projectMemoryToolInputSchema } from "../memory/types.js";
 import { renderPrompt } from "../prompts/instruction-renderer.js";
+import {
+  executeGitReadonly,
+  gitReadonlyParameters,
+  type GitReadonlyExecutionContext,
+} from "./git-readonly.js";
 import type { HarnessSubagentId, HarnessToolId } from "./types.js";
 
 export interface ResolvedHarnessTools {
@@ -13,9 +18,14 @@ export interface ResolvedHarnessTools {
 
 interface HarnessRegistryContext {
   memoryService?: ProjectMemoryService | null | undefined;
+  gitReadonly?: GitReadonlyExecutionContext | null | undefined;
 }
 
-const READ_ONLY_TOOL_IDS: HarnessToolId[] = ["glob", "rg", "view"];
+const BUILTIN_READ_ONLY_TOOL_IDS: HarnessToolId[] = ["glob", "rg", "view"];
+const REVIEW_READ_ONLY_TOOL_IDS: HarnessToolId[] = [
+  ...BUILTIN_READ_ONLY_TOOL_IDS,
+  "git_readonly",
+];
 
 export function resolveHarnessTools(
   toolIds: HarnessToolId[],
@@ -27,9 +37,24 @@ export function resolveHarnessTools(
   const enabledToolIds: HarnessToolId[] = [];
 
   for (const toolId of selectedToolIds) {
-    if (READ_ONLY_TOOL_IDS.includes(toolId)) {
+    if (BUILTIN_READ_ONLY_TOOL_IDS.includes(toolId)) {
       availableTools.push(toolId);
       enabledToolIds.push(toolId);
+      continue;
+    }
+
+    if (toolId === "git_readonly" && context.gitReadonly) {
+      const gitReadonly = context.gitReadonly;
+      registeredTools.push(
+        defineTool("git_readonly", {
+          description:
+            "Inspect the prepared review repository with fixed read-only Git operations and trusted base/head revisions",
+          parameters: gitReadonlyParameters,
+          handler: async (args) => executeGitReadonly(args, gitReadonly),
+        }),
+      );
+      availableTools.push("git_readonly");
+      enabledToolIds.push("git_readonly");
       continue;
     }
 
@@ -129,14 +154,14 @@ const subagentRegistry: Record<
   "context-analyst": {
     displayName: "Context Analyst",
     description: "Gathers evidence from diffs, instructions, and nearby code",
-    toolIds: READ_ONLY_TOOL_IDS,
+    toolIds: REVIEW_READ_ONLY_TOOL_IDS,
     promptTemplateId: "subagent.context-analyst",
   },
   "review-author": {
     displayName: "Review Author",
     description:
       "Produces platform-ready review findings and discussion dispositions",
-    toolIds: READ_ONLY_TOOL_IDS,
+    toolIds: REVIEW_READ_ONLY_TOOL_IDS,
     promptTemplateId: "subagent.review-author",
   },
 };

@@ -147,6 +147,9 @@ describe("GitHubPlatformReviewRuntime", () => {
         ],
       },
     });
+    expect(
+      (routing.platformContext as { mergeBaseSha: string }).mergeBaseSha,
+    ).toBe("merge-base-sha");
     expect(patch).toHaveBeenCalledWith({
       id: tenant.id,
       value: {
@@ -160,6 +163,11 @@ describe("GitHubPlatformReviewRuntime", () => {
     expect(client.getPullRequest).toHaveBeenCalledWith(
       "octo-org/reviewphin",
       42,
+    );
+    expect(client.getPullRequestMergeBase).toHaveBeenCalledWith(
+      "octo-org/reviewphin",
+      "base-sha",
+      "head-sha",
     );
     expect(client.downloadRepositoryArchive).toHaveBeenCalledWith(
       "octo-org/reviewphin",
@@ -181,6 +189,12 @@ describe("GitHubPlatformReviewRuntime", () => {
         headSha: "head-sha",
         instructionsJson: "[]",
         workspaceStrategy: "archive",
+        versionsJson: JSON.stringify([
+          {
+            baseSha: "merge-base-sha",
+            headSha: "head-sha",
+          },
+        ]),
         projectMemoryJson: JSON.stringify({
           enabled: true,
           page: {
@@ -835,6 +849,7 @@ function createClient(input: {
       },
       base: { sha: "base-sha", ref: "main" },
     })),
+    getPullRequestMergeBase: vi.fn(async () => "merge-base-sha"),
     listPullRequestFiles: vi.fn(async () => [
       {
         sha: "blob-1",

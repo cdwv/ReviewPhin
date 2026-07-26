@@ -1,4 +1,11 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -26,6 +33,14 @@ describe("WorkspaceMaterializer", () => {
     const getRawFile = vi.fn();
     const listRepositoryTree = vi.fn();
     const gitRunner = vi.fn(async ({ cwd, args }) => {
+      if (args[0] === "diff") {
+        return {
+          stdout: args.includes("--raw")
+            ? ":100644 100644 aaaa bbbb M\0src/index.ts\0"
+            : "5\t3\tsrc/index.ts\0",
+          stderr: "",
+        };
+      }
       if (args[0] === "-c" && args[2] === "checkout") {
         await mkdir(join(cwd, ".git"), { recursive: true });
         await writeFile(join(cwd, "AGENTS.md"), "# Root instructions\n");
@@ -56,6 +71,7 @@ describe("WorkspaceMaterializer", () => {
       jobId: "job_1",
       projectId: 1085,
       codeReviewId: 7,
+      baseSha: "base123",
       headSha: "abc123",
       changes: [],
     });
@@ -66,12 +82,104 @@ describe("WorkspaceMaterializer", () => {
     );
     expect(gitRunner).toHaveBeenCalledWith(
       expect.objectContaining({
-        args: ["fetch", "--depth", "1", "origin", "abc123"],
+        args: ["fetch", "--no-tags", "origin", "abc123"],
         env: expect.objectContaining({ TEST_ENV: "1" }),
       }),
     );
+    expect(gitRunner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: ["fetch", "--no-tags", "origin", "base123"],
+      }),
+    );
+    expect(gitRunner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: ["remote", "remove", "origin"],
+      }),
+    );
+    expect(
+      gitRunner.mock.calls.some(([call]) =>
+        (call as { args: string[] }).args.includes("--depth"),
+      ),
+    ).toBe(false);
+    expect(workspace.gitInspection).toEqual(
+      expect.objectContaining({
+        baseRef: "refs/reviewphin/base",
+        headRef: "refs/reviewphin/head",
+      }),
+    );
+    expect(workspace.gitChanges).toEqual([
+      {
+        oldPath: "src/index.ts",
+        newPath: "src/index.ts",
+        additions: 5,
+        deletions: 3,
+        contentSignature: "git-raw-v2:100644:aaaa:100644:bbbb",
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      },
+    ]);
     expect(downloadRepositoryArchive).not.toHaveBeenCalled();
     expect(getRawFile).not.toHaveBeenCalled();
+  });
+
+  it("disables tag fetching when the exact head SHA falls back to the merge request ref", async () => {
+    const workspaceRoot = await createTempRoot();
+    const gitRunner = vi.fn(async ({ args }) => {
+      if (
+        args[0] === "fetch" &&
+        args.at(-1) === "abc123" &&
+        !args.includes("refs/merge-requests/7/head")
+      ) {
+        throw new Error("exact SHA unavailable");
+      }
+      if (args[0] === "rev-parse" && args[1] === "FETCH_HEAD") {
+        return { stdout: "abc123\n", stderr: "" };
+      }
+      if (args[0] === "diff") {
+        return {
+          stdout: args.includes("--raw")
+            ? ":100644 100644 aaaa bbbb M\0src/index.ts\0"
+            : "1\t1\tsrc/index.ts\0",
+          stderr: "",
+        };
+      }
+
+      return { stdout: "", stderr: "" };
+    });
+    const materializer = new WorkspaceMaterializer({
+      workspaceRoot,
+      logger: createLogger("silent"),
+      gitRunner,
+    });
+
+    const workspace = await materializer.materialize({
+      client: {
+        getProject: async () => ({
+          id: 1085,
+          web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
+          http_url_to_repo: "https://gitlab.example.com/group/project.git",
+        }),
+        buildGitAuthEnv: () => ({}),
+        downloadRepositoryArchive: vi.fn(),
+        getRawFile: vi.fn(),
+        listRepositoryTree: vi.fn(),
+      } as never,
+      jobId: "job_fallback",
+      projectId: 1085,
+      codeReviewId: 7,
+      baseSha: "base123",
+      headSha: "abc123",
+      changes: [],
+    });
+
+    expect(workspace.strategy).toBe("git");
+    expect(gitRunner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: ["fetch", "--no-tags", "origin", "refs/merge-requests/7/head"],
+      }),
+    );
   });
 
   it("falls back to the archive API when git checkout fails", async () => {
@@ -94,7 +202,10 @@ describe("WorkspaceMaterializer", () => {
     const materializer = new WorkspaceMaterializer({
       workspaceRoot,
       logger: createLogger("silent"),
-      gitRunner: vi.fn(async () => {
+      gitRunner: vi.fn(async ({ cwd }) => {
+        await mkdir(join(cwd, ".git"), { recursive: true });
+        await writeFile(join(cwd, ".git", "config"), "stale remote");
+        await writeFile(join(cwd, "partial-checkout.ts"), "stale checkout");
         throw new Error("git failed");
       }),
     });
@@ -115,15 +226,21 @@ describe("WorkspaceMaterializer", () => {
       jobId: "job_2",
       projectId: 1085,
       codeReviewId: 7,
+      baseSha: "base123",
       headSha: "abc123",
       changes: [],
     });
 
     expect(workspace.strategy).toBe("archive");
+    expect(workspace.gitPreparationError).toBe("git failed");
     expect(workspace.rootPath).toBe(join(workspace.cleanupRoot, "workspace"));
     expect(await readFile(join(workspace.rootPath, "AGENTS.md"), "utf8")).toBe(
       "# Archived instructions\n",
     );
+    await expect(access(join(workspace.rootPath, ".git"))).rejects.toThrow();
+    await expect(
+      access(join(workspace.rootPath, "partial-checkout.ts")),
+    ).rejects.toThrow();
   });
 
   it("falls back to targeted files when git and archive fail", async () => {
@@ -195,6 +312,7 @@ describe("WorkspaceMaterializer", () => {
       jobId: "job_3",
       projectId: 1085,
       codeReviewId: 7,
+      baseSha: "base123",
       headSha: "abc123",
       changes: [
         {
@@ -209,12 +327,13 @@ describe("WorkspaceMaterializer", () => {
     });
 
     expect(workspace.strategy).toBe("targeted-files");
+    expect(workspace.gitPreparationError).toBe("git failed");
     expect(
       await readFile(join(workspace.rootPath, "src", "index.ts"), "utf8"),
     ).toBe("console.log('ok');\n");
-    expect(
-      await readFile(join(workspace.rootPath, "AGENTS.md"), "utf8"),
-    ).toBe("# File instructions\n");
+    expect(await readFile(join(workspace.rootPath, "AGENTS.md"), "utf8")).toBe(
+      "# File instructions\n",
+    );
     expect(
       await readFile(
         join(
@@ -274,6 +393,7 @@ describe("WorkspaceMaterializer", () => {
       jobId: "job_4",
       projectId: 1085,
       codeReviewId: 7,
+      baseSha: "base123",
       headSha: "abc123",
       changes: [],
     });
@@ -325,6 +445,7 @@ describe("WorkspaceMaterializer", () => {
       jobId: "job-shared",
       projectId: 1085,
       codeReviewId: 7,
+      baseSha: "base123",
       headSha: "abc123",
       changes: [],
     };

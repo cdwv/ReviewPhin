@@ -5,6 +5,7 @@ import type {
   TenantRecord,
 } from "../../storage/contract/current.js";
 import type { PlatformMaterializedWorkspace } from "../IPlatform.js";
+import type { CodeReviewChange } from "../../review/types.js";
 import type {
   GitHubIssueComment,
   GitHubPullRequest,
@@ -19,7 +20,9 @@ export interface GitHubPullRequestContext {
   job: InteractionJobRecord;
   repositoryFullName: string;
   pullRequest: GitHubPullRequest;
+  mergeBaseSha: string | null;
   files: GitHubPullRequestFile[];
+  reviewChanges?: CodeReviewChange[] | undefined;
   issueComments: GitHubIssueComment[];
   reviews: GitHubPullRequestReview[];
   reviewComments: GitHubReviewComment[];

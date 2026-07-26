@@ -129,8 +129,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       job: input.job,
       client: this.client,
       context: input.context?.platformContext as
-        | LightweightMergeRequestContext
-        | undefined,
+        LightweightMergeRequestContext | undefined,
     });
     return this.wrapContext(context);
   }
@@ -217,8 +216,11 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       attachments: input.attachments,
       attachmentIssues: input.attachmentIssues,
       workspacePath: context.workspace.rootPath,
+      ...(context.workspace.gitInspection
+        ? { gitInspection: context.workspace.gitInspection }
+        : {}),
       codeReview: toCodeReviewItem(context.mergeRequest),
-      changes: context.changes.map(toCodeReviewChange),
+      changes: getReviewChanges(context),
       comments: context.notes.map(toCodeReviewComment),
       discussions: context.discussions.map((discussion) =>
         toCodeReviewDiscussion(
@@ -589,11 +591,11 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
       codeReviewId: context.mergeRequest.iid,
       summaryContext: {
         codeReview: toCodeReviewItem(context.mergeRequest),
-        changes: context.changes.map(toCodeReviewChange),
+        changes: getReviewChanges(context),
       },
       workspace: context.workspace,
       projectMemory: context.projectMemory,
-      changedFileCount: context.changes.length,
+      changedFileCount: getReviewChanges(context).length,
       commentCount: context.notes.length,
       discussionCount: context.discussions.length,
       platformContext: context,
@@ -604,8 +606,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     context: PlatformReviewRoutingContext,
   ): LightweightMergeRequestContext | HydratedMergeRequestContext {
     return context.platformContext as
-      | LightweightMergeRequestContext
-      | HydratedMergeRequestContext;
+      LightweightMergeRequestContext | HydratedMergeRequestContext;
   }
 
   private createGitLabClient(input: {
@@ -678,6 +679,12 @@ function toCodeReviewChange(
     renamedFile: change.renamed_file,
     deletedFile: change.deleted_file,
   };
+}
+
+function getReviewChanges(
+  context: LightweightMergeRequestContext | HydratedMergeRequestContext,
+): CodeReviewChange[] {
+  return context.reviewChanges ?? context.changes.map(toCodeReviewChange);
 }
 
 function toCodeReviewComment(note: GitLabNote): CodeReviewComment {

@@ -124,6 +124,114 @@ describe("HarnessReviewProvider", () => {
     );
   });
 
+  it("enables git_readonly only for Git-ready reviewer sessions", async () => {
+    const run = vi.fn(async () => ({
+      response: {
+        data: {
+          content: JSON.stringify({
+            overview: { summary: "Looks good", overallSeverity: "low" },
+            findings: [],
+            priorDispositions: [],
+          }),
+        },
+      },
+      parsed: {
+        overview: { summary: "Looks good", overallSeverity: "low" },
+        findings: [],
+        priorDispositions: [],
+      },
+      events: [],
+    }));
+    const provider = new HarnessReviewProvider({
+      logger: createLogger(),
+      modelConfig: createModelConfig(),
+      harnessRuntime: { run } as never,
+      memoryConsolidator: {
+        coalesce: vi.fn(async (input) => input.coalesceInput.entries),
+      } as never,
+      maxPromptMemoryChars: 5_000,
+    });
+    const context = createReviewContext();
+    context.gitInspection = {
+      baseRef: "refs/reviewphin/base",
+      headRef: "refs/reviewphin/head",
+      emptyGitConfigPath: tmpPath("empty-git-config"),
+    };
+
+    await provider.review(context, {
+      tenant: createTenantRuntimeContext(),
+    });
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools: ["glob", "rg", "view", "git_readonly"],
+        gitReadonly: {
+          workspacePath: repoPath(),
+          baseRef: "refs/reviewphin/base",
+          headRef: "refs/reviewphin/head",
+          emptyGitConfigPath: tmpPath("empty-git-config"),
+        },
+      }),
+    );
+  });
+
+  it("fails clearly when a complete non-Git fallback exceeds its prompt budget", async () => {
+    const run = vi.fn();
+    const provider = new HarnessReviewProvider({
+      logger: createLogger(),
+      modelConfig: createModelConfig(),
+      harnessRuntime: { run } as never,
+      memoryConsolidator: {
+        coalesce: vi.fn(async (input) => input.coalesceInput.entries),
+      } as never,
+      maxPromptMemoryChars: 5_000,
+    });
+    const context = createReviewContext();
+    context.changes = [
+      {
+        oldPath: "src/large.ts",
+        newPath: "src/large.ts",
+        diff: "x".repeat(160_001),
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      },
+    ];
+
+    await expect(
+      provider.review(context, { tenant: createTenantRuntimeContext() }),
+    ).rejects.toThrow("complete platform diff");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("fails clearly when a non-Git fallback is missing a platform patch", async () => {
+    const run = vi.fn();
+    const provider = new HarnessReviewProvider({
+      logger: createLogger(),
+      modelConfig: createModelConfig(),
+      harnessRuntime: { run } as never,
+      memoryConsolidator: {
+        coalesce: vi.fn(async (input) => input.coalesceInput.entries),
+      } as never,
+      maxPromptMemoryChars: 5_000,
+    });
+    const context = createReviewContext();
+    context.changes = [
+      {
+        oldPath: "public/image.png",
+        newPath: "public/image.png",
+        newFile: false,
+        renamedFile: false,
+        deletedFile: false,
+      },
+    ];
+
+    await expect(
+      provider.review(context, { tenant: createTenantRuntimeContext() }),
+    ).rejects.toThrow("did not provide a complete diff");
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("passes the review reasoning effort and never the text-generation effort", async () => {
     const run = vi.fn(async () => ({
       response: {
@@ -203,13 +311,10 @@ describe("HarnessReviewProvider", () => {
       tenant: createTenantRuntimeContext(),
     });
 
-    const spec = (run.mock.calls[0] as unknown[])[0] as Record<
-      string,
-      unknown
-    >;
-    expect(
-      Object.prototype.hasOwnProperty.call(spec, "reasoningEffort"),
-    ).toBe(false);
+    const spec = (run.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(spec, "reasoningEffort")).toBe(
+      false,
+    );
   });
 
   it("synthesizes a reply handoff summary when the model returns it blank", async () => {

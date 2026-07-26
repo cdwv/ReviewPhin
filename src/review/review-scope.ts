@@ -7,7 +7,8 @@ import type {
   ReviewAttachmentIssue,
 } from "./types.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
-import { reviewResultSchema } from "./types.js";
+import type { GitReadonlyCapability } from "../harness/git-readonly.js";
+import { GIT_CONTENT_SIGNATURE_PREFIX, reviewResultSchema } from "./types.js";
 import type {
   PriorReviewFindingContext,
   PreviousReviewContext,
@@ -28,10 +29,13 @@ interface PreviousReviewSource {
   changesJson: string;
 }
 
+type FullRescanReason = "explicit" | "signature-transition" | null;
+
 interface BuildScopedReviewContextInput {
   attachments?: ReviewAttachment[] | undefined;
   attachmentIssues?: ReviewAttachmentIssue[] | undefined;
   workspacePath: string;
+  gitInspection?: GitReadonlyCapability | undefined;
   codeReview: CodeReviewItem;
   changes: CodeReviewChange[];
   comments: CodeReviewComment[];
@@ -43,12 +47,6 @@ interface BuildScopedReviewContextInput {
   previousReview: PreviousReviewSource | null;
   logging?: ReviewContext["logging"];
 }
-
-const CHANGE_LIMIT_BY_MODE: Record<ReviewMode, number> = {
-  "first-pass-full": 12,
-  "incremental-rereview": 8,
-  "follow-up-discussion": 4,
-};
 
 const COMMENT_LIMIT_BY_MODE: Record<ReviewMode, number> = {
   "first-pass-full": 12,
@@ -74,10 +72,18 @@ export function buildScopedReviewContext(
   const explicitFullRescan = hasExplicitFullRescanInstruction(
     input.trigger.instruction,
   );
+  const signatureTransition =
+    input.previousReview !== null &&
+    hasIncompatibleChangeSignatureFormats(input.changes, previousReviewChanges);
+  const fullRescanReason: FullRescanReason = explicitFullRescan
+    ? "explicit"
+    : signatureTransition
+      ? "signature-transition"
+      : null;
   const mode = determineReviewMode(
     input.trigger,
     input.previousReview,
-    explicitFullRescan,
+    fullRescanReason !== null,
   );
   const priorFindings = input.priorFindings ?? [];
   const targetDiscussionId =
@@ -87,17 +93,14 @@ export function buildScopedReviewContext(
   const targetDiscussion =
     targetDiscussionId !== null
       ? (input.priorDiscussions.find(
-          (discussion) =>
-            discussion.discussionId === targetDiscussionId,
+          (discussion) => discussion.discussionId === targetDiscussionId,
         ) ?? null)
       : null;
 
-  const allChangedFiles = input.changes.map((change) =>
-    toChangeSummary(change),
-  );
-  const deltaChanges = input.previousReview
-    ? findDeltaChanges(input.changes, previousReviewChanges)
-    : [];
+  const deltaChanges =
+    input.previousReview && mode === "incremental-rereview"
+      ? findDeltaChanges(input.changes, previousReviewChanges)
+      : [];
   const deltaPaths = new Set(
     deltaChanges.map((change) => getChangePath(change)),
   );
@@ -145,12 +148,24 @@ export function buildScopedReviewContext(
     }
   }
 
+  const allChangedFiles = input.changes.map((change) => {
+    const path = getChangePath(change);
+    const oldPath = change.oldPath;
+    const reason =
+      targetDiscussionPaths.has(path) || targetDiscussionPaths.has(oldPath)
+        ? "target discussion"
+        : deltaPaths.has(path)
+          ? "changed since the previous review"
+          : focusPaths.has(path) || focusPaths.has(oldPath)
+            ? "open finding or unresolved discussion"
+            : undefined;
+    return toChangeSummary(change, reason);
+  });
+
   const selectedChanges = selectChanges({
     changes: input.changes,
     focusPaths,
     mode,
-    deltaChanges,
-    widenScopeHints,
   });
   const selectedPathSet = new Set(
     selectedChanges.map((change) => getChangePath(change)),
@@ -195,12 +210,14 @@ export function buildScopedReviewContext(
     omittedChangedFiles,
     deltaChanges,
     widenScopeHints,
+    fullRescanReason,
   });
 
   return {
     attachments: input.attachments ?? [],
     attachmentIssues: input.attachmentIssues ?? [],
     workspacePath: input.workspacePath,
+    ...(input.gitInspection ? { gitInspection: input.gitInspection } : {}),
     codeReview: input.codeReview,
     changes: selectedChanges,
     comments: selectedComments,
@@ -291,116 +308,48 @@ function findDeltaChanges(
   );
 }
 
+function hasIncompatibleChangeSignatureFormats(
+  currentChanges: CodeReviewChange[],
+  previousChanges: CodeReviewChange[],
+): boolean {
+  const currentFormats = getChangeSignatureFormats(currentChanges);
+  const previousFormats = getChangeSignatureFormats(previousChanges);
+  if (currentFormats.size === 0 || previousFormats.size === 0) {
+    return false;
+  }
+  return (
+    currentFormats.size !== previousFormats.size ||
+    [...currentFormats].some((format) => !previousFormats.has(format))
+  );
+}
+
+function getChangeSignatureFormats(
+  changes: CodeReviewChange[],
+): Set<"git-raw-v2" | "content-signature-v1" | "provider-diff"> {
+  return new Set(
+    changes.map((change) => {
+      if (change.contentSignature === undefined) {
+        return "provider-diff";
+      }
+      return change.contentSignature.startsWith(GIT_CONTENT_SIGNATURE_PREFIX)
+        ? "git-raw-v2"
+        : "content-signature-v1";
+    }),
+  );
+}
+
 function selectChanges(input: {
   changes: CodeReviewChange[];
   focusPaths: Set<string>;
   mode: ReviewMode;
-  deltaChanges: CodeReviewChange[];
-  widenScopeHints: string[];
 }): CodeReviewChange[] {
   const focusedChanges = input.changes.filter((change) => {
     const path = getChangePath(change);
     return input.focusPaths.has(path) || input.focusPaths.has(change.oldPath);
   });
-
-  const candidatePool = getChangesCandidatePool(input, focusedChanges);
-
-  if (candidatePool.length <= CHANGE_LIMIT_BY_MODE[input.mode]) {
-    return candidatePool.slice();
-  }
-
-  const prioritized = candidatePool
-    .map((change, index) => ({
-      change,
-      index,
-      score: scoreChange(change, input.focusPaths, input.widenScopeHints),
-    }))
-    .sort((left, right) => right.score - left.score || left.index - right.index)
-    .slice(0, CHANGE_LIMIT_BY_MODE[input.mode])
-    .sort((left, right) => left.index - right.index)
-    .map((entry) => entry.change);
-
-  if (prioritized.length > 0) {
-    return prioritized;
-  }
-
-  return candidatePool.slice(0, CHANGE_LIMIT_BY_MODE[input.mode]);
-}
-
-function getChangesCandidatePool(
-  input: {
-    changes: CodeReviewChange[];
-    focusPaths: Set<string>;
-    mode: ReviewMode;
-    deltaChanges: CodeReviewChange[];
-    widenScopeHints: string[];
-  },
-  focusedChanges: CodeReviewChange[],
-) {
-  if (input.mode === "follow-up-discussion") {
-    return focusedChanges;
-  }
-
-  if (input.mode === "incremental-rereview" && input.deltaChanges.length > 0) {
-    return mergeChangesPreservingOrder(
-      input.changes,
-      focusedChanges,
-      input.deltaChanges,
-    );
-  }
-
-  return input.changes;
-}
-
-function mergeChangesPreservingOrder(
-  orderedChanges: CodeReviewChange[],
-  ...changeGroups: CodeReviewChange[][]
-): CodeReviewChange[] {
-  const included = new Set(
-    changeGroups.flat().map((change) => getChangeSignature(change)),
-  );
-  return orderedChanges.filter((change) =>
-    included.has(getChangeSignature(change)),
-  );
-}
-
-function scoreChange(
-  change: CodeReviewChange,
-  focusPaths: Set<string>,
-  widenScopeHints: string[],
-): number {
-  const path = getChangePath(change);
-  let score = 0;
-
-  if (focusPaths.has(path) || focusPaths.has(change.oldPath)) {
-    score += 1_000;
-  }
-
-  if (change.newFile || change.renamedFile || change.deletedFile) {
-    score += 100;
-  }
-
-  if (/^(src|test)\//.test(path)) {
-    score += path.startsWith("src/") ? 60 : 20;
-  }
-
-  if (
-    /^(src\/(platforms|jobs|reconcile|review|storage)\/|package\.json$|pnpm-lock\.yaml$|tsconfig(\..+)?\.json$|Dockerfile$|docker-compose\.yml$)/.test(
-      path,
-    )
-  ) {
-    score += 120;
-  }
-
-  if (
-    widenScopeHints.length > 0 &&
-    /(^src\/|package\.json$|pnpm-lock\.yaml$|tsconfig(\..+)?\.json$)/.test(path)
-  ) {
-    score += 40;
-  }
-
-  score += Math.min((change.diff?.length ?? 0) / 80, 80);
-  return score;
+  return input.mode === "follow-up-discussion"
+    ? focusedChanges
+    : input.changes.slice();
 }
 
 function collectWidenScopeHints(changes: CodeReviewChange[]): string[] {
@@ -492,6 +441,7 @@ function buildScope(input: {
   omittedChangedFiles: ReviewChangeSummary[];
   deltaChanges: CodeReviewChange[];
   widenScopeHints: string[];
+  fullRescanReason: FullRescanReason;
 }): ReviewScopeContext {
   const previousReview = buildPreviousReviewContext(
     input.previousReview,
@@ -537,6 +487,7 @@ function buildScopeSummary(
     omittedChangedFiles: ReviewChangeSummary[];
     deltaChanges: CodeReviewChange[];
     widenScopeHints: string[];
+    fullRescanReason: FullRescanReason;
   },
   selectedChangeCount: number,
 ) {
@@ -582,10 +533,12 @@ function buildScopeSummary(
 
     if (input.omittedChangedFiles.length > 0) {
       parts.push(
-        `${input.omittedChangedFiles.length} additional changed file(s) are summarized without inline diffs.`,
+        `${input.omittedChangedFiles.length} additional changed file(s) remain visible in the complete manifest.`,
       );
     } else {
-      parts.push("All current changed files are included in detail.");
+      parts.push(
+        "The complete current change boundary is included; inspect detailed evidence on demand.",
+      );
     }
 
     return parts.join(" ");
@@ -596,11 +549,13 @@ function buildScopeSummary(
       ? [`Apply this manual review instruction: ${input.trigger.instruction}`]
       : []),
     input.previousReview
-      ? "A fresh full rescan was explicitly requested even though a previous review exists."
+      ? input.fullRescanReason === "signature-transition"
+        ? "The stored review snapshot uses a different change-signature format, so this review establishes a fresh full-rescan baseline."
+        : "A fresh full rescan was explicitly requested even though a previous review exists."
       : "This is the first full review request for this code review.",
     input.omittedChangedFiles.length > 0
-      ? `${input.omittedChangedFiles.length} changed file(s) are summarized without inline diffs to keep the starting context bounded.`
-      : "All changed files are included in detail.",
+      ? `${input.omittedChangedFiles.length} changed file(s) remain visible in the complete manifest.`
+      : "The complete change boundary is included; inspect detailed evidence on demand.",
   ].join(" ");
 }
 
@@ -626,14 +581,60 @@ function toChangeSummary(
   change: CodeReviewChange,
   reason?: string,
 ): ReviewChangeSummary {
+  const diffStats = summarizeDiff(change.diff);
   return {
     path: getChangePath(change),
-    oldPath: change.oldPath,
+    oldPath: change.oldPath === change.newPath ? null : change.oldPath,
     newFile: change.newFile,
     renamedFile: change.renamedFile,
     deletedFile: change.deletedFile,
+    additions: change.additions ?? diffStats.additions,
+    deletions: change.deletions ?? diffStats.deletions,
+    changedLineRanges: diffStats.changedLineRanges,
+    diffAvailable: change.diff !== undefined,
     ...(reason ? { reason } : {}),
   };
+}
+
+function summarizeDiff(diff: string | undefined): {
+  additions: number | null;
+  deletions: number | null;
+  changedLineRanges: ReviewChangeSummary["changedLineRanges"];
+} {
+  if (diff === undefined) {
+    return {
+      additions: null,
+      deletions: null,
+      changedLineRanges: [],
+    };
+  }
+
+  let additions = 0;
+  let deletions = 0;
+  const changedLineRanges: ReviewChangeSummary["changedLineRanges"] = [];
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      additions += 1;
+    } else if (line.startsWith("-") && !line.startsWith("---")) {
+      deletions += 1;
+    }
+
+    const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+    if (!hunk) {
+      continue;
+    }
+    const oldStart = Number(hunk[1]);
+    const oldCount = Number(hunk[2] ?? 1);
+    const newStart = Number(hunk[3]);
+    const newCount = Number(hunk[4] ?? 1);
+    changedLineRanges.push({
+      oldStart: oldCount === 0 ? null : oldStart,
+      oldEnd: oldCount === 0 ? null : oldStart + oldCount - 1,
+      newStart: newCount === 0 ? null : newStart,
+      newEnd: newCount === 0 ? null : newStart + newCount - 1,
+    });
+  }
+  return { additions, deletions, changedLineRanges };
 }
 
 function getChangePath(change: CodeReviewChange): string {
@@ -644,7 +645,7 @@ function getChangeSignature(change: CodeReviewChange): string {
   return JSON.stringify({
     oldPath: change.oldPath,
     newPath: change.newPath,
-    diff: change.diff ?? "",
+    content: change.contentSignature ?? change.diff ?? "",
     newFile: change.newFile,
     renamedFile: change.renamedFile,
     deletedFile: change.deletedFile,
