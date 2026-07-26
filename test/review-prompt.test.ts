@@ -154,6 +154,17 @@ describe("buildReviewPrompt", () => {
     expect(renderPrompt("subagent.review-author", {})).not.toContain("unused");
   });
 
+  it("asks the reviewer to recheck unanchored findings without suppressing them", () => {
+    const prompt = buildReviewPrompt(createContext());
+
+    expect(prompt).toContain(
+      "Anchor a finding to the tightest valid changed-line range when it can be tied to specific code.",
+    );
+    expect(prompt).toContain(
+      "Otherwise, report it without an anchor. Before returning, recheck every unanchored finding",
+    );
+  });
+
   it("uses the incremental summary-follow-up registered combination", () => {
     const prompt = buildReviewPrompt(
       createContext(null, "summary-follow-up", "incremental-rereview"),

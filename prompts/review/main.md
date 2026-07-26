@@ -50,9 +50,7 @@ Do not say that a prior discussion is resolved, closed, or no longer needed unle
 
 When you can express a safe, concrete fix directly from the visible diff and nearby code, include a `suggestion` with replacement text instead of only describing the change. Prefer suggestions for small-to-medium self-contained fixes on the new side of the diff.
 
-Anchor each finding to the most specific valid diff line that demonstrates the issue. Do not anchor a whole function or block if the starting line is only unchanged context.
-
-If the issue spans a range, make the anchor range as tight as possible around the actual affected diff lines. If you cannot point to a valid diff line with high confidence, omit the anchor instead of guessing.
+Anchor a finding to the tightest valid changed-line range when it can be tied to specific code. Otherwise, report it without an anchor. Before returning, recheck every unanchored finding to see whether a valid changed-line anchor is available.
 
 Only emit a `suggestion` when the finding anchor points at the exact new-side lines to replace. Keep suggestion replacement as raw code text only, with no Markdown fences or commentary.
 
