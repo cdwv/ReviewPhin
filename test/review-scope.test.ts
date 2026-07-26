@@ -329,6 +329,107 @@ describe("buildScopedReviewContext", () => {
     ]);
   });
 
+  it("uses a full-rescan baseline when stored and current signatures are incompatible", () => {
+    const currentChange = {
+      ...createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+new"),
+      contentSignature: "aaaa:bbbb",
+    };
+    const scoped = buildScopedReviewContext({
+      workspacePath: repoPath(),
+      codeReview,
+      changes: [currentChange],
+      comments: [],
+      discussions: [],
+      trigger: {
+        kind: "manual-review",
+        provider: "github",
+        source: "check-run-requested-action",
+        instruction: null,
+        metadata: {
+          checkRunId: 1357,
+          actionIdentifier: "run_review",
+        },
+      },
+      priorDiscussions: [],
+      previousReview: {
+        reviewRunId: "run_legacy",
+        finishedAt: "2026-04-27T12:00:00.000Z",
+        headSha: "legacyhead",
+        resultJson: JSON.stringify({
+          overview: {
+            summary: "Prior pass",
+            overallSeverity: "low",
+          },
+          findings: [],
+          priorDispositions: [],
+        }),
+        changesJson: JSON.stringify([
+          createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+new"),
+        ]),
+      },
+    });
+
+    expect(scoped.scope.mode).toBe("first-pass-full");
+    expect(scoped.scope.deltaSincePreviousReview).toBeNull();
+    expect(scoped.scope.allChangedFiles[0]?.reason).toBeUndefined();
+    expect(scoped.scope.scopeSummary).toContain(
+      "different change-signature format",
+    );
+  });
+
+  it("keeps Git object-ID signatures incremental after the baseline", () => {
+    const existing = {
+      ...createChange("src/existing.ts", ""),
+      contentSignature: "aaaa:bbbb",
+    };
+    const delta = {
+      ...createChange("src/delta.ts", ""),
+      contentSignature: "cccc:dddd",
+    };
+    const scoped = buildScopedReviewContext({
+      workspacePath: repoPath(),
+      codeReview,
+      changes: [existing, delta],
+      comments: [],
+      discussions: [],
+      trigger: {
+        kind: "manual-review",
+        provider: "github",
+        source: "check-run-requested-action",
+        instruction: null,
+        metadata: {
+          checkRunId: 1357,
+          actionIdentifier: "run_review",
+        },
+      },
+      priorDiscussions: [],
+      previousReview: {
+        reviewRunId: "run_git",
+        finishedAt: "2026-04-27T12:00:00.000Z",
+        headSha: "githead",
+        resultJson: JSON.stringify({
+          overview: {
+            summary: "Prior pass",
+            overallSeverity: "low",
+          },
+          findings: [],
+          priorDispositions: [],
+        }),
+        changesJson: JSON.stringify([
+          existing,
+          { ...delta, contentSignature: "cccc:eeee" },
+        ]),
+      },
+    });
+
+    expect(scoped.scope.mode).toBe("incremental-rereview");
+    expect(
+      scoped.scope.deltaSincePreviousReview?.changedFiles.map(
+        (change) => change.path,
+      ),
+    ).toEqual(["src/delta.ts"]);
+  });
+
   it("keeps follow-up reviews focused on the target thread and related file", () => {
     const targetDiscussion = createThread(
       "map_target",

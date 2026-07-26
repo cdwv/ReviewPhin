@@ -59,7 +59,7 @@ The Reviewer runs as two sequential subagents inside one model session:
 1. **context-analyst** — explores the hydrated workspace with `glob`, `ripgrep`, file reads, and trusted read-only Git inspection to gather context relevant to the changed files.
 2. **review-author** — produces structured findings: severity, category, body, optional diff anchor, and optional inline suggestion.
 
-For Git-ready workspaces, ReviewPhin prepares the platform's exact comparison base and review head with their commit ancestry, verifies that Git reports the same changed paths as the platform, checks out the head in detached mode, and removes the remote and authentication data before the model session starts. The starting prompt contains the complete changed-file manifest; the Reviewer uses `git_readonly` to inspect focused diffs, history, and blame against the fixed `reviewphin/base` and `reviewphin/head` revisions.
+For Git-ready workspaces, ReviewPhin prepares the platform's exact comparison base and review head with their commit ancestry, derives the complete changed-file manifest from those trusted Git refs, checks out the head in detached mode, and removes the remote and authentication data before the model session starts. The starting prompt contains the complete changed-file manifest; the Reviewer uses `git_readonly` to inspect focused diffs, history, and blame against the fixed `reviewphin/base` and `reviewphin/head` revisions.
 
 If trusted Git preparation fails, ReviewPhin uses the complete platform diff only when that fallback is available and fits the prompt budget. Otherwise the review fails clearly instead of publishing a silently partial result.
 

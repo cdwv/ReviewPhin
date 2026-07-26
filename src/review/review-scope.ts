@@ -29,6 +29,8 @@ interface PreviousReviewSource {
   changesJson: string;
 }
 
+type FullRescanReason = "explicit" | "signature-transition" | null;
+
 interface BuildScopedReviewContextInput {
   attachments?: ReviewAttachment[] | undefined;
   attachmentIssues?: ReviewAttachmentIssue[] | undefined;
@@ -70,10 +72,18 @@ export function buildScopedReviewContext(
   const explicitFullRescan = hasExplicitFullRescanInstruction(
     input.trigger.instruction,
   );
+  const signatureTransition =
+    input.previousReview !== null &&
+    hasIncompatibleChangeSignatureFormats(input.changes, previousReviewChanges);
+  const fullRescanReason: FullRescanReason = explicitFullRescan
+    ? "explicit"
+    : signatureTransition
+      ? "signature-transition"
+      : null;
   const mode = determineReviewMode(
     input.trigger,
     input.previousReview,
-    explicitFullRescan,
+    fullRescanReason !== null,
   );
   const priorFindings = input.priorFindings ?? [];
   const targetDiscussionId =
@@ -87,9 +97,10 @@ export function buildScopedReviewContext(
         ) ?? null)
       : null;
 
-  const deltaChanges = input.previousReview
-    ? findDeltaChanges(input.changes, previousReviewChanges)
-    : [];
+  const deltaChanges =
+    input.previousReview && mode === "incremental-rereview"
+      ? findDeltaChanges(input.changes, previousReviewChanges)
+      : [];
   const deltaPaths = new Set(
     deltaChanges.map((change) => getChangePath(change)),
   );
@@ -199,6 +210,7 @@ export function buildScopedReviewContext(
     omittedChangedFiles,
     deltaChanges,
     widenScopeHints,
+    fullRescanReason,
   });
 
   return {
@@ -293,6 +305,31 @@ function findDeltaChanges(
     (change) =>
       previousSignatureByPath.get(getChangePath(change)) !==
       getChangeSignature(change),
+  );
+}
+
+function hasIncompatibleChangeSignatureFormats(
+  currentChanges: CodeReviewChange[],
+  previousChanges: CodeReviewChange[],
+): boolean {
+  const currentFormats = getChangeSignatureFormats(currentChanges);
+  const previousFormats = getChangeSignatureFormats(previousChanges);
+  if (currentFormats.size === 0 || previousFormats.size === 0) {
+    return false;
+  }
+  return (
+    currentFormats.size !== previousFormats.size ||
+    [...currentFormats].some((format) => !previousFormats.has(format))
+  );
+}
+
+function getChangeSignatureFormats(
+  changes: CodeReviewChange[],
+): Set<"git-object-id" | "provider-diff"> {
+  return new Set(
+    changes.map((change) =>
+      change.contentSignature !== undefined ? "git-object-id" : "provider-diff",
+    ),
   );
 }
 
@@ -399,6 +436,7 @@ function buildScope(input: {
   omittedChangedFiles: ReviewChangeSummary[];
   deltaChanges: CodeReviewChange[];
   widenScopeHints: string[];
+  fullRescanReason: FullRescanReason;
 }): ReviewScopeContext {
   const previousReview = buildPreviousReviewContext(
     input.previousReview,
@@ -444,6 +482,7 @@ function buildScopeSummary(
     omittedChangedFiles: ReviewChangeSummary[];
     deltaChanges: CodeReviewChange[];
     widenScopeHints: string[];
+    fullRescanReason: FullRescanReason;
   },
   selectedChangeCount: number,
 ) {
@@ -505,7 +544,9 @@ function buildScopeSummary(
       ? [`Apply this manual review instruction: ${input.trigger.instruction}`]
       : []),
     input.previousReview
-      ? "A fresh full rescan was explicitly requested even though a previous review exists."
+      ? input.fullRescanReason === "signature-transition"
+        ? "The stored review snapshot uses a different change-signature format, so this review establishes a fresh full-rescan baseline."
+        : "A fresh full rescan was explicitly requested even though a previous review exists."
       : "This is the first full review request for this code review.",
     input.omittedChangedFiles.length > 0
       ? `${input.omittedChangedFiles.length} changed file(s) remain visible in the complete manifest.`
