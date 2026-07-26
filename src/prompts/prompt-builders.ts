@@ -177,8 +177,8 @@ export function buildCompactReviewContext(
       ? {
           available: true,
           tool: "git_readonly",
-          baseRevision: "reviewphin/base",
-          headRevision: "reviewphin/head",
+          baseRevision: "base",
+          headRevision: "head",
           guidance:
             "Use the Git-derived manifest as the complete review boundary, then inspect relevant diffs, history, blame, and revisions on demand.",
         }

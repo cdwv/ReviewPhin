@@ -209,25 +209,32 @@ describe("buildReviewPrompt", () => {
       },
     ];
 
+    const prompt = buildReviewPrompt(context);
     const compact = buildCompactReviewContext(context, 5_000);
     const serialized = JSON.stringify(compact);
 
+    expect(prompt).toContain(
+      "`changedFiles` is the complete review change boundary",
+    );
+    expect(prompt).toContain(
+      "trusted base and head revisions provided by `gitInspection`",
+    );
     expect(compact.changedFiles).toHaveLength(1);
     expect(compact.inlineDiffs).toEqual([]);
     expect(compact.gitInspection).toEqual(
       expect.objectContaining({
         available: true,
         tool: "git_readonly",
-        baseRevision: "reviewphin/base",
-        headRevision: "reviewphin/head",
+        baseRevision: "base",
+        headRevision: "head",
       }),
     );
     expect(serialized).not.toContain("export function oldWorker");
   });
 
-  it("starts large Git-backed reviews with path-scoped diffs in every review mode", () => {
+  it("prefers split path-scoped reads for large Git-backed reviews in every review mode", () => {
     const expectedGuidance =
-      "begin with path-scoped `git_readonly` diffs for the highest-risk files";
+      "prefer splitting reads into several path-scoped `git_readonly` diffs";
 
     for (const [triggerKind, scopeMode] of [
       ["direct-mention", "first-pass-full"],

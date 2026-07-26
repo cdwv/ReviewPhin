@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   executeGitReadonly,
+  gitReadonlyParameters,
   type GitReadonlyExecutionContext,
   type GitReadonlyRunner,
 } from "../src/harness/git-readonly.js";
@@ -19,6 +20,12 @@ describe("executeGitReadonly", () => {
     headRef: "refs/reviewphin/head",
     emptyGitConfigPath: tmpPath("empty-git-config"),
   };
+
+  it("describes revisions without exposing internal ref names", () => {
+    expect(gitReadonlyParameters.properties.revision.description).toBe(
+      "A trusted prepared revision. range compares the review base and head and is accepted only by diff and log.",
+    );
+  });
 
   it("maps structured diff input to the trusted base/head range", async () => {
     const runner = successfulRunner("diff output");

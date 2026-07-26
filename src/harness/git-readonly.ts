@@ -177,7 +177,7 @@ export const gitReadonlyParameters = {
       type: "string",
       enum: ["base", "head", "range"],
       description:
-        "A trusted prepared revision. range means reviewphin/base..reviewphin/head and is accepted only by diff and log.",
+        "A trusted prepared revision. range compares the review base and head and is accepted only by diff and log.",
     },
     path: {
       type: "string",
@@ -234,11 +234,7 @@ export async function executeGitReadonly(
       `git_readonly ${input.operation} exceeded the ${GIT_TIMEOUT_MS}ms time limit; narrow the request by path, revision, or line range`,
     );
   }
-  if (
-    !result.truncated &&
-    result.exitCode !== 0 &&
-    result.exitCode !== null
-  ) {
+  if (!result.truncated && result.exitCode !== 0 && result.exitCode !== null) {
     const detail = (result.stderr || result.stdout).trim();
     throw new Error(
       `git_readonly ${input.operation} failed with exit code ${result.exitCode}${detail ? `: ${detail}` : ""}`,
