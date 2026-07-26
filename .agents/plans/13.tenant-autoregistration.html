@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 13 — Register tenants from trusted webhooks</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="high">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 13</p>
+          <p class="rail-value">Register trusted projects</p>
+          <p class="rail-label">Database</p>
+          <p class="rail-value">New connection settings</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a
+            ><a href="#goal">What do we want?</a
+            ><a href="#fix">How do we fix it?</a><a href="#steps">Work steps</a
+            ><a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 13 · tenant onboarding</p>
+          <h1>Let a trusted first webhook register its project.</h1>
+          <p class="lede">
+            Operators currently register every tenant before ReviewPhin can
+            accept its webhooks. Connections should be able to opt into safe
+            automatic registration while preserving platform access checks,
+            webhook authentication, and predictable model selection.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>High</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span
+              ><strong>Operators and project teams</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main area</span><strong>Webhook onboarding</strong>
+            </div>
+            <div class="meta-item">
+              <span>Stored data</span
+              ><strong>Connection defaults and policy</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> an operator can enable an existing
+            GitHub or GitLab connection, hand a team the correct setup bundle,
+            and let the first authenticated webhook create the tenant. The same
+            webhook then continues through normal event handling.
+          </div>
+        </header>
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>An unknown project always stops</h3>
+              <p>
+                The webhook route identifies a project, looks for its tenant,
+                and returns not found when no tenant exists. It has no safe path
+                for creating one.
+              </p>
+            </article>
+            <article class="card">
+              <h3>GitLab does not identify the connection</h3>
+              <p>
+                A GitLab event names its instance and project, but not the
+                ReviewPhin bot credential that should own the tenant. Several
+                connections can also reach the same instance.
+              </p>
+            </article>
+            <article class="card">
+              <h3>A first-time secret cannot trust itself</h3>
+              <p>
+                Accepting any secret supplied by an unknown first request would
+                let a forged payload choose the credential that protects all
+                later requests for that tenant.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Profiles have no connection fallback</h3>
+              <p>
+                A review can use a review override, a tenant override, or the
+                instance default. An operator cannot yet choose one live default
+                for all non-overridden tenants on a connection.
+              </p>
+            </article>
+          </div>
+        </section>
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="Trusted tenant auto-registration flow">
+            <div>
+              <strong>1. Authenticate and route</strong
+              ><span
+                >Prove the webhook and identify one enabled, ready connection
+                before remote API work.</span
+              >
+            </div>
+            <div>
+              <strong>2. Verify platform access</strong
+              ><span
+                >Require GitLab Developer access or GitHub App installation
+                access to the named project.</span
+              >
+            </div>
+            <div>
+              <strong>3. Create and continue</strong
+              ><span
+                >Create the tenant once, then process that same event through
+                the ordinary webhook path.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>
+              Automatic registration is off for every new and migrated
+              connection.
+            </li>
+            <li>
+              An existing ready connection can enable or disable it without
+              recreating credentials.
+            </li>
+            <li>Unsupported platform modules cannot opt in accidentally.</li>
+            <li>
+              An existing tenant is never reassigned or overwritten by a
+              webhook.
+            </li>
+            <li>Concurrent first deliveries converge on one tenant.</li>
+            <li>
+              Profile order is review override, tenant override, connection
+              default, instance default, then native fallback.
+            </li>
+          </ul>
+        </section>
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Situation</th>
+                <th>Planned behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Connection administration</td>
+                <td>
+                  Add opt-in automatic registration and an optional live default
+                  profile. Support enabling, disabling, clearing the profile,
+                  showing onboarding data, and rotating future onboarding
+                  credentials on existing connections.
+                </td>
+              </tr>
+              <tr>
+                <td>GitHub first webhook</td>
+                <td>
+                  Match its App installation to one enabled connection, verify
+                  the signature, and use installation credentials to load the
+                  repository before registration.
+                </td>
+              </tr>
+              <tr>
+                <td>GitLab 17 and later</td>
+                <td>
+                  Use a connection-specific URL and a high-entropy custom
+                  bootstrap header. After that check, store and verify the
+                  project-specific legacy webhook token supplied with the
+                  request.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  GitLab 19.0 with signing enabled, and GitLab 19.1 or later
+                </td>
+                <td>
+                  Allow a signing token in addition to the legacy token. Verify
+                  the raw body, webhook ID, and recent timestamp, and copy the
+                  verified signing credential into the new tenant.
+                </td>
+              </tr>
+              <tr>
+                <td>Access denied or request forged</td>
+                <td>
+                  Create nothing, reveal no candidate details, and return the
+                  same not-found response used for an unavailable tenant.
+                </td>
+              </tr>
+              <tr>
+                <td>Temporary API or storage failure</td>
+                <td>
+                  Record a secret-free diagnostic and return a retryable server
+                  error instead of pretending the project is ineligible.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            <strong>No trust on first use:</strong> remote project access proves
+            that ReviewPhin can serve a project; it does not prove that an
+            incoming GitLab request came from that project. The bootstrap check
+            must succeed before accepting or storing its project secret.
+          </div>
+        </section>
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Store common connection policy.</strong> Add the
+                disabled-by-default registration switch and nullable connection
+                profile to the storage contract. Migrate both built-in storage
+                providers without changing existing connection behavior.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong
+                  >Make connection settings independently editable.</strong
+                >
+                Let metadata-only changes bypass provider credential recreation.
+                Validate profile references, expose positive and negative
+                switches, and report the effective settings in every output
+                mode.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Provide a safe onboarding bundle.</strong> Give an
+                operator a copyable webhook URL, GitLab bootstrap header,
+                suggested project token, and version-labelled signing guidance.
+                Reveal secrets only through an explicit onboarding action.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Add the platform capability.</strong> Let a platform
+                declare support and return an authenticated connection plus
+                normalized tenant settings. Keep storage writes and existing
+                tenant conflict rules in the shared registry.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Implement GitHub registration.</strong> Authenticate
+                with the matched App connection, prove repository access, build
+                the same tenant settings as manual registration, and preserve
+                normal check-run setup.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Implement GitLab registration.</strong> Route by the
+                connection-specific URL, verify bootstrap and webhook
+                credentials, require Developer-or-higher effective access, and
+                retain GitLab 17 legacy authentication.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Make creation race-safe.</strong> Add one create-or-get
+                operation keyed by the remote project. A losing request must
+                load the winner, continue only for the same connection, and
+                never change tenant secrets or ownership.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Apply live profile fallback.</strong> Resolve the
+                connection profile after a missing tenant override and before
+                the instance default. Block profile deletion while either a
+                tenant or connection still references it.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Document operations and failures.</strong> Cover setup
+                by GitLab version, GitHub App repository selection, disabling
+                future registration, credential rotation, retry behavior, and
+                audit-safe diagnostics.
+              </div>
+            </li>
+          </ol>
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                Create <code>storage-v007</code> from
+                <a href="../../src/storage/contract/current.d.ts"
+                  >the current storage contract</a
+                >. Add required <code>autoRegisterTenants</code> and nullable
+                <code>defaultModelProfileName</code> fields to
+                <code>PlatformConnectionRecord</code>, add the boolean to its
+                query fields, and add an atomic or convergent
+                <code>createTenantIfAbsent</code> operation to
+                <code>TenantStore</code>. Update contract history and both
+                providers' reported revisions.
+              </li>
+              <li>
+                In
+                <a href="../../src/storage/adapters/sqlite/database.ts"
+                  >the SQLite adapter</a
+                >, add the two connection columns and use a conflict-safe insert
+                followed by a read for first tenant creation. In
+                <a href="../../src/storage/adapters/flotiq/migrations/v002.ts"
+                  >the Flotiq definitions</a
+                >, add the connection fields, make the tenant key unique, map
+                the profile relation, populate false/null on existing objects,
+                and turn a uniqueness loser into a read of the winning tenant.
+              </li>
+              <li>
+                Extend
+                <a href="../../src/storage/storage-helpers.ts"
+                  ><code>StorageHelpers</code></a
+                >
+                so connection create/update validates profile references and
+                profile deletion checks connection references. The
+                auto-registration path must compare a create-or-get winner's
+                connection ID and must not call ordinary tenant upsert on a
+                conflict.
+              </li>
+              <li>
+                Extend
+                <a href="../../src/platforms/IPlatform.ts"
+                  ><code>IPlatform</code></a
+                >
+                with one optional auto-registration capability. Update
+                <a href="../../src/tenants/tenant-registry.ts"
+                  ><code>TenantRegistry.resolveWebhookTenant</code></a
+                >
+                to attempt it only after ordinary lookup misses, then return a
+                normally resolved and authorized tenant. Keep the route in
+                <a href="../../src/app.ts">the webhook app</a> responsible for
+                the final HTTP response and processing of the same payload.
+              </li>
+              <li>
+                In
+                <a href="../../src/platforms/github/platform.ts"
+                  ><code>GitHubPlatform</code></a
+                >, match ready opted-in connections by parsed installation ID,
+                verify the signature before repository lookup, use
+                <a href="../../src/platforms/github/client.ts"
+                  ><code>GitHubClient.resolveRepositoryById</code></a
+                >
+                as the access proof, and reuse manual tenant normalization and
+                open-pull-request check-run setup without duplicating it.
+              </li>
+              <li>
+                In
+                <a href="../../src/platforms/gitlab/platform.ts"
+                  ><code>GitLabPlatform</code></a
+                >, reserve a connection-specific suffix under the existing
+                wildcard webhook route. Add bootstrap and optional signing
+                credentials to the GitLab connection configuration. Add
+                effective
+                <code>permissions.project_access.access_level</code> and
+                <code>permissions.group_access.access_level</code> parsing to
+                <a href="../../src/platforms/gitlab/types.ts"
+                  ><code>GitLabProject</code></a
+                >
+                and require their maximum to be at least 30.
+              </li>
+              <li>
+                GitLab signing verification must use the exact raw request body
+                and the Standard Webhooks
+                <code>webhook-id.webhook-timestamp.body</code> message, accept
+                multiple versioned signatures, use constant-time comparison, and
+                enforce a documented clock-skew window. If signing headers are
+                present or the tenant requires signing, invalid, incomplete, or
+                stale signing data must fail without legacy downgrade.
+              </li>
+              <li>
+                Update <a href="../../src/cli.ts">the CLI</a> with
+                <code>--auto-register-tenant</code>,
+                <code>--no-auto-register-tenant</code>,
+                <code>--default-profile</code>, and
+                <code>--clear-default-profile</code>. Add an explicit onboarding
+                output and a future-registration credential rotation action. A
+                common-only GitHub update must not invoke its unsupported App
+                credential update hook.
+              </li>
+              <li>
+                Pass the resolved connection into
+                <a href="../../src/review/model-profiles.ts"
+                  ><code>resolveReviewProviderConfig</code></a
+                >
+                from
+                <a href="../../src/jobs/review-worker.ts">the review worker</a>.
+                Add a distinct selection source for the connection fallback and
+                snapshot the resolved profile on each new run as today; changing
+                a default affects subsequent, not already-started, runs.
+              </li>
+              <li>
+                Expand
+                <a href="../../test/webhook-route.test.ts">webhook route</a>,
+                <a href="../../test/tenant-registry.test.ts">tenant registry</a
+                >,
+                <a href="../../test/github-webhook.test.ts">GitHub webhook</a>,
+                <a href="../../test/platform-connections.test.ts"
+                  >connection storage</a
+                >, <a href="../../test/tenant-cli.test.ts">CLI</a>,
+                <a href="../../test/model-profiles.test.ts">profile</a>, SQLite,
+                Flotiq migration, malformed-header, replay, ambiguity, access,
+                race, and secret-redaction tests.
+              </li>
+              <li>
+                Update
+                <a
+                  href="../../docs/src/content/docs/management/platform-connections.md"
+                  >platform connection management</a
+                >,
+                <a href="../../docs/src/content/docs/management/tenants.md"
+                  >tenant management</a
+                >,
+                <a
+                  href="../../docs/src/content/docs/management/model-profiles.md"
+                  >profile precedence</a
+                >,
+                <a
+                  href="../../docs/src/content/docs/deployment/exposing-webhooks.md"
+                  >webhook exposure</a
+                >, CLI reference, storage-provider documentation, adapter
+                README, and the root README. State that custom bootstrap headers
+                require GitLab 17+. State that signing tokens are feature-gated
+                in GitLab 19.0 and generally available in GitLab 19.1.
+              </li>
+            </ul>
+          </details>
+        </section>
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              New and migrated connections reject unknown tenants until an
+              operator explicitly enables automatic registration.
+            </li>
+            <li>
+              Enabling an existing GitLab connection produces a usable URL and
+              bootstrap bundle without recreating its API credential.
+            </li>
+            <li>
+              GitLab 17 accepts a correctly bootstrapped legacy webhook and
+              rejects a missing bootstrap header, bad tenant token, or access
+              below Developer without storing anything.
+            </li>
+            <li>
+              GitLab 19 verifies a valid signing signature when the feature is
+              available, in addition to the tenant token, and rejects altered
+              bodies, stale timestamps, and downgrade attempts.
+            </li>
+            <li>
+              GitHub selects only the payload's installation, verifies its
+              signature, and refuses repositories outside that installation.
+            </li>
+            <li>
+              Two simultaneous first deliveries yield one tenant, and a tenant
+              already owned by another connection is unchanged.
+            </li>
+            <li>
+              The webhook that creates a tenant can also create or handle its
+              intended event; no second delivery is required.
+            </li>
+            <li>
+              Changing a connection or instance default changes the next review
+              for tenants without a higher override, while explicit tenant and
+              review overrides still win.
+            </li>
+            <li>
+              Pretty, plain, JSON, and logs never reveal onboarding, webhook,
+              App, or API secrets unless the operator invokes the explicit
+              onboarding action.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> targeted webhook, connection,
+            tenant, profile, SQLite, Flotiq, migration, CLI help/output, and
+            documentation tests, <code>pnpm test</code>,
+            <code>pnpm typecheck</code>, <code>pnpm lint</code>,
+            <code>pnpm docs:build</code>, and <code>pnpm build</code>.
+          </p>
+        </section>
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="12.gitlab-token-permissions-documentation.html"
+            >← GitLab token permissions</a
+          ><a href="index.html">All plans →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>
