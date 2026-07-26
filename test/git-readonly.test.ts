@@ -224,7 +224,7 @@ describe("Git-derived review manifest", () => {
         ...change("src/index.ts"),
         additions: 4,
         deletions: 2,
-        contentSignature: "aaaa:bbbb",
+        contentSignature: "git-raw-v2:100644:aaaa:100644:bbbb",
       },
       {
         ...change("src/new.ts"),
@@ -232,26 +232,46 @@ describe("Git-derived review manifest", () => {
         additions: 1,
         deletions: 1,
         renamedFile: true,
-        contentSignature: "cccc:dddd",
+        contentSignature: "git-raw-v2:100644:cccc:100644:dddd",
       },
       {
         ...change("public/old.png"),
         deletedFile: true,
-        contentSignature: "eeee:0000",
+        contentSignature: "git-raw-v2:100644:eeee:000000:0000",
       },
       {
         ...change("public/new.png"),
         additions: 8,
         deletions: 0,
         newFile: true,
-        contentSignature: "0000:ffff",
+        contentSignature: "git-raw-v2:000000:0000:100644:ffff",
       },
       {
         ...change("src/copy.ts"),
         additions: 3,
         deletions: 0,
         newFile: true,
-        contentSignature: "1111:2222",
+        contentSignature: "git-raw-v2:100644:1111:100644:2222",
+      },
+    ]);
+  });
+
+  it("changes the content signature when only the file mode changes", async () => {
+    const gitRunner = vi.fn(async ({ args }: { args: string[] }) => ({
+      stdout: args.includes("--raw")
+        ? ":100644 100755 aaaa aaaa M\0scripts/review.sh\0"
+        : "0\t0\tscripts/review.sh\0",
+      stderr: "",
+    }));
+
+    await expect(
+      buildGitReviewChanges({ cwd: "repo", gitRunner }),
+    ).resolves.toEqual([
+      {
+        ...change("scripts/review.sh"),
+        additions: 0,
+        deletions: 0,
+        contentSignature: "git-raw-v2:100644:aaaa:100755:aaaa",
       },
     ]);
   });

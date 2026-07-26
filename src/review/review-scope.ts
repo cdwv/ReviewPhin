@@ -8,7 +8,7 @@ import type {
 } from "./types.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
 import type { GitReadonlyCapability } from "../harness/git-readonly.js";
-import { reviewResultSchema } from "./types.js";
+import { GIT_CONTENT_SIGNATURE_PREFIX, reviewResultSchema } from "./types.js";
 import type {
   PriorReviewFindingContext,
   PreviousReviewContext,
@@ -325,11 +325,16 @@ function hasIncompatibleChangeSignatureFormats(
 
 function getChangeSignatureFormats(
   changes: CodeReviewChange[],
-): Set<"git-object-id" | "provider-diff"> {
+): Set<"git-raw-v2" | "content-signature-v1" | "provider-diff"> {
   return new Set(
-    changes.map((change) =>
-      change.contentSignature !== undefined ? "git-object-id" : "provider-diff",
-    ),
+    changes.map((change) => {
+      if (change.contentSignature === undefined) {
+        return "provider-diff";
+      }
+      return change.contentSignature.startsWith(GIT_CONTENT_SIGNATURE_PREFIX)
+        ? "git-raw-v2"
+        : "content-signature-v1";
+    }),
   );
 }
 

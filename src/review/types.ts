@@ -210,6 +210,8 @@ export interface CodeReviewItem {
   targetBranch: string;
 }
 
+export const GIT_CONTENT_SIGNATURE_PREFIX = "git-raw-v2:" as const;
+
 export interface CodeReviewChange {
   oldPath: string;
   newPath: string;

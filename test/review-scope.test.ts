@@ -329,62 +329,78 @@ describe("buildScopedReviewContext", () => {
     ]);
   });
 
-  it("uses a full-rescan baseline when stored and current signatures are incompatible", () => {
-    const currentChange = {
-      ...createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+new"),
-      contentSignature: "aaaa:bbbb",
-    };
-    const scoped = buildScopedReviewContext({
-      workspacePath: repoPath(),
-      codeReview,
-      changes: [currentChange],
-      comments: [],
-      discussions: [],
-      trigger: {
-        kind: "manual-review",
-        provider: "github",
-        source: "check-run-requested-action",
-        instruction: null,
-        metadata: {
-          checkRunId: 1357,
-          actionIdentifier: "run_review",
-        },
+  it.each([
+    {
+      previousName: "provider diff",
+      previousChange: createChange(
+        "src/existing.ts",
+        "@@ -1 +1 @@\n-old\n+new",
+      ),
+    },
+    {
+      previousName: "legacy content signature",
+      previousChange: {
+        ...createChange("src/existing.ts", ""),
+        contentSignature: "aaaa:bbbb",
       },
-      priorDiscussions: [],
-      previousReview: {
-        reviewRunId: "run_legacy",
-        finishedAt: "2026-04-27T12:00:00.000Z",
-        headSha: "legacyhead",
-        resultJson: JSON.stringify({
-          overview: {
-            summary: "Prior pass",
-            overallSeverity: "low",
+    },
+  ])(
+    "uses a full-rescan baseline when the current signature replaces a $previousName",
+    ({ previousChange }) => {
+      const currentChange = {
+        ...createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+new"),
+        contentSignature: "git-raw-v2:100644:aaaa:100644:bbbb",
+      };
+      const scoped = buildScopedReviewContext({
+        workspacePath: repoPath(),
+        codeReview,
+        changes: [currentChange],
+        comments: [],
+        discussions: [],
+        trigger: {
+          kind: "manual-review",
+          provider: "github",
+          source: "check-run-requested-action",
+          instruction: null,
+          metadata: {
+            checkRunId: 1357,
+            actionIdentifier: "run_review",
           },
-          findings: [],
-          priorDispositions: [],
-        }),
-        changesJson: JSON.stringify([
-          createChange("src/existing.ts", "@@ -1 +1 @@\n-old\n+new"),
-        ]),
-      },
-    });
+        },
+        priorDiscussions: [],
+        previousReview: {
+          reviewRunId: "run_legacy",
+          finishedAt: "2026-04-27T12:00:00.000Z",
+          headSha: "legacyhead",
+          resultJson: JSON.stringify({
+            overview: {
+              summary: "Prior pass",
+              overallSeverity: "low",
+            },
+            findings: [],
+            priorDispositions: [],
+          }),
+          changesJson: JSON.stringify([previousChange]),
+        },
+      });
 
-    expect(scoped.scope.mode).toBe("first-pass-full");
-    expect(scoped.scope.deltaSincePreviousReview).toBeNull();
-    expect(scoped.scope.allChangedFiles[0]?.reason).toBeUndefined();
-    expect(scoped.scope.scopeSummary).toContain(
-      "different change-signature format",
-    );
-  });
+      expect(scoped.scope.mode).toBe("first-pass-full");
+      expect(scoped.scope.deltaSincePreviousReview).toBeNull();
+      expect(scoped.scope.allChangedFiles[0]?.reason).toBeUndefined();
+      expect(scoped.scope.scopeSummary).toContain(
+        "different change-signature format",
+      );
+    },
+  );
 
-  it("keeps Git object-ID signatures incremental after the baseline", () => {
+  it("keeps versioned Git signatures incremental after the baseline", () => {
     const existing = {
       ...createChange("src/existing.ts", ""),
-      contentSignature: "aaaa:bbbb",
+      contentSignature: "git-raw-v2:100644:aaaa:100644:bbbb",
     };
     const delta = {
       ...createChange("src/delta.ts", ""),
-      contentSignature: "cccc:dddd",
+      contentSignature: "git-raw-v2:100644:cccc:100755:dddd",
     };
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
@@ -417,7 +433,10 @@ describe("buildScopedReviewContext", () => {
         }),
         changesJson: JSON.stringify([
           existing,
-          { ...delta, contentSignature: "cccc:eeee" },
+          {
+            ...delta,
+            contentSignature: "git-raw-v2:100644:cccc:100644:dddd",
+          },
         ]),
       },
     });

@@ -106,7 +106,7 @@ describe("WorkspaceMaterializer", () => {
         newPath: "src/index.ts",
         additions: 5,
         deletions: 3,
-        contentSignature: "aaaa:bbbb",
+        contentSignature: "git-raw-v2:100644:aaaa:100644:bbbb",
         newFile: false,
         renamedFile: false,
         deletedFile: false,

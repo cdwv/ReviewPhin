@@ -2,7 +2,10 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { GitReadonlyCapability } from "../harness/git-readonly.js";
-import type { CodeReviewChange } from "../review/types.js";
+import {
+  GIT_CONTENT_SIGNATURE_PREFIX,
+  type CodeReviewChange,
+} from "../review/types.js";
 
 export const REVIEW_BASE_REF = "refs/reviewphin/base" as const;
 export const REVIEW_HEAD_REF = "refs/reviewphin/head" as const;
@@ -23,6 +26,8 @@ export type GitRunner = (input: GitRunnerInput) => Promise<GitRunnerResult>;
 interface RawGitChange {
   oldPath: string;
   newPath: string;
+  oldMode: string;
+  newMode: string;
   oldObjectId: string;
   newObjectId: string;
   status: string;
@@ -114,7 +119,7 @@ export async function buildGitReviewChanges(input: {
       newFile: status === "A" || status === "C",
       renamedFile: status === "R",
       deletedFile: status === "D",
-      contentSignature: `${change.oldObjectId}:${change.newObjectId}`,
+      contentSignature: `${GIT_CONTENT_SIGNATURE_PREFIX}${change.oldMode}:${change.oldObjectId}:${change.newMode}:${change.newObjectId}`,
     };
   });
 }
@@ -149,6 +154,8 @@ export function parseGitRawChanges(output: string): RawGitChange[] {
       changes.push({
         oldPath: status === "C" ? secondPath : firstPath,
         newPath: secondPath,
+        oldMode: parsed[1]!,
+        newMode: parsed[2]!,
         oldObjectId: parsed[3]!,
         newObjectId: parsed[4]!,
         status,
@@ -158,6 +165,8 @@ export function parseGitRawChanges(output: string): RawGitChange[] {
     changes.push({
       oldPath: firstPath,
       newPath: firstPath,
+      oldMode: parsed[1]!,
+      newMode: parsed[2]!,
       oldObjectId: parsed[3]!,
       newObjectId: parsed[4]!,
       status,

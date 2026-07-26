@@ -75,7 +75,7 @@ describe("GitHubWorkspaceMaterializer", () => {
         newPath: "src.ts",
         additions: 2,
         deletions: 1,
-        contentSignature: "aaaa:bbbb",
+        contentSignature: "git-raw-v2:100644:aaaa:100644:bbbb",
         newFile: false,
         renamedFile: false,
         deletedFile: false,
