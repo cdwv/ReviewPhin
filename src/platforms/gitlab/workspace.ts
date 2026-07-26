@@ -254,6 +254,7 @@ export class WorkspaceMaterializer {
         cwd: rootPath,
         args: [
           "fetch",
+          "--no-tags",
           "origin",
           `refs/merge-requests/${input.codeReviewId}/head`,
         ],

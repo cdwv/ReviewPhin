@@ -123,6 +123,65 @@ describe("WorkspaceMaterializer", () => {
     expect(getRawFile).not.toHaveBeenCalled();
   });
 
+  it("disables tag fetching when the exact head SHA falls back to the merge request ref", async () => {
+    const workspaceRoot = await createTempRoot();
+    const gitRunner = vi.fn(async ({ args }) => {
+      if (
+        args[0] === "fetch" &&
+        args.at(-1) === "abc123" &&
+        !args.includes("refs/merge-requests/7/head")
+      ) {
+        throw new Error("exact SHA unavailable");
+      }
+      if (args[0] === "rev-parse" && args[1] === "FETCH_HEAD") {
+        return { stdout: "abc123\n", stderr: "" };
+      }
+      if (args[0] === "diff") {
+        return {
+          stdout: args.includes("--raw")
+            ? ":100644 100644 aaaa bbbb M\0src/index.ts\0"
+            : "1\t1\tsrc/index.ts\0",
+          stderr: "",
+        };
+      }
+
+      return { stdout: "", stderr: "" };
+    });
+    const materializer = new WorkspaceMaterializer({
+      workspaceRoot,
+      logger: createLogger("silent"),
+      gitRunner,
+    });
+
+    const workspace = await materializer.materialize({
+      client: {
+        getProject: async () => ({
+          id: 1085,
+          web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
+          http_url_to_repo: "https://gitlab.example.com/group/project.git",
+        }),
+        buildGitAuthEnv: () => ({}),
+        downloadRepositoryArchive: vi.fn(),
+        getRawFile: vi.fn(),
+        listRepositoryTree: vi.fn(),
+      } as never,
+      jobId: "job_fallback",
+      projectId: 1085,
+      codeReviewId: 7,
+      baseSha: "base123",
+      headSha: "abc123",
+      changes: [],
+    });
+
+    expect(workspace.strategy).toBe("git");
+    expect(gitRunner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: ["fetch", "--no-tags", "origin", "refs/merge-requests/7/head"],
+      }),
+    );
+  });
+
   it("falls back to the archive API when git checkout fails", async () => {
     const workspaceRoot = await createTempRoot();
     const archiveSourceRoot = await createTempRoot();
