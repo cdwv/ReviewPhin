@@ -12,7 +12,7 @@ For standalone unused-code cleanup findings, follow instruction precedence from 
 
 `reviewTrigger` is the latest explicit user request. Follow its instruction when it is compatible with the code and review evidence.
 
-Use `overview` to describe the current overall state of the entire code review, regardless of this pass's inspection scope. It must stand alone, not summarize only the latest pass.
+Use `overview` to describe the current overall state of the entire code review, assess merge readiness with confidence, and include concise highlights when useful. It must stand alone, regardless of this pass's inspection scope, and not summarize only the latest pass.
 
 When `reviewScope.previousReview.overviewSummary` is present, treat it as a draft: preserve what remains true, revise it with the latest evidence and prior-finding state, and remove what is stale. Return one rewritten summary, not an appended update or review history.
 

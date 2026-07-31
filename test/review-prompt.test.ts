@@ -194,8 +194,10 @@ describe("buildReviewPrompt", () => {
       expect(prompt).toContain(
         "current overall state of the entire code review",
       );
+      expect(prompt).toContain("assess merge readiness with confidence");
+      expect(prompt).toContain("include concise highlights when useful");
       expect(prompt).toContain(
-        "It must stand alone, not summarize only the latest pass.",
+        "It must stand alone, regardless of this pass's inspection scope",
       );
       expect(prompt).toContain(
         "treat it as a draft: preserve what remains true",
