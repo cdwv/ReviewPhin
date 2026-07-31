@@ -167,6 +167,48 @@ describe("buildReviewPrompt", () => {
     );
   });
 
+  it.each([
+    "first-pass-full",
+    "incremental-rereview",
+    "follow-up-discussion",
+  ] as const)(
+    "requires %s overviews to summarize the entire code review",
+    (mode) => {
+      const context = createContext(
+        null,
+        mode === "follow-up-discussion"
+          ? "follow-up-comment"
+          : "direct-mention",
+        mode,
+      );
+      context.scope.previousReview = {
+        reviewRunId: "run_previous",
+        reviewedAt: "2026-07-13T09:00:00.000Z",
+        headSha: "previous-head",
+        overviewSummary: "Adds tenant-scoped review synchronization.",
+        mergeReadiness: null,
+      };
+
+      const prompt = buildReviewPrompt(context);
+
+      expect(prompt).toContain(
+        "current overall state of the entire code review",
+      );
+      expect(prompt).toContain(
+        "It must stand alone, not summarize only the latest pass.",
+      );
+      expect(prompt).toContain(
+        "treat it as a draft: preserve what remains true",
+      );
+      expect(prompt).toContain(
+        "Return one rewritten summary, not an appended update or review history.",
+      );
+      expect(prompt).toContain(
+        '"overviewSummary": "Adds tenant-scoped review synchronization."',
+      );
+    },
+  );
+
   it("includes prior finding history with status and resolve resolution schema", () => {
     const prompt = buildReviewPrompt(
       createContext(null, "direct-mention", "incremental-rereview"),
