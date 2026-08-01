@@ -246,12 +246,15 @@ See [model profiles](../model-profiles/) for provider-specific examples.
 
 ### `model-profile available-models`
 
-List models available to the current GitHub Copilot identity, or to the credentials stored in a named native profile.
+List models available to the current GitHub Copilot identity, the credentials stored in a named native profile, or a GitHub token supplied only for this request.
 
 ```bash
 reviewphin model-profile available-models
-reviewphin model-profile available-models --name copilot-team-a
+reviewphin model-profile available-models --model-profile copilot-team-a
+reviewphin model-profile available-models --auth-token github_pat_xxxxxxxxxxxxxxxxxxxx
 ```
+
+`--model-profile` and `--auth-token` cannot be used together. A direct token is not stored or included in output.
 
 Pretty output is a table with Model, Name, Reasoning, Default effort, and Vision columns. Plain output has one tab-separated row per model in that order. JSON has the following shape:
 
@@ -272,11 +275,12 @@ Pretty output is a table with Model, Name, Reasoning, Default effort, and Vision
 
 Models are sorted by ID. Catalog or authentication failures exit with code 1; JSON errors use `model_catalog_unavailable`. Discovery is unavailable for custom-provider profiles.
 
-| Flag                        | Required | Description                                        |
-| --------------------------- | -------- | -------------------------------------------------- |
-| `--name`                    | No       | Use credentials from this named native profile.    |
-| `--sqlite-database-path`    | No       | Override the SQLite path when `--name` is used.    |
-| `--storage-provider-module` | No       | Override the storage module when `--name` is used. |
+| Flag                        | Required | Description                                                       |
+| --------------------------- | -------- | ----------------------------------------------------------------- |
+| `--model-profile`           | No       | Use credentials from this named native profile.                   |
+| `--auth-token`              | No       | Use this GitHub token for the catalog request without storing it. |
+| `--sqlite-database-path`    | No       | Override the SQLite path when `--model-profile` is used.          |
+| `--storage-provider-module` | No       | Override the storage module when `--model-profile` is used.       |
 
 ---
 

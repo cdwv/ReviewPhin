@@ -105,7 +105,7 @@ describe("CLI help", () => {
 
     const help = output.mock.calls.join("");
     expect(help).toContain(
-      "pnpm cli model-profile available-models [--name <name>]",
+      "pnpm cli model-profile available-models [--model-profile <name> | --auth-token <token>]",
     );
   });
 

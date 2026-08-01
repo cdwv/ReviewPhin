@@ -46,11 +46,19 @@ Before pinning a model, list the catalog available to the current Copilot identi
 reviewphin model-profile available-models
 ```
 
-The catalog comes from GitHub Copilot at command time. It can vary by token, account, organization policy, and date. To inspect the credentials stored in a native profile, add `--name`:
+The catalog comes from GitHub Copilot at command time. It can vary by token, account, organization policy, and date. To inspect the credentials stored in a native profile, use `--model-profile`:
 
 ```bash
-reviewphin model-profile available-models --name copilot-team-a
+reviewphin model-profile available-models --model-profile copilot-team-a
 ```
+
+To check a GitHub token before creating a profile, pass it directly:
+
+```bash
+reviewphin model-profile available-models --auth-token github_pat_xxxxxxxxxxxxxxxxxxxx
+```
+
+The direct token is used only for that catalog request. ReviewPhin does not store or display it. `--model-profile` and `--auth-token` cannot be used together.
 
 The table includes the model ID, display name, supported reasoning efforts, default effort, and vision support. Use `--output plain` for tab-separated rows or `--output json` for structured output.
 

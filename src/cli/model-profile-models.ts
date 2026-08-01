@@ -22,6 +22,7 @@ interface ModelCatalogDependencies {
 
 export async function listAvailableModels(
   profile: ModelProfileRecord | null,
+  authToken: string | null,
   config: AppConfig,
   dependencies: ModelCatalogDependencies,
 ): Promise<number> {
@@ -36,7 +37,7 @@ export async function listAvailableModels(
   let models: AvailableModel[];
   try {
     models = await discoverAvailableModels(
-      catalogInput(config, profile?.authToken),
+      catalogInput(config, authToken ?? profile?.authToken),
       dependencies.clientFactory,
     );
   } catch {
@@ -111,7 +112,7 @@ export async function validateProfileModels(
   if (!ignoreMissingModel) {
     throw new CliError(
       "model_not_found",
-      `Model profile "${profile.name}" uses models that were not found: ${missingModels.join(", ")}. Use --ignore-missing-model to ignore this error if you are sure the models are valid and available.`,
+      `Model profile "${profile.name}" uses models that were not found: ${missingModels.join(", ")}. Run "model-profile available-models" with the same credentials (using --model-profile or --auth-token when needed) to inspect available model IDs. Use --ignore-missing-model to ignore this error if you are sure the models are valid and available.`,
       { profileName: profile.name, missingModels },
     );
   }

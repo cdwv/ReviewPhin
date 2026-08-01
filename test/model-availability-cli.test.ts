@@ -148,7 +148,7 @@ describe("model availability CLI", () => {
         [
           "model-profile",
           "available-models",
-          "--name",
+          "--model-profile",
           "native-token",
           "--output",
           "json",
@@ -164,6 +164,50 @@ describe("model availability CLI", () => {
     expect(stdout).not.toContain("secret-github-token");
   });
 
+  it("uses an ephemeral auth token without storing or exposing it", async () => {
+    let stdout = "";
+    const catalog = catalogDependencies([model("gpt-5.4")], {
+      stdout: createStringWriter((text) => (stdout += text)),
+    });
+
+    await expect(
+      runCli(
+        [
+          "model-profile",
+          "available-models",
+          "--auth-token",
+          "ephemeral-github-token",
+          "--output",
+          "json",
+        ],
+        catalog.dependencies,
+      ),
+    ).resolves.toBe(0);
+    expect(catalog.factory).toHaveBeenCalledWith({
+      gitHubToken: "ephemeral-github-token",
+    });
+    expect(stdout).not.toContain("ephemeral-github-token");
+  });
+
+  it("rejects combining a model profile with an auth token", async () => {
+    const catalog = catalogDependencies([model("unused")]);
+
+    await expect(
+      runCli(
+        [
+          "model-profile",
+          "available-models",
+          "--model-profile",
+          "native-token",
+          "--auth-token",
+          "ephemeral-github-token",
+        ],
+        catalog.dependencies,
+      ),
+    ).rejects.toThrow("Cannot use --model-profile and --auth-token together");
+    expect(catalog.factory).not.toHaveBeenCalled();
+  });
+
   it("reports catalog failures with a stable JSON error and no secret", async () => {
     let stdout = "";
     let stderr = "";
@@ -174,7 +218,14 @@ describe("model availability CLI", () => {
 
     await expect(
       runCliEntry(
-        ["model-profile", "available-models", "--output", "json"],
+        [
+          "model-profile",
+          "available-models",
+          "--auth-token",
+          "secret-token",
+          "--output",
+          "json",
+        ],
         catalog.dependencies,
       ),
     ).resolves.toBe(1);
@@ -184,6 +235,9 @@ describe("model availability CLI", () => {
       error: expect.objectContaining({ code: "model_catalog_unavailable" }),
     });
     expect(stderr).not.toContain("secret-token");
+    expect(catalog.factory).toHaveBeenCalledWith({
+      gitHubToken: "secret-token",
+    });
     expect(catalog.stop).toHaveBeenCalledOnce();
   });
 
@@ -260,13 +314,16 @@ describe("model availability CLI", () => {
         catalog.dependencies,
       ),
     ).resolves.toBe(1);
-    expect(JSON.parse(stderr).error).toEqual(
+    const error = JSON.parse(stderr).error;
+    expect(error).toEqual(
       expect.objectContaining({
         code: "model_not_found",
         profileName: "invalid",
         missingModels: ["missing-a", "missing-z"],
       }),
     );
+    expect(error.message).toContain("model-profile available-models");
+    expect(error.message).toContain("--model-profile or --auth-token");
 
     const storage = await openSqliteTestStorage(databasePath);
     expect(await storage.stores.modelProfiles.get("invalid")).toBeNull();

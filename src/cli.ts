@@ -192,10 +192,16 @@ const modelProfileLookupSchema = z.object({
   databasePath: z.string().min(1).optional(),
 });
 
-const availableModelsSchema = z.object({
-  name: modelProfileNameSchema.optional(),
-  databasePath: z.string().min(1).optional(),
-});
+const availableModelsSchema = z
+  .object({
+    modelProfileName: modelProfileNameSchema.optional(),
+    authToken: z.string().min(1).optional(),
+    databasePath: z.string().min(1).optional(),
+  })
+  .refine(
+    (value) => !(value.modelProfileName && value.authToken),
+    "Cannot use --model-profile and --auth-token together",
+  );
 
 const storageMigrationSchema = z.object({
   fromProviderModule: z.string().min(1),
@@ -1164,17 +1170,19 @@ async function runCliCommand(
 
   if (resource === "model-profile" && action === "available-models") {
     const selection = availableModelsSchema.parse({
-      name: options.name,
+      modelProfileName: options["model-profile"],
+      authToken: options["auth-token"],
       databasePath: options["sqlite-database-path"],
     });
-    if (!selection.name) {
+    if (!selection.modelProfileName) {
       return listAvailableModels(
         null,
+        selection.authToken ?? null,
         config,
         modelCatalogDependencies(dependencies),
       );
     }
-    const profileName = selection.name;
+    const profileName = selection.modelProfileName;
 
     return withStorage(options, config, async (storage) => {
       const profile = await storage.stores.modelProfiles.get(profileName);
@@ -1187,6 +1195,7 @@ async function runCliCommand(
       }
       return listAvailableModels(
         profile,
+        null,
         config,
         modelCatalogDependencies(dependencies),
       );
@@ -1659,7 +1668,7 @@ function printHelp(
     "tenant clear-profile (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "tenant remove (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
     "model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--review-reasoning-effort <low|medium|high|xhigh>] [--clear-review-reasoning-effort] [--text-generation-reasoning-effort <low|medium|high|xhigh>] [--clear-text-generation-reasoning-effort] [--default] [--ignore-missing-model] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-    "model-profile available-models [--name <name>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "model-profile available-models [--model-profile <name> | --auth-token <token>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile remove --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile set-default --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
