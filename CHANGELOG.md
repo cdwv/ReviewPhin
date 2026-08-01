@@ -3,6 +3,11 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v1.6.1 - 2026-08-01
+### Fixed
+- Review summaries now describe the current overall state of the pull or
+merge request after incremental and focused reviews.
+
 ## v1.6.0 - 2026-07-26
 ### Changed
 - Reviews now consider the complete merge request or pull request change
