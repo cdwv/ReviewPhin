@@ -125,8 +125,8 @@
                 >
               </h3>
               <p>
-                Invalid structured output should receive a small number of
-                focused correction attempts before the whole review fails.
+                Every structured harness call gets two focused correction
+                attempts before its invalid output can escape.
               </p>
             </article>
             <article class="card">
@@ -149,8 +149,8 @@
                 >
               </h3>
               <p>
-                List models for the current credentials, check profiles, and
-                fail early when a trustworthy catalog proves a model missing.
+                List models, validate profiles before saving, and require an
+                explicit flag to accept missing or unverifiable models.
               </p>
             </article>
             <article class="card">
@@ -260,7 +260,11 @@
               </tr>
               <tr>
                 <td>10. Available models</td>
-                <td>No database change. Query the live model catalog.</td>
+                <td>
+                  No database change. Query the live model catalog before
+                  saving, and leave existing data unchanged after failed
+                  validation.
+                </td>
               </tr>
               <tr>
                 <td>11. Copilot token docs</td>

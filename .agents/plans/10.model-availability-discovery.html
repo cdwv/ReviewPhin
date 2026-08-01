@@ -53,8 +53,9 @@
           <div class="outcome">
             <strong>Finished result:</strong> an operator can list the models
             available to the active Copilot identity, inspect useful
-            capabilities, check a saved profile, and receive an actionable error
-            before an unavailable model consumes a full review attempt.
+            capabilities, and validate a complete profile before it is saved.
+            Missing or unverifiable models prevent the write unless the operator
+            explicitly uses <code>--ignore-missing-model</code>.
           </div>
         </header>
         <section id="problem">
@@ -110,8 +111,8 @@
             <div>
               <strong>3. Configure safely</strong
               ><span
-                >Choose an available model or receive a clear
-                unsupported-discovery message.</span
+                >Save a validated profile, reject it, or use the explicit
+                override.</span
               >
             </div>
           </div>
@@ -123,11 +124,19 @@
               Native Copilot model listing works in pretty, plain, and JSON
               output.
             </li>
-            <li>A saved profile can be checked without starting a review.</li>
-            <li>Saving a profile remains possible without network access.</li>
             <li>
-              Providers without discovery say so honestly and preserve the
-              provider’s runtime error.
+              New and updated profiles are checked before storage changes.
+            </li>
+            <li>
+              Missing or unverifiable models reject the command by default.
+            </li>
+            <li>
+              <code>--ignore-missing-model</code> explicitly permits an
+              unvalidated profile to be saved.
+            </li>
+            <li>
+              Providers without discovery say so honestly instead of silently
+              accepting the profile.
             </li>
           </ul>
         </section>
@@ -156,11 +165,19 @@
                 </td>
               </tr>
               <tr>
-                <td>Check a profile.</td>
+                <td>Save or update a profile.</td>
                 <td>
-                  Add an optional profile name to test its review and
-                  text-generation models against the selected provider when
-                  discovery is supported.
+                  Resolve the complete resulting profile, then check its review
+                  and text-generation models before any storage mutation. Reject
+                  the command if either model cannot be validated.
+                </td>
+              </tr>
+              <tr>
+                <td>Accept an unavailable model deliberately.</td>
+                <td>
+                  Add <code>--ignore-missing-model</code> to profile creation
+                  and updates. With this flag, report the validation problem and
+                  save the requested profile anyway.
                 </td>
               </tr>
               <tr>
@@ -174,17 +191,17 @@
               <tr>
                 <td>Use a provider without discovery.</td>
                 <td>
-                  Report that availability cannot be checked; do not pretend the
-                  configured name is valid or invalid.
+                  Reject the save because availability cannot be validated,
+                  unless <code>--ignore-missing-model</code> is present.
                 </td>
               </tr>
             </tbody>
           </table>
           <div class="callout warning">
-            <strong>Do not make saving depend on a live provider:</strong>
-            profiles may be prepared offline, migrated between environments, or
-            configured before credentials are attached. Discovery is a preflight
-            capability, not a universal storage rule.
+            <strong>Validate before writing:</strong> a failed or unavailable
+            catalog check must leave both the target profile and the current
+            default unchanged. Only <code>--ignore-missing-model</code> permits
+            the command to cross that boundary.
           </div>
         </section>
         <section id="steps">
@@ -193,8 +210,9 @@
             <li>
               <div>
                 <strong>Define the command contract.</strong> Set selection
-                rules, output fields, secret handling, exit codes, and the
-                response for unsupported discovery.
+                rules, output fields, secret handling, exit codes, unsupported
+                discovery behavior, and the exact warning shown when
+                <code>--ignore-missing-model</code> is used.
               </div>
             </li>
             <li>
@@ -206,9 +224,10 @@
             </li>
             <li>
               <div>
-                <strong>Add profile checks.</strong> Resolve the profile exactly
-                as a review would and validate both configured roles when the
-                provider has a trustworthy catalog.
+                <strong>Validate before saving.</strong> Combine new values with
+                the existing profile, validate both effective model roles, and
+                only then write the profile or change the default. Keep the
+                existing data untouched on every validation failure.
               </div>
             </li>
             <li>
@@ -248,7 +267,16 @@
                 Profile resolution and provider construction live in
                 <a href="../../src/review/model-profiles.ts"
                   >model profile resolution</a
-                >. Keep stored secrets masked in all output and errors.
+                >. Build the effective updated profile before validation so
+                omitted command options retain their stored values. Keep stored
+                secrets masked in all output and errors.
+              </li>
+              <li>
+                Perform catalog validation before
+                <a href="../../src/cli.ts"
+                  ><code>storage.upsertModelProfile</code></a
+                >. This also prevents a failed command using
+                <code>--default</code> from changing the existing default.
               </li>
               <li>
                 Use a small service shared by the CLI and review preflight
@@ -257,7 +285,10 @@
               <li>
                 Extend <a href="../../test/cli-help.test.ts">CLI help tests</a>,
                 <a href="../../test/cli-output.test.ts">CLI output tests</a>,
-                harness client tests, and model profile tests.
+                harness client tests, and model profile tests. Assert that the
+                storage write is not called after a missing model, unavailable
+                discovery, authentication failure, or catalog failure, and that
+                the override flag permits the write.
               </li>
               <li>
                 Track the original request in
@@ -283,12 +314,20 @@
               Review and text-generation models are checked independently.
             </li>
             <li>
+              Adding or updating a profile with a missing model exits with an
+              actionable error and leaves stored data unchanged.
+            </li>
+            <li>
+              A catalog, authentication, or unsupported-discovery failure also
+              leaves stored data unchanged by default.
+            </li>
+            <li>
               An unavailable native Copilot model fails before workspace
               hydration and suggests the discovery command.
             </li>
             <li>
-              An offline profile save still succeeds, and unsupported
-              custom-provider discovery is not reported as model absence.
+              <code>--ignore-missing-model</code> reports the bypass and saves
+              the requested profile despite missing or unverifiable models.
             </li>
             <li>
               No authentication token appears in normal output, JSON, logs, or

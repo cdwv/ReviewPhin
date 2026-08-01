@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Plan 7 — Recover malformed model output</title>
+    <title>Plan 7 — Repair invalid structured model output</title>
     <link rel="stylesheet" href="_plan.css" />
   </head>
   <body data-priority="high">
@@ -15,7 +15,7 @@
             ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
           >
           <p class="rail-label">Plan 07</p>
-          <p class="rail-value">Recover model output</p>
+          <p class="rail-value">Repair structured output</p>
           <p class="rail-label">Database</p>
           <p class="rail-value">No new fields</p>
           <nav class="toc" aria-label="On this page">
@@ -31,32 +31,33 @@
       <main id="content">
         <header class="hero">
           <p class="eyebrow">Plan 07 · model reliability</p>
-          <h1>Ask the model to correct an invalid review before failing.</h1>
+          <h1>Repair invalid structured output inside the harness.</h1>
           <p class="lede">
-            A model can return text that resembles the requested review but is
-            not valid structured data. ReviewPhin currently fails that attempt
-            and may repeat the whole job. It should make a small number of
-            focused correction attempts first.
+            A model can return useful content that is not valid JSON or does not
+            match the requested shape. ReviewPhin currently lets that failure
+            escape the harness. Every structured harness call should make two
+            focused correction attempts before it fails.
           </p>
           <div class="meta-grid">
             <div class="meta-item">
               <span>Importance</span><strong>High</strong>
             </div>
             <div class="meta-item">
-              <span>Who notices</span><strong>Review requesters</strong>
+              <span>Who notices</span><strong>All model-backed features</strong>
             </div>
             <div class="meta-item">
-              <span>Main area</span><strong>Model sessions</strong>
+              <span>Main area</span><strong>Harness sessions</strong>
             </div>
             <div class="meta-item">
               <span>Stored data</span><strong>Attempts in run logs</strong>
             </div>
           </div>
           <div class="outcome">
-            <strong>Finished result:</strong> when a model returns malformed or
-            schema-invalid review data, ReviewPhin asks it to return a corrected
-            object, validates the correction, records each attempt, and fails
-            clearly only after the correction limit is exhausted.
+            <strong>Finished result:</strong> when any structured harness call
+            returns malformed JSON or data that fails its requested shape,
+            ReviewPhin asks the same model session to fix the response up to two
+            times. The harness returns the first valid result or throws one
+            clear error after both corrections fail.
           </div>
         </header>
 
@@ -73,17 +74,17 @@
             <article class="card">
               <h3>The retry is too broad</h3>
               <p>
-                A normal job retry reloads context and asks for a new review.
-                That costs more and can produce different findings instead of
+                A normal job retry reloads context and asks for new work. That
+                costs more and can produce different content instead of
                 repairing the response already produced.
               </p>
             </article>
             <article class="card">
               <h3>The error lacks repair context</h3>
               <p>
-                Operators see that no object matched the expected shape, but
-                cannot easily tell how many corrections were attempted or why
-                the last one still failed.
+                Callers receive the invalid result and decide how to fail.
+                Operators cannot easily tell which correction was attempted or
+                why the final response still failed.
               </p>
             </article>
             <article class="card">
@@ -99,33 +100,42 @@
 
         <section id="goal">
           <h2>What do we want instead?</h2>
-          <div class="flow" aria-label="Structured output correction flow">
+          <div
+            class="flow"
+            aria-label="Structured harness output correction flow"
+          >
             <div>
               <strong>1. Validate</strong
               ><span
-                >Parse the first response and check the full review shape.</span
+                >Parse the first response and check the requested object
+                shape.</span
               >
             </div>
             <div>
               <strong>2. Correct</strong
               ><span
                 >Give the model the failure details and request only a corrected
-                object.</span
+                object, at most twice.</span
               >
             </div>
             <div>
               <strong>3. Accept or fail</strong
               ><span
-                >Use the first valid correction or stop after the fixed
-                limit.</span
+                >Return the first valid correction or throw after the second
+                correction fails.</span
               >
             </div>
           </div>
           <ul class="checklist">
-            <li>Correction attempts happen inside the review attempt.</li>
+            <li>Correction attempts happen inside the harness session.</li>
+            <li>
+              Reviews, chatter, memory, and future structured calls use the same
+              behavior.
+            </li>
+            <li>Exactly two correction messages are allowed.</li>
+            <li>Malformed JSON and invalid object shapes are both eligible.</li>
             <li>Every candidate passes the same parser and schema.</li>
             <li>No heuristic quote replacement is used as a success path.</li>
-            <li>The correction limit is small, deterministic, and tested.</li>
             <li>Logs distinguish the original response from corrections.</li>
           </ul>
         </section>
@@ -143,8 +153,8 @@
               <tr>
                 <td>The first response is malformed.</td>
                 <td>
-                  Keep the session open and ask for a corrected object using the
-                  parser failure.
+                  Keep the session open and ask for a corrected object using a
+                  concise JSON parsing failure.
                 </td>
               </tr>
               <tr>
@@ -157,23 +167,25 @@
               <tr>
                 <td>A correction is still invalid.</td>
                 <td>
-                  Repeat only up to the configured internal limit, then return
-                  one clear terminal error.
+                  Send no more than two correction messages. If the second
+                  correction is invalid, throw one clear terminal error from the
+                  harness.
                 </td>
               </tr>
               <tr>
-                <td>A later publication retry starts.</td>
+                <td>The call does not request structured output.</td>
                 <td>
-                  Reuse the already validated saved result; do not enter
-                  correction again.
+                  Keep its current behavior. Only calls with a requested output
+                  shape enter correction.
                 </td>
               </tr>
             </tbody>
           </table>
           <div class="callout warning">
-            <strong>Boundary with Plan 2:</strong> this plan ends when a valid
-            review result exists. Plan 2 owns retries after that result has been
-            saved and publication has begun.
+            <strong>The harness owns recovery:</strong> callers receive valid
+            structured data or one error after two failed corrections. They do
+            not inspect a parse failure and decide whether to ask the model
+            again.
           </div>
         </section>
 
@@ -182,16 +194,16 @@
           <ol class="sequence">
             <li>
               <div>
-                <strong>Define correction behavior.</strong> Set the attempt
-                limit, the eligible parse failures, the correction prompt, and
-                the final error format.
+                <strong>Encode one fixed policy.</strong> Treat JSON parsing and
+                object-shape validation failures as repairable, allow exactly
+                two correction messages, and define the terminal error.
               </div>
             </li>
             <li>
               <div>
-                <strong>Keep the model session available.</strong> Allow another
-                message after an invalid response without rebuilding the entire
-                review context.
+                <strong>Keep recovery inside the harness.</strong> Allow two
+                messages after an invalid response without rebuilding the
+                calling feature's context or returning the parse failure to it.
               </div>
             </li>
             <li>
@@ -210,9 +222,10 @@
             </li>
             <li>
               <div>
-                <strong>Cover all exit paths.</strong> Test
-                valid-first-response, repaired JSON, repaired schema, exhausted
-                attempts, timeout, and a later publication retry.
+                <strong>Cover every structured caller.</strong> Test a valid
+                first response, JSON repair, shape repair, two exhausted
+                corrections, and unchanged unstructured-call behavior across
+                reviews, chatter, and memory work.
               </div>
             </li>
           </ol>
@@ -228,37 +241,49 @@
                 and
                 <a href="../../src/harness/response-format.ts"
                   ><code>parseHarnessStructuredResponse</code></a
-                >.
+                >. The session runtime should own the send, parse, validate, and
+                two-correction loop.
               </li>
               <li>
-                The review consumer is
+                Structured consumers include
                 <a href="../../src/review/harness-review-provider.ts"
                   ><code>HarnessReviewProvider.review</code></a
-                >. Chatter and memory sessions use the same harness contract and
-                need an explicit decision about whether correction applies to
-                them.
+                >,
+                <a href="../../src/review/harness-chatter.ts">harness chatter</a
+                >, and
+                <a href="../../src/memory/consolidator.ts"
+                  >memory consolidation</a
+                >. They should all receive the same harness behavior whenever
+                they provide a <code>responseFormat</code>.
               </li>
               <li>
-                Keep
+                After two invalid corrections, throw a stable harness error that
+                preserves the last parse or Zod validation detail. Keep
                 <a href="../../src/jobs/review-worker.ts"
                   >whole-job retry handling</a
                 >
-                as the outer recovery boundary. A failed correction may still be
-                retried there.
+                unchanged as the outer recovery boundary; no special combined
+                retry budget is required.
               </li>
               <li>
                 Add focused cases to
                 <a href="../../test/harness-session.test.ts"
                   >harness session tests</a
                 >
-                and
+                ,
                 <a href="../../test/harness-review-provider.test.ts"
                   >review provider tests</a
-                >.
+                >, chatter tests, and memory service tests.
               </li>
               <li>
                 This work should not change the storage contract. Use existing
                 per-session logs and the existing completed result field.
+              </li>
+              <li>
+                Track the original report in
+                <a href="https://github.com/cdwv/ReviewPhin/issues/27"
+                  >GitHub issue 27</a
+                >.
               </li>
             </ul>
           </details>
@@ -268,8 +293,8 @@
           <h2>How do we know it works?</h2>
           <ul class="checklist">
             <li>
-              A response with one JSON escaping error is corrected without
-              restarting the review job.
+              A response with invalid JSON is corrected without leaving the
+              harness session.
             </li>
             <li>
               A schema-invalid response receives concise, useful validation
@@ -277,23 +302,26 @@
             </li>
             <li>A valid first response causes no correction call.</li>
             <li>
-              Exhausted correction attempts produce one stable error and follow
-              normal job retry rules.
+              Reviews, chatter, and memory consolidation all use the same two
+              correction limit when they request structured output.
+            </li>
+            <li>
+              Two invalid corrections produce one stable harness error and then
+              follow normal caller and job retry rules.
             </li>
             <li>
               No test accepts content because of blind quote or punctuation
               replacement.
             </li>
             <li>
-              A saved valid result is reused during publication recovery without
-              another model call.
+              Calls without a requested output shape do not enter correction.
             </li>
           </ul>
           <p>
             <strong>Checks to run:</strong> harness session tests, review
-            provider tests, worker retry tests, run-log and metrics tests,
-            <code>pnpm test</code>, <code>pnpm typecheck</code>, and
-            <code>pnpm build</code>.
+            provider tests, chatter tests, memory service tests, worker retry
+            tests, run-log and metrics tests, <code>pnpm test</code>,
+            <code>pnpm typecheck</code>, and <code>pnpm build</code>.
           </p>
         </section>
 
