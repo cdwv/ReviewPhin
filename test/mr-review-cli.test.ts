@@ -17,6 +17,45 @@ afterEach(() => {
 });
 
 describe("mr review CLI", () => {
+  it.each(["--report", "-r"])(
+    "rejects %s with --no-watch before queueing",
+    async (reportOption) => {
+      await expect(
+        runCli([
+          "mr",
+          "review",
+          "--key",
+          "https://gitlab.example.com::123",
+          "--trigger-text",
+          "Review this change.",
+          "--code-review-id",
+          "7",
+          "--no-publish",
+          "--no-watch",
+          reportOption,
+          "review.md",
+        ]),
+      ).rejects.toThrow("Cannot combine --no-watch with --report or -r.");
+    },
+  );
+
+  it("requires no-publish mode for report files", async () => {
+    await expect(
+      runCli([
+        "mr",
+        "review",
+        "--key",
+        "https://gitlab.example.com::123",
+        "--trigger-text",
+        "Review this change.",
+        "--code-review-id",
+        "7",
+        "--report",
+        "review.md",
+      ]),
+    ).rejects.toThrow("--report/-r requires --no-publish or --no-comment.");
+  });
+
   it("submits a fresh text job without starting a worker and emits one JSON summary", async () => {
     const directory = await mkdtemp(join(tmpdir(), "mr-review-cli-"));
     const databasePath = join(directory, "reviewphin.sqlite");
@@ -121,6 +160,7 @@ describe("mr review CLI", () => {
           "Review the retry boundary.",
           "--code-review-id",
           "7",
+          "--no-comment",
           "--no-watch",
           "--sqlite-database-path",
           databasePath,
@@ -136,6 +176,17 @@ describe("mr review CLI", () => {
 
     expect(prettyOutput).toContain("Review submitted.");
     expect(diagnostics).toBe("");
+
+    const updatedStorage = await openSqliteTestStorage(databasePath);
+    const updatedJobs = await listAll(updatedStorage.stores.interactionJobs);
+    await updatedStorage.close();
+    const localTestJob = updatedJobs.find((job) =>
+      job.triggerJson.includes("Review the retry boundary."),
+    );
+    expect(localTestJob).toBeDefined();
+    expect(
+      parseLocalReviewTrigger(JSON.parse(localTestJob!.triggerJson)),
+    ).toEqual(expect.objectContaining({ publicationMode: "no-publish" }));
   });
 });
 

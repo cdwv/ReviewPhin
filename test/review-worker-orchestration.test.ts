@@ -5,6 +5,7 @@ import type { Logger } from "pino";
 
 import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
+import GitLabPlatform from "../src/platforms/gitlab/platform.js";
 import type {
   IPlatform,
   PlatformReviewRuntime,
@@ -1896,5 +1897,151 @@ describe("ReviewWorker orchestration", () => {
     expect(reviewContext.scope.priorFindings[0]?.status).toBe("dismissed");
 
     globalThis.fetch = originalFetch;
+  });
+
+  it("stores local-test results without constructing publication paths", async () => {
+    const trigger = {
+      kind: "reviewphin-local-review",
+      source: "cli",
+      requestId: "request-no-publish",
+      codeReviewId: 7,
+      instruction: "Review without publishing.",
+      createdAt: "2026-08-01T12:00:00.000Z",
+      publicationMode: "no-publish",
+    } as const;
+    const job = {
+      id: "job-no-publish",
+      tenantId: tenant.id,
+      dedupeKey: "dedupe-no-publish",
+      projectId: tenant.projectId,
+      codeReviewId: 7,
+      commentId: null,
+      triggerJson: JSON.stringify(trigger),
+      headSha: "abc123",
+      status: "queued" as const,
+      payloadJson: JSON.stringify(trigger),
+      retryCount: 0,
+      lastError: null,
+      enqueuedAt: new Date().toISOString(),
+      startedAt: null,
+      finishedAt: null,
+    };
+    const run = { id: "run-no-publish" };
+    const jobStore = createClaimAwareJobStoreFake({
+      get: async () => job as never,
+      run: run as never,
+    });
+    const reviewResult = {
+      overview: {
+        summary: "No issues found.",
+        overallSeverity: "low" as const,
+      },
+      findings: [],
+      priorDispositions: [],
+    };
+    const routingContext = wrapGitLabPlatformContext({
+      tenant,
+      job,
+      mergeRequest: {
+        id: 1,
+        iid: 7,
+        project_id: tenant.projectId,
+        title: "Add worker",
+        description: "Adds the worker",
+        web_url: "https://gitlab.example.com/group/project/-/merge_requests/7",
+        source_branch: "feature",
+        target_branch: "main",
+        author: { id: 42, username: "developer", name: "Dev User" },
+      },
+      changes: [],
+      notes: [],
+      discussions: [],
+      workspace: {
+        rootPath: join("tmp", "workspace-no-publish"),
+        cleanupRoot: join("tmp", "cleanup-no-publish"),
+        strategy: "git",
+      },
+      projectMemory: {
+        enabled: true,
+        page: null,
+        entries: [],
+      },
+    });
+    const platform = new GitLabPlatform(createLogger("silent"));
+    const createTriggerLifecycle = vi.spyOn(platform, "createTriggerLifecycle");
+    const buildHarnessTenantContext = vi.spyOn(
+      platform,
+      "buildHarnessTenantContext",
+    );
+    const createReviewPublicationAdapter = vi.fn(() => {
+      throw new Error("publication adapter must not be created");
+    });
+    const reconciler = { reconcile: vi.fn() };
+
+    const worker = new ReviewWorker({
+      storage: {
+        stores: {
+          interactionJobs: jobStore,
+          discussionMappings: { list: vi.fn(async () => []) },
+          modelProfiles: {
+            get: vi.fn(async () => null),
+            find: vi.fn(async () => null),
+          },
+        },
+        getInteractionJobById: vi.fn(async () => job),
+        getModelProfileByName: vi.fn(async () => null),
+        getDefaultModelProfile: vi.fn(async () => null),
+        getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
+        listPriorReviewFindings: vi.fn(async () => []),
+      } as never,
+      tenantRegistry: {
+        getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
+      } as never,
+      reviewRuntimeFactory: createReviewRuntimeFactory({
+        loadRoutingContext: vi.fn(async () => routingContext),
+        hydrate: vi.fn(async () => routingContext),
+        createReviewPublicationAdapter,
+        cleanupWorkspace: vi.fn(async () => {}),
+      }),
+      reviewProviderFactory: {
+        createProvider: vi.fn(() => ({
+          name: "copilot-sdk",
+          review: vi.fn(async () => reviewResult),
+        })),
+      },
+      chatterRunnerFactory: {
+        createRunner: vi.fn(() => ({ run: vi.fn() })),
+      } as never,
+      reconciler: reconciler as never,
+      logger: createLogger("silent"),
+      runLogDir: join("tmp", "run-logs"),
+      maxJobRetries: 3,
+      retryBackoffMs: 1000,
+      platformResolver: () => platform,
+    });
+
+    await expect(
+      worker.processClaimedJob(job as never, createClaimContext(job.id)),
+    ).resolves.toBeUndefined();
+
+    expect(createTriggerLifecycle).not.toHaveBeenCalled();
+    expect(createReviewPublicationAdapter).not.toHaveBeenCalled();
+    expect(reconciler.reconcile).not.toHaveBeenCalled();
+    expect(buildHarnessTenantContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        memoryEnabled: true,
+        platformWritesEnabled: false,
+      }),
+    );
+    expect(jobStore.transitionInteractionRunForClaim).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interactionRunId: run.id,
+        status: "completed",
+        resultJson: JSON.stringify(reviewResult),
+      }),
+    );
+    expect(jobStore.transitionClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "completed" }),
+    );
   });
 });

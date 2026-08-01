@@ -472,15 +472,12 @@ describe("InStoreMemoryProvider", () => {
     });
 
     await expect(
-      backend.saveEntries(
-        [{ text: "Use Jest and pnpm." }],
-        {
-          baseEntries: [
-            { text: "Use Jest for tests." },
-            { text: "Use pnpm for scripts." },
-          ],
-        },
-      ),
+      backend.saveEntries([{ text: "Use Jest and pnpm." }], {
+        baseEntries: [
+          { text: "Use Jest for tests." },
+          { text: "Use pnpm for scripts." },
+        ],
+      }),
     ).resolves.toMatchObject({
       entries: [
         { text: "Use Zod and avoid broad snapshot tests." },
@@ -563,8 +560,7 @@ describe("GitLab project memory selection", () => {
           title: REVIEWPHIN_MEMORY_PAGE_TITLE,
           slug: "reviewphin-memory",
           format: "markdown",
-          content:
-            "## Remembered project knowledge\n- Use GitLab wiki memory.",
+          content: "## Remembered project knowledge\n- Use GitLab wiki memory.",
         })),
         listProjectWikiPages: vi.fn(async () => []),
       } as never,
@@ -579,6 +575,75 @@ describe("GitLab project memory selection", () => {
       entries: [{ text: "Use GitLab wiki memory." }],
     });
     await expect(store.get("tenant-1")).resolves.toBeNull();
+  });
+
+  it("keeps GitLab wiki memory read-only when platform writes are disabled", async () => {
+    const store = createProjectMemoryStore();
+    const createProjectWikiPage = vi.fn();
+    const updateProjectWikiPage = vi.fn();
+    const backend = createGitLabProjectMemoryBackend({
+      client: {
+        getProject: vi.fn(async () => ({
+          id: 1085,
+          web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
+          http_url_to_repo: "https://gitlab.example.com/group/project.git",
+          wiki_enabled: true,
+        })),
+        getProjectWikiPage: vi.fn(async () => ({
+          title: REVIEWPHIN_MEMORY_PAGE_TITLE,
+          slug: "reviewphin-memory",
+          format: "markdown",
+          content:
+            "## Remembered project knowledge\n- Keep the existing memory.",
+        })),
+        listProjectWikiPages: vi.fn(async () => []),
+        createProjectWikiPage,
+        updateProjectWikiPage,
+      } as never,
+      projectId: 1085,
+      tenantId: "tenant-1",
+      enabled: true,
+      platformWritesEnabled: false,
+      stores: { projectMemories: store },
+    });
+
+    await expect(
+      backend.saveEntries([{ text: "Do not publish this memory." }]),
+    ).resolves.toMatchObject({
+      entries: [{ text: "Keep the existing memory." }],
+    });
+    expect(createProjectWikiPage).not.toHaveBeenCalled();
+    expect(updateProjectWikiPage).not.toHaveBeenCalled();
+  });
+
+  it("still writes store-backed GitLab memory when platform writes are disabled", async () => {
+    const store = createProjectMemoryStore();
+    const backend = createGitLabProjectMemoryBackend({
+      client: {
+        getProject: vi.fn(async () => ({
+          id: 1085,
+          web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
+          http_url_to_repo: "https://gitlab.example.com/group/project.git",
+          wiki_enabled: false,
+        })),
+      } as never,
+      projectId: 1085,
+      tenantId: "tenant-1",
+      enabled: true,
+      platformWritesEnabled: false,
+      stores: { projectMemories: store },
+    });
+
+    await expect(
+      backend.saveEntries([{ text: "Keep storage memory enabled." }]),
+    ).resolves.toMatchObject({
+      entries: [{ text: "Keep storage memory enabled." }],
+    });
+    await expect(store.get("tenant-1")).resolves.toMatchObject({
+      entriesJson: JSON.stringify([{ text: "Keep storage memory enabled." }]),
+    });
   });
 });
 

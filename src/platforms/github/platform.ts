@@ -981,6 +981,7 @@ export default class GitHubPlatform implements IPlatform {
     storage: StorageHelpers;
     logger: Logger;
     enabled: boolean;
+    platformWritesEnabled?: boolean | undefined;
     logging?: HarnessRunLoggingContext | undefined;
   }) {
     return createGitHubProjectMemoryBackend({
@@ -995,6 +996,7 @@ export default class GitHubPlatform implements IPlatform {
     storage: StorageHelpers;
     logger: Logger;
     memoryEnabled: boolean;
+    platformWritesEnabled?: boolean | undefined;
     logging?: HarnessRunLoggingContext | undefined;
   }) {
     return {

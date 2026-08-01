@@ -44,6 +44,7 @@ export function createGitLabProjectMemoryBackendForTenant(input: {
   logger: Logger;
   logging?: HarnessRunLoggingContext | undefined;
   enabled: boolean;
+  platformWritesEnabled?: boolean | undefined;
   stores: Pick<StorageStores, "projectMemories">;
 }): ProjectMemoryBackend {
   const tenantConfig = getGitLabTenantConfig(input.resolvedTenant.tenant);
@@ -76,6 +77,7 @@ export function createGitLabProjectMemoryBackend(input: {
   projectId: number;
   tenantId: string;
   enabled: boolean;
+  platformWritesEnabled?: boolean | undefined;
   stores: Pick<StorageStores, "projectMemories">;
   logger?: Logger | undefined;
 }): ProjectMemoryBackend {
@@ -93,6 +95,7 @@ class GitLabProjectMemorySelectionBackend implements ProjectMemoryBackend {
       projectId: number;
       tenantId: string;
       stores: Pick<StorageStores, "projectMemories">;
+      platformWritesEnabled?: boolean | undefined;
       logger?: Logger | undefined;
     },
   ) {}
@@ -129,16 +132,35 @@ class GitLabProjectMemorySelectionBackend implements ProjectMemoryBackend {
         );
       }
 
-      return new GitLabWikiProjectMemoryBackend({
+      const backend = new GitLabWikiProjectMemoryBackend({
         client: this.options.client,
         projectId: this.options.projectId,
       });
+      return this.options.platformWritesEnabled === false
+        ? new ReadOnlyProjectMemoryBackend(backend)
+        : backend;
     }
 
     return new InStoreMemoryProvider({
       stores: this.options.stores,
       tenantId: this.options.tenantId,
     });
+  }
+}
+
+class ReadOnlyProjectMemoryBackend implements ProjectMemoryBackend {
+  public constructor(private readonly backend: ProjectMemoryBackend) {}
+
+  public getCapability(): Promise<ProjectMemoryCapability> {
+    return this.backend.getCapability();
+  }
+
+  public load(): Promise<ProjectMemoryContext> {
+    return this.backend.load();
+  }
+
+  public saveEntries(): Promise<ProjectMemoryContext> {
+    return this.backend.load();
   }
 }
 

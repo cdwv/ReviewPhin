@@ -267,6 +267,7 @@ export interface IPlatform {
     storage: StorageHelpers;
     logger: Logger;
     enabled: boolean;
+    platformWritesEnabled?: boolean | undefined;
     logging?: HarnessRunLoggingContext | undefined;
   }): ProjectMemoryBackend;
   buildHarnessTenantContext(input: {
@@ -274,6 +275,7 @@ export interface IPlatform {
     storage: StorageHelpers;
     logger: Logger;
     memoryEnabled: boolean;
+    platformWritesEnabled?: boolean | undefined;
     logging?: HarnessRunLoggingContext | undefined;
   }): HarnessTenantContext;
   getReviewSummaryInstructions(resolvedTenant: ResolvedTenant): string[];

@@ -426,6 +426,9 @@ Exactly one tenant selector and one trigger selector are required.
 | `--trigger-text-file`       | Yes\*\*   | UTF-8 instruction file, resolved from the current directory. Requires `--code-review-id`.                   |
 | `--code-review-id`          | Sometimes | Positive merge request IID or pull request number. A comment URL supplies it; an explicit value must match. |
 | `--force-new`               | No        | Create a distinct job for a comment that would otherwise reuse its canonical job.                           |
+| `--no-publish`              | No        | Run a local test: store the review result without publishing anything to the code-hosting platform.         |
+| `--no-comment`              | No        | Exact alias for `--no-publish`.                                                                             |
+| `--report`, `-r`            | No        | Write the completed local-test result as Markdown to this path, replacing an existing file.                 |
 | `--watch`                   | No        | Watch persisted job and run state. This is the default.                                                     |
 | `--no-watch`                | No        | Return after persistence without waiting.                                                                   |
 | `--sqlite-database-path`    | No        | Override the SQLite path.                                                                                   |
@@ -448,9 +451,13 @@ ReviewPhin verifies the URL against the resolved tenant and fetches the comment 
 
 Comment submissions use the same deduplication identity as webhook submissions. Repeating one reuses the existing job, including a terminal job; `--force-new` derives a distinct identity. Text instructions always include a new local request ID and therefore always create a fresh job.
 
+`--no-publish` (or its exact alias, `--no-comment`) marks the review as a local test. The runner still reads the platform context, performs the review, and stores the completed result, but it does not mutate the platform: no reactions, comments, replies, review/check statuses, or platform-backed memory writes are published. A local test has a separate deduplication identity from an otherwise identical published review, so it cannot accidentally reuse a result that was already published.
+
+After a local test completes, the CLI loads the stored result. Without `--report`, it prints a formatted report to the terminal. With `--report <path>` or `-r <path>`, it writes the same result as UTF-8 Markdown and replaces the file if it already exists. The report path is local to the CLI and is never sent to the runner. `--report` requires `--no-publish` or `--no-comment`; it cannot be combined with `--no-watch`, because the CLI must wait for the stored result before writing the file. These combinations are validated before the job is queued.
+
 Watch mode reports persisted status changes and follows the selected attempt through retries. In pretty mode on an interactive terminal, it keeps a dashboard in place with separate status, identity, and latest-activity sections. The dashboard uses the available terminal width and wraps recent activity messages onto aligned continuation lines. Plain output and redirected pretty output remain append-only. The watcher tails live logs only when the configured run-log directory is locally accessible or shared with the runner. Missing live logs do not affect persisted status or findings. Leaving watch mode with `SIGINT` or `SIGTERM` does not cancel the job.
 
-With `--output json`, watch mode emits JSONL events: `review_submitted`, `job_status`, `run_status`, `activity`, and a final `review_completed`. Activity events retain a safe projection of up to four scalar log-data fields; nested values are omitted and credential-like fields are redacted. Human-readable activity details use the same projection. `--no-watch --output json` is not a stream and returns exactly one summary object.
+With `--output json`, watch mode emits JSONL events: `review_submitted`, `job_status`, `run_status`, `activity`, and a final `review_completed`. A successful local test without `--report` then emits a `review_result` event containing the stored result. Activity events retain a safe projection of up to four scalar log-data fields; nested values are omitted and credential-like fields are redacted. Human-readable activity details use the same projection. `--no-watch --output json` is not a stream and returns exactly one summary object.
 
 The final summary contains `jobId`, `created`, `jobStatus`, `runId`, `runStatus`, `runLogDirectory`, `findingCount`, `error`, and `liveLogsAvailable`. Exit code `0` means a no-watch submission succeeded or a watched job completed. Validation and operational errors, or watched jobs ending as failed, cancelled, or expired, return `1`; interrupted watches return `130` for `SIGINT` and `143` for `SIGTERM`.
 
