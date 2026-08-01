@@ -43,7 +43,9 @@ createLocalInteractionJob(input: {
 
 The selector is one canonical comment URL, a comment ID plus code review ID, or local instruction text plus code review ID. The provider owns platform API access, tenant and URL verification, comment classification, head-SHA resolution, trigger construction, and canonical deduplication. For comment selectors, return the same trigger and dedupe identity as the equivalent webhook. For text selectors, include the request ID so each submission is fresh.
 
-The CLI adds the resolved tenant ID, persists the job, and synchronizes its queued lifecycle. Return a no-op lifecycle for provider-neutral local text triggers; keep native lifecycle behavior for reconstructed comments.
+The CLI adds the resolved tenant ID and persists the job. For publishing reviews, it also synchronizes the queued lifecycle. Return a no-op lifecycle for provider-neutral local text triggers; keep native lifecycle behavior for reconstructed comments.
+
+Local tests submitted with `--no-publish` or `--no-comment` deliberately skip trigger-lifecycle synchronization and every other platform mutation. The provider still resolves the selected review and constructs the persisted job, but it is not asked to publish lifecycle state or review output. See the [`mr review` CLI reference](../../management/cli-reference/#mr-review) for the complete local-test behavior.
 
 Providers that omit this hook continue to load normally. `mr review` reports that local submission is unsupported for those providers.
 
