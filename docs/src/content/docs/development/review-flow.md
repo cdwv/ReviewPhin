@@ -60,6 +60,16 @@ The Reviewer runs as two sequential subagents inside one model session:
 1. **context-analyst** — explores the hydrated workspace with `glob`, `ripgrep`, file reads, and trusted read-only Git inspection to gather context relevant to the changed files.
 2. **review-author** — produces structured findings: severity, category, body, optional diff anchor, and optional inline suggestion.
 
+### Structured-output recovery
+
+Review results, Chatter replies, and project-memory consolidation all request structured JSON from the model harness. The harness parses each response and validates it against the shape requested by the caller.
+
+When a response contains malformed JSON or does not match that shape, ReviewPhin keeps the same model session open and asks the model to correct its previous response. It sends at most two correction messages after the original response, and every corrected candidate passes through the same parsing and validation checks. The first valid candidate is returned to the caller.
+
+This bounded recovery is separate from a whole-job retry: it does not rebuild the prompt or reload the workspace. One harness session can therefore contain up to three structured-response attempts for one requested result, and the correction turns can add assistant calls to the session. Session metrics include all underlying model calls, and the run log records each candidate's attempt number, validation failure, duration, and model usage.
+
+If the second correction is still invalid, the harness raises one terminal structured-output error with the last parsing or validation detail. Review and reply callers then follow their existing failure handling, including the worker's normal job-retry policy where applicable.
+
 For Git-ready workspaces, ReviewPhin prepares the platform's exact comparison base and review head with their commit ancestry, derives the complete changed-file manifest from those trusted Git refs, checks out the head in detached mode, and removes the remote and authentication data before the model session starts. The starting prompt contains the complete changed-file manifest; the Reviewer uses `git_readonly` to inspect focused diffs, history, and blame against the fixed `reviewphin/base` and `reviewphin/head` revisions.
 
 If trusted Git preparation fails, ReviewPhin uses the complete platform diff only when that fallback is available and fits the prompt budget. Otherwise the review fails clearly instead of publishing a silently partial result.
