@@ -111,7 +111,7 @@ export async function validateProfileModels(
   if (!ignoreMissingModel) {
     throw new CliError(
       "model_not_found",
-      `Model profile "${profile.name}" uses models that were not found: ${missingModels.join(", ")}.`,
+      `Model profile "${profile.name}" uses models that were not found: ${missingModels.join(", ")}. Use --ignore-missing-model to ignore this error if you are sure the models are valid and available.`,
       { profileName: profile.name, missingModels },
     );
   }
