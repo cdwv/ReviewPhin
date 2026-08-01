@@ -26,6 +26,17 @@ export interface RenderedResult {
   readonly plain?: string | (() => string);
 }
 
+export class CliError extends Error {
+  public constructor(
+    public readonly code: string,
+    message: string,
+    public readonly details?: Readonly<Record<string, unknown>>,
+  ) {
+    super(message);
+    this.name = "CliError";
+  }
+}
+
 export function resolveOutputMode(options: OutputOptions): OutputMode {
   const requested = options.output;
   if (requested !== undefined && typeof requested !== "string") {
@@ -124,12 +135,19 @@ export class CliOutput {
   public error(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
     if (this.mode === "json") {
+      const cliError = error instanceof CliError ? error : null;
       this.stderr.write(
         `${JSON.stringify({
           type: "error",
           error: {
             name: error instanceof Error ? error.name : "Error",
             message,
+            ...(cliError
+              ? {
+                  code: cliError.code,
+                  ...cliError.details,
+                }
+              : {}),
           },
         })}\n`,
       );

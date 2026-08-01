@@ -12,6 +12,7 @@ import {
   tenantConfigSchema,
 } from "./config.js";
 import { loadLocalEnvFile } from "./env.js";
+import type { ModelCatalogClientFactory } from "./review/model-catalog.js";
 import { maskSecret } from "./review/model-profiles.js";
 import {
   getReviewPublicationMode,
@@ -34,6 +35,7 @@ import {
   initializeStorageRuntime,
   type InitializedStorageRuntime,
 } from "./storage/runtime.js";
+import { resolveModelProfileUpsertInput } from "./storage/model-profile-upsert.js";
 import { listAll, type StorageHelpers } from "./storage/storage-helpers.js";
 import { createInteractionJobDedupeKey } from "./utils/ids.js";
 import { createId } from "./utils/ids.js";
@@ -51,6 +53,7 @@ import type {
   StoreListOrder,
   TenantDeletionSummary,
   TenantRecord,
+  UpsertModelProfileInput,
 } from "./storage/contract/index.js";
 import {
   getPlatforms,
@@ -70,9 +73,14 @@ import {
   formatReviewReportForTerminal,
   writeReviewReport,
 } from "./cli/review-report.js";
+import {
+  listAvailableModels,
+  validateProfileModels,
+} from "./cli/model-profile-models.js";
 import { getGitLabTenantConfig } from "./platforms/gitlab/tenant-config.js";
 import {
   CliOutput,
+  CliError,
   formatIsoDate,
   formatKeyValues,
   formatPrettyDate,
@@ -80,6 +88,10 @@ import {
   resolveOutputMode,
   type CliOutputDependencies,
 } from "./cli/output.js";
+
+export interface CliDependencies extends CliOutputDependencies {
+  readonly modelCatalogClientFactory?: ModelCatalogClientFactory | undefined;
+}
 
 interface ParsedCliArgs {
   readonly positionals: string[];
@@ -177,6 +189,11 @@ const clearableModelProfileFields = [
 
 const modelProfileLookupSchema = z.object({
   name: modelProfileNameSchema,
+  databasePath: z.string().min(1).optional(),
+});
+
+const availableModelsSchema = z.object({
+  name: modelProfileNameSchema.optional(),
   databasePath: z.string().min(1).optional(),
 });
 
@@ -552,6 +569,13 @@ function output(): CliOutput {
   return cliOutputStorage.getStore() ?? new CliOutput("pretty");
 }
 
+function modelCatalogDependencies(dependencies: CliDependencies) {
+  return {
+    output: output(),
+    clientFactory: dependencies.modelCatalogClientFactory,
+  };
+}
+
 function prettyHeading(value: string): string {
   return output().style("heading", value);
 }
@@ -611,17 +635,22 @@ function decorateTable(table: string): string {
 
 export async function runCli(
   argv: string[] = process.argv.slice(2),
-  dependencies: CliOutputDependencies = {},
+  dependencies: CliDependencies = {},
 ): Promise<number> {
   const parsed = parseCliArgs(argv);
   const cliOutput = new CliOutput(
     resolveOutputMode(parsed.options),
     dependencies,
   );
-  return cliOutputStorage.run(cliOutput, () => runCliCommand(argv));
+  return cliOutputStorage.run(cliOutput, () =>
+    runCliCommand(argv, dependencies),
+  );
 }
 
-async function runCliCommand(argv: string[]): Promise<number> {
+async function runCliCommand(
+  argv: string[],
+  dependencies: CliDependencies,
+): Promise<number> {
   loadLocalEnvFile();
   const config = loadConfig();
   const { positionals, options } = parseCliArgs(argv);
@@ -1133,6 +1162,37 @@ async function runCliCommand(argv: string[]): Promise<number> {
     });
   }
 
+  if (resource === "model-profile" && action === "available-models") {
+    const selection = availableModelsSchema.parse({
+      name: options.name,
+      databasePath: options["sqlite-database-path"],
+    });
+    if (!selection.name) {
+      return listAvailableModels(
+        null,
+        config,
+        modelCatalogDependencies(dependencies),
+      );
+    }
+    const profileName = selection.name;
+
+    return withStorage(options, config, async (storage) => {
+      const profile = await storage.stores.modelProfiles.get(profileName);
+      if (!profile) {
+        throw new CliError(
+          "model_catalog_unavailable",
+          `Model profile "${profileName}" was not found, so its model catalog cannot be loaded.`,
+          { profileName },
+        );
+      }
+      return listAvailableModels(
+        profile,
+        config,
+        modelCatalogDependencies(dependencies),
+      );
+    });
+  }
+
   if (resource === "model-profile" && action === "add") {
     assertNoConflictingModelProfileFieldOptions(options);
     const profile = modelProfileSchema.parse({
@@ -1153,102 +1213,28 @@ async function runCliCommand(argv: string[]): Promise<number> {
       databasePath: options["sqlite-database-path"],
     });
     return withStorage(options, config, async (storage) => {
-      const clearBaseUrl =
-        options["clear-base-url"] === true ||
-        options["clear-base-url"] === "true";
-      const clearProviderType =
-        clearBaseUrl ||
-        options["clear-provider-type"] === true ||
-        options["clear-provider-type"] === "true";
-      const clearWireApi =
-        clearBaseUrl ||
-        options["clear-wire-api"] === true ||
-        options["clear-wire-api"] === "true";
-
-      const savedProfile = await storage.upsertModelProfile({
-        name: profile.name,
-        ...(clearBaseUrl ? { providerBaseUrl: null } : {}),
-        ...("base-url" in options && !clearBaseUrl
-          ? { providerBaseUrl: profile.providerBaseUrl ?? null }
-          : {}),
-        ...(clearProviderType ? { providerType: null } : {}),
-        ...("provider-type" in options && !clearProviderType
-          ? { providerType: profile.providerType ?? null }
-          : {}),
-        ...(clearWireApi ? { wireApi: null } : {}),
-        ...("wire-api" in options && !clearWireApi
-          ? { wireApi: profile.wireApi ?? null }
-          : {}),
-        ...(options["clear-auth-token"] === true ||
-        options["clear-auth-token"] === "true"
-          ? { authToken: null }
-          : {}),
-        ...("auth-token" in options &&
-        !(
-          options["clear-auth-token"] === true ||
-          options["clear-auth-token"] === "true"
-        )
-          ? { authToken: profile.authToken ?? null }
-          : {}),
-        ...(options["clear-review-model"] === true ||
-        options["clear-review-model"] === "true"
-          ? { reviewModel: null }
-          : {}),
-        ...("review-model" in options &&
-        !(
-          options["clear-review-model"] === true ||
-          options["clear-review-model"] === "true"
-        )
-          ? { reviewModel: profile.reviewModel ?? null }
-          : {}),
-        ...(options["clear-text-generation-model"] === true ||
-        options["clear-text-generation-model"] === "true"
-          ? { textGenerationModel: null }
-          : {}),
-        ...("text-generation-model" in options &&
-        !(
-          options["clear-text-generation-model"] === true ||
-          options["clear-text-generation-model"] === "true"
-        )
-          ? { textGenerationModel: profile.textGenerationModel ?? null }
-          : {}),
-        ...(options["clear-review-reasoning-effort"] === true ||
-        options["clear-review-reasoning-effort"] === "true"
-          ? { reviewReasoningEffort: null }
-          : {}),
-        ...("review-reasoning-effort" in options &&
-        !(
-          options["clear-review-reasoning-effort"] === true ||
-          options["clear-review-reasoning-effort"] === "true"
-        )
-          ? { reviewReasoningEffort: profile.reviewReasoningEffort ?? null }
-          : {}),
-        ...(options["clear-text-generation-reasoning-effort"] === true ||
-        options["clear-text-generation-reasoning-effort"] === "true"
-          ? { textGenerationReasoningEffort: null }
-          : {}),
-        ...("text-generation-reasoning-effort" in options &&
-        !(
-          options["clear-text-generation-reasoning-effort"] === true ||
-          options["clear-text-generation-reasoning-effort"] === "true"
-        )
-          ? {
-              textGenerationReasoningEffort:
-                profile.textGenerationReasoningEffort ?? null,
-            }
-          : {}),
-        ...("default" in options
-          ? { isDefault: profile.isDefault ?? false }
-          : {}),
-      });
-      const result = summarizeModelProfile(savedProfile);
+      const upsertInput = buildModelProfileUpsertInput(options, profile);
+      const existingProfile = await storage.stores.modelProfiles.get(
+        profile.name,
+      );
+      const effectiveProfile = resolveModelProfileUpsertInput(
+        existingProfile,
+        upsertInput,
+      );
+      const modelValidation = await validateProfileModels(
+        effectiveProfile,
+        isTrueOption(options["ignore-missing-model"]),
+        config,
+        modelCatalogDependencies(dependencies),
+      );
+      const savedProfile = await storage.upsertModelProfile(upsertInput);
+      const result = {
+        ...summarizeModelProfile(savedProfile),
+        modelValidation,
+      };
       output().result(result, {
-        pretty: formatModelProfileSummary("Model profile saved.", savedProfile),
-        plain: formatModelProfileSummary(
-          "model profile saved",
-          savedProfile,
-          true,
-        ),
+        pretty: `${formatModelProfileSummary("Model profile saved.", savedProfile)}\n${prettyField("modelValidation", modelValidation.status)}`,
+        plain: `${formatModelProfileSummary("model profile saved", savedProfile, true)}\nmodelValidation: ${modelValidation.status}`,
       });
       return 0;
     });
@@ -1672,7 +1658,8 @@ function printHelp(
     "tenant set-profile (--tenant-id <id> | --key <key>) --model-profile <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "tenant clear-profile (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "tenant remove (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
-    "model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--review-reasoning-effort <low|medium|high|xhigh>] [--clear-review-reasoning-effort] [--text-generation-reasoning-effort <low|medium|high|xhigh>] [--clear-text-generation-reasoning-effort] [--default] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--review-reasoning-effort <low|medium|high|xhigh>] [--clear-review-reasoning-effort] [--text-generation-reasoning-effort <low|medium|high|xhigh>] [--clear-text-generation-reasoning-effort] [--default] [--ignore-missing-model] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "model-profile available-models [--name <name>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile remove --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile set-default --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
@@ -3291,6 +3278,72 @@ function formatStorageMigrationSummary(
   );
 }
 
+function buildModelProfileUpsertInput(
+  options: Record<string, string | boolean>,
+  profile: z.infer<typeof modelProfileSchema>,
+): UpsertModelProfileInput {
+  const clearBaseUrl = isTrueOption(options["clear-base-url"]);
+  const clearProviderType =
+    clearBaseUrl || isTrueOption(options["clear-provider-type"]);
+  const clearWireApi = clearBaseUrl || isTrueOption(options["clear-wire-api"]);
+
+  return {
+    name: profile.name,
+    ...(clearBaseUrl ? { providerBaseUrl: null } : {}),
+    ...("base-url" in options && !clearBaseUrl
+      ? { providerBaseUrl: profile.providerBaseUrl ?? null }
+      : {}),
+    ...(clearProviderType ? { providerType: null } : {}),
+    ...("provider-type" in options && !clearProviderType
+      ? { providerType: profile.providerType ?? null }
+      : {}),
+    ...(clearWireApi ? { wireApi: null } : {}),
+    ...("wire-api" in options && !clearWireApi
+      ? { wireApi: profile.wireApi ?? null }
+      : {}),
+    ...(isTrueOption(options["clear-auth-token"]) ? { authToken: null } : {}),
+    ...("auth-token" in options && !isTrueOption(options["clear-auth-token"])
+      ? { authToken: profile.authToken ?? null }
+      : {}),
+    ...(isTrueOption(options["clear-review-model"])
+      ? { reviewModel: null }
+      : {}),
+    ...("review-model" in options &&
+    !isTrueOption(options["clear-review-model"])
+      ? { reviewModel: profile.reviewModel ?? null }
+      : {}),
+    ...(isTrueOption(options["clear-text-generation-model"])
+      ? { textGenerationModel: null }
+      : {}),
+    ...("text-generation-model" in options &&
+    !isTrueOption(options["clear-text-generation-model"])
+      ? { textGenerationModel: profile.textGenerationModel ?? null }
+      : {}),
+    ...(isTrueOption(options["clear-review-reasoning-effort"])
+      ? { reviewReasoningEffort: null }
+      : {}),
+    ...("review-reasoning-effort" in options &&
+    !isTrueOption(options["clear-review-reasoning-effort"])
+      ? { reviewReasoningEffort: profile.reviewReasoningEffort ?? null }
+      : {}),
+    ...(isTrueOption(options["clear-text-generation-reasoning-effort"])
+      ? { textGenerationReasoningEffort: null }
+      : {}),
+    ...("text-generation-reasoning-effort" in options &&
+    !isTrueOption(options["clear-text-generation-reasoning-effort"])
+      ? {
+          textGenerationReasoningEffort:
+            profile.textGenerationReasoningEffort ?? null,
+        }
+      : {}),
+    ...("default" in options ? { isDefault: profile.isDefault ?? false } : {}),
+  };
+}
+
+function isTrueOption(value: string | boolean | undefined): boolean {
+  return value === true || value === "true";
+}
+
 interface ModelProfileOutput {
   name: string;
   providerBaseUrl: string | null;
@@ -3953,7 +4006,7 @@ function formatCellValue(value: string | number): string {
 
 export async function runCliEntry(
   argv: string[] = process.argv.slice(2),
-  dependencies: CliOutputDependencies = {},
+  dependencies: CliDependencies = {},
 ): Promise<number> {
   try {
     const exitCode = await runCli(argv, dependencies);

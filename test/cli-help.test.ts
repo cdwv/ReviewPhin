@@ -92,6 +92,21 @@ describe("CLI help", () => {
       "[--text-generation-reasoning-effort <low|medium|high|xhigh>]",
     );
     expect(help).toContain("[--clear-text-generation-reasoning-effort]");
+    expect(help).toContain("[--ignore-missing-model]");
+  });
+
+  it("documents model catalog credential selection", async () => {
+    vi.stubEnv("REVIEWPHIN_CLI_COMMAND", "pnpm cli");
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    await expect(
+      runCli(["model-profile", "available-models", "--help"]),
+    ).resolves.toBe(0);
+
+    const help = output.mock.calls.join("");
+    expect(help).toContain(
+      "pnpm cli model-profile available-models [--name <name>]",
+    );
   });
 
   it("documents mr review selectors and watch controls", async () => {
