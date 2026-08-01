@@ -67,6 +67,7 @@ export function createGitLabProjectMemoryBackendForTenant(input: {
     projectId: tenantConfig.projectId,
     tenantId: input.resolvedTenant.tenant.id,
     enabled: input.enabled,
+    platformWritesEnabled: input.platformWritesEnabled,
     stores: input.stores,
     logger: input.logger,
   });
