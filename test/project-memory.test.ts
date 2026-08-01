@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createLogger } from "../src/logger.js";
 import { GitLabApiError } from "../src/platforms/gitlab/client.js";
 import {
   createGitLabProjectMemoryBackend,
+  createGitLabProjectMemoryBackendForTenant,
   GitLabWikiProjectMemoryBackend,
 } from "../src/platforms/gitlab/project-memory-backend.js";
 import {
@@ -19,6 +21,10 @@ import {
   REVIEWPHIN_MEMORY_PAGE_TITLE,
   projectMemoryToolInputSchema,
 } from "../src/memory/types.js";
+import {
+  createGitLabConnectionRecord,
+  createGitLabTenantRecord,
+} from "./helpers/gitlab-tenant.js";
 
 describe("project memory", () => {
   it("renders and parses the managed wiki format deterministically", () => {
@@ -472,15 +478,12 @@ describe("InStoreMemoryProvider", () => {
     });
 
     await expect(
-      backend.saveEntries(
-        [{ text: "Use Jest and pnpm." }],
-        {
-          baseEntries: [
-            { text: "Use Jest for tests." },
-            { text: "Use pnpm for scripts." },
-          ],
-        },
-      ),
+      backend.saveEntries([{ text: "Use Jest and pnpm." }], {
+        baseEntries: [
+          { text: "Use Jest for tests." },
+          { text: "Use pnpm for scripts." },
+        ],
+      }),
     ).resolves.toMatchObject({
       entries: [
         { text: "Use Zod and avoid broad snapshot tests." },
@@ -509,6 +512,66 @@ describe("InStoreMemoryProvider", () => {
 });
 
 describe("GitLab project memory selection", () => {
+  it("forwards the platform write fence through the tenant factory", async () => {
+    const requests: Array<{ method: string; url: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async (
+          request: string | URL | Request,
+          init?: RequestInit,
+        ): Promise<Response> => {
+          const url = new URL(
+            typeof request === "string"
+              ? request
+              : request instanceof URL
+                ? request.toString()
+                : request.url,
+          );
+          const method =
+            init?.method ??
+            (request instanceof Request ? request.method : "GET");
+          requests.push({ method, url: url.toString() });
+          if (url.pathname.endsWith("/projects/123")) {
+            return jsonResponse({ id: 123, wiki_enabled: true });
+          }
+          if (url.pathname.endsWith("/projects/123/wikis/reviewphin-memory")) {
+            return jsonResponse({
+              title: REVIEWPHIN_MEMORY_PAGE_TITLE,
+              slug: "reviewphin-memory",
+              format: "markdown",
+              content:
+                "## Remembered project knowledge\n- Keep the existing memory.",
+            });
+          }
+          throw new Error(`Unexpected ${method} request to ${url}`);
+        },
+      ),
+    );
+
+    try {
+      const backend = createGitLabProjectMemoryBackendForTenant({
+        resolvedTenant: {
+          tenant: createGitLabTenantRecord(),
+          connection: createGitLabConnectionRecord(),
+        },
+        enabled: true,
+        platformWritesEnabled: false,
+        stores: { projectMemories: createProjectMemoryStore() },
+        logger: createLogger("silent"),
+      });
+
+      await expect(
+        backend.saveEntries([{ text: "Do not publish this memory." }]),
+      ).resolves.toMatchObject({
+        entries: [{ text: "Keep the existing memory." }],
+      });
+      expect(requests.map((request) => request.method)).toEqual(["GET", "GET"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("uses store-backed memory when project metadata reports wiki disabled", async () => {
     const store = createProjectMemoryStore();
     await store.upsert({
@@ -563,8 +626,7 @@ describe("GitLab project memory selection", () => {
           title: REVIEWPHIN_MEMORY_PAGE_TITLE,
           slug: "reviewphin-memory",
           format: "markdown",
-          content:
-            "## Remembered project knowledge\n- Use GitLab wiki memory.",
+          content: "## Remembered project knowledge\n- Use GitLab wiki memory.",
         })),
         listProjectWikiPages: vi.fn(async () => []),
       } as never,
@@ -579,6 +641,75 @@ describe("GitLab project memory selection", () => {
       entries: [{ text: "Use GitLab wiki memory." }],
     });
     await expect(store.get("tenant-1")).resolves.toBeNull();
+  });
+
+  it("keeps GitLab wiki memory read-only when platform writes are disabled", async () => {
+    const store = createProjectMemoryStore();
+    const createProjectWikiPage = vi.fn();
+    const updateProjectWikiPage = vi.fn();
+    const backend = createGitLabProjectMemoryBackend({
+      client: {
+        getProject: vi.fn(async () => ({
+          id: 1085,
+          web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
+          http_url_to_repo: "https://gitlab.example.com/group/project.git",
+          wiki_enabled: true,
+        })),
+        getProjectWikiPage: vi.fn(async () => ({
+          title: REVIEWPHIN_MEMORY_PAGE_TITLE,
+          slug: "reviewphin-memory",
+          format: "markdown",
+          content:
+            "## Remembered project knowledge\n- Keep the existing memory.",
+        })),
+        listProjectWikiPages: vi.fn(async () => []),
+        createProjectWikiPage,
+        updateProjectWikiPage,
+      } as never,
+      projectId: 1085,
+      tenantId: "tenant-1",
+      enabled: true,
+      platformWritesEnabled: false,
+      stores: { projectMemories: store },
+    });
+
+    await expect(
+      backend.saveEntries([{ text: "Do not publish this memory." }]),
+    ).resolves.toMatchObject({
+      entries: [{ text: "Keep the existing memory." }],
+    });
+    expect(createProjectWikiPage).not.toHaveBeenCalled();
+    expect(updateProjectWikiPage).not.toHaveBeenCalled();
+  });
+
+  it("still writes store-backed GitLab memory when platform writes are disabled", async () => {
+    const store = createProjectMemoryStore();
+    const backend = createGitLabProjectMemoryBackend({
+      client: {
+        getProject: vi.fn(async () => ({
+          id: 1085,
+          web_url: "https://gitlab.example.com/group/project",
+          path_with_namespace: "group/project",
+          http_url_to_repo: "https://gitlab.example.com/group/project.git",
+          wiki_enabled: false,
+        })),
+      } as never,
+      projectId: 1085,
+      tenantId: "tenant-1",
+      enabled: true,
+      platformWritesEnabled: false,
+      stores: { projectMemories: store },
+    });
+
+    await expect(
+      backend.saveEntries([{ text: "Keep storage memory enabled." }]),
+    ).resolves.toMatchObject({
+      entries: [{ text: "Keep storage memory enabled." }],
+    });
+    await expect(store.get("tenant-1")).resolves.toMatchObject({
+      entriesJson: JSON.stringify([{ text: "Keep storage memory enabled." }]),
+    });
   });
 });
 
@@ -623,4 +754,14 @@ function createProjectMemoryStore() {
       }
     }),
   };
+}
+
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+      "x-next-page": "",
+    },
+  });
 }

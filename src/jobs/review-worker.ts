@@ -6,10 +6,12 @@ import type {
   PlatformMaterializedWorkspace,
   PlatformReviewRoutingContext,
   PlatformReviewRuntime,
+  PlatformTriggerLifecycle,
   ResolvedTenant,
 } from "../platforms/IPlatform.js";
 import { getPlatformBySlug } from "../platforms/platform-registry.js";
 import {
+  NoOpPlatformTriggerLifecycle,
   syncPlatformTriggerLifecycle,
   syncPlatformTriggerLifecycleForJob,
 } from "../platforms/trigger-lifecycle.js";
@@ -24,6 +26,7 @@ import {
   ModelProfileConfigurationError,
   resolveReviewProviderConfig,
 } from "../review/model-profiles.js";
+import { getReviewPublicationMode } from "../review/publication.js";
 import type { ReviewProviderFactory } from "../review/provider.js";
 import { InteractionRunArtifacts } from "../review/run-artifacts.js";
 import type {
@@ -180,11 +183,11 @@ export class ReviewWorker {
       if (!platform) {
         return;
       }
-      const lifecycle = platform.createTriggerLifecycle({
+      const lifecycle = this.createTriggerLifecycle(
+        platform,
         resolvedTenant,
         job,
-        logger: this.logger,
-      });
+      );
       await syncPlatformTriggerLifecycleForJob({
         logger: this.logger,
         job,
@@ -240,11 +243,11 @@ export class ReviewWorker {
       if (!platform) {
         return;
       }
-      const lifecycle = platform.createTriggerLifecycle({
+      const lifecycle = this.createTriggerLifecycle(
+        platform,
         resolvedTenant,
         job,
-        logger: this.logger,
-      });
+      );
 
       const message =
         job.lastError ??
@@ -285,11 +288,13 @@ export class ReviewWorker {
     }
     const { tenant, connection } = resolvedTenant;
     const platform = this.resolvePlatform(tenant.platform);
-    const triggerLifecycle = platform.createTriggerLifecycle({
+    const publicationEnabled =
+      getReviewPublicationMode(job.triggerJson) === "publish";
+    const triggerLifecycle = this.createTriggerLifecycle(
+      platform,
       resolvedTenant,
       job,
-      logger: this.logger,
-    });
+    );
 
     context.assertOwned();
     await syncPlatformTriggerLifecycle({
@@ -544,6 +549,7 @@ export class ReviewWorker {
               interactionJobId: job.id,
               runDirectory: runArtifacts.runDirectory,
               memoryEnabled: routingContext.projectMemory.enabled,
+              platformWritesEnabled: publicationEnabled,
               onMetrics: this.createMetricsSink(jobStore, context, {
                 interactionRunId: interactionRun.id,
                 triggerKind: trigger.kind,
@@ -666,6 +672,7 @@ export class ReviewWorker {
             interactionJobId: job.id,
             runDirectory: runArtifacts.runDirectory,
             memoryEnabled: hydratedContext.projectMemory.enabled,
+            platformWritesEnabled: publicationEnabled,
             onMetrics: this.createMetricsSink(jobStore, context, {
               interactionRunId: interactionRun.id,
               triggerKind: reviewContext.trigger.kind,
@@ -719,34 +726,43 @@ export class ReviewWorker {
           throw new LeaseLostError();
         }
 
-        context.assertOwned();
-        reconcileSummary = await this.reconciler.reconcile({
-          platform,
-          tenant,
-          connection,
-          context: hydratedContext.summaryContext,
-          mappings,
-          interactionJobId: job.id,
-          interactionRunId: interactionRun.id,
-          reviewResult,
-          storage: scoped,
-          guard: context,
-          publicationAdapter: runRuntime.createReviewPublicationAdapter({
-            context: hydratedContext,
+        if (publicationEnabled) {
+          context.assertOwned();
+          reconcileSummary = await this.reconciler.reconcile({
+            platform,
+            tenant,
+            connection,
+            context: hydratedContext.summaryContext,
+            mappings,
+            interactionJobId: job.id,
             interactionRunId: interactionRun.id,
-          }),
-        });
-        context.assertOwned();
+            reviewResult,
+            storage: scoped,
+            guard: context,
+            publicationAdapter: runRuntime.createReviewPublicationAdapter({
+              context: hydratedContext,
+              interactionRunId: interactionRun.id,
+            }),
+          });
+          context.assertOwned();
 
-        await this.logRunEvent(
-          runArtifacts,
-          "info",
-          "reconciled review result into platform discussions",
-          {
-            interactionRunId: interactionRun.id,
-            summary: reconcileSummary,
-          },
-        );
+          await this.logRunEvent(
+            runArtifacts,
+            "info",
+            "reconciled review result into platform discussions",
+            {
+              interactionRunId: interactionRun.id,
+              summary: reconcileSummary,
+            },
+          );
+        } else {
+          await this.logRunEvent(
+            runArtifacts,
+            "info",
+            "skipped review publication for local test",
+            { interactionRunId: interactionRun.id },
+          );
+        }
       }
 
       if (interactionPlan.replyNeeded && trigger.kind !== "manual-review") {
@@ -795,6 +811,7 @@ export class ReviewWorker {
               memoryEnabled:
                 reviewContext?.projectMemory.enabled ??
                 routingContext.projectMemory.enabled,
+              platformWritesEnabled: publicationEnabled,
               onMetrics: this.createMetricsSink(jobStore, context, {
                 interactionRunId: interactionRun.id,
                 triggerKind: trigger.kind,
@@ -818,12 +835,14 @@ export class ReviewWorker {
         );
 
         context.assertOwned();
-        const publishOutcomes = await runRuntime.publishChatterReplies({
-          codeReviewId: routingContext.codeReviewId,
-          result: replyResult,
-          plannedTargets: interactionPlan.responseTargets,
-          guard: context,
-        });
+        const publishOutcomes = publicationEnabled
+          ? await runRuntime.publishChatterReplies({
+              codeReviewId: routingContext.codeReviewId,
+              result: replyResult,
+              plannedTargets: interactionPlan.responseTargets,
+              guard: context,
+            })
+          : [];
         context.assertOwned();
         await runArtifacts.writeJsonArtifact(
           join("orchestration", "reply-publish-outcomes.json"),
@@ -1177,6 +1196,21 @@ export class ReviewWorker {
     return input.runtime.loadRoutingContext(input.job);
   }
 
+  private createTriggerLifecycle(
+    platform: IPlatform,
+    resolvedTenant: ResolvedTenant,
+    job: InteractionJobRecord,
+  ): PlatformTriggerLifecycle {
+    if (getReviewPublicationMode(job.triggerJson) === "no-publish") {
+      return new NoOpPlatformTriggerLifecycle();
+    }
+    return platform.createTriggerLifecycle({
+      resolvedTenant,
+      job,
+      logger: this.logger,
+    });
+  }
+
   private async hydrateContext(input: {
     runtime: PlatformReviewRuntime;
     job: InteractionJobRecord;
@@ -1205,6 +1239,7 @@ export class ReviewWorker {
     interactionJobId: string;
     runDirectory: string;
     memoryEnabled: boolean;
+    platformWritesEnabled: boolean;
     onMetrics?:
       ((metrics: HarnessSessionMetricsEnvelope) => Promise<void>) | undefined;
   }) {
@@ -1219,6 +1254,7 @@ export class ReviewWorker {
       storage: this.storage,
       logger: this.logger,
       memoryEnabled: input.memoryEnabled,
+      platformWritesEnabled: input.platformWritesEnabled,
       logging: {
         interactionRunId: input.interactionRunId,
         interactionJobId: input.interactionJobId,

@@ -13,7 +13,8 @@ CLI request    -> mr review             -> resolve + construct trigger
   -> review worker              runner claims a leased job
   -> model harness              Reviewer (context-analyst -> review-author)
   -> finding reconciliation     Chatter: replies + memory
-  -> platform publication       create/update/resolve/reply
+  -> platform publication       publishing reviews: create/update/resolve/reply
+                                local tests: skipped
 ```
 
 ## 1. Receive
@@ -26,9 +27,9 @@ The tenant registry maps the platform event to a configured tenant.
 
 ## Interaction jobs and the runner
 
-Webhooks, provider-owned actions, and `mr review` write persisted interaction jobs; they never enqueue process-local work. The persisted queue is the source of truth. The CLI uses the configured platform connection to verify a selected comment and preserves that platform's normal trigger lifecycle.
+Webhooks, provider-owned actions, and `mr review` write persisted interaction jobs; they never enqueue process-local work. The persisted queue is the source of truth. The CLI uses the configured platform connection to verify a selected comment. Publishing reviews preserve that platform's normal trigger lifecycle; local tests submitted with `--no-publish` or `--no-comment` deliberately skip lifecycle synchronization and all other platform mutations. See the [`mr review` CLI reference](../../management/cli-reference/#mr-review) for local-test output and storage behavior.
 
-A CLI text selector creates a local manual-review trigger instead of a synthetic comment. Its instruction is included in review scope and prompt context. It always requests review work, never requests a trigger-comment reply, and still publishes normal findings and a summary.
+A CLI text selector creates a local manual-review trigger instead of a synthetic comment. Its instruction is included in review scope and prompt context. It always requests review work and never requests a trigger-comment reply. By default, it publishes normal findings and a summary; in no-publish mode, it stores the completed result without publishing either.
 
 Each enabled runner process polls for work, while storage permits only one active review:
 
@@ -71,6 +72,6 @@ It selects one of three modes from the trigger context:
 
 ## 5. Publish
 
-Chatter handles conversational replies and project memory decisions, using the profile's text-generation model to keep light interactions cheap. The publication adapter then creates, updates, resolves, reopens, or replies to bot-owned discussions and summaries. Retries recover bot-owned publications by stable markers instead of duplicating comments.
+Chatter handles conversational replies and project memory decisions, using the profile's text-generation model to keep light interactions cheap. For publishing reviews, the publication adapter then creates, updates, resolves, reopens, or replies to bot-owned discussions and summaries. Retries recover bot-owned publications by stable markers instead of duplicating comments. Local tests still run the review and store its result, but they bypass the publication adapter and platform-backed memory writes.
 
 ReviewPhin calls the configured model API, the connected platform API, and any configured external storage provider such as Flotiq. SQLite keeps persisted review data on the ReviewPhin host; hosted adapters store it with that provider.

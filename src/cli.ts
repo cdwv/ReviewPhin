@@ -14,6 +14,13 @@ import {
 import { loadLocalEnvFile } from "./env.js";
 import { maskSecret } from "./review/model-profiles.js";
 import {
+  getReviewPublicationMode,
+  scopeReviewDedupeKeyToPublicationMode,
+  setReviewPublicationMode,
+  type ReviewPublicationMode,
+} from "./review/publication.js";
+import { reviewResultSchema, type ReviewResult } from "./review/types.js";
+import {
   collectMetrics,
   displayUsageUnit,
   formatUsageAmount,
@@ -59,6 +66,10 @@ import {
   watchReviewJob,
   type ReviewWatchSummary,
 } from "./cli/review-watch.js";
+import {
+  formatReviewReportForTerminal,
+  writeReviewReport,
+} from "./cli/review-report.js";
 import { getGitLabTenantConfig } from "./platforms/gitlab/tenant-config.js";
 import {
   CliOutput,
@@ -247,6 +258,9 @@ const mergeRequestReviewSchema = z
     forceNew: z.boolean(),
     watchRequested: z.boolean(),
     noWatchRequested: z.boolean(),
+    noPublishRequested: z.boolean(),
+    noCommentRequested: z.boolean(),
+    reportPath: z.string().min(1).optional(),
   })
   .superRefine((value, ctx) => {
     if (
@@ -279,6 +293,21 @@ const mergeRequestReviewSchema = z
         code: z.ZodIssueCode.custom,
         message: "Provide either --watch or --no-watch, not both.",
         path: ["watchRequested"],
+      });
+    }
+    const noPublish = value.noPublishRequested || value.noCommentRequested;
+    if (value.reportPath !== undefined && !noPublish) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "--report/-r requires --no-publish or --no-comment.",
+        path: ["reportPath"],
+      });
+    }
+    if (value.reportPath !== undefined && value.noWatchRequested) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Cannot combine --no-watch with --report or -r.",
+        path: ["reportPath"],
       });
     }
     if (
@@ -1461,6 +1490,25 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    if (token === "-r" || token?.startsWith("-r=")) {
+      const inlineValue = token === "-r" ? undefined : token.slice(3);
+      if (inlineValue !== undefined) {
+        options.report = inlineValue;
+        continue;
+      }
+      const nextToken = argv[index + 1];
+      if (
+        nextToken &&
+        !nextToken.startsWith("--") &&
+        !isRecognizedShortOption(nextToken)
+      ) {
+        options.report = nextToken;
+        index += 1;
+      } else {
+        options.report = true;
+      }
+      continue;
+    }
     if (!token?.startsWith("--")) {
       positionals.push(token ?? "");
       continue;
@@ -1478,7 +1526,11 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     }
 
     const nextToken = argv[index + 1];
-    if (nextToken && !nextToken.startsWith("--")) {
+    if (
+      nextToken &&
+      !nextToken.startsWith("--") &&
+      !isRecognizedShortOption(nextToken)
+    ) {
       options[key] = nextToken;
       index += 1;
       continue;
@@ -1488,6 +1540,10 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
   }
 
   return { positionals, options };
+}
+
+function isRecognizedShortOption(token: string): boolean {
+  return token === "-r" || token.startsWith("-r=");
 }
 
 async function withStorage<T>(
@@ -1623,7 +1679,7 @@ function printHelp(
     "model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "storage migrate --from-storage-provider-module <module> [--from-sqlite-database-path <path>] --to-storage-provider-module <module> [--to-sqlite-database-path <path>]",
     "mr describe (--tenant-id <id> | --key <key>) --code-review-id <id> [--current-interaction-job-id <id>] [--trigger-comment-id <id> --trigger-comment-action <create|update> [--trigger-comment-updated-at <iso>] [--trigger-comment-body <text>]] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-    "mr review (--tenant-id <id> | --key <tenant-key>) (--trigger-comment-url <url> | --trigger-comment-id <id> | --trigger-text <text> | --trigger-text-file <path>) [--code-review-id <id>] [--force-new] [--watch | --no-watch] [--sqlite-database-path <path>] [--storage-provider-module <module>] [--run-log-dir <path>]",
+    "mr review (--tenant-id <id> | --key <tenant-key>) (--trigger-comment-url <url> | --trigger-comment-id <id> | --trigger-text <text> | --trigger-text-file <path>) [--code-review-id <id>] [--force-new] [--watch | --no-watch] [--no-publish | --no-comment] [--report <path> | -r <path>] [--sqlite-database-path <path>] [--storage-provider-module <module>] [--run-log-dir <path>]",
     "metrics sessions [--connection <name>] [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--all-sessions] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "metrics collect [--run-log-dir <path>] [--dry-run] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
   );
@@ -1874,7 +1930,14 @@ async function runMergeRequestReviewCommand(
     forceNew: Object.hasOwn(options, "force-new"),
     watchRequested: Object.hasOwn(options, "watch"),
     noWatchRequested: Object.hasOwn(options, "no-watch"),
+    noPublishRequested: Object.hasOwn(options, "no-publish"),
+    noCommentRequested: Object.hasOwn(options, "no-comment"),
+    reportPath: options.report,
   });
+  const publicationMode: ReviewPublicationMode =
+    input.noPublishRequested || input.noCommentRequested
+      ? "no-publish"
+      : "publish";
   const selector = await resolveLocalReviewSelector(input);
   await initializePlatformRegistry({
     platformModules: config.platformModules,
@@ -1909,7 +1972,7 @@ async function runMergeRequestReviewCommand(
     }
 
     const requestId = createId("local-review");
-    const interactionJob = await platform.createLocalInteractionJob({
+    const platformInteractionJob = await platform.createLocalInteractionJob({
       resolvedTenant,
       storage,
       selector,
@@ -1917,11 +1980,28 @@ async function runMergeRequestReviewCommand(
       requestId,
       createdAt: new Date().toISOString(),
     });
+    const interactionJob = {
+      ...platformInteractionJob,
+      dedupeKey: scopeReviewDedupeKeyToPublicationMode(
+        platformInteractionJob.dedupeKey,
+        publicationMode,
+      ),
+      triggerJson:
+        publicationMode === "publish"
+          ? platformInteractionJob.triggerJson
+          : setReviewPublicationMode(
+              platformInteractionJob.triggerJson,
+              publicationMode,
+            ),
+    };
     const submitted = await storage.createOrGetInteractionJob({
       ...interactionJob,
       tenantId: resolvedTenant.tenant.id,
     });
-    if (submitted.created || submitted.job.commentId !== null) {
+    if (
+      publicationMode === "publish" &&
+      (submitted.created || submitted.job.commentId !== null)
+    ) {
       const lifecycle = platform.createTriggerLifecycle({
         resolvedTenant,
         job: submitted.job,
@@ -1974,6 +2054,22 @@ async function runMergeRequestReviewCommand(
         codeReviewId: submitted.job.codeReviewId,
         signal: controller.signal,
       });
+      if (
+        summary.jobStatus === "completed" &&
+        getReviewPublicationMode(submitted.job.triggerJson) === "no-publish"
+      ) {
+        const reviewResult = await loadCompletedReviewResult(storage, summary);
+        if (input.reportPath) {
+          await writeReviewReport(
+            resolve(process.cwd(), input.reportPath),
+            reviewResult,
+          );
+        } else {
+          output().event({ type: "review_result", result: reviewResult }, () =>
+            formatReviewReportForTerminal(reviewResult, output()),
+          );
+        }
+      }
       return summary.jobStatus === "completed" ? 0 : 1;
     } catch (error) {
       if (error instanceof ReviewWatchAbortedError && signalExitCode) {
@@ -1985,6 +2081,27 @@ async function runMergeRequestReviewCommand(
       process.removeListener("SIGTERM", handleSigterm);
     }
   });
+}
+
+async function loadCompletedReviewResult(
+  storage: StorageHelpers,
+  summary: ReviewWatchSummary,
+): Promise<ReviewResult> {
+  if (!summary.runId) {
+    throw new Error(
+      `Completed review job ${summary.jobId} has no interaction run.`,
+    );
+  }
+  const run = await storage.stores.interactionRuns.get(summary.runId);
+  if (!run) {
+    throw new Error(
+      `Completed review job ${summary.jobId} references missing run ${summary.runId}.`,
+    );
+  }
+  if (!run.resultJson) {
+    throw new Error(`Completed review run ${run.id} has no review result.`);
+  }
+  return reviewResultSchema.parse(JSON.parse(run.resultJson) as unknown);
 }
 
 async function resolveLocalReviewSelector(

@@ -444,6 +444,7 @@ export default class GitLabPlatform implements IPlatform {
     storage: StorageHelpers;
     logger: Logger;
     enabled: boolean;
+    platformWritesEnabled?: boolean | undefined;
     logging?: HarnessRunLoggingContext | undefined;
   }) {
     return createGitLabProjectMemoryBackendForTenant({
@@ -456,6 +457,7 @@ export default class GitLabPlatform implements IPlatform {
     storage: StorageHelpers;
     logger: Logger;
     memoryEnabled: boolean;
+    platformWritesEnabled?: boolean | undefined;
     logging?: HarnessRunLoggingContext | undefined;
   }) {
     return {
@@ -467,6 +469,7 @@ export default class GitLabPlatform implements IPlatform {
         logger: input.logger,
         logging: input.logging,
         enabled: input.memoryEnabled,
+        platformWritesEnabled: input.platformWritesEnabled,
       }),
     };
   }

@@ -28,13 +28,15 @@
       </aside>
       <main id="content">
         <header class="hero">
-          <p class="eyebrow">Plan 09 · local CLI</p>
+          <p class="eyebrow">Plan 09 · local CLI test</p>
           <h1>Review a remote change without writing back to its platform.</h1>
           <p class="lede">
             The CLI can submit a review of an existing merge request or pull
             request, but a successful run follows the normal publication path.
             Operators need a mode that reads remote context, runs the model, and
-            shows the result locally while guaranteeing zero remote mutations.
+            acts as a local test: it delivers the result locally while
+            guaranteeing zero platform mutations and retaining the result in
+            ReviewPhin storage.
           </p>
           <div class="meta-grid">
             <div class="meta-item">
@@ -47,14 +49,19 @@
               <span>Main area</span><strong>Review CLI and worker</strong>
             </div>
             <div class="meta-item">
-              <span>Stored data</span><strong>Local job and run records</strong>
+              <span>Stored data</span
+              ><strong>Job, run, result, and diagnostic records</strong>
             </div>
           </div>
           <div class="outcome">
             <strong>Finished result:</strong>
-            <code>mr review --no-publish</code> reads an existing remote review,
-            performs the full analysis, saves local diagnostics, and prints a
-            readable report without creating or updating anything on GitLab or
+            <code>mr review --no-publish</code> and its exact alias
+            <code>--no-comment</code> read an existing remote review, perform
+            the full analysis, and save the checked result to storage. By
+            default, the CLI prints a readable report; with
+            <code>--report/-r &lt;path&gt;</code>, the invoking CLI writes a
+            Markdown report to its own filesystem, replacing the file if it
+            already exists. The run creates or updates nothing on GitLab or
             GitHub.
           </div>
         </header>
@@ -72,62 +79,79 @@
               <h3>The result is hidden behind job status</h3>
               <p>
                 The watch view reports progress and counts. It does not present
-                the completed review as a useful local report.
+                the completed review as useful formatted console text or a
+                Markdown file.
               </p>
             </article>
             <article class="card">
               <h3>“Dry run” would be misleading</h3>
               <p>
                 The operation still reads the remote platform, calls a model
-                that may incur cost, and writes local database and run-log
+                that may incur cost, and writes configured storage and run-log
                 records.
               </p>
             </article>
             <article class="card">
-              <h3>Pretty output needs Markdown semantics</h3>
+              <h3>There is no report artifact option</h3>
               <p>
-                Finding bodies contain headings, lists, code, and suggestions.
-                Printing raw markers produces a poor terminal experience.
+                The existing <code>--output</code> option selects console data
+                format, not a destination. A separate
+                <code>--report/-r</code> option must write the final review to a
+                file, and the CLI must learn to parse that short option.
               </p>
             </article>
           </div>
         </section>
         <section id="goal">
           <h2>What do we want instead?</h2>
-          <div class="flow" aria-label="No-publish review flow">
+          <div class="flow" aria-label="CLI and runner responsibilities">
             <div>
-              <strong>1. Read remotely</strong
+              <strong>1. CLI queues and watches</strong
               ><span
-                >Load the selected merge request or pull request and hydrate its
-                workspace.</span
+                >Submit the local-test job with its publication choice, then
+                watch the stored job and run state.</span
               >
             </div>
             <div>
-              <strong>2. Analyze locally</strong
+              <strong>2. Runner analyzes and stores</strong
               ><span
-                >Run the normal reviewer and save its checked result and
-                diagnostics.</span
+                >Run the normal review, save the checked result, and omit every
+                platform publication step.</span
               >
             </div>
             <div>
-              <strong>3. Render locally</strong
+              <strong>3. CLI collects and delivers</strong
               ><span
-                >Skip all publication and print the report in the requested CLI
-                format.</span
+                >Load the completed result from storage, then print formatted
+                text or write the Markdown report.</span
               >
             </div>
           </div>
           <ul class="checklist">
             <li>The default command keeps its current publication behavior.</li>
             <li>
-              <code>--no-publish</code> means zero remote writes, not zero
-              remote reads.
+              <code>--no-publish</code> and <code>--no-comment</code> are exact
+              aliases with the same help text and behavior.
             </li>
-            <li>Pretty output renders Markdown for a terminal.</li>
             <li>
-              Plain output is valid Markdown suitable for redirection to a file.
+              Either alias means zero platform writes, not zero platform reads.
             </li>
-            <li>JSON output returns stable structured review data.</li>
+            <li>A no-publish run is explicitly a local test.</li>
+            <li>The checked review result is saved to configured storage.</li>
+            <li>
+              With no file destination, the final review is printed as readable,
+              well-formatted console text.
+            </li>
+            <li>
+              With <code>--report/-r &lt;path&gt;</code>, the final review is
+              written by the invoking CLI as valid Markdown to that path instead
+              of being printed as the console report. An existing destination
+              file is overwritten with the new complete report.
+            </li>
+            <li>
+              Combining <code>--no-watch</code> with
+              <code>--report/-r</code> fails before a review job is submitted.
+            </li>
           </ul>
         </section>
         <section id="fix">
@@ -143,36 +167,78 @@
               <tr>
                 <td>Command option</td>
                 <td>
-                  Add <code>--no-publish</code>. Do not call it a dry run
-                  because model and local persistence work still happen.
+                  Add <code>--no-publish</code> and the easier-to-remember
+                  <code>--no-comment</code> alias. Treat them as one publication
+                  choice. Do not call this a dry run because model work and
+                  storage writes still happen.
                 </td>
               </tr>
               <tr>
-                <td>Queued execution</td>
+                <td>Output destination</td>
                 <td>
-                  Store the publication choice with the submitted local request
-                  so another runner process sees it.
+                  Print a polished text report to the console by default. When
+                  <code>--report/-r &lt;path&gt;</code> is supplied, the
+                  invoking CLI—not the runner—writes the same review as valid
+                  UTF-8 Markdown to the requested file, replacing rather than
+                  appending to an existing file. Continue to use the existing
+                  <code>--output</code> option only for the format of progress,
+                  diagnostics, and other CLI data.
+                </td>
+              </tr>
+              <tr>
+                <td>Invalid option combination</td>
+                <td>
+                  Reject <code>--no-watch</code> together with
+                  <code>--report</code> or <code>-r</code> with the error
+                  “Cannot combine <code>--no-watch</code> with
+                  <code>--report</code> or <code>-r</code>.” Validate this
+                  before any job is queued.
+                </td>
+              </tr>
+              <tr>
+                <td>CLI responsibility</td>
+                <td>
+                  Queue the job, watch it to completion, load and validate the
+                  stored checked result, build the report, and either print it
+                  or write it to the caller-local file. Keep the report path and
+                  presentation choices in the CLI process.
+                </td>
+              </tr>
+              <tr>
+                <td>Runner responsibility</td>
+                <td>
+                  Read the publication choice from the queued request. Otherwise
+                  perform the normal review and storage work, but bypass every
+                  platform publication path. The runner does not format output,
+                  write the report file, or receive its path.
                 </td>
               </tr>
               <tr>
                 <td>Remote safety</td>
                 <td>
-                  Skip discussion reconciliation, summaries, replies, reactions,
-                  check updates, and any project-memory write.
+                  Skip every platform mutation, including emojis or reactions,
+                  inline and summary comments, responses or replies, discussion
+                  reconciliation, GitHub review submissions and statuses, check
+                  statuses, trigger-status updates, cleanup, and platform-hosted
+                  project memory writes.
                 </td>
               </tr>
               <tr>
-                <td>Local persistence</td>
+                <td>ReviewPhin storage</td>
                 <td>
-                  Complete the interaction run with the checked review result
-                  and retain normal logs and metrics.
+                  Complete the interaction run with the checked review result in
+                  the configured storage provider. Retain normal job and run
+                  records, diagnostics, artifacts, logs, and metrics even though
+                  nothing is published to the code-review platform.
                 </td>
               </tr>
               <tr>
                 <td>CLI report</td>
                 <td>
-                  Build one canonical Markdown report, then render it for pretty
-                  mode or emit it directly for plain mode.
+                  Build one canonical Markdown report. Render its headings,
+                  lists, code, suggestions, severity, and file anchors cleanly
+                  for a terminal, or write the Markdown source to the selected
+                  file.
                 </td>
               </tr>
             </tbody>
@@ -180,7 +246,39 @@
           <div class="callout warning">
             <strong>Zero remote writes is a contract:</strong> tests must fail
             if any GitLab or GitHub mutation endpoint is called, even for
-            progress feedback, cleanup, memory, or an error path.
+            progress feedback, an emoji, a comment or response, a GitHub review
+            or status, cleanup, platform memory, or an error path.
+          </div>
+          <div class="callout">
+            <strong>Keep format and destination separate:</strong>
+            <code>--output</code> continues to choose pretty, plain, or JSON CLI
+            data. <code>--report/-r</code> only redirects the final review
+            artifact to a Markdown file; it does not change the global output
+            format.
+          </div>
+          <div class="callout warning">
+            <strong>Local-test report contract:</strong>
+            <code>--report/-r</code> belongs to a watched no-publish run. The
+            CLI process that submitted and watched the test writes the file
+            after loading the checked result from storage. Combining it with
+            <code>--no-watch</code> is an error and queues nothing. Progress and
+            diagnostics may still use the console; only the final review
+            artifact has one destination.
+          </div>
+          <div class="callout">
+            <strong>The runner integration stays narrow:</strong> the queued
+            publication choice is the only new input the runner needs. It does
+            not receive the report destination or CLI output settings. Its only
+            changed behavior is to skip platform publication while preserving
+            normal analysis, result storage, diagnostics, metrics, artifacts,
+            and cleanup.
+          </div>
+          <div class="callout">
+            <strong>Overwrite is intentional:</strong> once the watched run has
+            a checked result, <code>--report/-r</code> replaces any file already
+            at the selected path with one complete Markdown report. It never
+            appends. A run that fails before producing a checked result does not
+            start the write, so an existing file remains unchanged.
           </div>
         </section>
         <section id="steps">
@@ -188,45 +286,56 @@
           <ol class="sequence">
             <li>
               <div>
-                <strong>Persist the publication choice.</strong> Extend the
-                local review request with a backward-compatible publication mode
-                and expose <code>--no-publish</code> in help.
+                <strong>Add a report destination.</strong> Add
+                <code>--report &lt;path&gt;</code> and its <code>-r</code> alias
+                without changing the global output-format option. Add
+                short-option parsing and reject <code>--no-watch</code> together
+                with either report spelling before platform setup, storage
+                access, or job submission. Replace an existing destination only
+                after the completed report has been built in memory.
               </div>
             </li>
             <li>
               <div>
-                <strong>Fence remote mutations.</strong> Decide publication once
-                in the worker and bypass every mutation path while retaining
-                remote reads and workspace hydration.
+                <strong>Persist one publication choice.</strong> Extend the
+                local review request with a backward-compatible publication
+                mode. Map <code>--no-publish</code> and
+                <code>--no-comment</code> to that same value and expose both in
+                help. Do not queue the report path or presentation settings.
               </div>
             </li>
             <li>
               <div>
-                <strong>Keep local results useful.</strong> Save the completed
-                result and make the watcher load it after terminal job
-                completion.
+                <strong>Fence only platform publication in the runner.</strong>
+                Read the queued publication choice once and bypass every
+                mutation path while retaining platform reads, workspace
+                hydration, analysis, storage, diagnostics, metrics, artifacts,
+                and cleanup.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Collect the result in the CLI.</strong> After the
+                watcher observes terminal completion, make the CLI load and
+                validate the checked result from configured storage. Do not add
+                report rendering or file-writing responsibilities to the runner.
               </div>
             </li>
             <li>
               <div>
                 <strong>Create one report formatter.</strong> Convert overview,
                 readiness, findings, anchors, explanations, and suggestions into
-                canonical Markdown.
-              </div>
-            </li>
-            <li>
-              <div>
-                <strong>Render by output mode.</strong> Use terminal styling and
-                width-aware wrapping for pretty mode, raw Markdown for plain
-                mode, and structured data for JSON mode. Respect color settings
-                and non-terminal output.
+                canonical Markdown. Render it with terminal styling and
+                width-aware wrapping for console delivery, or write it without
+                terminal escapes to the chosen Markdown file.
               </div>
             </li>
             <li>
               <div>
                 <strong>Prove the safety boundary.</strong> Run successful,
                 failed, retried, GitLab, and GitHub no-publish jobs against
-                clients that reject every mutation call.
+                clients that reject every mutation call. Exercise both aliases,
+                console delivery, file delivery, and stored-result retrieval.
               </div>
             </li>
           </ol>
@@ -242,6 +351,17 @@
                 triggers must continue to mean normal publication.
               </li>
               <li>
+                Global output parsing is implemented by
+                <a href="../../src/cli/output.ts"
+                  ><code>resolveOutputMode</code></a
+                >, and
+                <a href="../../src/cli.ts"><code>parseCliArgs</code></a>
+                currently recognizes only long options. Keep
+                <code>--report</code> out of <code>resolveOutputMode</code>, and
+                extend argument parsing narrowly enough that <code>-r</code>
+                cannot consume a command name or another option by accident.
+              </li>
+              <li>
                 The CLI submission and wait path lives in
                 <a href="../../src/cli.ts"
                   ><code>runMergeRequestReviewCommand</code></a
@@ -252,6 +372,20 @@
                 >.
               </li>
               <li>
+                <a href="../../src/cli/review-watch.ts"
+                  ><code>watchReviewJob</code></a
+                >
+                currently returns <code>ReviewWatchSummary</code>, which has a
+                run ID and counts but not the stored review payload. After a
+                successful watch, keep result collection in
+                <a href="../../src/cli.ts"
+                  ><code>runMergeRequestReviewCommand</code></a
+                >: load that interaction run, parse its
+                <code>resultJson</code> with <code>reviewResultSchema</code>,
+                then render or write the report. Do not add file-output
+                arguments to the watcher or worker.
+              </li>
+              <li>
                 The main mutation boundary is
                 <a href="../../src/jobs/review-worker.ts">the review worker</a>,
                 especially discussion reconciliation and chatter publication.
@@ -259,6 +393,13 @@
                 <a href="../../src/platforms/trigger-lifecycle.ts"
                   ><code>NoOpPlatformTriggerLifecycle</code></a
                 >.
+              </li>
+              <li>
+                In the worker, the publication mode should only guard platform
+                mutation calls such as discussion reconciliation, chatter reply
+                publication, and lifecycle updates. Keep the normal reviewer,
+                finding persistence, <code>completeInteractionRun</code>,
+                metrics, run artifacts, and workspace cleanup paths unchanged.
               </li>
               <li>
                 Parse the stored result with
@@ -271,6 +412,29 @@
                 Add any Markdown parser/renderer as a direct production
                 dependency. Do not rely on documentation-tool transitive
                 dependencies.
+              </li>
+              <li>
+                A caller-side output file requires a watched terminal result.
+                Reject <code>--report/-r</code> with
+                <code>--no-watch</code> during input validation, before
+                <code>initializePlatformRegistry</code>,
+                <code>withStorage</code>, or
+                <code>createOrGetInteractionJob</code>. Cover both report
+                spellings with the same human-readable validation error.
+              </li>
+              <li>
+                Keep the report path out of
+                <a href="../../src/review/local-trigger.ts"
+                  ><code>localReviewTriggerSchema</code></a
+                >. The runner may be on another machine. After
+                <a href="../../src/cli/review-watch.ts"
+                  ><code>watchReviewJob</code></a
+                >
+                returns a completed result, the invoking CLI resolves the
+                caller-local path and writes the Markdown file. Build the full
+                report before opening the destination, then replace its contents
+                rather than appending. A filesystem write error must fail the
+                command.
               </li>
               <li>
                 No new storage column is expected because the trigger JSON and
@@ -288,29 +452,65 @@
             </li>
             <li>
               A no-publish run makes remote read calls but no remote mutation
-              calls in success, retry, or failure paths.
+              calls in success, retry, or failure paths. This includes emojis,
+              comments, responses, GitHub reviews, and GitHub check statuses.
             </li>
             <li>
-              Pretty output has readable headings, lists, code blocks, severity,
-              and file anchors at narrow and wide terminal widths.
+              <code>--no-publish</code> and <code>--no-comment</code> produce
+              the same queued publication mode and the same observable behavior.
             </li>
             <li>
-              Plain output can be redirected to a file and remains valid
-              Markdown without ANSI escapes.
+              The queued request contains the publication choice but never the
+              report path or console-format settings.
             </li>
             <li>
-              JSON output contains the checked review result and job identity
-              without mixed progress text.
+              The runner stores the same checked result shape as a publishing
+              run; its only no-publish difference is that no platform mutation
+              path is called.
             </li>
             <li>
-              The run result, metrics, and diagnostic artifacts remain available
-              locally.
+              After completion, the CLI uses the watched run identity to load
+              and validate the stored result before it prints or writes the
+              report.
+            </li>
+            <li>
+              Default console output has readable headings, lists, code blocks,
+              severity, and file anchors at narrow and wide terminal widths.
+            </li>
+            <li>
+              <code>--report</code> and <code>-r</code> write the same valid
+              Markdown file without terminal escape codes, and do not also print
+              the final console report.
+            </li>
+            <li>
+              When the report path already exists, its previous contents are
+              replaced by exactly one complete new report; no old content is
+              retained or appended.
+            </li>
+            <li>
+              A review failure before report generation leaves an existing
+              destination unchanged, while a filesystem write failure returns a
+              non-zero exit code.
+            </li>
+            <li>
+              <code>--no-watch --report &lt;path&gt;</code> and
+              <code>--no-watch -r &lt;path&gt;</code> both fail with a clear
+              incompatibility error before platform setup, storage access, or
+              job creation; neither creates or changes the report file.
+            </li>
+            <li>
+              The checked review result, job and run records, metrics, logs, and
+              diagnostic artifacts remain available through the configured
+              storage provider.
             </li>
           </ul>
           <p>
             <strong>Checks to run:</strong> merge-request review CLI tests,
             review-watch tests, worker orchestration and lifecycle tests, GitLab
-            and GitHub runtime tests, CLI output snapshot tests,
+            and GitHub runtime tests, CLI argument and help tests, console and
+            Markdown-file output snapshot tests, report overwrite and
+            write-error tests, queued-payload boundary tests, runner publication
+            fence tests, storage-provider contract tests,
             <code>pnpm test</code>, <code>pnpm typecheck</code>, and
             <code>pnpm build</code>.
           </p>

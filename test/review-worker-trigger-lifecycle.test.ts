@@ -376,4 +376,52 @@ describe("ReviewWorker provider trigger lifecycle", () => {
     expect(lifecycle.retry).not.toHaveBeenCalled();
     expect(lifecycle.failed).not.toHaveBeenCalled();
   });
+
+  it("keeps local-test lifecycle reconciliation off the platform", async () => {
+    const job = {
+      id: "job-no-publish",
+      tenantId: "tenant-github",
+      status: "queued",
+      lastError: null,
+      triggerJson: JSON.stringify({
+        kind: "github-comment",
+        publicationMode: "no-publish",
+      }),
+    };
+    const resolvedTenant = {
+      tenant: { id: job.tenantId, platform: "github" },
+      connection: { id: "connection-github" },
+    };
+    const platform = {
+      createTriggerLifecycle: vi.fn(),
+    } as unknown as IPlatform;
+    const worker = new ReviewWorker({
+      storage: {
+        stores: {
+          interactionJobs: {
+            get: vi.fn(async () => job),
+          },
+        },
+      } as never,
+      tenantRegistry: {
+        getResolvedTenantById: vi.fn(async () => resolvedTenant),
+      } as never,
+      reviewProviderFactory: {} as never,
+      chatterRunnerFactory: {} as never,
+      reconciler: {} as never,
+      logger: createLogger("silent"),
+      runLogDir: "tmp/test-trigger-lifecycle",
+      maxJobRetries: 3,
+      retryBackoffMs: 1000,
+      platformResolver: () => platform,
+    });
+
+    await worker.reconcileTriggerLifecycle(job as never);
+    await worker.reconcileOrphanLifecycle({
+      id: "run-no-publish",
+      interactionJobId: job.id,
+    } as never);
+
+    expect(platform.createTriggerLifecycle).not.toHaveBeenCalled();
+  });
 });

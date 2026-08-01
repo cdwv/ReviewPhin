@@ -105,6 +105,8 @@ describe("CLI help", () => {
     expect(help).toContain("--trigger-comment-url <url>");
     expect(help).toContain("--trigger-text-file <path>");
     expect(help).toContain("[--watch | --no-watch]");
+    expect(help).toContain("[--no-publish | --no-comment]");
+    expect(help).toContain("[--report <path> | -r <path>]");
   });
 
   it("validates mr review selectors without appending usage", async () => {
