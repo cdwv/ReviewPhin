@@ -1,5 +1,14 @@
 import type { HarnessResponseFormat, HarnessRunParseError } from "./types.js";
 
+const MAX_REPORTED_ZOD_ISSUES = 8;
+const MAX_ISSUE_MESSAGE_LENGTH = 200;
+
+export interface HarnessParseErrorSummary {
+  reason: HarnessRunParseError["reason"];
+  message: string;
+  issues: string[];
+}
+
 export function parseHarnessStructuredResponse<TParsed>(
   content: string | undefined,
   format: HarnessResponseFormat<TParsed> | undefined,
@@ -23,7 +32,15 @@ export function parseHarnessStructuredResponse<TParsed>(
 
   let fallback: TParsed | null = null;
   let schemaError: HarnessRunParseError | null = null;
+  const jsonParseErrors: string[] = [];
   let sawJsonObject = false;
+
+  const parseJsonObject = (candidate: string): Record<string, unknown> | null =>
+    tryParseJsonObject(candidate, (error) => {
+      if (jsonParseErrors.length === 0) {
+        jsonParseErrors.push(summarizeJsonParseError(error));
+      }
+    });
 
   const recordResult = (
     candidate: Record<string, unknown>,
@@ -51,7 +68,7 @@ export function parseHarnessStructuredResponse<TParsed>(
   };
 
   if (trimmed.startsWith("{")) {
-    const directObject = tryParseJsonObject(trimmed);
+    const directObject = parseJsonObject(trimmed);
     if (directObject) {
       const directResult = recordResult(directObject);
       if (directResult.parsed !== undefined) {
@@ -62,7 +79,7 @@ export function parseHarnessStructuredResponse<TParsed>(
 
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced?.[1]) {
-    const fencedObject = tryParseJsonObject(fenced[1].trim());
+    const fencedObject = parseJsonObject(fenced[1].trim());
     if (fencedObject) {
       const fencedResult = recordResult(fencedObject);
       if (fencedResult.parsed !== undefined) {
@@ -78,7 +95,7 @@ export function parseHarnessStructuredResponse<TParsed>(
       continue;
     }
 
-    const parsed = tryParseJsonObject(candidate);
+    const parsed = parseJsonObject(candidate);
     if (!parsed) {
       continue;
     }
@@ -106,12 +123,33 @@ export function parseHarnessStructuredResponse<TParsed>(
       reason: sawJsonObject ? "schema-mismatch" : "no-json",
       message: sawJsonObject
         ? "Harness response contained JSON objects, but none matched the expected schema"
-        : "Harness response did not contain a JSON object",
+        : jsonParseErrors[0]
+          ? `Harness response contained invalid JSON: ${jsonParseErrors[0]}`
+          : "Harness response did not contain a JSON object",
     },
   };
 }
 
-function tryParseJsonObject(content: string): Record<string, unknown> | null {
+export function summarizeHarnessParseError(
+  error: HarnessRunParseError,
+): HarnessParseErrorSummary {
+  return {
+    reason: error.reason,
+    message: error.message,
+    issues: (error.zodIssues ?? [])
+      .slice(0, MAX_REPORTED_ZOD_ISSUES)
+      .map((issue) => {
+        const path = issue.path.length > 0 ? issue.path.join(".") : "root";
+        const message = issue.message.replace(/\s+/g, " ").trim();
+        return `${path}: ${message.slice(0, MAX_ISSUE_MESSAGE_LENGTH)}`;
+      }),
+  };
+}
+
+function tryParseJsonObject(
+  content: string,
+  onParseError: (error: unknown) => void,
+): Record<string, unknown> | null {
   try {
     const parsed: unknown = JSON.parse(content);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -119,9 +157,23 @@ function tryParseJsonObject(content: string): Record<string, unknown> | null {
     }
 
     return parsed as Record<string, unknown>;
-  } catch {
+  } catch (error) {
+    onParseError(error);
     return null;
   }
+}
+
+function summarizeJsonParseError(error: unknown): string {
+  if (!(error instanceof SyntaxError)) {
+    return "JSON parsing failed";
+  }
+
+  const location = error.message.match(
+    /(?:position \d+|line \d+ column \d+)/gi,
+  );
+  return location
+    ? `JSON parsing failed at ${location.join(", ")}`
+    : "JSON parsing failed";
 }
 
 function extractJsonObjectCandidates(content: string): string[] {
