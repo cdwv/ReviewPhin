@@ -32,8 +32,8 @@
           <h1>Show which models the current credentials can actually use.</h1>
           <p class="lede">
             A model profile accepts any non-empty model name. The first proof
-            that a Copilot account cannot use that model may arrive during a
-            paid review attempt. Operators need discovery and preflight tools
+            that a Copilot account cannot use that model may arrive only when a
+            session starts. Operators need discovery and save-time validation
             that reflect the credentials in use.
           </p>
           <div class="meta-grid">
@@ -55,7 +55,8 @@
             available to the active Copilot identity, inspect useful
             capabilities, and validate a complete profile before it is saved.
             Missing or unverifiable models prevent the write unless the operator
-            explicitly uses <code>--ignore-missing-model</code>.
+            explicitly uses <code>--ignore-missing-model</code>. ReviewPhin does
+            not repeat this check when a saved profile is selected or used.
           </div>
         </header>
         <section id="problem">
@@ -83,17 +84,18 @@
               </p>
             </article>
             <article class="card">
-              <h3>Errors arrive too late</h3>
+              <h3>Invalid settings remain stored</h3>
               <p>
-                A review can spend time hydrating the repository before session
-                creation finally reports that the model is unavailable.
+                A misspelled model can become the default or be assigned to a
+                tenant. The eventual session error is useful, but the CLI had an
+                earlier chance to prevent the invalid save.
               </p>
             </article>
           </div>
         </section>
         <section id="goal">
           <h2>What do we want instead?</h2>
-          <div class="flow" aria-label="Model discovery and preflight flow">
+          <div class="flow" aria-label="Model discovery and profile save flow">
             <div>
               <strong>1. Select credentials</strong
               ><span
@@ -109,10 +111,10 @@
               >
             </div>
             <div>
-              <strong>3. Configure safely</strong
+              <strong>3. Save or reject</strong
               ><span
-                >Save a validated profile, reject it, or use the explicit
-                override.</span
+                >Write a valid profile, reject the command, or honor the
+                explicit override.</span
               >
             </div>
           </div>
@@ -133,6 +135,14 @@
             <li>
               <code>--ignore-missing-model</code> explicitly permits an
               unvalidated profile to be saved.
+            </li>
+            <li>
+              An omitted model is valid and uses the Copilot CLI default; it
+              does not require validation.
+            </li>
+            <li>
+              Selecting a default profile and running model sessions do not
+              perform catalog checks.
             </li>
             <li>
               Providers without discovery say so honestly instead of silently
@@ -160,32 +170,36 @@
               <tr>
                 <td>Inspect capabilities.</td>
                 <td>
-                  Show model ID, display name, supported reasoning effort,
-                  vision support, and other stable advertised fields.
+                  Show model ID, display name, supported reasoning efforts,
+                  default reasoning effort, and vision support in a stable order
+                  and format.
                 </td>
               </tr>
               <tr>
                 <td>Save or update a profile.</td>
                 <td>
                   Resolve the complete resulting profile, then check its review
-                  and text-generation models before any storage mutation. Reject
-                  the command if either model cannot be validated.
+                  and text-generation models before any storage mutation.
+                  Omitted model IDs use the Copilot CLI default and need no
+                  catalog lookup. Reject the command if an explicit model cannot
+                  be validated.
                 </td>
               </tr>
               <tr>
                 <td>Accept an unavailable model deliberately.</td>
                 <td>
                   Add <code>--ignore-missing-model</code> to profile creation
-                  and updates. With this flag, report the validation problem and
-                  save the requested profile anyway.
+                  and updates. The flag does not skip validation. When an
+                  explicit model is missing, warn that it was not found and that
+                  the flag caused ReviewPhin to ignore that result, then save
+                  the requested profile.
                 </td>
               </tr>
               <tr>
-                <td>Run with a missing model.</td>
+                <td>Select an existing default profile.</td>
                 <td>
-                  Fail before expensive hydration when a trustworthy catalog
-                  proves the selected model unavailable, and point to the
-                  discovery command.
+                  Keep <code>model-profile set-default</code> unchanged. Do not
+                  revalidate a profile or add an override flag to that command.
                 </td>
               </tr>
               <tr>
@@ -193,6 +207,14 @@
                 <td>
                   Reject the save because availability cannot be validated,
                   unless <code>--ignore-missing-model</code> is present.
+                </td>
+              </tr>
+              <tr>
+                <td>Run with a saved profile.</td>
+                <td>
+                  Keep runtime behavior unchanged. Start the model session
+                  without a catalog preflight and let the provider report a
+                  missing model through the existing error and retry paths.
                 </td>
               </tr>
             </tbody>
@@ -203,16 +225,27 @@
             default unchanged. Only <code>--ignore-missing-model</code> permits
             the command to cross that boundary.
           </div>
+          <div class="callout">
+            <strong>Null means the Copilot default:</strong> when the review
+            model is unset, the Copilot CLI selects its default model. When only
+            the text-generation model is unset, it continues to use the review
+            model. Neither case is a missing-model error.
+          </div>
+          <div class="callout">
+            <strong>No runtime preflight:</strong> saving is the only new
+            enforcement point. Assigning a profile, making it the default, and
+            starting review, chatter, or memory sessions keep their current
+            behavior.
+          </div>
         </section>
         <section id="steps">
           <h2>Work steps</h2>
           <ol class="sequence">
             <li>
               <div>
-                <strong>Define the command contract.</strong> Set selection
-                rules, output fields, secret handling, exit codes, unsupported
-                discovery behavior, and the exact warning shown when
-                <code>--ignore-missing-model</code> is used.
+                <strong>Add the fixed command contract.</strong> Add the catalog
+                command and save-time flag with the output, warning, and exit
+                behavior specified below.
               </div>
             </li>
             <li>
@@ -224,27 +257,68 @@
             </li>
             <li>
               <div>
-                <strong>Validate before saving.</strong> Combine new values with
-                the existing profile, validate both effective model roles, and
-                only then write the profile or change the default. Keep the
-                existing data untouched on every validation failure.
+                <strong>Validate explicit models before saving.</strong> Combine
+                new values with the existing profile, skip null model IDs,
+                validate every effective explicit model, and only then write the
+                profile. Keep existing data untouched on every validation
+                failure.
               </div>
             </li>
             <li>
               <div>
-                <strong>Preflight review startup.</strong> Check availability
-                before repository hydration where possible, while avoiding
-                duplicate catalog calls and rate-limit pressure.
+                <strong>Honor the override visibly.</strong> Attempt validation
+                even when the flag is present. Save after a missing or
+                unavailable result, but emit the required warning and structured
+                validation status.
               </div>
             </li>
             <li>
               <div>
-                <strong>Document limitations.</strong> Explain that catalogs
-                vary by account and time, and that custom-provider discovery may
-                be unavailable.
+                <strong>Document the boundary.</strong> Explain that catalogs
+                vary by account and time, custom-provider discovery may be
+                unavailable, null uses the Copilot default, and runtime does not
+                revalidate saved profiles.
               </div>
             </li>
           </ol>
+          <div class="callout">
+            <strong>Catalog command output:</strong>
+            <code>model-profile available-models</code> exits zero and sorts
+            models by ID. Pretty output is a table with Model, Name, Reasoning,
+            Default effort, and Vision columns. Plain output uses one
+            tab-separated row per model in that order. JSON output is
+            <code>{"source":"github-copilot","models":[...]}</code>; each model
+            contains <code>id</code>, <code>name</code>,
+            <code>supportedReasoningEfforts</code>,
+            <code>defaultReasoningEffort</code> (nullable), and
+            <code>supportsVision</code>. Catalog or authentication failure exits
+            one and uses the JSON error code
+            <code>model_catalog_unavailable</code>.
+          </div>
+          <div class="callout warning">
+            <strong>Profile validation output:</strong> a confirmed missing
+            model without the flag exits one, writes nothing, and uses
+            <code>model_not_found</code> with <code>profileName</code> and
+            sorted <code>missingModels</code> in JSON. An unavailable validation
+            exits one with <code>model_validation_unavailable</code>. Successful
+            JSON keeps the existing profile fields and adds
+            <code>modelValidation</code> with <code>status</code>, sorted
+            <code>checkedModels</code>, and sorted <code>missingModels</code>.
+            Status is <code>validated</code>, <code>not_required</code>,
+            <code>ignored_missing</code>, or <code>ignored_unavailable</code>.
+          </div>
+          <div class="callout warning">
+            <strong>Required override warning:</strong> for every confirmed
+            missing model, pretty and plain output say
+            <code
+              >Model "&lt;id&gt;" was not found, but --ignore-missing-model was
+              provided, so this result was ignored.</code
+            >
+            The command still exits zero and saves the profile. If validation
+            itself is unavailable, use the same pattern but say availability
+            could not be verified. Never claim a model is missing without a
+            successful catalog response.
+          </div>
           <details>
             <summary>Technical notes for the implementing agent</summary>
             <ul>
@@ -272,15 +346,37 @@
                 secrets masked in all output and errors.
               </li>
               <li>
+                The non-mutating merge used for validation must match the
+                existing partial-update rules in
+                <a href="../../src/storage/storage-helpers.ts"
+                  >storage helpers</a
+                >
+                and the SQLite adapter. Extract or share a pure resolver rather
+                than copying the rules into the CLI.
+              </li>
+              <li>
                 Perform catalog validation before
                 <a href="../../src/cli.ts"
                   ><code>storage.upsertModelProfile</code></a
-                >. This also prevents a failed command using
-                <code>--default</code> from changing the existing default.
+                >. This also prevents a failed
+                <code>model-profile add --default</code> command from changing
+                the existing default.
               </li>
               <li>
-                Use a small service shared by the CLI and review preflight
-                rather than creating separate catalog logic in both paths.
+                A null native Copilot review model requires no validation. A
+                null text-generation model inherits the review model; validate
+                that explicit inherited ID once. Custom providers still require
+                their existing explicit review model.
+              </li>
+              <li>
+                Do not add validation to
+                <a href="../../src/cli.ts"
+                  ><code>model-profile set-default</code></a
+                >, tenant assignment, or
+                <a href="../../src/harness/session.ts">harness runtime</a>. A
+                reliable existing missing-model error may be made non-retryable
+                without another catalog request, but that is optional and is not
+                an acceptance requirement.
               </li>
               <li>
                 Extend <a href="../../test/cli-help.test.ts">CLI help tests</a>,
@@ -288,7 +384,24 @@
                 harness client tests, and model profile tests. Assert that the
                 storage write is not called after a missing model, unavailable
                 discovery, authentication failure, or catalog failure, and that
-                the override flag permits the write.
+                the override flag still attempts validation and then permits the
+                write. Add regression coverage proving null models,
+                <code>set-default</code>, and harness startup do not trigger
+                catalog validation.
+              </li>
+              <li>
+                Update
+                <a
+                  href="../../docs/src/content/docs/management/model-profiles.md"
+                  >model profile guidance</a
+                >
+                and the
+                <a
+                  href="../../docs/src/content/docs/management/cli-reference.md"
+                  >CLI reference</a
+                >
+                with the new command, flag, output contract, null behavior, and
+                lack of runtime revalidation.
               </li>
               <li>
                 Track the original request in
@@ -314,20 +427,32 @@
               Review and text-generation models are checked independently.
             </li>
             <li>
+              A null review model saves without a catalog check and continues to
+              select the Copilot CLI default. A null text-generation model
+              continues to inherit the review model.
+            </li>
+            <li>
               Adding or updating a profile with a missing model exits with an
               actionable error and leaves stored data unchanged.
             </li>
             <li>
-              A catalog, authentication, or unsupported-discovery failure also
-              leaves stored data unchanged by default.
+              A catalog, authentication, or unsupported-discovery failure leaves
+              stored data unchanged by default and returns the specified stable
+              error.
             </li>
             <li>
-              An unavailable native Copilot model fails before workspace
-              hydration and suggests the discovery command.
+              The override flag still attempts validation. A confirmed missing
+              model produces the required warning and an
+              <code>ignored_missing</code> result before the profile is saved.
             </li>
             <li>
-              <code>--ignore-missing-model</code> reports the bypass and saves
-              the requested profile despite missing or unverifiable models.
+              Unavailable validation with the override produces an honest
+              warning and an <code>ignored_unavailable</code> result before the
+              profile is saved.
+            </li>
+            <li>
+              <code>model-profile set-default</code>, tenant assignment, and all
+              model session startup paths make no new catalog calls.
             </li>
             <li>
               No authentication token appears in normal output, JSON, logs, or
@@ -336,7 +461,8 @@
           </ul>
           <p>
             <strong>Checks to run:</strong> model profile tests, harness client
-            tests, CLI help and output tests, review startup tests,
+            tests, CLI help and output tests, storage helper and SQLite tests,
+            runtime no-preflight regression tests, documentation checks,
             secret-redaction tests, <code>pnpm test</code>,
             <code>pnpm typecheck</code>, and <code>pnpm build</code>.
           </p>
