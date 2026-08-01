@@ -17,15 +17,34 @@ import {
   attachmentRequiresVision,
   prepareImageAttachmentsForModel,
 } from "./image-input.js";
-import { parseHarnessStructuredResponse } from "./response-format.js";
+import {
+  parseHarnessStructuredResponse,
+  summarizeHarnessParseError,
+} from "./response-format.js";
 import { resolveHarnessSubagents, resolveHarnessTools } from "./registry.js";
 import { HarnessRunLog } from "./run-log.js";
 import { COPILOT_HARNESS, summarizeHarnessRunLog } from "./run-metrics.js";
 import type {
   HarnessRunAttachment,
+  HarnessRunParseError,
   HarnessRunResult,
   HarnessRunSpec,
 } from "./types.js";
+
+const STRUCTURED_OUTPUT_CORRECTION_LIMIT = 2;
+
+export class HarnessStructuredOutputError extends Error {
+  public readonly lastParseError: HarnessRunParseError;
+
+  public constructor(lastParseError: HarnessRunParseError) {
+    super(
+      `Harness structured output remained invalid after ${STRUCTURED_OUTPUT_CORRECTION_LIMIT} correction attempts: ${lastParseError.message}`,
+      { cause: lastParseError },
+    );
+    this.name = "HarnessStructuredOutputError";
+    this.lastParseError = lastParseError;
+  }
+}
 
 interface HarnessSessionRuntimeOptions {
   logger: Logger;
@@ -132,27 +151,73 @@ export class HarnessSessionRuntime {
           session,
           spec,
         );
-        const response: AssistantMessageEvent | undefined =
-          await session.sendAndWait(
-            {
-              prompt: preparedInput.prompt,
-              ...(preparedInput.attachments &&
-              preparedInput.attachments.length > 0
-                ? { attachments: preparedInput.attachments }
-                : {}),
-            },
-            spec.timeoutMs ?? this.timeoutMs,
+        const timeoutMs = spec.timeoutMs ?? this.timeoutMs;
+        const maximumAttempts = spec.responseFormat
+          ? STRUCTURED_OUTPUT_CORRECTION_LIMIT + 1
+          : 1;
+        let prompt = preparedInput.prompt;
+
+        for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+          const eventStartIndex = events.length;
+          const startedAt = Date.now();
+          const response: AssistantMessageEvent | undefined =
+            await session.sendAndWait(
+              {
+                prompt,
+                ...(attempt === 1 &&
+                preparedInput.attachments &&
+                preparedInput.attachments.length > 0
+                  ? { attachments: preparedInput.attachments }
+                  : {}),
+              },
+              timeoutMs,
+            );
+          runLog.setResponse(response);
+          const structuredResponse = parseHarnessStructuredResponse(
+            response?.data.content,
+            spec.responseFormat,
           );
-        runLog.setResponse(response);
-        const structuredResponse = parseHarnessStructuredResponse(
-          response?.data.content,
-          spec.responseFormat,
+
+          if (!spec.responseFormat) {
+            return {
+              response,
+              events,
+            };
+          }
+
+          runLog.appendStructuredOutputAttempt({
+            attempt,
+            correctionAttempt: attempt - 1,
+            durationMs: Date.now() - startedAt,
+            response,
+            parseError: structuredResponse.parseError,
+            events: events.slice(eventStartIndex),
+          });
+
+          if (structuredResponse.parsed !== undefined) {
+            return {
+              response,
+              events,
+              parsed: structuredResponse.parsed,
+            };
+          }
+
+          const parseError = structuredResponse.parseError;
+          if (!parseError) {
+            throw new Error(
+              "Harness structured output validation returned no result",
+            );
+          }
+          if (attempt === maximumAttempts) {
+            throw new HarnessStructuredOutputError(parseError);
+          }
+
+          prompt = buildStructuredOutputCorrectionPrompt(parseError, attempt);
+        }
+
+        throw new Error(
+          "Harness structured output recovery ended unexpectedly",
         );
-        return {
-          response,
-          events,
-          ...structuredResponse,
-        };
       } finally {
         unsubscribe();
         await session.disconnect();
@@ -406,6 +471,24 @@ export class HarnessSessionRuntime {
           : undefined,
     };
   }
+}
+
+function buildStructuredOutputCorrectionPrompt(
+  parseError: HarnessRunParseError,
+  correctionAttempt: number,
+): string {
+  const summary = summarizeHarnessParseError(parseError);
+  const failureDetails =
+    summary.issues.length > 0
+      ? [summary.message, ...summary.issues.map((issue) => `- ${issue}`)]
+      : [summary.message];
+
+  return [
+    `Structured output correction ${correctionAttempt} of ${STRUCTURED_OUTPUT_CORRECTION_LIMIT}.`,
+    "Your previous response did not satisfy the requested JSON object shape.",
+    ...failureDetails,
+    "Return only one corrected JSON object. Do not include Markdown fences, commentary, or the invalid response.",
+  ].join("\n");
 }
 
 function resolveLogDir(baseLogDir: string, spec: HarnessRunSpec): string {

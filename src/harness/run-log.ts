@@ -4,7 +4,12 @@ import { join } from "node:path";
 import type { AssistantMessageEvent, SessionEvent } from "@github/copilot-sdk";
 
 import type { ModelReasoningEffort } from "../storage/contract/index.js";
-import type { HarnessRunLoggingContext, HarnessRunMetadata } from "./types.js";
+import { summarizeHarnessParseError } from "./response-format.js";
+import type {
+  HarnessRunLoggingContext,
+  HarnessRunMetadata,
+  HarnessRunParseError,
+} from "./types.js";
 
 interface HarnessRunLogOptions {
   logDir: string;
@@ -19,6 +24,29 @@ interface SerializedError {
   message: string;
   name?: string | undefined;
   stack?: string | undefined;
+}
+
+interface SerializedResponse {
+  messageId: string;
+  requestId: string | null;
+  content: string;
+}
+
+interface HarnessStructuredOutputAttemptRecord {
+  attempt: number;
+  correctionAttempt: number;
+  durationMs: number;
+  response: SerializedResponse | null;
+  failure: ReturnType<typeof summarizeHarnessParseError> | null;
+  modelUsage: Array<{
+    model: string;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    reasoningTokens: number | null;
+    durationMs: number | null;
+    premiumRequestCost: number | null;
+    nanoAiu: number | null;
+  }>;
 }
 
 export interface HarnessRunLogRecord {
@@ -37,11 +65,8 @@ export interface HarnessRunLogRecord {
     sessionKind: string | null;
   };
   prompt: string;
-  response: {
-    messageId: string;
-    requestId: string | null;
-    content: string;
-  } | null;
+  response: SerializedResponse | null;
+  structuredOutputAttempts: HarnessStructuredOutputAttemptRecord[];
   error: SerializedError | null;
   events: SessionEvent[];
 }
@@ -69,6 +94,7 @@ export class HarnessRunLog {
       },
       prompt: options.prompt,
       response: null,
+      structuredOutputAttempts: [],
       error: null,
       events: [],
     };
@@ -87,15 +113,37 @@ export class HarnessRunLog {
   }
 
   public setResponse(response: AssistantMessageEvent | undefined): void {
-    if (!response) {
-      return;
-    }
+    this.record.response = serializeResponse(response);
+  }
 
-    this.record.response = {
-      messageId: response.data.messageId,
-      requestId: response.data.requestId ?? null,
-      content: response.data.content,
-    };
+  public appendStructuredOutputAttempt(input: {
+    attempt: number;
+    correctionAttempt: number;
+    durationMs: number;
+    response: AssistantMessageEvent | undefined;
+    parseError: HarnessRunParseError | undefined;
+    events: SessionEvent[];
+  }): void {
+    this.record.structuredOutputAttempts.push({
+      attempt: input.attempt,
+      correctionAttempt: input.correctionAttempt,
+      durationMs: input.durationMs,
+      response: serializeResponse(input.response),
+      failure: input.parseError
+        ? summarizeHarnessParseError(input.parseError)
+        : null,
+      modelUsage: input.events
+        .filter((event) => event.type === "assistant.usage")
+        .map((event) => ({
+          model: event.data.model,
+          inputTokens: event.data.inputTokens ?? null,
+          outputTokens: event.data.outputTokens ?? null,
+          reasoningTokens: event.data.reasoningTokens ?? null,
+          durationMs: event.data.duration ?? null,
+          premiumRequestCost: event.data.cost ?? null,
+          nanoAiu: event.data.copilotUsage?.totalNanoAiu ?? null,
+        })),
+    });
   }
 
   public setError(error: unknown): void {
@@ -108,6 +156,20 @@ export class HarnessRunLog {
     await writeFile(this.path, JSON.stringify(this.record, null, 2), "utf8");
     return this.path;
   }
+}
+
+function serializeResponse(
+  response: AssistantMessageEvent | undefined,
+): SerializedResponse | null {
+  if (!response) {
+    return null;
+  }
+
+  return {
+    messageId: response.data.messageId,
+    requestId: response.data.requestId ?? null,
+    content: response.data.content,
+  };
 }
 
 function serializeError(error: unknown): SerializedError {

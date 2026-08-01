@@ -8,9 +8,7 @@ import { HarnessRunLog } from "../src/harness/run-log.js";
 
 describe("HarnessRunLog", () => {
   it("writes prompt, events, response, and error details to disk", async () => {
-    const logDir = await mkdtemp(
-      join(tmpdir(), "reviewphin-logs-"),
-    );
+    const logDir = await mkdtemp(join(tmpdir(), "reviewphin-logs-"));
 
     const runLog = new HarnessRunLog({
       logDir,
@@ -52,6 +50,41 @@ describe("HarnessRunLog", () => {
         requestId: "req_123",
       },
     } as never);
+    runLog.appendStructuredOutputAttempt({
+      attempt: 1,
+      correctionAttempt: 0,
+      durationMs: 125,
+      response: {
+        data: {
+          content: '{"overview":null}',
+          messageId: "message_1",
+          requestId: "req_123",
+        },
+      } as never,
+      parseError: {
+        reason: "schema-mismatch",
+        message: "Response did not match the schema",
+        zodIssues: [
+          {
+            code: "custom",
+            path: ["overview"],
+            message: "Expected an overview object",
+          },
+        ],
+      },
+      events: [
+        {
+          type: "assistant.usage",
+          data: {
+            model: "gpt-5.4",
+            inputTokens: 100,
+            outputTokens: 20,
+            duration: 120,
+            cost: 1,
+          },
+        } as never,
+      ],
+    });
     runLog.setError(
       new Error("Timeout after 60000ms waiting for session.idle"),
     );
@@ -65,6 +98,26 @@ describe("HarnessRunLog", () => {
     expect(written.prompt).toBe("Return JSON only.");
     expect(written.events).toHaveLength(1);
     expect(written.response.content).toContain('"overview"');
+    expect(written.structuredOutputAttempts).toEqual([
+      expect.objectContaining({
+        attempt: 1,
+        correctionAttempt: 0,
+        durationMs: 125,
+        failure: {
+          reason: "schema-mismatch",
+          message: "Response did not match the schema",
+          issues: ["overview: Expected an overview object"],
+        },
+        modelUsage: [
+          expect.objectContaining({
+            model: "gpt-5.4",
+            inputTokens: 100,
+            outputTokens: 20,
+            premiumRequestCost: 1,
+          }),
+        ],
+      }),
+    ]);
     expect(written.error.message).toContain("Timeout after 60000ms");
   });
 });

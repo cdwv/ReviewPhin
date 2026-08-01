@@ -27,7 +27,10 @@ vi.mock("@github/copilot-sdk", () => ({
 
 import { CopilotClient } from "@github/copilot-sdk";
 import type { SessionEvent } from "@github/copilot-sdk";
-import { HarnessSessionRuntime } from "../src/harness/session.js";
+import {
+  HarnessSessionRuntime,
+  HarnessStructuredOutputError,
+} from "../src/harness/session.js";
 import type {
   HarnessModelConfig,
   HarnessTenantContext,
@@ -435,19 +438,18 @@ describe("HarnessSessionRuntime", () => {
   });
 
   it("returns the bottom-most matching parsed payload when a response format is provided", async () => {
-    createSessionMock.mockResolvedValue(
-      createSession({
-        responseContent: [
-          "Here is the first draft.",
-          JSON.stringify({
-            items: ["stale"],
-          }),
-          JSON.stringify({
-            items: ["fresh"],
-          }),
-        ].join("\n\n"),
-      }),
-    );
+    const session = createSession({
+      responseContent: [
+        "Here is the first draft.",
+        JSON.stringify({
+          items: ["stale"],
+        }),
+        JSON.stringify({
+          items: ["fresh"],
+        }),
+      ].join("\n\n"),
+    });
+    createSessionMock.mockResolvedValue(session);
     startMock.mockResolvedValue(undefined);
     stopMock.mockResolvedValue(undefined);
 
@@ -474,16 +476,87 @@ describe("HarnessSessionRuntime", () => {
       items: ["fresh"],
     });
     expect(result.parseError).toBeUndefined();
+    expect(session.sendAndWait).toHaveBeenCalledOnce();
   });
 
-  it("captures schema parse errors when no JSON object matches the response format", async () => {
-    createSessionMock.mockResolvedValue(
-      createSession({
-        responseContent: JSON.stringify({
-          note: "not the expected payload",
+  it("corrects malformed JSON in the same session and counts correction usage", async () => {
+    const session = createSession({
+      responses: [
+        {
+          content: '{"items":["almost"]',
+          events: [createUsageEvent("usage_1")],
+        },
+        {
+          content: JSON.stringify({ items: ["fixed"] }),
+          events: [createUsageEvent("usage_2")],
+        },
+      ],
+    });
+    createSessionMock.mockResolvedValue(session);
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+    const onMetrics = vi.fn(async () => {});
+
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    const result = await runtime.run({
+      prompt: "Return a structured list.",
+      modelConfig: createModelConfig(),
+      tools: ["glob", "rg", "view"],
+      subagents: [],
+      responseFormat: {
+        schema: z.object({
+          items: z.array(z.string()),
         }),
+      },
+      logging: {
+        interactionRunId: null,
+        interactionJobId: null,
+        tenantId: null,
+        sessionKind: "review",
+        onMetrics,
+      },
+    });
+
+    expect(result.parsed).toEqual({ items: ["fixed"] });
+    expect(session.sendAndWait).toHaveBeenCalledTimes(2);
+    expect(session.sendAndWait).toHaveBeenNthCalledWith(
+      2,
+      {
+        prompt: expect.stringContaining("Structured output correction 1 of 2."),
+      },
+      1_000,
+    );
+    expect(
+      (
+        session.sendAndWait.mock.calls as unknown as Array<
+          [{ prompt: string }, number]
+        >
+      )[1]?.[0].prompt,
+    ).toContain("invalid JSON");
+    expect(onMetrics).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metrics: expect.objectContaining({ assistantCalls: 2 }),
       }),
     );
+  });
+
+  it("gives concise schema guidance and returns the first valid correction", async () => {
+    const invalidContent = JSON.stringify({
+      note: "not the expected payload",
+    });
+    const session = createSession({
+      responses: [
+        { content: invalidContent },
+        { content: JSON.stringify({ items: ["fixed"] }) },
+      ],
+    });
+    createSessionMock.mockResolvedValue(session);
     startMock.mockResolvedValue(undefined);
     stopMock.mockResolvedValue(undefined);
 
@@ -503,19 +576,86 @@ describe("HarnessSessionRuntime", () => {
         schema: z.object({
           items: z.array(z.string()),
         }),
-        looksLike: (value) => "items" in value,
       },
     });
 
-    expect(result.parsed).toBeUndefined();
-    expect(result.parseError).toEqual(
+    const sendCalls = session.sendAndWait.mock.calls as unknown as Array<
+      [{ prompt: string }, number]
+    >;
+    const correctionPrompt = sendCalls[1]?.[0].prompt;
+    expect(result.parsed).toEqual({ items: ["fixed"] });
+    expect(correctionPrompt).toContain("items:");
+    expect(correctionPrompt).toContain("Return only one corrected JSON object");
+    expect(correctionPrompt).not.toContain(invalidContent);
+  });
+
+  it("throws one stable error after two invalid corrections", async () => {
+    const session = createSession({
+      responses: [
+        { content: "not json" },
+        { content: '{"still":"wrong"}' },
+        { content: '{"also":"wrong"}' },
+      ],
+    });
+    createSessionMock.mockResolvedValue(session);
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    const run = runtime.run({
+      prompt: "Return a structured list.",
+      modelConfig: createModelConfig(),
+      tools: [],
+      subagents: [],
+      responseFormat: {
+        schema: z.object({ items: z.array(z.string()) }),
+      },
+    });
+
+    await expect(run).rejects.toBeInstanceOf(HarnessStructuredOutputError);
+    await expect(run).rejects.toEqual(
       expect.objectContaining({
-        reason: "schema-mismatch",
+        name: "HarnessStructuredOutputError",
         message:
-          "Harness response contained JSON objects, but none matched the expected schema",
+          "Harness structured output remained invalid after 2 correction attempts: Harness response contained JSON objects, but none matched the expected schema",
+        lastParseError: expect.objectContaining({
+          reason: "schema-mismatch",
+          zodIssues: expect.any(Array),
+        }),
       }),
     );
-    expect(result.parseError?.zodIssues).toBeDefined();
+    expect(session.sendAndWait).toHaveBeenCalledTimes(3);
+    expect(session.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("does not correct unstructured responses", async () => {
+    const session = createSession({ responseContent: "not json" });
+    createSessionMock.mockResolvedValue(session);
+    startMock.mockResolvedValue(undefined);
+    stopMock.mockResolvedValue(undefined);
+
+    const runtime = new HarnessSessionRuntime({
+      logger: createLogger(),
+      runLogDir: tmpPath(),
+      timeoutMs: 1_000,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    const result = await runtime.run({
+      prompt: "Reply in prose.",
+      modelConfig: createModelConfig(),
+      tools: [],
+      subagents: [],
+    });
+
+    expect(result.response?.data.content).toBe("not json");
+    expect(session.sendAndWait).toHaveBeenCalledOnce();
   });
 
   it("passes blob attachments through to the Copilot session", async () => {
@@ -867,8 +1007,13 @@ function createSession(input?: {
   currentModelId?: string;
   responseContent?: string;
   events?: SessionEvent[];
+  responses?: Array<{
+    content: string;
+    events?: SessionEvent[];
+  }>;
 }) {
   let eventHandler: ((event: SessionEvent) => void) | undefined;
+  let responseIndex = 0;
   return {
     sessionId: "session_1",
     rpc: {
@@ -883,12 +1028,15 @@ function createSession(input?: {
       return () => {};
     }),
     sendAndWait: vi.fn(async () => {
-      for (const event of input?.events ?? []) {
+      const configuredResponse = input?.responses?.[responseIndex];
+      responseIndex += 1;
+      for (const event of configuredResponse?.events ?? input?.events ?? []) {
         eventHandler?.(event);
       }
       return {
         data: {
           content:
+            configuredResponse?.content ??
             input?.responseContent ??
             JSON.stringify({
               overview: {
@@ -898,10 +1046,29 @@ function createSession(input?: {
               findings: [],
               priorDispositions: [],
             }),
+          messageId: `message_${responseIndex}`,
+          requestId: `request_${responseIndex}`,
         },
       };
     }),
     disconnect: vi.fn(async () => {}),
+  };
+}
+
+function createUsageEvent(id: string): SessionEvent {
+  return {
+    id,
+    parentId: null,
+    timestamp: new Date().toISOString(),
+    type: "assistant.usage",
+    ephemeral: true,
+    data: {
+      model: "gpt-5.4",
+      inputTokens: 100,
+      outputTokens: 20,
+      duration: 100,
+      cost: 1,
+    },
   };
 }
 
