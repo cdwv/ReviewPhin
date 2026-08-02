@@ -872,6 +872,14 @@ describe("GitHubClient", () => {
           startLine: 12,
           startSide: "RIGHT",
         },
+        {
+          path: "src/legacy.ts",
+          body: "Removed finding",
+          line: 9,
+          side: "LEFT",
+          startLine: 8,
+          startSide: "LEFT",
+        },
       ],
     });
     await client.submitPullRequestReview({
@@ -893,6 +901,14 @@ describe("GitHubClient", () => {
             side: "RIGHT",
             start_line: 12,
             start_side: "RIGHT",
+          },
+          {
+            path: "src/legacy.ts",
+            body: "Removed finding",
+            line: 9,
+            side: "LEFT",
+            start_line: 8,
+            start_side: "LEFT",
           },
         ],
       }),

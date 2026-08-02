@@ -192,17 +192,44 @@ describe("buildReviewPrompt", () => {
     );
   });
 
-  it("describes optional location fields consistently with the response validator", () => {
+  it("includes the review validator's input JSON Schema", () => {
     const prompt = buildReviewPrompt(createContext());
+    const schema = extractPromptJsonSchema(prompt);
+    const overview = getSchemaProperty(schema, "overview");
+    const finding = asRecord(getSchemaProperty(schema, "findings").items);
+    const anchor = getSchemaProperty(finding, "anchor");
+    const anchorObject = asRecord((anchor.anyOf as unknown[])[0]);
+    const suggestion = getSchemaProperty(finding, "suggestion");
+    const suggestionObject = asRecord((suggestion.anyOf as unknown[])[0]);
+    const replyHandoff = getSchemaProperty(schema, "replyHandoff");
+    const handoffTargets = getSchemaProperty(replyHandoff, "targets");
+    const handoffTarget = asRecord(handoffTargets.items);
 
     expect(prompt).toContain(
-      "Output field guide (fields described as optional may be omitted):",
+      "JSON Schema (properties not listed in `required` may be omitted):",
     );
-    expect(prompt).toContain(
-      '"anchor": "optional { path: string, oldPath?: string',
+    expect(schema.required).toEqual(["overview", "findings"]);
+    expect(overview.required).toEqual(["summary", "overallSeverity"]);
+    expect(finding.required).toEqual(["title", "body", "severity", "category"]);
+    expect(anchorObject.required).toEqual([
+      "path",
+      "startLine",
+      "endLine",
+      "side",
+    ]);
+    expect(anchorObject.description).toContain("inclusive range");
+    expect(suggestionObject.required).toEqual([
+      "replacement",
+      "startLine",
+      "endLine",
+    ]);
+    expect(getSchemaProperty(schema, "priorDispositions").default).toEqual([]);
+    expect(replyHandoff.required).toEqual(["summary"]);
+    expect(handoffTargets.default).toEqual([]);
+    expect(handoffTarget.required).toEqual(["kind", "commentId", "guidance"]);
+    expect(getSchemaProperty(handoffTarget, "discussionId").description).toBe(
+      "Required unless kind is code-review-comment",
     );
-    expect(prompt).toContain('"suggestion": "optional { replacement: string');
-    expect(prompt).toContain('"replyHandoff": "optional { summary: string');
     expect(prompt).toContain(
       "new-side anchor whose line range exactly matches the suggestion range",
     );
@@ -265,10 +292,13 @@ describe("buildReviewPrompt", () => {
     },
   );
 
-  it("includes prior finding history with status and resolve resolution schema", () => {
+  it("includes prior finding history and the disposition resolution contract", () => {
     const prompt = buildReviewPrompt(
       createContext(null, "direct-mention", "incremental-rereview"),
     );
+    const schema = extractPromptJsonSchema(prompt);
+    const priorDispositions = getSchemaProperty(schema, "priorDispositions");
+    const disposition = asRecord(priorDispositions.items);
 
     expect(prompt).toContain('"priorFindings": [');
     expect(prompt).toContain('"status": "open"');
@@ -276,7 +306,10 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain(
       "treat `resolved` and `dismissed` prior findings as inactive by default",
     );
-    expect(prompt).toContain('"resolution": "optional resolved | dismissed"');
+    expect(getSchemaProperty(disposition, "resolution").enum).toEqual([
+      "resolved",
+      "dismissed",
+    ]);
   });
 
   it("uses a complete compact manifest and omits full diffs when Git inspection is ready", () => {
@@ -506,7 +539,7 @@ describe("buildReviewPrompt", () => {
     );
     expect(prompt).toContain("Formatting contract:");
     expect(prompt).toContain(
-      "Return exactly one JSON object matching the output field guide below.",
+      "Return exactly one JSON object matching the JSON Schema below.",
     );
     expect(prompt).toContain(
       "Do not include Markdown fences, introductions, explanations, or trailing text outside the JSON object.",
@@ -521,8 +554,15 @@ describe("buildReviewPrompt", () => {
       "Separate distinct reasons or conditions into short paragraphs",
     );
     expect(prompt).toContain("Put that formatting inside `replyBody`");
-    expect(prompt).toContain(
-      '"memory": "optional null | { status: written | skipped',
+    const schema = extractPromptJsonSchema(prompt);
+    const replies = getSchemaProperty(schema, "replies");
+    const reply = asRecord(replies.items);
+    const target = getSchemaProperty(reply, "target");
+    expect(schema.required).toBeUndefined();
+    expect(getSchemaProperty(schema, "memory").anyOf).toBeInstanceOf(Array);
+    expect(replies.default).toEqual([]);
+    expect(getSchemaProperty(target, "discussionId").description).toContain(
+      "Required unless kind is code-review-comment",
     );
   });
 
@@ -557,6 +597,35 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain('"status": 403');
   });
 });
+
+function extractPromptJsonSchema(prompt: string): Record<string, unknown> {
+  const heading =
+    "JSON Schema (properties not listed in `required` may be omitted):\n";
+  const start = prompt.indexOf(heading);
+  if (start < 0) {
+    throw new Error("Prompt JSON Schema heading was not found");
+  }
+  const schemaStart = start + heading.length;
+  const schemaEnd = prompt.indexOf("\n\nContext:", schemaStart);
+  if (schemaEnd < 0) {
+    throw new Error("Prompt JSON Schema terminator was not found");
+  }
+  return asRecord(JSON.parse(prompt.slice(schemaStart, schemaEnd)) as unknown);
+}
+
+function getSchemaProperty(
+  schema: Record<string, unknown>,
+  property: string,
+): Record<string, unknown> {
+  return asRecord(asRecord(schema.properties)[property]);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Expected a JSON Schema object");
+  }
+  return value as Record<string, unknown>;
+}
 
 function createContext(
   entries:

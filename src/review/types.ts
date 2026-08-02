@@ -18,7 +18,8 @@ export const reviewAnchorSchema = z
   })
   .refine((value) => value.endLine >= value.startLine, {
     message: "endLine must be greater than or equal to startLine",
-  });
+  })
+  .describe("startLine and endLine must identify an inclusive range");
 
 export const reviewSuggestionSchema = z
   .object({
@@ -28,7 +29,8 @@ export const reviewSuggestionSchema = z
   })
   .refine((value) => value.endLine >= value.startLine, {
     message: "endLine must be greater than or equal to startLine",
-  });
+  })
+  .describe("startLine and endLine must identify an inclusive range");
 
 export const reviewFindingSchema = z.object({
   priorDiscussionId: z.string().min(1).optional(),
@@ -84,7 +86,11 @@ export const reviewerReplyTargetHandoffSchema = z
   .object({
     kind: responseTargetSchema.shape.kind,
     commentId: z.number().int().positive(),
-    discussionId: z.string().min(1).optional(),
+    discussionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Required unless kind is code-review-comment"),
     guidance: z.string().min(1),
   })
   .superRefine((target, context) => {
@@ -139,7 +145,11 @@ export const chatterReplySchema = z.object({
     .object({
       kind: responseTargetSchema.shape.kind,
       commentId: z.number().int().positive(),
-      discussionId: z.string().min(1).optional(),
+      discussionId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Required unless kind is code-review-comment"),
     })
     .superRefine((target, context) => {
       if (target.kind !== "code-review-comment" && !target.discussionId) {

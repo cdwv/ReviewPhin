@@ -1,11 +1,22 @@
 import { renderPrompt, type PromptTemplateId } from "./instruction-renderer.js";
 import { isReviewSummaryNoteBody } from "../review/summary.js";
 import type { ChatterRunContext } from "../review/harness-chatter.js";
-import type { ReviewAnchor, ReviewContext } from "../review/types.js";
+import {
+  chatterBatchResultSchema,
+  reviewResultSchema,
+  type ReviewAnchor,
+  type ReviewContext,
+} from "../review/types.js";
 import { truncate } from "../utils/text.js";
 import type { ProjectMemoryCoalesceInput } from "../memory/types.js";
 
 const DEFAULT_MAX_PROMPT_MEMORY_CHARS = 5_000;
+const reviewResponseJsonSchema = reviewResultSchema.toJSONSchema({
+  io: "input",
+});
+const chatterResponseJsonSchema = chatterBatchResultSchema.toJSONSchema({
+  io: "input",
+});
 
 export function buildProjectMemoryCoalescePrompt(
   input: ProjectMemoryCoalesceInput,
@@ -25,8 +36,8 @@ export function buildReviewPrompt(
     renderPrompt(getPromptTemplateId(context), {}),
     ...buildAttachmentRuntimeNote(context),
     "",
-    "Output field guide (fields described as optional may be omitted):",
-    JSON.stringify(reviewResponseFieldGuide, null, 2),
+    "JSON Schema (properties not listed in `required` may be omitted):",
+    JSON.stringify(reviewResponseJsonSchema, null, 2),
     "",
     "Context:",
     JSON.stringify(
@@ -44,12 +55,12 @@ export function buildChatterPrompt(context: ChatterRunContext): string {
     ...buildAttachmentRuntimeNote(context.reviewContext),
     "",
     "Formatting contract:",
-    "- Return exactly one JSON object matching the output field guide below.",
+    "- Return exactly one JSON object matching the JSON Schema below.",
     "- Put all human-facing reply text inside JSON string fields such as `replies[].replyBody`.",
     "- Do not include Markdown fences, introductions, explanations, or trailing text outside the JSON object.",
     "",
-    "Output field guide (fields described as optional may be omitted):",
-    JSON.stringify(chatterResponseFieldGuide, null, 2),
+    "JSON Schema (properties not listed in `required` may be omitted):",
+    JSON.stringify(chatterResponseJsonSchema, null, 2),
     "",
     "Context:",
     JSON.stringify(
@@ -274,60 +285,6 @@ function buildPromptProjectMemory(
     entries,
   };
 }
-
-const reviewResponseFieldGuide = {
-  overview: {
-    summary: "string",
-    overallSeverity: "low | medium | high | critical",
-    overallAssessment: "string",
-    mergeReadiness: {
-      status: "ready | needs_attention | blocked",
-      confidence: "low | medium | high",
-      summary: "string",
-    },
-    highlights: ["optional string"],
-  },
-  findings: [
-    {
-      priorDiscussionId: "optional string",
-      title: "string",
-      body: "string",
-      severity: "low | medium | high | critical",
-      category: "bug | correctness | security | performance | maintainability",
-      confidence: "optional low | medium | high",
-      anchor:
-        "optional { path: string, oldPath?: string, startLine: positive integer, endLine: positive integer, side: new | old }",
-      suggestion:
-        "optional { replacement: string, startLine: positive integer, endLine: positive integer }",
-      replyInDiscussion: "optional boolean",
-    },
-  ],
-  priorDispositions: [
-    {
-      discussionId: "string",
-      action: "keep | update | resolve | reply",
-      replyBody: "optional string",
-      resolution: "optional resolved | dismissed",
-    },
-  ],
-  replyHandoff:
-    "optional { summary: string, targets: Array<{ kind: code-review-comment | discussion-reply | summary-discussion-reply | finding-discussion-reply, commentId: positive integer, discussionId?: string (required unless kind is code-review-comment), guidance: string }> }",
-};
-
-const chatterResponseFieldGuide = {
-  memory: "optional null | { status: written | skipped, summary: string }",
-  replies: [
-    {
-      target: {
-        kind: "code-review-comment | discussion-reply | summary-discussion-reply | finding-discussion-reply",
-        commentId: 1,
-        discussionId:
-          "required for threaded reply kinds; optional for code-review-comment",
-      },
-      replyBody: "string",
-    },
-  ],
-};
 
 function buildCompactChatterContext(
   context: ChatterRunContext,

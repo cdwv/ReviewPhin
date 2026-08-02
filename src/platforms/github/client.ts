@@ -307,9 +307,9 @@ export interface GitHubPendingReviewComment {
   path: string;
   body: string;
   line: number;
-  side: "RIGHT";
+  side: "LEFT" | "RIGHT";
   startLine?: number | undefined;
-  startSide?: "RIGHT" | undefined;
+  startSide?: "LEFT" | "RIGHT" | undefined;
 }
 
 export class GitHubApiError extends Error {
