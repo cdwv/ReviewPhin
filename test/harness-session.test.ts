@@ -117,6 +117,7 @@ describe("HarnessSessionRuntime", () => {
     expect(saveEntries).toHaveBeenCalledWith([{ text: "Remember this." }], {
       baseEntries: [],
     });
+    expect(listModelsMock).not.toHaveBeenCalled();
   });
 
   it("registers git_readonly only when a prepared capability is supplied", async () => {

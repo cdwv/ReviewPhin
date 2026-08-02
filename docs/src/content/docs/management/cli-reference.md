@@ -244,6 +244,46 @@ Model profiles store LLM provider configuration. When no profiles exist, ReviewP
 
 See [model profiles](../model-profiles/) for provider-specific examples.
 
+### `model-profile available-models`
+
+List models available to the current GitHub Copilot identity, the credentials stored in a named native profile, or a GitHub token supplied only for this request.
+
+```bash
+reviewphin model-profile available-models
+reviewphin model-profile available-models --model-profile copilot-team-a
+reviewphin model-profile available-models --auth-token github_pat_xxxxxxxxxxxxxxxxxxxx
+```
+
+`--model-profile` and `--auth-token` cannot be used together. A direct token is not stored or included in output.
+
+Pretty output is a table with Model, Name, Reasoning, Default effort, and Vision columns. Plain output has one tab-separated row per model in that order. JSON has the following shape:
+
+```json
+{
+  "source": "github-copilot",
+  "models": [
+    {
+      "id": "gpt-5.4",
+      "name": "GPT-5.4",
+      "supportedReasoningEfforts": ["low", "medium", "high"],
+      "defaultReasoningEffort": "medium",
+      "supportsVision": true
+    }
+  ]
+}
+```
+
+Models are sorted by ID. Catalog or authentication failures exit with code 1; JSON errors use `model_catalog_unavailable`. Discovery is unavailable for custom-provider profiles.
+
+| Flag                        | Required | Description                                                       |
+| --------------------------- | -------- | ----------------------------------------------------------------- |
+| `--model-profile`           | No       | Use credentials from this named native profile.                   |
+| `--auth-token`              | No       | Use this GitHub token for the catalog request without storing it. |
+| `--sqlite-database-path`    | No       | Override the SQLite path when `--model-profile` is used.          |
+| `--storage-provider-module` | No       | Override the storage module when `--model-profile` is used.       |
+
+---
+
 ### `model-profile add`
 
 Create or update a named model profile.
@@ -262,7 +302,8 @@ reviewphin model-profile add \
   --base-url http://vllm-host:8000/v1 \
   --provider-type openai \
   --review-model meta-llama/Llama-3.1-8B-Instruct \
-  --text-generation-model meta-llama/Llama-3.1-8B-Instruct
+  --text-generation-model meta-llama/Llama-3.1-8B-Instruct \
+  --ignore-missing-model
 
 # BYOK: Azure OpenAI
 reviewphin model-profile add \
@@ -271,7 +312,8 @@ reviewphin model-profile add \
   --provider-type azure \
   --auth-token your-azure-key \
   --review-model my-gpt5.4-deployment \
-  --text-generation-model my-gpt5.4mini-deployment
+  --text-generation-model my-gpt5.4mini-deployment \
+  --ignore-missing-model
 ```
 
 | Flag                                       | Required | Description                                                                                                       |
@@ -286,6 +328,7 @@ reviewphin model-profile add \
 | `--review-reasoning-effort`                | No       | Reasoning effort for review runs: `low`, `medium`, `high`, or `xhigh`. Omitted from the session when unset.       |
 | `--text-generation-reasoning-effort`       | No       | Reasoning effort for text-generation runs. Independent of the review effort; omitted from the session when unset. |
 | `--default`                                | No       | Mark this profile as the database default.                                                                        |
+| `--ignore-missing-model`                   | No       | Save after a missing model or unavailable validation, with a warning. Validation is still attempted.              |
 | `--clear-base-url`                         | No       | Clear the stored base URL. Also clears provider type and wire API; cannot be combined with new values for either. |
 | `--clear-provider-type`                    | No       | Clear the stored provider type.                                                                                   |
 | `--clear-wire-api`                         | No       | Clear the stored wire API setting.                                                                                |
@@ -298,6 +341,10 @@ reviewphin model-profile add \
 | `--storage-provider-module`                | No       | Override the storage module.                                                                                      |
 
 A field flag and its matching `--clear-*` flag cannot be used together. Re-running `add` updates only the fields present on the command line.
+
+Before writing, the command validates all explicit models in the complete resulting profile. A missing model uses JSON error code `model_not_found`; unavailable discovery uses `model_validation_unavailable`. Either failure leaves the target profile and current default unchanged. A null native review model uses the Copilot CLI default and needs no check. A null text-generation model inherits the review model.
+
+Successful JSON adds `modelValidation` with `status`, sorted `checkedModels`, and sorted `missingModels`. Status is `validated`, `not_required`, `ignored_missing`, or `ignored_unavailable`. Custom providers currently require `--ignore-missing-model` because their catalogs cannot be verified through one common discovery contract.
 
 ---
 
@@ -325,6 +372,8 @@ Mark an existing profile as the database default.
 ```bash
 reviewphin model-profile set-default --name byok-llama
 ```
+
+This command does not revalidate the profile's models. Save-time validation occurs only in `model-profile add`.
 
 | Flag                        | Required | Description                  |
 | --------------------------- | -------- | ---------------------------- |

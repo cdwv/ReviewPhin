@@ -40,6 +40,28 @@ reviewphin model-profile add \
   --default
 ```
 
+Before pinning a model, list the catalog available to the current Copilot identity:
+
+```bash
+reviewphin model-profile available-models
+```
+
+The catalog comes from GitHub Copilot at command time. It can vary by token, account, organization policy, and date. To inspect the credentials stored in a native profile, use `--model-profile`:
+
+```bash
+reviewphin model-profile available-models --model-profile copilot-team-a
+```
+
+To check a GitHub token before creating a profile, pass it directly:
+
+```bash
+reviewphin model-profile available-models --auth-token github_pat_xxxxxxxxxxxxxxxxxxxx
+```
+
+The direct token is used only for that catalog request. ReviewPhin does not store or display it. `--model-profile` and `--auth-token` cannot be used together.
+
+The table includes the model ID, display name, supported reasoning efforts, default effort, and vision support. Use `--output plain` for tab-separated rows or `--output json` for structured output.
+
 ## OpenAI-compatible endpoint
 
 Any provider that exposes an OpenAI-compatible API can be used with `--provider-type openai`.
@@ -49,7 +71,8 @@ reviewphin model-profile add \
   --name byok-llama \
   --base-url http://vllm-host:8000/v1 \
   --provider-type openai \
-  --review-model meta-llama/Llama-3.1-8B-Instruct
+  --review-model meta-llama/Llama-3.1-8B-Instruct \
+  --ignore-missing-model
 ```
 
 No `--auth-token` is needed when the endpoint runs without an API key. If the endpoint requires one, add `--auth-token <key>`.
@@ -64,6 +87,7 @@ reviewphin model-profile add \
   --auth-token sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
   --review-model gpt-5.4 \
   --text-generation-model gpt-5.4-mini \
+  --ignore-missing-model \
   --default
 ```
 
@@ -78,7 +102,8 @@ reviewphin model-profile add \
   --provider-type azure \
   --auth-token your-azure-api-key \
   --review-model my-gpt5.4-deployment \
-  --text-generation-model my-gpt5.4mini-deployment
+  --text-generation-model my-gpt5.4mini-deployment \
+  --ignore-missing-model
 ```
 
 ## Anthropic
@@ -90,7 +115,8 @@ reviewphin model-profile add \
   --provider-type anthropic \
   --auth-token sk-ant-xxxxxxxxxxxx \
   --review-model claude-opus-4.8 \
-  --text-generation-model claude-sonnet-4.6
+  --text-generation-model claude-sonnet-4.6 \
+  --ignore-missing-model
 ```
 
 Use `--wire-api completions` only for compatibility endpoints that do not support the default Responses-style API.
@@ -107,6 +133,7 @@ reviewphin model-profile add \
   --auth-token sk-xxx \
   --review-model gpt-5.4 \
   --text-generation-model gpt-5.4-mini \
+  --ignore-missing-model \
   --default
 ```
 
@@ -143,6 +170,16 @@ If a model and effort combination is not supported by the provider, ReviewPhin p
 GPT-5.6 models are shown as examples. Availability depends on the account or organization entitlement of the token or key backing the profile — not every account can use every model or effort.
 :::
 
+## Save-time model validation
+
+When you create or update a profile, ReviewPhin resolves the complete result first. It then checks every explicit native Copilot model against the catalog for that profile's credentials before changing storage. This includes stored model values retained during a partial update.
+
+If an explicit model is missing, or the catalog cannot be loaded, the command fails and leaves both the profile and the current default unchanged. An unset native review model is valid: `null` tells Copilot CLI to choose its default and does not require a catalog lookup. An unset text-generation model inherits the review model, so the explicit review model is checked once.
+
+Custom providers do not share one reliable model-discovery endpoint or metadata format. ReviewPhin therefore cannot verify their model IDs. Use `--ignore-missing-model` when you have verified a custom provider separately and want to save it anyway, as shown in the examples above. The flag still attempts validation where discovery is supported and prints a warning explaining whether a model was missing or availability could not be verified.
+
+Validation happens only when `model-profile add` writes a profile. Selecting a stored profile with `model-profile set-default`, assigning it to a tenant, or starting a review does not query the catalog again. If availability changes later, the provider's existing session error and retry behavior applies.
+
 ## Updating profiles
 
 Re-run `model-profile add` with the same `--name` to update fields. Nullable fields can be cleared:
@@ -153,5 +190,7 @@ reviewphin model-profile add --name my-profile --clear-auth-token
 ```
 
 `--clear-base-url` also clears the stored provider type and wire API. You cannot set new values for provider type or wire API in the same command that clears the base URL.
+
+Updates also validate the effective stored model values. If you deliberately need to retain an unavailable or unverifiable model, include `--ignore-missing-model` on that update.
 
 Full flags for `model-profile` commands are in the [CLI reference](../cli-reference/#model-profile-commands).

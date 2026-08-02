@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it, vi } from "vitest";
 
+import type * as ModelCatalogModule from "../src/review/model-catalog.js";
 import { runCli } from "../src/cli.js";
 import { createLogger } from "../src/logger.js";
 import GitLabPlatform from "../src/platforms/gitlab/platform.js";
@@ -16,6 +17,20 @@ import { StoreBackedStorage, listAll } from "../src/storage/storage-helpers.js";
 import { TenantRegistry } from "../src/tenants/tenant-registry.js";
 import { createGitLabTenantInput } from "./helpers/gitlab-tenant.js";
 import { openSqliteTestStorage } from "./helpers/storage.js";
+
+vi.mock("../src/review/model-catalog.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof ModelCatalogModule>();
+  const models = ["custom-review", "custom-text", "gpt-5.4", "gpt-5.6"].map(
+    (id) => ({
+      id,
+      name: id,
+      supportedReasoningEfforts: [],
+      defaultReasoningEffort: null,
+      supportsVision: false,
+    }),
+  );
+  return { ...actual, discoverAvailableModels: vi.fn(async () => models) };
+});
 
 function createPayload() {
   return {
@@ -228,6 +243,7 @@ describe("tenant CLI", () => {
       "--text-generation-model",
       "custom-text",
       "--default",
+      "--ignore-missing-model",
     ]);
     expect(addExitCode).toBe(0);
 
@@ -311,6 +327,7 @@ describe("tenant CLI", () => {
       "custom-review",
       "--text-generation-model",
       "custom-text",
+      "--ignore-missing-model",
     ]);
 
     const exitCode = await runCli([
@@ -321,6 +338,7 @@ describe("tenant CLI", () => {
       "--name",
       "byok",
       "--default",
+      "--ignore-missing-model",
     ]);
 
     expect(exitCode).toBe(0);
@@ -360,6 +378,7 @@ describe("tenant CLI", () => {
       "custom-review",
       "--text-generation-model",
       "custom-text",
+      "--ignore-missing-model",
     ]);
 
     const exitCode = await runCli([
