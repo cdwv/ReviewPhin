@@ -208,6 +208,7 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain(
       "JSON Schema (properties not listed in `required` may be omitted):",
     );
+    expect(extractPromptJsonSchemaText(prompt)).not.toContain("\n");
     expect(schema.required).toEqual(["overview", "findings"]);
     expect(overview.required).toEqual(["summary", "overallSeverity"]);
     expect(finding.required).toEqual(["title", "body", "severity", "category"]);
@@ -554,6 +555,7 @@ describe("buildReviewPrompt", () => {
       "Separate distinct reasons or conditions into short paragraphs",
     );
     expect(prompt).toContain("Put that formatting inside `replyBody`");
+    expect(extractPromptJsonSchemaText(prompt)).not.toContain("\n");
     const schema = extractPromptJsonSchema(prompt);
     const replies = getSchemaProperty(schema, "replies");
     const reply = asRecord(replies.items);
@@ -599,6 +601,10 @@ describe("buildReviewPrompt", () => {
 });
 
 function extractPromptJsonSchema(prompt: string): Record<string, unknown> {
+  return asRecord(JSON.parse(extractPromptJsonSchemaText(prompt)) as unknown);
+}
+
+function extractPromptJsonSchemaText(prompt: string): string {
   const heading =
     "JSON Schema (properties not listed in `required` may be omitted):\n";
   const start = prompt.indexOf(heading);
@@ -610,7 +616,7 @@ function extractPromptJsonSchema(prompt: string): Record<string, unknown> {
   if (schemaEnd < 0) {
     throw new Error("Prompt JSON Schema terminator was not found");
   }
-  return asRecord(JSON.parse(prompt.slice(schemaStart, schemaEnd)) as unknown);
+  return prompt.slice(schemaStart, schemaEnd);
 }
 
 function getSchemaProperty(

@@ -37,7 +37,7 @@ export function buildReviewPrompt(
     ...buildAttachmentRuntimeNote(context),
     "",
     "JSON Schema (properties not listed in `required` may be omitted):",
-    JSON.stringify(reviewResponseJsonSchema, null, 2),
+    JSON.stringify(reviewResponseJsonSchema),
     "",
     "Context:",
     JSON.stringify(
@@ -60,7 +60,7 @@ export function buildChatterPrompt(context: ChatterRunContext): string {
     "- Do not include Markdown fences, introductions, explanations, or trailing text outside the JSON object.",
     "",
     "JSON Schema (properties not listed in `required` may be omitted):",
-    JSON.stringify(chatterResponseJsonSchema, null, 2),
+    JSON.stringify(chatterResponseJsonSchema),
     "",
     "Context:",
     JSON.stringify(
