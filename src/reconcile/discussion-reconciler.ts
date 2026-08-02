@@ -27,6 +27,7 @@ import { firstNonEmptyLine } from "../utils/text.js";
 import {
   buildReviewSummaryNote,
   isReviewSummaryNoteBody,
+  resolveReviewOverview,
 } from "../review/summary.js";
 import {
   renderReviewFindingProse,
@@ -69,6 +70,7 @@ export interface ReconcileSummary {
   kept: number;
   summaryCommentAction: "created" | "updated" | null;
   links: PlatformPublicationLink[];
+  resolvedOverview: ReviewResult["overview"];
 }
 
 const MANUAL_RESOLUTION_NOTICE_MARKER =
@@ -214,18 +216,6 @@ export class DiscussionReconciler {
       ]),
     );
 
-    const summary: ReconcileSummary = {
-      created: 0,
-      updated: 0,
-      replied: 0,
-      resolved: 0,
-      skippedResolution: 0,
-      skippedResolutionReasons: [],
-      kept: 0,
-      summaryCommentAction: null,
-      links: [],
-    };
-
     const referencedDiscussionIds = collectReferencedDiscussionIds(
       input.reviewResult.findings,
       discussionById,
@@ -237,6 +227,21 @@ export class DiscussionReconciler {
       discussionById,
       referencedDiscussionIds,
     });
+    const summary: ReconcileSummary = {
+      created: 0,
+      updated: 0,
+      replied: 0,
+      resolved: 0,
+      skippedResolution: 0,
+      skippedResolutionReasons: [],
+      kept: 0,
+      summaryCommentAction: null,
+      links: [],
+      resolvedOverview: resolveReviewOverview(
+        input.reviewResult,
+        projectedActiveFindings,
+      ),
+    };
 
     const pendingFindings: PendingFindingPublication[] = [];
     for (const finding of input.reviewResult.findings) {

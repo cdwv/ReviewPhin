@@ -1949,9 +1949,9 @@ describe("ReviewWorker orchestration", () => {
         overallSeverity: "low" as const,
         overallAssessment: "No issues were found.",
         mergeReadiness: {
-          status: "ready" as const,
+          status: "blocked" as const,
           confidence: "high" as const,
-          summary: "The change is ready to merge.",
+          summary: "The model supplied an inconsistent readiness decision.",
         },
       },
       findings: [],
@@ -2055,7 +2055,20 @@ describe("ReviewWorker orchestration", () => {
       expect.objectContaining({
         interactionRunId: run.id,
         status: "completed",
-        resultJson: JSON.stringify(reviewResult),
+        resultJson: JSON.stringify({
+          ...reviewResult,
+          overview: {
+            ...reviewResult.overview,
+            overallAssessment:
+              "No actionable findings were identified in this review.",
+            mergeReadiness: {
+              status: "ready",
+              confidence: "medium",
+              summary:
+                "No actionable findings were identified in this review run.",
+            },
+          },
+        }),
       }),
     );
     expect(jobStore.transitionClaim).toHaveBeenCalledWith(

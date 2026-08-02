@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ReviewWorker } from "../src/jobs/review-worker.js";
 import { createLogger } from "../src/logger.js";
+import { formatReviewReportMarkdown } from "../src/cli/review-report.js";
 import type { GitHubApi } from "../src/platforms/github/client.js";
 import GitHubPlatform from "../src/platforms/github/platform.js";
 import { DiscussionReconciler } from "../src/reconcile/discussion-reconciler.js";
@@ -15,6 +16,7 @@ import type {
   TenantRecord,
 } from "../src/storage/contract/current.js";
 import type { StorageHelpers } from "../src/storage/storage-helpers.js";
+import type { ReviewResult } from "../src/review/types.js";
 import { createClaimContext } from "./helpers/claim.js";
 import { overridePlatformRuntime } from "./helpers/platform-runtime.js";
 
@@ -57,7 +59,7 @@ describe("GitHub requested-action happy path", () => {
         overallSeverity: "high" as const,
         overallAssessment: "One correctness issue found.",
         mergeReadiness: {
-          status: "needs_attention" as const,
+          status: "blocked" as const,
           confidence: "high" as const,
           summary: "Fix the correctness issue before merging.",
         },
@@ -210,6 +212,26 @@ describe("GitHub requested-action happy path", () => {
     expect(github.issueComments[0]?.body).toContain(
       "<!-- reviewphin-review-summary -->",
     );
+    expect(github.issueComments[0]?.body).toContain(
+      "- **Status:** Needs attention",
+    );
+
+    const transitionRun = vi.mocked(
+      storage.stores.interactionJobs.transitionInteractionRunForClaim,
+    );
+    const completedRunInput = transitionRun.mock.calls
+      .map(([input]) => input)
+      .find((input) => input.status === "completed");
+    expect(completedRunInput?.resultJson).toBeTruthy();
+    const persistedResult = JSON.parse(
+      completedRunInput?.resultJson ?? "null",
+    ) as ReviewResult;
+    expect(persistedResult.overview.mergeReadiness.status).toBe(
+      "needs_attention",
+    );
+    expect(formatReviewReportMarkdown(persistedResult)).toContain(
+      "**Status:** Needs Attention",
+    );
 
     const completed = github.checkRunUpdates.find(
       (update) => update.status === "completed",
@@ -222,7 +244,9 @@ describe("GitHub requested-action happy path", () => {
         }),
       ],
     });
-    expect(completed?.output.summary).toContain("One correctness issue found.");
+    expect(completed?.output.summary).toContain(
+      "High-severity findings remain and should be addressed before merge.",
+    );
     expect(completed?.output.summary).toContain(
       "https://github.com/octo/repo/pull/42#pullrequestreview-500",
     );

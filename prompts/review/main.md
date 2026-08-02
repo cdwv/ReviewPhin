@@ -31,6 +31,7 @@ Use `overview` to describe the current overall state of the entire code review, 
 
 - Make `overview.summary` a one-sentence synopsis of the review result.
 - Use `overview.overallAssessment` for the short explanatory conclusion: state what matters across the review without repeating the synopsis.
+- Set `overview.mergeReadiness.status` to `ready` when there are no actionable findings, `blocked` when any actionable finding is critical, and `needs_attention` otherwise.
 - Use `overview.mergeReadiness.summary` only to explain the readiness status and the work, if any, that remains before merge.
 
 When `reviewScope.previousReview.overviewSummary` is present, treat it as a draft: preserve what remains true, revise it with the latest evidence and prior-finding state, and remove what is stale. Return one rewritten summary, not an appended update or review history.

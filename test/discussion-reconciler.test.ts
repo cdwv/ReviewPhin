@@ -1879,6 +1879,14 @@ describe("Discussion reconciler", () => {
     });
 
     expect(summary.summaryCommentAction).toBe("updated");
+    expect(summary.resolvedOverview).toEqual(
+      expect.objectContaining({
+        summary: "Actionable findings remain after reconciliation.",
+        mergeReadiness: expect.objectContaining({
+          status: "needs_attention",
+        }),
+      }),
+    );
     expect(createCodeReviewComment).not.toHaveBeenCalled();
     expect(updateCodeReviewComment).toHaveBeenCalledTimes(1);
     expect(updateCodeReviewComment.mock.calls[0]?.[2]).toBe(71);

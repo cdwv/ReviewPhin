@@ -295,6 +295,9 @@ describe("buildReviewPrompt", () => {
         "Use `overview.overallAssessment` for the short explanatory conclusion",
       );
       expect(prompt).toContain(
+        "`blocked` when any actionable finding is critical",
+      );
+      expect(prompt).toContain(
         "Use `overview.mergeReadiness.summary` only to explain the readiness status",
       );
       expect(prompt).toContain("include concise highlights when useful");
