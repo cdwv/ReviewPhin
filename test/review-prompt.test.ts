@@ -288,6 +288,15 @@ describe("buildReviewPrompt", () => {
         "current overall state of the entire code review",
       );
       expect(prompt).toContain("assess merge readiness with confidence");
+      expect(prompt).toContain(
+        "Make `overview.summary` a one-sentence synopsis",
+      );
+      expect(prompt).toContain(
+        "Use `overview.overallAssessment` for the short explanatory conclusion",
+      );
+      expect(prompt).toContain(
+        "Use `overview.mergeReadiness.summary` only to explain the readiness status",
+      );
       expect(prompt).toContain("include concise highlights when useful");
       expect(prompt).toContain(
         "It must stand alone, regardless of this pass's inspection scope",

@@ -26,24 +26,22 @@ export function formatReviewReportMarkdown(
     `**Overall severity:** ${capitalize(result.overview.overallSeverity)}`,
     "",
     result.overview.summary.trim(),
+    "",
+    heading(headingLevel + 1, "Overall assessment"),
+    "",
+    result.overview.overallAssessment.trim(),
   ];
 
-  if (result.overview.overallAssessment) {
-    lines.push("", result.overview.overallAssessment.trim());
-  }
-
-  if (result.overview.mergeReadiness) {
-    lines.push(
-      "",
-      heading(headingLevel + 1, "Merge readiness"),
-      "",
-      `**Status:** ${formatLabel(result.overview.mergeReadiness.status)}`,
-      "",
-      `**Confidence:** ${capitalize(result.overview.mergeReadiness.confidence)}`,
-      "",
-      result.overview.mergeReadiness.summary.trim(),
-    );
-  }
+  lines.push(
+    "",
+    heading(headingLevel + 1, "Merge readiness"),
+    "",
+    `**Status:** ${formatLabel(result.overview.mergeReadiness.status)}`,
+    "",
+    `**Confidence:** ${capitalize(result.overview.mergeReadiness.confidence)}`,
+    "",
+    result.overview.mergeReadiness.summary.trim(),
+  );
 
   if (result.overview.highlights?.length) {
     lines.push(

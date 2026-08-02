@@ -29,6 +29,10 @@ For standalone unused-code cleanup findings, follow instruction precedence from 
 
 Use `overview` to describe the current overall state of the entire code review, assess merge readiness with confidence, and include concise highlights when useful. It must stand alone, regardless of this pass's inspection scope, and not summarize only the latest pass.
 
+- Make `overview.summary` a one-sentence synopsis of the review result.
+- Use `overview.overallAssessment` for the short explanatory conclusion: state what matters across the review without repeating the synopsis.
+- Use `overview.mergeReadiness.summary` only to explain the readiness status and the work, if any, that remains before merge.
+
 When `reviewScope.previousReview.overviewSummary` is present, treat it as a draft: preserve what remains true, revise it with the latest evidence and prior-finding state, and remove what is stale. Return one rewritten summary, not an appended update or review history.
 
 When continuing an existing bot-owned discussion, set `priorDiscussionId` on the finding instead of creating a duplicate discussion.

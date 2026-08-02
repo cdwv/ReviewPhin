@@ -6,6 +6,7 @@ import type {
 } from "./types.js";
 import type { IPlatform, ResolvedTenant } from "../platforms/IPlatform.js";
 import type { TenantRecord } from "../storage/contract/index.js";
+import { deriveMergeReadinessStatus } from "./merge-readiness.js";
 
 export const REVIEW_SUMMARY_NOTE_MARKER = "<!-- reviewphin-review-summary -->";
 export const REVIEW_SUMMARY_DETECTION_REGEX =
@@ -191,9 +192,10 @@ function deriveMergeReadinessFromFindings(
   findings: ReadonlyArray<Pick<ReviewFinding, "severity">>,
   source: "current" | "persisted",
 ): ReviewMergeReadiness {
-  if (findings.length === 0) {
+  const status = deriveMergeReadinessStatus(findings);
+  if (status === "ready") {
     return {
-      status: "ready",
+      status,
       confidence: "medium",
       summary:
         source === "persisted"
@@ -202,9 +204,9 @@ function deriveMergeReadinessFromFindings(
     };
   }
 
-  if (findings.some((finding) => finding.severity === "critical")) {
+  if (status === "blocked") {
     return {
-      status: "blocked",
+      status,
       confidence: "medium",
       summary:
         source === "persisted"
@@ -215,7 +217,7 @@ function deriveMergeReadinessFromFindings(
 
   if (findings.some((finding) => finding.severity === "high")) {
     return {
-      status: "needs_attention",
+      status,
       confidence: "medium",
       summary:
         source === "persisted"
@@ -225,7 +227,7 @@ function deriveMergeReadinessFromFindings(
   }
 
   return {
-    status: "needs_attention",
+    status,
     confidence: "medium",
     summary:
       source === "persisted"

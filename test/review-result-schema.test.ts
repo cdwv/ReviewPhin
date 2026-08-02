@@ -123,4 +123,29 @@ describe("persisted review result compatibility", () => {
       targets: [],
     });
   });
+
+  it("blocks legacy results that contain critical findings", () => {
+    const result = parsePersistedReviewResult(
+      JSON.stringify({
+        overview: {
+          summary: "A critical security issue remains.",
+          overallSeverity: "critical",
+        },
+        findings: [
+          {
+            title: "Reject unauthenticated access",
+            body: "Require authentication before returning tenant data.",
+            severity: "critical",
+            category: "security",
+          },
+        ],
+      }),
+    );
+
+    expect(result.overview.mergeReadiness).toEqual({
+      status: "blocked",
+      confidence: "low",
+      summary: "A critical security issue remains.",
+    });
+  });
 });

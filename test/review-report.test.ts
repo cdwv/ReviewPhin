@@ -52,6 +52,7 @@ describe("review report", () => {
     const report = formatReviewReportMarkdown(reviewResult);
 
     expect(report).toContain("# Review result");
+    expect(report).toContain("## Overall assessment");
     expect(report).toContain("## Merge readiness");
     expect(report).toContain("## Findings (1)");
     expect(report).toContain("`src/auth.ts`, lines 10-12 (new side)");

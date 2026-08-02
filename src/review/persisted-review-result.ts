@@ -1,4 +1,9 @@
-import { reviewResultSchema, type ReviewResult } from "./types.js";
+import {
+  reviewResultSchema,
+  type ReviewFinding,
+  type ReviewResult,
+} from "./types.js";
+import { deriveMergeReadinessStatus } from "./merge-readiness.js";
 
 export function parsePersistedReviewResult(resultJson: string): ReviewResult {
   return reviewResultSchema.parse(
@@ -14,6 +19,11 @@ function normalizeLegacyPersistedReviewResult(value: unknown): unknown {
   }
 
   const findings = Array.isArray(value.findings) ? value.findings : [];
+  const findingSeverities = findings.flatMap((finding) =>
+    isRecord(finding) && isReviewFindingSeverity(finding.severity)
+      ? [{ severity: finding.severity }]
+      : [],
+  );
   const summary = value.overview.summary;
   const overview = {
     ...value.overview,
@@ -27,7 +37,7 @@ function normalizeLegacyPersistedReviewResult(value: unknown): unknown {
     summary.length > 0
       ? {
           mergeReadiness: {
-            status: findings.length === 0 ? "ready" : "needs_attention",
+            status: deriveMergeReadinessStatus(findingSeverities),
             confidence: "low",
             summary,
           },
@@ -79,4 +89,15 @@ function normalizeLegacyPriorDispositions(value: unknown): unknown[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isReviewFindingSeverity(
+  value: unknown,
+): value is ReviewFinding["severity"] {
+  return (
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "critical"
+  );
 }
