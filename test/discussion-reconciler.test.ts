@@ -17,6 +17,15 @@ import { REVIEW_SUMMARY_NOTE_MARKER } from "../src/review/summary.js";
 import type { ReviewSummaryContext } from "../src/review/types.js";
 import { createFindingIdentityKey } from "../src/utils/ids.js";
 
+const defaultReviewOverviewDetails = {
+  overallAssessment: "Found one issue",
+  mergeReadiness: {
+    status: "needs_attention",
+    confidence: "medium",
+    summary: "Address the reported findings before merging.",
+  },
+} as const;
+
 describe("Discussion reconciler", () => {
   const logger = createLogger("silent");
   const platform = getPlatformBySlug("gitlab");
@@ -281,6 +290,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Found one issue",
           overallSeverity: "medium",
         },
@@ -416,6 +426,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Handled follow-up",
           overallSeverity: "medium",
         },
@@ -520,6 +531,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Found one replacement issue",
           overallSeverity: "medium",
         },
@@ -678,6 +690,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Found one replacement issue",
           overallSeverity: "medium",
         },
@@ -789,6 +802,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Handled follow-up",
           overallSeverity: "low",
         },
@@ -926,6 +940,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "The targeted rerun looks good.",
           overallAssessment: "The targeted rerun looks good.",
           overallSeverity: "low",
@@ -1057,6 +1072,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Handled resolved thread",
           overallSeverity: "medium",
         },
@@ -1200,6 +1216,7 @@ describe("Discussion reconciler", () => {
         interactionJobId: "job-publication",
         reviewResult: {
           overview: {
+            ...defaultReviewOverviewDetails,
             summary: "Handled follow-up",
             overallSeverity: "low",
           },
@@ -1321,6 +1338,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Resolved in store",
           overallSeverity: "low",
         },
@@ -1494,6 +1512,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Handled resolved thread",
           overallSeverity: "medium",
         },
@@ -1616,6 +1635,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Finding still applies",
           overallSeverity: "medium",
         },
@@ -1720,6 +1740,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Looks good overall",
           overallSeverity: "low",
           mergeReadiness: {
@@ -1833,6 +1854,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "The targeted rerun looks good.",
           overallAssessment: "The targeted rerun looks good.",
           overallSeverity: "low",
@@ -1857,6 +1879,14 @@ describe("Discussion reconciler", () => {
     });
 
     expect(summary.summaryCommentAction).toBe("updated");
+    expect(summary.resolvedOverview).toEqual(
+      expect.objectContaining({
+        summary: "Actionable findings remain after reconciliation.",
+        mergeReadiness: expect.objectContaining({
+          status: "needs_attention",
+        }),
+      }),
+    );
     expect(createCodeReviewComment).not.toHaveBeenCalled();
     expect(updateCodeReviewComment).toHaveBeenCalledTimes(1);
     expect(updateCodeReviewComment.mock.calls[0]?.[2]).toBe(71);
@@ -2164,6 +2194,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Found one issue",
           overallSeverity: "medium",
         },
@@ -2347,6 +2378,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Found one issue",
           overallSeverity: "medium",
         },
@@ -2478,6 +2510,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Found one issue",
           overallSeverity: "medium",
         },
@@ -2603,6 +2636,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Found one issue",
           overallSeverity: "medium",
         },
@@ -2711,6 +2745,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Found one issue",
           overallSeverity: "medium",
         },
@@ -2809,6 +2844,7 @@ describe("Discussion reconciler", () => {
         interactionJobId: "job-publication",
         reviewResult: {
           overview: {
+            ...defaultReviewOverviewDetails,
             summary: "Found one issue",
             overallSeverity: "medium",
           },
@@ -2902,6 +2938,7 @@ describe("Discussion reconciler", () => {
         interactionJobId: "job-publication",
         reviewResult: {
           overview: {
+            ...defaultReviewOverviewDetails,
             summary: "Found one issue",
             overallSeverity: "medium",
           },
@@ -3021,6 +3058,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Found one issue",
           overallSeverity: "medium" as const,
         },
@@ -3153,6 +3191,7 @@ describe("Discussion reconciler", () => {
       interactionJobId: "job-publication",
       reviewResult: {
         overview: {
+          ...defaultReviewOverviewDetails,
           summary: "Updated one issue",
           overallSeverity: "medium",
         },
@@ -3222,6 +3261,7 @@ describe("Discussion reconciler", () => {
         interactionJobId: "job-lease",
         reviewResult: {
           overview: {
+            ...defaultReviewOverviewDetails,
             summary: "Found one issue",
             overallSeverity: "medium",
           },

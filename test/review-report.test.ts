@@ -52,12 +52,44 @@ describe("review report", () => {
     const report = formatReviewReportMarkdown(reviewResult);
 
     expect(report).toContain("# Review result");
+    expect(report).toContain("## Overall assessment");
     expect(report).toContain("## Merge readiness");
     expect(report).toContain("## Findings (1)");
     expect(report).toContain("`src/auth.ts`, lines 10-12 (new side)");
+    expect(report).toContain("- **File:** `src/auth.ts`");
+    expect(report).toContain("- **Lines:** lines 10-12");
+    expect(report).toContain("**Replace the indicated lines with:**");
     expect(report).toContain("```suggestion");
     expect(report).toMatch(/\n$/);
     expect(report).not.toContain("\u001B[");
+  });
+
+  it("shows the exact code replaced by an anchored suggestion when the diff is stored", () => {
+    const report = formatReviewReportMarkdown(reviewResult, {
+      changes: [
+        {
+          oldPath: "src/auth.ts",
+          newPath: "src/auth.ts",
+          diff: [
+            "@@ -8,5 +8,5 @@",
+            " function authorize() {",
+            "   const tenant = findTenant();",
+            "+  return tenant.data;",
+            "+}",
+            "+export { authorize };",
+          ].join("\n"),
+          newFile: false,
+          renamedFile: false,
+          deletedFile: false,
+        },
+      ],
+    });
+
+    expect(report).toContain("**Replace:**");
+    expect(report).toContain(
+      "```text\n  return tenant.data;\n}\nexport { authorize };\n```",
+    );
+    expect(report).toContain("**With:**");
   });
 
   it("renders Markdown semantics as width-aware terminal text", () => {

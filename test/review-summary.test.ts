@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { formatReviewReportMarkdown } from "../src/cli/review-report.js";
 import { getPlatformBySlug } from "../src/platforms/platform-registry.js";
-import { buildReviewSummaryNote } from "../src/review/summary.js";
+import {
+  buildReviewSummaryNote,
+  resolveReviewOverview,
+} from "../src/review/summary.js";
+import type { ReviewResult } from "../src/review/types.js";
 
 const platform = getPlatformBySlug("gitlab");
 if (!platform) {
@@ -12,6 +17,27 @@ import { tmpPath } from "./test-paths.js";
 describe("review summary comment", () => {
   it("wraps the suggested fixes prompt in a fenced md block and escapes embedded fences", () => {
     const timestamp = "2026-04-27T11:00:00.000Z";
+    const reviewResult: ReviewResult = {
+      overview: {
+        summary: "One fix remains",
+        overallSeverity: "high",
+        overallAssessment: "One high-severity correctness issue remains.",
+        mergeReadiness: {
+          status: "blocked",
+          confidence: "high",
+          summary: "Fix the prompt escaping issue before merging.",
+        },
+      },
+      findings: [
+        {
+          title: "Escape fenced prompt content",
+          body: 'Preserve content like ```ts\nconst status = "blocked";\n``` in the copied prompt.',
+          severity: "high",
+          category: "correctness",
+        },
+      ],
+      priorDispositions: [],
+    };
     const note = buildReviewSummaryNote({
       platform,
       context: {
@@ -112,23 +138,18 @@ describe("review summary comment", () => {
           createdAt: timestamp,
         },
       } as never,
-      reviewResult: {
-        overview: {
-          summary: "One fix remains",
-          overallSeverity: "high",
-        },
-        findings: [
-          {
-            title: "Escape fenced prompt content",
-            body: 'Preserve content like ```ts\nconst status = "blocked";\n``` in the copied prompt.',
-            severity: "high",
-            category: "correctness",
-          },
-        ],
-        priorDispositions: [],
-      },
+      reviewResult,
     });
 
+    const report = formatReviewReportMarkdown({
+      ...reviewResult,
+      overview: resolveReviewOverview(reviewResult),
+    });
+
+    expect(note).toContain("- **Status:** Needs attention");
+    expect(note).not.toContain("- **Status:** Blocked");
+    expect(report).toContain("**Status:** Needs Attention");
+    expect(report).not.toContain("**Status:** Blocked");
     expect(note).toContain(
       "<details><summary>Suggested fixes prompt</summary>",
     );
@@ -238,6 +259,8 @@ describe("review summary comment", () => {
           summary:
             "One thread was dismissed, but merge readiness still depends on an older open storage fix.",
           overallSeverity: "medium",
+          overallAssessment:
+            "The targeted thread is resolved, but another issue remains.",
           mergeReadiness: {
             status: "needs_attention",
             confidence: "medium",

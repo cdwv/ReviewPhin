@@ -88,6 +88,37 @@ describe("HarnessChatterRunner", () => {
     );
   });
 
+  it("rejects current model responses that omit memory", async () => {
+    const runner = new HarnessChatterRunner({
+      modelConfig: createModelConfig(),
+      harnessRuntime: {
+        run: vi.fn(async () => ({
+          response: { data: { content: "{}" } },
+          parsed: { replies: [] },
+          events: [],
+        })),
+      } as never,
+    });
+
+    await expect(
+      runner.run(
+        {
+          phase: "reply",
+          replyStyle: "direct-answer",
+          trigger: createTrigger(),
+          responseTargets: [createTrigger().responseTarget],
+          reviewContext: createReviewContext(),
+          projectMemory: {
+            enabled: true,
+            page: null,
+            entries: [],
+          },
+        },
+        { tenant: createTenantRuntimeContext() },
+      ),
+    ).rejects.toThrow(/memory/);
+  });
+
   it("exposes read-only repository tools for reply passes", async () => {
     const run = vi.fn(async () => ({
       response: {
@@ -165,7 +196,9 @@ describe("HarnessChatterRunner", () => {
 
   it("passes the text-generation reasoning effort for reply passes", async () => {
     const run = vi.fn(async () => ({
-      response: { data: { content: JSON.stringify({ memory: null, replies: [] }) } },
+      response: {
+        data: { content: JSON.stringify({ memory: null, replies: [] }) },
+      },
       parsed: { memory: null, replies: [] },
       events: [],
     }));
@@ -198,7 +231,9 @@ describe("HarnessChatterRunner", () => {
 
   it("omits reasoningEffort from the chatter run spec when text-generation effort is null", async () => {
     const run = vi.fn(async () => ({
-      response: { data: { content: JSON.stringify({ memory: null, replies: [] }) } },
+      response: {
+        data: { content: JSON.stringify({ memory: null, replies: [] }) },
+      },
       parsed: { memory: null, replies: [] },
       events: [],
     }));
@@ -224,13 +259,10 @@ describe("HarnessChatterRunner", () => {
       { tenant: createTenantRuntimeContext() },
     );
 
-    const spec = (run.mock.calls[0] as unknown[])[0] as Record<
-      string,
-      unknown
-    >;
-    expect(
-      Object.prototype.hasOwnProperty.call(spec, "reasoningEffort"),
-    ).toBe(false);
+    const spec = (run.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(spec, "reasoningEffort")).toBe(
+      false,
+    );
   });
 
   it("uses the parsed shared-harness response payload for replies", async () => {

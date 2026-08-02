@@ -911,6 +911,12 @@ function createWorker(input: {
             overview: {
               summary: "Done",
               overallSeverity: "low" as const,
+              overallAssessment: "No issues found.",
+              mergeReadiness: {
+                status: "ready" as const,
+                confidence: "high" as const,
+                summary: "The change is ready to merge.",
+              },
             },
             findings: [],
             priorDispositions: [],

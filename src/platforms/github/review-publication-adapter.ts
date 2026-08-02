@@ -398,16 +398,17 @@ export class GitHubReviewPublicationAdapter implements PlatformReviewPublication
       }),
       publication.marker,
     );
-    if (anchor.side !== "new" || !diffContainsRange(file.patch, anchor)) {
+    if (!diffContainsRange(file.patch, anchor)) {
       return null;
     }
+    const side = anchor.side === "new" ? "RIGHT" : "LEFT";
     return {
       path: file.filename,
       body,
       line: anchor.endLine,
-      side: "RIGHT",
+      side,
       ...(anchor.startLine !== anchor.endLine
-        ? { startLine: anchor.startLine, startSide: "RIGHT" }
+        ? { startLine: anchor.startLine, startSide: side }
         : {}),
     };
   }

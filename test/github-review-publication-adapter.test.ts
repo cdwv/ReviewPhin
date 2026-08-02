@@ -197,7 +197,7 @@ describe("GitHubReviewPublicationAdapter", () => {
     );
   });
 
-  it("falls back to marked issue comments for old-side and invalid anchors", async () => {
+  it("publishes old-side anchors inline and falls back for invalid anchors", async () => {
     const state = createState();
     const adapter = createAdapter(state);
 
@@ -247,13 +247,25 @@ describe("GitHubReviewPublicationAdapter", () => {
       ],
     });
 
-    expect(state.client.createPullRequestReview).not.toHaveBeenCalled();
-    expect(state.client.submitPullRequestReview).not.toHaveBeenCalled();
-    expect(state.client.createIssueComment).toHaveBeenCalledTimes(2);
-    for (const call of state.client.createIssueComment.mock.calls) {
-      expect(call[0].body).toContain("<!-- reviewphin-finding:");
-      expect(call[0].body).not.toContain("```suggestion");
-    }
+    expect(state.client.createPullRequestReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        comments: [
+          expect.objectContaining({
+            path: "src/index.ts",
+            line: 1,
+            side: "LEFT",
+          }),
+        ],
+      }),
+    );
+    const oldSideBody = state.client.createPullRequestReview.mock.calls[0]?.[0]
+      .comments[0]?.body as string | undefined;
+    expect(oldSideBody).not.toContain("```suggestion");
+    expect(state.client.submitPullRequestReview).toHaveBeenCalledOnce();
+    expect(state.client.createIssueComment).toHaveBeenCalledOnce();
+    expect(state.client.createIssueComment.mock.calls[0]?.[0].body).toContain(
+      "<!-- reviewphin-finding:",
+    );
   });
 
   it("continues fallback findings with linked issue comments", async () => {
@@ -803,15 +815,15 @@ function createAdapter(state: ReturnType<typeof createState>) {
         sha: "blob",
         filename: "src/index.ts",
         status: "modified",
-        additions: 1,
-        deletions: 0,
-        changes: 1,
+        additions: 2,
+        deletions: 1,
+        changes: 3,
         blob_url: "https://github.com/octo/repo/blob/head/src/index.ts",
         raw_url: "https://github.com/octo/repo/raw/head/src/index.ts",
         contents_url:
           "https://api.github.com/repos/octo/repo/contents/src/index.ts",
         patch:
-          "@@ -1,1 +1,3 @@\n const value = compute();\n+value;\n+consume(value);",
+          "@@ -1,2 +1,3 @@\n-const obsolete = true;\n const value = compute();\n+value;\n+consume(value);",
       },
     ],
     issueComments: state.issueComments,

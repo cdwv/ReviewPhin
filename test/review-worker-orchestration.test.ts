@@ -12,6 +12,7 @@ import type {
 } from "../src/platforms/IPlatform.js";
 import type { GitLabNoteHookPayload } from "../src/platforms/gitlab/types.js";
 import type { InteractionRunArtifacts } from "../src/review/run-artifacts.js";
+import type { ReviewContext } from "../src/review/types.js";
 import type { TenantRecord } from "../src/storage/contract/index.js";
 import type { StorageHelpers } from "../src/storage/storage-helpers.js";
 import { createGitLabConnectionRecord } from "./helpers/gitlab-tenant.js";
@@ -1398,6 +1399,12 @@ describe("ReviewWorker orchestration", () => {
         overview: {
           summary: "No further issues found",
           overallSeverity: "low" as const,
+          overallAssessment: "No further issues were found.",
+          mergeReadiness: {
+            status: "ready" as const,
+            confidence: "high" as const,
+            summary: "The change is ready to merge.",
+          },
         },
         findings: [],
         priorDispositions: [],
@@ -1743,6 +1750,12 @@ describe("ReviewWorker orchestration", () => {
         overview: {
           summary: "No further issues found",
           overallSeverity: "low" as const,
+          overallAssessment: "No further issues were found.",
+          mergeReadiness: {
+            status: "ready" as const,
+            confidence: "high" as const,
+            summary: "The change is ready to merge.",
+          },
         },
         findings: [],
         priorDispositions: [],
@@ -1899,7 +1912,7 @@ describe("ReviewWorker orchestration", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("stores local-test results without constructing publication paths", async () => {
+  it("keeps prior open findings in incremental no-publish readiness", async () => {
     const trigger = {
       kind: "reviewphin-local-review",
       source: "cli",
@@ -1931,14 +1944,36 @@ describe("ReviewWorker orchestration", () => {
       get: async () => job as never,
       run: run as never,
     });
+    const priorFinding = {
+      findingId: "finding-prior-high",
+      identityKey: "identity-prior-high",
+      status: "open" as const,
+      title: "Older high-severity finding",
+      body: "The earlier issue is still unresolved.",
+      severity: "high",
+      category: "correctness",
+      anchor: null,
+      suggestion: null,
+      interactionRunId: "run-prior",
+      reviewedAt: "2026-08-01T10:00:00.000Z",
+      headSha: "previous-head",
+    };
     const reviewResult = {
       overview: {
-        summary: "No issues found.",
+        summary: "The earlier issue still needs attention.",
         overallSeverity: "low" as const,
+        overallAssessment:
+          "No new issues were found, but the earlier issue remains open.",
+        mergeReadiness: {
+          status: "needs_attention" as const,
+          confidence: "high" as const,
+          summary: "The earlier high-severity issue remains open.",
+        },
       },
       findings: [],
       priorDispositions: [],
     };
+    const review = vi.fn(async (_context: ReviewContext) => reviewResult);
     const routingContext = wrapGitLabPlatformContext({
       tenant,
       job,
@@ -1991,8 +2026,52 @@ describe("ReviewWorker orchestration", () => {
         getInteractionJobById: vi.fn(async () => job),
         getModelProfileByName: vi.fn(async () => null),
         getDefaultModelProfile: vi.fn(async () => null),
-        getLatestCompletedInteractionForCodeReview: vi.fn(async () => null),
-        listPriorReviewFindings: vi.fn(async () => []),
+        getLatestCompletedInteractionForCodeReview: vi.fn(async () => ({
+          interactionRunId: "run-prior",
+          interactionJobId: "job-prior",
+          finishedAt: "2026-08-01T10:00:00.000Z",
+          headSha: "previous-head",
+          resultJson: JSON.stringify({
+            overview: {
+              summary: "One earlier issue remains.",
+              overallSeverity: "high",
+              overallAssessment:
+                "The earlier high-severity issue needs attention.",
+              mergeReadiness: {
+                status: "needs_attention",
+                confidence: "high",
+                summary: "The earlier issue should be addressed before merge.",
+              },
+            },
+            findings: [
+              {
+                title: priorFinding.title,
+                body: priorFinding.body,
+                severity: priorFinding.severity,
+                category: priorFinding.category,
+              },
+            ],
+            priorDispositions: [],
+          }),
+          snapshot: {
+            id: "snapshot-prior",
+            interactionJobId: "job-prior",
+            interactionRunId: "run-prior",
+            tenantId: tenant.id,
+            codeReviewId: 7,
+            headSha: "previous-head",
+            codeReviewJson: "{}",
+            versionsJson: "[]",
+            changesJson: "[]",
+            commentsJson: "[]",
+            discussionsJson: "[]",
+            instructionsJson: "[]",
+            projectMemoryJson: null,
+            workspaceStrategy: "git",
+            createdAt: "2026-08-01T10:00:00.000Z",
+          },
+        })),
+        listPriorReviewFindings: vi.fn(async () => [priorFinding]),
       } as never,
       tenantRegistry: {
         getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
@@ -2006,7 +2085,7 @@ describe("ReviewWorker orchestration", () => {
       reviewProviderFactory: {
         createProvider: vi.fn(() => ({
           name: "copilot-sdk",
-          review: vi.fn(async () => reviewResult),
+          review,
         })),
       },
       chatterRunnerFactory: {
@@ -2027,6 +2106,17 @@ describe("ReviewWorker orchestration", () => {
     expect(createTriggerLifecycle).not.toHaveBeenCalled();
     expect(createReviewPublicationAdapter).not.toHaveBeenCalled();
     expect(reconciler.reconcile).not.toHaveBeenCalled();
+    const reviewContext = review.mock.calls[0]?.[0];
+    expect(reviewContext?.scope.mode).toBe("incremental-rereview");
+    expect(reviewContext?.scope.priorFindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          identityKey: priorFinding.identityKey,
+          status: "open",
+          severity: "high",
+        }),
+      ]),
+    );
     expect(buildHarnessTenantContext).toHaveBeenCalledWith(
       expect.objectContaining({
         memoryEnabled: true,
@@ -2037,7 +2127,22 @@ describe("ReviewWorker orchestration", () => {
       expect.objectContaining({
         interactionRunId: run.id,
         status: "completed",
-        resultJson: JSON.stringify(reviewResult),
+        resultJson: JSON.stringify({
+          ...reviewResult,
+          overview: {
+            ...reviewResult.overview,
+            overallAssessment:
+              "Persisted open high-severity findings remain after reconciling the latest review and should be addressed before merge.",
+            summary: "High-severity findings remain after reconciliation.",
+            overallSeverity: "high",
+            mergeReadiness: {
+              status: "needs_attention",
+              confidence: "medium",
+              summary:
+                "Persisted open high-severity findings remain and should be addressed before merge.",
+            },
+          },
+        }),
       }),
     );
     expect(jobStore.transitionClaim).toHaveBeenCalledWith(

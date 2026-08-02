@@ -15,12 +15,14 @@ import { loadLocalEnvFile } from "./env.js";
 import type { ModelCatalogClientFactory } from "./review/model-catalog.js";
 import { maskSecret } from "./review/model-profiles.js";
 import {
+  reviewPublicationModeSchema,
   getReviewPublicationMode,
   scopeReviewDedupeKeyToPublicationMode,
   setReviewPublicationMode,
   type ReviewPublicationMode,
 } from "./review/publication.js";
-import { reviewResultSchema, type ReviewResult } from "./review/types.js";
+import type { ReviewResult } from "./review/types.js";
+import { parsePersistedReviewResult } from "./review/persisted-review-result.js";
 import {
   collectMetrics,
   displayUsageUnit,
@@ -70,9 +72,17 @@ import {
   type ReviewWatchSummary,
 } from "./cli/review-watch.js";
 import {
+  formatMarkdownForTerminal,
   formatReviewReportForTerminal,
   writeReviewReport,
 } from "./cli/review-report.js";
+import {
+  formatStoredReviewReportsMarkdown,
+  loadStoredReviewReports,
+  REVIEW_REPORT_TRIGGER_TYPES,
+  toStoredReviewReportOutput,
+  writeStoredReviewReports,
+} from "./cli/stored-review-reports.js";
 import {
   listAvailableModels,
   validateProfileModels,
@@ -346,6 +356,22 @@ const mergeRequestReviewSchema = z
         path: ["codeReviewId"],
       });
     }
+  });
+
+const mergeRequestReportSchema = z
+  .object({
+    tenantKey: z.string().min(1),
+    codeReviewId: z.coerce.number().int().positive().optional(),
+    from: z.string().optional(),
+    latest: z.boolean(),
+    limit: z.coerce.number().int().positive().optional(),
+    publicationMode: reviewPublicationModeSchema.optional(),
+    triggerType: z.enum(REVIEW_REPORT_TRIGGER_TYPES).optional(),
+    reportPath: z.string().min(1).optional(),
+  })
+  .refine((value) => !(value.latest && value.limit !== undefined), {
+    message: "Cannot combine --latest with --limit.",
+    path: ["limit"],
   });
 
 interface CodeReviewTriggerDedupeInput {
@@ -1428,6 +1454,10 @@ async function runCliCommand(
     return runMergeRequestReviewCommand(options, config, logger);
   }
 
+  if (resource === "mr" && action === "report") {
+    return runMergeRequestReportCommand(options, config);
+  }
+
   if (resource === "metrics" && action === "sessions") {
     const config = loadConfig();
     return withStorage(options, config, async (storage) => {
@@ -1675,6 +1705,7 @@ function printHelp(
     "model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "storage migrate --from-storage-provider-module <module> [--from-sqlite-database-path <path>] --to-storage-provider-module <module> [--to-sqlite-database-path <path>]",
     "mr describe (--tenant-id <id> | --key <key>) --code-review-id <id> [--current-interaction-job-id <id>] [--trigger-comment-id <id> --trigger-comment-action <create|update> [--trigger-comment-updated-at <iso>] [--trigger-comment-body <text>]] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "mr report --key <tenant-key> [--from <YYYY-MM-DD>] [--latest | --limit <count>] [--code-review-id <id> | --code-review <id>] [--trigger-type <manual-review|direct-mention|follow-up-comment|summary-follow-up> | --type <type>] [--publication-mode <publish|no-publish>] [--report <path> | -r <path>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "mr review (--tenant-id <id> | --key <tenant-key>) (--trigger-comment-url <url> | --trigger-comment-id <id> | --trigger-text <text> | --trigger-text-file <path>) [--code-review-id <id>] [--force-new] [--watch | --no-watch] [--no-publish | --no-comment] [--report <path> | -r <path>] [--sqlite-database-path <path>] [--storage-provider-module <module>] [--run-log-dir <path>]",
     "metrics sessions [--connection <name>] [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--all-sessions] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "metrics collect [--run-log-dir <path>] [--dry-run] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
@@ -1910,6 +1941,87 @@ async function runCodeReviewDescribeCommand(
   });
 }
 
+async function runMergeRequestReportCommand(
+  options: Record<string, string | boolean>,
+  config: ReturnType<typeof loadConfig>,
+): Promise<number> {
+  const codeReviewId = resolveEquivalentOptions(
+    options,
+    "code-review-id",
+    "code-review",
+  );
+  const triggerType = resolveEquivalentOptions(options, "trigger-type", "type");
+  const dateRange = parseMetricsDateRange({ from: options.from });
+  const input = mergeRequestReportSchema.parse({
+    tenantKey: options.key,
+    codeReviewId,
+    from: dateRange.from ?? undefined,
+    latest: Object.hasOwn(options, "latest"),
+    limit: options.limit,
+    publicationMode: options["publication-mode"],
+    triggerType,
+    reportPath: options.report,
+  });
+
+  return withStorage(options, config, async (storage) => {
+    const tenant = await storage.stores.tenants.find({
+      key: { eq: input.tenantKey },
+    });
+    if (!tenant) {
+      throw new Error(`Tenant ${input.tenantKey} was not found.`);
+    }
+
+    const reports = await loadStoredReviewReports(storage, tenant, input);
+    const reportOutput = reports.map(toStoredReviewReportOutput);
+    if (input.reportPath && reports.length > 0) {
+      const reportPath = resolve(process.cwd(), input.reportPath);
+      await writeStoredReviewReports(reportPath, reports);
+      output().result(
+        {
+          count: reports.length,
+          reportPath,
+          reports: reportOutput,
+        },
+        {
+          pretty: `Wrote ${reports.length} review ${
+            reports.length === 1 ? "report" : "reports"
+          } to ${reportPath}.`,
+        },
+      );
+      return 0;
+    }
+
+    output().result(reportOutput, {
+      pretty:
+        reports.length === 0
+          ? output().style("muted", "No stored review reports found.")
+          : () =>
+              formatMarkdownForTerminal(
+                formatStoredReviewReportsMarkdown(reports),
+                output(),
+              ),
+    });
+    return 0;
+  });
+}
+
+function resolveEquivalentOptions(
+  options: Record<string, string | boolean>,
+  preferred: string,
+  alias: string,
+): string | boolean | undefined {
+  const preferredValue = options[preferred];
+  const aliasValue = options[alias];
+  if (
+    preferredValue !== undefined &&
+    aliasValue !== undefined &&
+    preferredValue !== aliasValue
+  ) {
+    throw new Error(`--${preferred} and --${alias} must have the same value.`);
+  }
+  return preferredValue ?? aliasValue;
+}
+
 async function runMergeRequestReviewCommand(
   options: Record<string, string | boolean>,
   config: ReturnType<typeof loadConfig>,
@@ -2097,7 +2209,8 @@ async function loadCompletedReviewResult(
   if (!run.resultJson) {
     throw new Error(`Completed review run ${run.id} has no review result.`);
   }
-  return reviewResultSchema.parse(JSON.parse(run.resultJson) as unknown);
+  // Normalize only because a watched run may resolve to an older stored record.
+  return parsePersistedReviewResult(run.resultJson);
 }
 
 async function resolveLocalReviewSelector(

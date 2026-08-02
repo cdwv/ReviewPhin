@@ -124,6 +124,21 @@ describe("CLI help", () => {
     expect(help).toContain("[--report <path> | -r <path>]");
   });
 
+  it("documents mr report filters and aliases", async () => {
+    vi.stubEnv("REVIEWPHIN_CLI_COMMAND", "pnpm cli");
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    await expect(runCli(["mr", "report", "--help"])).resolves.toBe(0);
+
+    const help = output.mock.calls.join("");
+    expect(help).toContain("pnpm cli mr report --key <tenant-key>");
+    expect(help).toContain("[--from <YYYY-MM-DD>]");
+    expect(help).toContain("[--latest | --limit <count>]");
+    expect(help).toContain("[--code-review-id <id> | --code-review <id>]");
+    expect(help).toContain("[--trigger-type <manual-review|");
+    expect(help).toContain("[--publication-mode <publish|no-publish>]");
+  });
+
   it("validates mr review selectors without appending usage", async () => {
     const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     const errors = vi.spyOn(process.stderr, "write").mockReturnValue(true);

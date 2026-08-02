@@ -20,6 +20,7 @@ import type {
   ReconcileSummary,
 } from "../reconcile/discussion-reconciler.js";
 import type { HarnessChatterRunnerFactory } from "../review/harness-chatter.js";
+import { projectActiveReviewFindings } from "../review/active-findings.js";
 import { buildInteractionPlan } from "../review/interaction-plan.js";
 import type { HarnessSessionMetricsEnvelope } from "../harness/types.js";
 import {
@@ -29,6 +30,7 @@ import {
 import { getReviewPublicationMode } from "../review/publication.js";
 import type { ReviewProviderFactory } from "../review/provider.js";
 import { InteractionRunArtifacts } from "../review/run-artifacts.js";
+import { resolveReviewOverview } from "../review/summary.js";
 import type {
   ReviewContext,
   ReviewResult,
@@ -662,7 +664,7 @@ export class ReviewWorker {
         );
 
         context.assertOwned();
-        reviewResult = await reviewProvider.review(reviewContext, {
+        const modelReviewResult = await reviewProvider.review(reviewContext, {
           attachments: imageAttachments.attachments,
           tenant: this.buildHarnessTenantContext({
             platform,
@@ -684,6 +686,19 @@ export class ReviewWorker {
             }),
           }),
         });
+        const activeFindings = projectActiveReviewFindings({
+          priorFindings: reviewContext.scope.priorFindings,
+          discussionIdentities: mappings.map((mapping) => ({
+            discussionId: mapping.id,
+            identityKey: mapping.identityKey,
+          })),
+          reviewResult: modelReviewResult,
+        });
+        // Canonicalize readiness before any no-publish output or persistence.
+        reviewResult = {
+          ...modelReviewResult,
+          overview: resolveReviewOverview(modelReviewResult, activeFindings),
+        };
         await runArtifacts.writeJsonArtifact(
           join("orchestration", "review-result.json"),
           reviewResult,
@@ -744,6 +759,13 @@ export class ReviewWorker {
               interactionRunId: interactionRun.id,
             }),
           });
+          // Reconciliation may carry forward active findings from earlier runs.
+          if (reconcileSummary.resolvedOverview) {
+            reviewResult = {
+              ...reviewResult,
+              overview: reconcileSummary.resolvedOverview,
+            };
+          }
           context.assertOwned();
 
           await this.logRunEvent(

@@ -6,6 +6,7 @@ import type {
 } from "./types.js";
 import type { IPlatform, ResolvedTenant } from "../platforms/IPlatform.js";
 import type { TenantRecord } from "../storage/contract/index.js";
+import { deriveMergeReadinessStatus } from "./merge-readiness.js";
 
 export const REVIEW_SUMMARY_NOTE_MARKER = "<!-- reviewphin-review-summary -->";
 export const REVIEW_SUMMARY_DETECTION_REGEX =
@@ -18,12 +19,7 @@ const severityRank = {
   low: 3,
 } as const;
 
-interface ResolvedReviewSummaryOverview {
-  overallAssessment: string;
-  mergeReadiness: ReviewMergeReadiness;
-  overallSeverity: ReviewResult["overview"]["overallSeverity"];
-  highlights: string[];
-}
+export type ResolvedReviewOverview = ReviewResult["overview"];
 
 type SummaryFinding = Pick<
   ReviewFinding,
@@ -60,7 +56,7 @@ export function buildReviewSummaryNote(input: {
   activeFindings?: SummaryFinding[];
 }): string {
   const activeFindings = input.activeFindings ?? input.reviewResult.findings;
-  const overview = resolveSummaryOverview(
+  const overview = resolveReviewOverview(
     input.reviewResult,
     input.activeFindings,
   );
@@ -91,7 +87,7 @@ export function buildReviewSummaryNote(input: {
     "",
   ];
 
-  if (overview.highlights.length > 0) {
+  if (overview.highlights?.length) {
     lines.push("", "### Highlights", "");
     for (const highlight of overview.highlights) {
       lines.push(`- ${highlight}`);
@@ -152,28 +148,33 @@ export function buildReviewSummaryNote(input: {
   return lines.join("\n");
 }
 
-function resolveSummaryOverview(
+export function resolveReviewOverview(
   reviewResult: ReviewResult,
   activeFindings?: SummaryFinding[],
-): ResolvedReviewSummaryOverview {
+): ResolvedReviewOverview {
   const effectiveFindings = activeFindings ?? reviewResult.findings;
   const findingsDifferFromCurrentRun =
     activeFindings !== undefined &&
     !areEquivalentFindings(activeFindings, reviewResult.findings);
+  const source = findingsDifferFromCurrentRun ? "persisted" : "current";
   const providedMergeReadiness = reviewResult.overview.mergeReadiness;
   const derivedMergeReadiness = deriveMergeReadinessFromFindings(
     effectiveFindings,
-    findingsDifferFromCurrentRun ? "persisted" : "current",
+    source,
   );
   const useProvidedMergeReadiness =
-    providedMergeReadiness?.status === derivedMergeReadiness.status;
+    !findingsDifferFromCurrentRun &&
+    providedMergeReadiness.status === derivedMergeReadiness.status;
 
   return {
+    ...reviewResult.overview,
+    summary: findingsDifferFromCurrentRun
+      ? deriveOverviewSummaryFromFindings(effectiveFindings)
+      : reviewResult.overview.summary,
     overallAssessment:
-      findingsDifferFromCurrentRun && !useProvidedMergeReadiness
-        ? deriveOverallAssessmentFromFindings(effectiveFindings)
-        : (reviewResult.overview.overallAssessment ??
-          reviewResult.overview.summary),
+      findingsDifferFromCurrentRun || !useProvidedMergeReadiness
+        ? deriveOverallAssessmentFromFindings(effectiveFindings, source)
+        : reviewResult.overview.overallAssessment,
     mergeReadiness: useProvidedMergeReadiness
       ? providedMergeReadiness
       : derivedMergeReadiness,
@@ -183,7 +184,6 @@ function resolveSummaryOverview(
           reviewResult.overview.overallSeverity,
         )
       : reviewResult.overview.overallSeverity,
-    highlights: reviewResult.overview.highlights ?? [],
   };
 }
 
@@ -191,9 +191,10 @@ function deriveMergeReadinessFromFindings(
   findings: ReadonlyArray<Pick<ReviewFinding, "severity">>,
   source: "current" | "persisted",
 ): ReviewMergeReadiness {
-  if (findings.length === 0) {
+  const status = deriveMergeReadinessStatus(findings);
+  if (status === "ready") {
     return {
-      status: "ready",
+      status,
       confidence: "medium",
       summary:
         source === "persisted"
@@ -202,9 +203,9 @@ function deriveMergeReadinessFromFindings(
     };
   }
 
-  if (findings.some((finding) => finding.severity === "critical")) {
+  if (status === "blocked") {
     return {
-      status: "blocked",
+      status,
       confidence: "medium",
       summary:
         source === "persisted"
@@ -215,7 +216,7 @@ function deriveMergeReadinessFromFindings(
 
   if (findings.some((finding) => finding.severity === "high")) {
     return {
-      status: "needs_attention",
+      status,
       confidence: "medium",
       summary:
         source === "persisted"
@@ -225,7 +226,7 @@ function deriveMergeReadinessFromFindings(
   }
 
   return {
-    status: "needs_attention",
+    status,
     confidence: "medium",
     summary:
       source === "persisted"
@@ -247,20 +248,44 @@ function compareNotesByUpdatedAtDesc<
 
 function deriveOverallAssessmentFromFindings(
   findings: ReadonlyArray<SummaryFinding>,
+  source: "current" | "persisted",
 ): string {
   if (findings.length === 0) {
-    return "No actionable findings remain after reconciling the latest review with persisted history.";
+    return source === "persisted"
+      ? "No actionable findings remain after reconciling the latest review with persisted history."
+      : "No actionable findings were identified in this review.";
   }
 
   if (findings.some((finding) => finding.severity === "critical")) {
-    return "Persisted open critical findings remain after reconciling the latest review and should be resolved before merge.";
+    return source === "persisted"
+      ? "Persisted open critical findings remain after reconciling the latest review and should be resolved before merge."
+      : "Critical findings remain and should be resolved before merge.";
   }
 
   if (findings.some((finding) => finding.severity === "high")) {
-    return "Persisted open high-severity findings remain after reconciling the latest review and should be addressed before merge.";
+    return source === "persisted"
+      ? "Persisted open high-severity findings remain after reconciling the latest review and should be addressed before merge."
+      : "High-severity findings remain and should be addressed before merge.";
   }
 
-  return "Persisted open findings remain after reconciling the latest review and should be reviewed before merge.";
+  return source === "persisted"
+    ? "Persisted open findings remain after reconciling the latest review and should be reviewed before merge."
+    : "Actionable findings remain and should be reviewed before merge.";
+}
+
+function deriveOverviewSummaryFromFindings(
+  findings: ReadonlyArray<SummaryFinding>,
+): string {
+  if (findings.length === 0) {
+    return "No actionable findings remain after reconciliation.";
+  }
+  if (findings.some((finding) => finding.severity === "critical")) {
+    return "Critical findings remain after reconciliation.";
+  }
+  if (findings.some((finding) => finding.severity === "high")) {
+    return "High-severity findings remain after reconciliation.";
+  }
+  return "Actionable findings remain after reconciliation.";
 }
 
 function deriveOverallSeverityFromFindings(
@@ -310,14 +335,14 @@ function compareFindingsBySeverity(
 }
 
 function shouldIncludeSuggestedFixesPrompt(
-  overview: ResolvedReviewSummaryOverview,
+  overview: ResolvedReviewOverview,
 ): boolean {
   return overview.mergeReadiness.status !== "ready";
 }
 
 function buildSuggestedFixesPrompt(input: {
   context: ReviewSummaryContext;
-  overview: ResolvedReviewSummaryOverview;
+  overview: ResolvedReviewOverview;
   findings: SummaryFinding[];
 }): string {
   const lines = [
@@ -334,7 +359,7 @@ function buildSuggestedFixesPrompt(input: {
     `- Readiness rationale: ${input.overview.mergeReadiness.summary}`,
   ];
 
-  if (input.overview.highlights.length > 0) {
+  if (input.overview.highlights?.length) {
     lines.push("", "Useful highlights:");
     for (const highlight of input.overview.highlights) {
       lines.push(`- ${highlight}`);
@@ -367,7 +392,7 @@ function buildSuggestedFixesPrompt(input: {
 
 function buildSuggestedFixesPromptBlock(input: {
   context: ReviewSummaryContext;
-  overview: ResolvedReviewSummaryOverview;
+  overview: ResolvedReviewOverview;
   findings: SummaryFinding[];
 }): string {
   return [

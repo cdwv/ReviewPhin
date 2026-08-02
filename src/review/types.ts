@@ -18,7 +18,8 @@ export const reviewAnchorSchema = z
   })
   .refine((value) => value.endLine >= value.startLine, {
     message: "endLine must be greater than or equal to startLine",
-  });
+  })
+  .describe("startLine and endLine must identify an inclusive range");
 
 export const reviewSuggestionSchema = z
   .object({
@@ -28,7 +29,8 @@ export const reviewSuggestionSchema = z
   })
   .refine((value) => value.endLine >= value.startLine, {
     message: "endLine must be greater than or equal to startLine",
-  });
+  })
+  .describe("startLine and endLine must identify an inclusive range");
 
 export const reviewFindingSchema = z.object({
   priorDiscussionId: z.string().min(1).optional(),
@@ -84,7 +86,11 @@ export const reviewerReplyTargetHandoffSchema = z
   .object({
     kind: responseTargetSchema.shape.kind,
     commentId: z.number().int().positive(),
-    discussionId: z.string().min(1).optional(),
+    discussionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Required unless kind is code-review-comment"),
     guidance: z.string().min(1),
   })
   .superRefine((target, context) => {
@@ -99,7 +105,7 @@ export const reviewerReplyTargetHandoffSchema = z
 
 export const reviewerReplyHandoffSchema = z.object({
   summary: z.string().min(1),
-  targets: z.array(reviewerReplyTargetHandoffSchema).default([]),
+  targets: z.array(reviewerReplyTargetHandoffSchema),
 });
 
 export const reviewMergeReadinessSchema = z.object({
@@ -111,15 +117,15 @@ export const reviewMergeReadinessSchema = z.object({
 export const reviewOverviewSchema = z.object({
   summary: z.string().min(1),
   overallSeverity: z.enum(["low", "medium", "high", "critical"]),
-  overallAssessment: z.string().min(1).optional(),
-  mergeReadiness: reviewMergeReadinessSchema.optional(),
+  overallAssessment: z.string().min(1),
+  mergeReadiness: reviewMergeReadinessSchema,
   highlights: z.array(z.string().min(1)).max(5).optional(),
 });
 
 export const reviewResultSchema = z.object({
   overview: reviewOverviewSchema,
   findings: z.array(reviewFindingSchema),
-  priorDispositions: z.array(priorDispositionSchema).default([]),
+  priorDispositions: z.array(priorDispositionSchema),
   replyHandoff: reviewerReplyHandoffSchema.optional(),
 });
 
@@ -139,7 +145,11 @@ export const chatterReplySchema = z.object({
     .object({
       kind: responseTargetSchema.shape.kind,
       commentId: z.number().int().positive(),
-      discussionId: z.string().min(1).optional(),
+      discussionId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Required unless kind is code-review-comment"),
     })
     .superRefine((target, context) => {
       if (target.kind !== "code-review-comment" && !target.discussionId) {
@@ -154,8 +164,8 @@ export const chatterReplySchema = z.object({
 });
 
 export const chatterBatchResultSchema = z.object({
-  memory: chatterMemoryOutcomeSchema.nullable().optional(),
-  replies: z.array(chatterReplySchema).default([]),
+  memory: chatterMemoryOutcomeSchema.nullable(),
+  replies: z.array(chatterReplySchema),
 });
 
 export type ReviewAnchor = z.infer<typeof reviewAnchorSchema>;

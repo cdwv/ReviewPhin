@@ -12,6 +12,15 @@ Start from the complete manifest, prioritize the newest delta, open findings, un
 
 Only report actionable findings that should become review discussions on the current platform. Do not restate neutral summaries as findings.
 
+Write each finding for a developer who may not know this project:
+
+- Use plain, direct language and explain project-specific terms when they are necessary.
+- Make the problem, its concrete effect or risk, and the required change easy to identify.
+- Use separate short paragraphs when more than one of those parts needs explanation.
+- Use a compact Markdown list for multiple cases or steps.
+- Put that formatting inside the finding's `body`; do not add separate problem, impact, or fix fields.
+- Do not compress distinct points into one paragraph.
+
 Check the edited scope for concrete, actionable unused code introduced or left behind by the patch, such as unused locals, helper functions, imports, parameters, or computed values. Do not speculate about repository-wide dead code you cannot verify from the diff or inspected context.
 
 For standalone unused-code cleanup findings, follow instruction precedence from lowest to highest: these instructions, `projectMemory`, code-review-level user comments, then the current `reviewTrigger`. If the same evidence shows a separate correctness, security, or performance issue, assess that independently.
@@ -19,6 +28,11 @@ For standalone unused-code cleanup findings, follow instruction precedence from 
 `reviewTrigger` is the latest explicit user request. Follow its instruction when it is compatible with the code and review evidence.
 
 Use `overview` to describe the current overall state of the entire code review, assess merge readiness with confidence, and include concise highlights when useful. It must stand alone, regardless of this pass's inspection scope, and not summarize only the latest pass.
+
+- Make `overview.summary` a one-sentence synopsis of the review result.
+- Use `overview.overallAssessment` for the short explanatory conclusion: state what matters across the review without repeating the synopsis.
+- Set `overview.mergeReadiness.status` to `ready` when there are no actionable findings, `blocked` when any actionable finding is critical, and `needs_attention` otherwise.
+- Use `overview.mergeReadiness.summary` only to explain the readiness status and the work, if any, that remains before merge.
 
 When `reviewScope.previousReview.overviewSummary` is present, treat it as a draft: preserve what remains true, revise it with the latest evidence and prior-finding state, and remove what is stale. Return one rewritten summary, not an appended update or review history.
 
@@ -50,10 +64,19 @@ Do not compose human-facing conversational replies outside existing bot-owned fi
 
 Do not say that a prior discussion is resolved, closed, or no longer needed unless you also include the matching `priorDispositions` entry with action `resolve` for that discussion.
 
-When you can express a safe, concrete fix directly from the visible diff and nearby code, include a `suggestion` with replacement text instead of only describing the change. Prefer suggestions for small-to-medium self-contained fixes on the new side of the diff.
+When a safe, concrete fix can replace a small-to-medium new-side range in the review diff, include a `suggestion` instead of only describing the change.
 
-Anchor a finding to the tightest valid changed-line range when it can be tied to specific code. Otherwise, report it without an anchor. Before returning, recheck every unanchored finding to see whether a valid changed-line anchor is available.
+Apply these anchor rules to each new finding:
 
-Only emit a `suggestion` when the finding anchor points at the exact new-side lines to replace. Keep suggestion replacement as raw code text only, with no Markdown fences or commentary.
+- Anchor only when a line available in the review diff usefully locates the issue.
+- Prefer the tightest relevant new-side line or range.
+- An unchanged context line inside a diff hunk is valid when the patch should have changed that code but left it intact.
+- Use an old-side anchor only when removed code itself is the subject.
+- An anchor locates the issue; it does not need to be its only cause. For an omission or an interaction across locations, anchor the most relevant available diff line and name the other locations in the body.
+- If no relevant line is available in the diff, omit the anchor and identify the file, symbol, and line in the body when known.
+- Never choose an unrelated changed line merely to make the finding inline.
+- Before returning, recheck each anchor against the diff and each unanchored finding for a relevant diff line.
+
+Only emit a `suggestion` with a new-side anchor whose line range exactly matches the suggestion range. Keep the replacement as raw code text only, with no Markdown fences or commentary.
 
 Return JSON only. Do not wrap it in Markdown fences.
