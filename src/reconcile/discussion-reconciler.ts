@@ -30,6 +30,10 @@ import {
   resolveReviewOverview,
 } from "../review/summary.js";
 import {
+  projectActiveReviewFindings,
+  type ActiveReviewFinding,
+} from "../review/active-findings.js";
+import {
   renderReviewFindingProse,
   stripReviewDiscussionMarker,
 } from "../review/discussion-format.js";
@@ -225,7 +229,6 @@ export class DiscussionReconciler {
       codeReviewId: input.context.codeReview.id,
       reviewResult: input.reviewResult,
       discussionById,
-      referencedDiscussionIds,
     });
     const summary: ReconcileSummary = {
       created: 0,
@@ -1006,84 +1009,40 @@ export class DiscussionReconciler {
     codeReviewId: number;
     reviewResult: ReviewResult;
     discussionById: ReadonlyMap<string, KnownDiscussion>;
-    referencedDiscussionIds: ReadonlySet<string>;
-  }): Promise<SummaryFinding[]> {
-    const activeFindings = new Map<string, SummaryFinding>();
+  }): Promise<ActiveReviewFinding[]> {
     const persistedFindings = await this.storage.listLatestReviewFindings(
       input.tenant.id,
       input.codeReviewId,
     );
+    const priorFindings = persistedFindings.map((finding) => ({
+      identityKey: finding.identityKey,
+      status: finding.status,
+      title: finding.title,
+      body: finding.body,
+      severity: finding.severity as ReviewFinding["severity"],
+      category: finding.category as ReviewFinding["category"],
+    }));
+    const discussionIdentities = [...input.discussionById.values()].map(
+      (knownDiscussion) => ({
+        discussionId: knownDiscussion.discussionId,
+        identityKey:
+          knownDiscussion.mapping?.identityKey ??
+          createFindingIdentityKey({
+            title: knownDiscussion.title,
+            category: knownDiscussion.mapping?.category ?? "correctness",
+            path: knownDiscussion.anchor?.path,
+            startLine: knownDiscussion.anchor?.startLine,
+            endLine: knownDiscussion.anchor?.endLine,
+            side: knownDiscussion.anchor?.side,
+          }),
+      }),
+    );
 
-    for (const finding of persistedFindings) {
-      if (finding.status !== "open") {
-        continue;
-      }
-
-      activeFindings.set(finding.identityKey, {
-        title: finding.title,
-        body: finding.body,
-        severity: finding.severity as SummaryFinding["severity"],
-        category: finding.category as SummaryFinding["category"],
-      });
-    }
-
-    for (const finding of input.reviewResult.findings) {
-      const nextIdentityKey = createFindingIdentityKey({
-        title: finding.title,
-        category: finding.category,
-        path: finding.anchor?.path,
-        startLine: finding.anchor?.startLine,
-        endLine: finding.anchor?.endLine,
-        side: finding.anchor?.side,
-      });
-      const matchedDiscussion = finding.priorDiscussionId
-        ? (input.discussionById.get(finding.priorDiscussionId) ?? null)
-        : null;
-      if (matchedDiscussion) {
-        const previousIdentityKey =
-          matchedDiscussion.mapping?.identityKey ?? null;
-        if (previousIdentityKey && previousIdentityKey !== nextIdentityKey) {
-          activeFindings.delete(previousIdentityKey);
-        }
-      }
-
-      activeFindings.set(nextIdentityKey, {
-        title: finding.title,
-        body: finding.body,
-        severity: finding.severity,
-        category: finding.category,
-      });
-    }
-
-    for (const disposition of input.reviewResult.priorDispositions) {
-      if (
-        disposition.action !== "resolve" ||
-        input.referencedDiscussionIds.has(disposition.discussionId)
-      ) {
-        continue;
-      }
-
-      const knownDiscussion = input.discussionById.get(
-        disposition.discussionId,
-      );
-      if (!knownDiscussion) {
-        continue;
-      }
-
-      const identityKey =
-        knownDiscussion.mapping?.identityKey ??
-        createFindingIdentityKey({
-          title: knownDiscussion.title,
-          category: knownDiscussion.mapping?.category ?? "correctness",
-          path: knownDiscussion.anchor?.path,
-          startLine: knownDiscussion.anchor?.startLine,
-          endLine: knownDiscussion.anchor?.endLine,
-          side: knownDiscussion.anchor?.side,
-        });
-      activeFindings.delete(identityKey);
-    }
-
-    return [...activeFindings.values()];
+    return projectActiveReviewFindings({
+      priorFindings,
+      discussionIdentities,
+      reviewResult: input.reviewResult,
+    });
   }
 }
 

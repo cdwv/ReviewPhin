@@ -20,6 +20,7 @@ import type {
   ReconcileSummary,
 } from "../reconcile/discussion-reconciler.js";
 import type { HarnessChatterRunnerFactory } from "../review/harness-chatter.js";
+import { projectActiveReviewFindings } from "../review/active-findings.js";
 import { buildInteractionPlan } from "../review/interaction-plan.js";
 import type { HarnessSessionMetricsEnvelope } from "../harness/types.js";
 import {
@@ -685,10 +686,18 @@ export class ReviewWorker {
             }),
           }),
         });
-        // Canonicalize current-run readiness before any no-publish output or persistence.
+        const activeFindings = projectActiveReviewFindings({
+          priorFindings: reviewContext.scope.priorFindings,
+          discussionIdentities: mappings.map((mapping) => ({
+            discussionId: mapping.id,
+            identityKey: mapping.identityKey,
+          })),
+          reviewResult: modelReviewResult,
+        });
+        // Canonicalize readiness before any no-publish output or persistence.
         reviewResult = {
           ...modelReviewResult,
-          overview: resolveReviewOverview(modelReviewResult),
+          overview: resolveReviewOverview(modelReviewResult, activeFindings),
         };
         await runArtifacts.writeJsonArtifact(
           join("orchestration", "review-result.json"),
