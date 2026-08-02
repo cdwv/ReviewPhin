@@ -3,6 +3,14 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v1.8.0 - 2026-08-02
+### Added
+- Administrators can list models available to their current GitHub
+Copilot identity, a saved model profile, or a GitHub token supplied only
+for the request.
+- Model profile validation now reports unavailable models before saving
+and directs administrators to inspect the available catalog.
+
 ## v1.7.1 - 2026-08-01
 ### Fixed
 - Reviews and replies now recover automatically when a model returns
