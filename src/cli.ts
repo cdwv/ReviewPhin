@@ -361,6 +361,7 @@ const mergeRequestReportSchema = z
   .object({
     tenantKey: z.string().min(1),
     codeReviewId: z.coerce.number().int().positive().optional(),
+    from: z.string().optional(),
     latest: z.boolean(),
     limit: z.coerce.number().int().positive().optional(),
     publicationMode: reviewPublicationModeSchema.optional(),
@@ -1703,7 +1704,7 @@ function printHelp(
     "model-profile clear-default [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "storage migrate --from-storage-provider-module <module> [--from-sqlite-database-path <path>] --to-storage-provider-module <module> [--to-sqlite-database-path <path>]",
     "mr describe (--tenant-id <id> | --key <key>) --code-review-id <id> [--current-interaction-job-id <id>] [--trigger-comment-id <id> --trigger-comment-action <create|update> [--trigger-comment-updated-at <iso>] [--trigger-comment-body <text>]] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
-    "mr report --key <tenant-key> [--latest | --limit <count>] [--code-review-id <id> | --code-review <id>] [--trigger-type <manual-review|direct-mention|follow-up-comment|summary-follow-up> | --type <type>] [--publication-mode <publish|no-publish>] [--report <path> | -r <path>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "mr report --key <tenant-key> [--from <YYYY-MM-DD>] [--latest | --limit <count>] [--code-review-id <id> | --code-review <id>] [--trigger-type <manual-review|direct-mention|follow-up-comment|summary-follow-up> | --type <type>] [--publication-mode <publish|no-publish>] [--report <path> | -r <path>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "mr review (--tenant-id <id> | --key <tenant-key>) (--trigger-comment-url <url> | --trigger-comment-id <id> | --trigger-text <text> | --trigger-text-file <path>) [--code-review-id <id>] [--force-new] [--watch | --no-watch] [--no-publish | --no-comment] [--report <path> | -r <path>] [--sqlite-database-path <path>] [--storage-provider-module <module>] [--run-log-dir <path>]",
     "metrics sessions [--connection <name>] [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--all-sessions] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "metrics collect [--run-log-dir <path>] [--dry-run] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
@@ -1949,9 +1950,11 @@ async function runMergeRequestReportCommand(
     "code-review",
   );
   const triggerType = resolveEquivalentOptions(options, "trigger-type", "type");
+  const dateRange = parseMetricsDateRange({ from: options.from });
   const input = mergeRequestReportSchema.parse({
     tenantKey: options.key,
     codeReviewId,
+    from: dateRange.from ?? undefined,
     latest: Object.hasOwn(options, "latest"),
     limit: options.limit,
     publicationMode: options["publication-mode"],

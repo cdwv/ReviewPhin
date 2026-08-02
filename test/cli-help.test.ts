@@ -132,6 +132,7 @@ describe("CLI help", () => {
 
     const help = output.mock.calls.join("");
     expect(help).toContain("pnpm cli mr report --key <tenant-key>");
+    expect(help).toContain("[--from <YYYY-MM-DD>]");
     expect(help).toContain("[--latest | --limit <count>]");
     expect(help).toContain("[--code-review-id <id> | --code-review <id>]");
     expect(help).toContain("[--trigger-type <manual-review|");

@@ -165,6 +165,20 @@ describe("buildReviewPrompt", () => {
     );
   });
 
+  it("asks review authors for plain, structured, correctly anchored findings", () => {
+    const prompt = buildReviewPrompt(createContext());
+    const authorPrompt = renderPrompt("subagent.review-author", {});
+
+    expect(prompt).toContain("a developer who may not know this project");
+    expect(prompt).toContain("what is wrong, the concrete behavior or risk");
+    expect(prompt).toContain("short paragraphs or a compact Markdown list");
+    expect(prompt).toContain("changed line that causes the reported behavior");
+    expect(authorPrompt).toContain(
+      "problem, its concrete effect or risk, and the required change",
+    );
+    expect(authorPrompt).toContain("do not pack them into one dense paragraph");
+  });
+
   it("uses the incremental summary-follow-up registered combination", () => {
     const prompt = buildReviewPrompt(
       createContext(null, "summary-follow-up", "incremental-rereview"),
@@ -467,6 +481,11 @@ describe("buildReviewPrompt", () => {
     );
     expect(prompt).toContain(
       "Do not include Markdown fences, introductions, explanations, or trailing text outside the JSON object.",
+    );
+    expect(prompt).toContain("Match the language of the triggering request");
+    expect(prompt).toContain("Lead with the answer or requested action");
+    expect(prompt).toContain(
+      "short paragraphs or a compact Markdown list instead of compressing them into one dense paragraph",
     );
   });
 

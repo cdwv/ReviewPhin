@@ -32,6 +32,7 @@ export const REVIEW_REPORT_TRIGGER_TYPES = [
 
 export interface StoredReviewReportFilters {
   readonly codeReviewId?: number | undefined;
+  readonly from?: string | undefined;
   readonly latest: boolean;
   readonly limit?: number | undefined;
   readonly publicationMode?: ReviewPublicationMode | undefined;
@@ -96,6 +97,7 @@ export async function loadStoredReviewReports(
         tenantId: { eq: tenant.id },
         status: { eq: "completed" },
         resultJson: { isNull: false },
+        ...(filters.from ? { finishedAt: { gte: filters.from } } : {}),
       },
       order: [
         { field: "finishedAt", direction: "desc" },
@@ -140,10 +142,37 @@ export async function loadStoredReviewReports(
       triggerType: triggerTypeByRunId.get(run.id) ?? null,
       startedAt: run.startedAt,
       finishedAt: run.finishedAt,
-      result: reviewResultSchema.parse(JSON.parse(run.resultJson!) as unknown),
+      result: parseStoredReviewResult(run.resultJson!),
       changes: parseReviewChanges(snapshotByRunId.get(run.id)?.changesJson),
     };
   });
+}
+
+function parseStoredReviewResult(resultJson: string): ReviewResult {
+  const parsed = JSON.parse(resultJson) as unknown;
+  if (!isRecord(parsed) || !Array.isArray(parsed.priorDispositions)) {
+    return reviewResultSchema.parse(parsed);
+  }
+
+  return reviewResultSchema.parse({
+    ...parsed,
+    priorDispositions: parsed.priorDispositions.flatMap((disposition) => {
+      if (!isRecord(disposition)) {
+        return [];
+      }
+      if (typeof disposition.discussionId === "string") {
+        return [disposition];
+      }
+      if (typeof disposition.threadId === "string") {
+        return [{ ...disposition, discussionId: disposition.threadId }];
+      }
+      return [];
+    }),
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export function formatStoredReviewReportsMarkdown(

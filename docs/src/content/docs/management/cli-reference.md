@@ -517,7 +517,7 @@ Display completed review reports stored for a tenant. Reports include published 
 ```bash
 reviewphin mr report \
   --key https://gitlab.example.com::123 \
-  --latest
+  --from 2026-07-01
 ```
 
 Without a result filter, the command displays every stored report for the tenant, newest first. Completed interaction runs without a review result, such as reply-only runs, are omitted.
@@ -525,6 +525,7 @@ Without a result filter, the command displays every stored report for the tenant
 | Flag                        | Required | Description                                                                                                                |
 | --------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `--key`                     | Yes      | Stable tenant key printed by `tenant list`.                                                                                |
+| `--from`                    | No       | Include reports completed on or after this date (`YYYY-MM-DD`, UTC).                                                       |
 | `--latest`                  | No       | Display only the newest report after applying the other filters. Cannot be combined with `--limit`.                        |
 | `--limit`                   | No       | Display at most this many reports. Must be a positive integer and cannot be combined with `--latest`.                      |
 | `--code-review-id`          | No       | Include only this merge request IID or pull request number.                                                                |
@@ -537,6 +538,8 @@ Without a result filter, the command displays every stored report for the tenant
 | `--storage-provider-module` | No       | Override the storage adapter module.                                                                                       |
 
 Trigger-type filters use persisted run metrics and fall back to trigger metadata where the type is unambiguous. Historical reports without either source remain visible as type `unknown`, but do not match a trigger-type filter.
+
+Historical results that use the former `threadId` name in prior-discussion dispositions remain readable. Disposition entries without either the current or former identifier are ignored because they do not affect the displayed findings.
 
 Human-readable reports identify the tenant, merge request or pull request, completion time, trigger and publication modes, head SHA, job, and run. Suggested changes show the filename, line range, and replacement. When the stored code-review snapshot contains those lines, the report also shows the exact code being replaced.
 

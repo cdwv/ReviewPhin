@@ -102,6 +102,66 @@ describe("mr report CLI", () => {
     }
   });
 
+  it("filters reports by their inclusive completion date", async () => {
+    const fixture = await createReportFixture();
+    try {
+      let stdout = "";
+      await runCli(
+        [
+          "mr",
+          "report",
+          "--key",
+          tenantKey,
+          "--from",
+          "2026-08-02",
+          "--json",
+          "--sqlite-database-path",
+          fixture.databasePath,
+        ],
+        { stdout: createStringWriter((text) => (stdout += text)) },
+      );
+
+      const reports = JSON.parse(stdout) as Array<Record<string, unknown>>;
+      expect(reports).toHaveLength(1);
+      expect(reports[0]).toEqual(expect.objectContaining({ codeReviewId: 8 }));
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it("reads legacy prior dispositions without discussionId", async () => {
+    const fixture = await createReportFixture({ legacyDisposition: true });
+    try {
+      let stdout = "";
+      await runCli(
+        [
+          "mr",
+          "report",
+          "--key",
+          tenantKey,
+          "--code-review",
+          "7",
+          "--json",
+          "--sqlite-database-path",
+          fixture.databasePath,
+        ],
+        { stdout: createStringWriter((text) => (stdout += text)) },
+      );
+
+      const reports = JSON.parse(stdout) as Array<{
+        result: { priorDispositions: Array<Record<string, unknown>> };
+      }>;
+      expect(reports[0]?.result.priorDispositions).toEqual([
+        expect.objectContaining({
+          discussionId: "legacy-discussion",
+          action: "keep",
+        }),
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it("writes matching reports as one Markdown document", async () => {
     const fixture = await createReportFixture();
     try {
@@ -137,9 +197,17 @@ describe("mr report CLI", () => {
       runCli(["mr", "report", "--key", tenantKey, "--latest", "--limit", "2"]),
     ).rejects.toThrow("Cannot combine --latest with --limit.");
   });
+
+  it("rejects an invalid from date", async () => {
+    await expect(
+      runCli(["mr", "report", "--key", tenantKey, "--from", "2026/08/02"]),
+    ).rejects.toThrow("--from requires YYYY-MM-DD");
+  });
 });
 
-async function createReportFixture() {
+async function createReportFixture(
+  options: { legacyDisposition?: boolean } = {},
+) {
   const directory = await mkdtemp(join(tmpdir(), "mr-report-cli-"));
   const databasePath = join(directory, "reviewphin.sqlite");
   const storage = await openSqliteTestStorage(databasePath);
@@ -161,7 +229,15 @@ async function createReportFixture() {
     triggerType: "manual-review",
     startedAt: "2026-08-01T10:00:00.000Z",
     finishedAt: "2026-08-01T10:01:00.000Z",
-    result: reviewResultWithSuggestion,
+    result: options.legacyDisposition
+      ? {
+          ...reviewResultWithSuggestion,
+          priorDispositions: [
+            { threadId: "legacy-discussion", action: "keep" },
+            { action: "resolve", resolution: "dismissed" },
+          ],
+        }
+      : reviewResultWithSuggestion,
     diff: [
       "@@ -8,5 +8,5 @@",
       " function authorize() {",
@@ -208,7 +284,7 @@ async function seedReport(
     triggerType: ReviewTriggerKind;
     startedAt: string;
     finishedAt: string;
-    result: ReviewResult;
+    result: unknown;
     diff: string;
   },
 ): Promise<void> {

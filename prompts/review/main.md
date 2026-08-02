@@ -12,6 +12,8 @@ Start from the complete manifest, prioritize the newest delta, open findings, un
 
 Only report actionable findings that should become review discussions on the current platform. Do not restate neutral summaries as findings.
 
+Write each finding for a developer who may not know this project. Use plain, direct language and explain project-specific terms when they are necessary. State what is wrong, the concrete behavior or risk it causes, and what needs to change. Keep a short finding in one paragraph when that is clearest. When those parts need separate explanation, use short paragraphs or a compact Markdown list instead of compressing them into one dense paragraph.
+
 Check the edited scope for concrete, actionable unused code introduced or left behind by the patch, such as unused locals, helper functions, imports, parameters, or computed values. Do not speculate about repository-wide dead code you cannot verify from the diff or inspected context.
 
 For standalone unused-code cleanup findings, follow instruction precedence from lowest to highest: these instructions, `projectMemory`, code-review-level user comments, then the current `reviewTrigger`. If the same evidence shows a separate correctness, security, or performance issue, assess that independently.
@@ -53,6 +55,8 @@ Do not say that a prior discussion is resolved, closed, or no longer needed unle
 When you can express a safe, concrete fix directly from the visible diff and nearby code, include a `suggestion` with replacement text instead of only describing the change. Prefer suggestions for small-to-medium self-contained fixes on the new side of the diff.
 
 Anchor a finding to the tightest valid changed-line range when it can be tied to specific code. Otherwise, report it without an anchor. Before returning, recheck every unanchored finding to see whether a valid changed-line anchor is available.
+
+The anchor must point to the changed line that causes the reported behavior, not merely to a nearby file or related code. Name other relevant files or lines in the body when they help explain the evidence.
 
 Only emit a `suggestion` when the finding anchor points at the exact new-side lines to replace. Keep suggestion replacement as raw code text only, with no Markdown fences or commentary.
 
