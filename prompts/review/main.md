@@ -12,7 +12,14 @@ Start from the complete manifest, prioritize the newest delta, open findings, un
 
 Only report actionable findings that should become review discussions on the current platform. Do not restate neutral summaries as findings.
 
-Write each finding for a developer who may not know this project. Use plain, direct language and explain project-specific terms when they are necessary. State what is wrong, the concrete behavior or risk it causes, and what needs to change. Keep a short finding in one paragraph when that is clearest. When those parts need separate explanation, use short paragraphs or a compact Markdown list instead of compressing them into one dense paragraph.
+Write each finding for a developer who may not know this project:
+
+- Use plain, direct language and explain project-specific terms when they are necessary.
+- Make the problem, its concrete effect or risk, and the required change easy to identify.
+- Use separate short paragraphs when more than one of those parts needs explanation.
+- Use a compact Markdown list for multiple cases or steps.
+- Put that formatting inside the finding's `body`; do not add separate problem, impact, or fix fields.
+- Do not compress distinct points into one paragraph.
 
 Check the edited scope for concrete, actionable unused code introduced or left behind by the patch, such as unused locals, helper functions, imports, parameters, or computed values. Do not speculate about repository-wide dead code you cannot verify from the diff or inspected context.
 
@@ -52,12 +59,19 @@ Do not compose human-facing conversational replies outside existing bot-owned fi
 
 Do not say that a prior discussion is resolved, closed, or no longer needed unless you also include the matching `priorDispositions` entry with action `resolve` for that discussion.
 
-When you can express a safe, concrete fix directly from the visible diff and nearby code, include a `suggestion` with replacement text instead of only describing the change. Prefer suggestions for small-to-medium self-contained fixes on the new side of the diff.
+When a safe, concrete fix can replace a small-to-medium new-side range in the review diff, include a `suggestion` instead of only describing the change.
 
-Anchor a finding to the tightest valid changed-line range when it can be tied to specific code. Otherwise, report it without an anchor. Before returning, recheck every unanchored finding to see whether a valid changed-line anchor is available.
+Apply these anchor rules to each new finding:
 
-The anchor must point to the changed line that causes the reported behavior, not merely to a nearby file or related code. Name other relevant files or lines in the body when they help explain the evidence.
+- Anchor only when a line available in the review diff usefully locates the issue.
+- Prefer the tightest relevant new-side line or range.
+- An unchanged context line inside a diff hunk is valid when the patch should have changed that code but left it intact.
+- Use an old-side anchor only when removed code itself is the subject.
+- An anchor locates the issue; it does not need to be its only cause. For an omission or an interaction across locations, anchor the most relevant available diff line and name the other locations in the body.
+- If no relevant line is available in the diff, omit the anchor and identify the file, symbol, and line in the body when known.
+- Never choose an unrelated changed line merely to make the finding inline.
+- Before returning, recheck each anchor against the diff and each unanchored finding for a relevant diff line.
 
-Only emit a `suggestion` when the finding anchor points at the exact new-side lines to replace. Keep suggestion replacement as raw code text only, with no Markdown fences or commentary.
+Only emit a `suggestion` with a new-side anchor whose line range exactly matches the suggestion range. Keep the replacement as raw code text only, with no Markdown fences or commentary.
 
 Return JSON only. Do not wrap it in Markdown fences.

@@ -25,8 +25,8 @@ export function buildReviewPrompt(
     renderPrompt(getPromptTemplateId(context), {}),
     ...buildAttachmentRuntimeNote(context),
     "",
-    "JSON schema:",
-    JSON.stringify(reviewResponseSchema, null, 2),
+    "Output field guide (fields described as optional may be omitted):",
+    JSON.stringify(reviewResponseFieldGuide, null, 2),
     "",
     "Context:",
     JSON.stringify(
@@ -44,12 +44,12 @@ export function buildChatterPrompt(context: ChatterRunContext): string {
     ...buildAttachmentRuntimeNote(context.reviewContext),
     "",
     "Formatting contract:",
-    "- Return exactly one JSON object matching the schema below.",
+    "- Return exactly one JSON object matching the output field guide below.",
     "- Put all human-facing reply text inside JSON string fields such as `replies[].replyBody`.",
     "- Do not include Markdown fences, introductions, explanations, or trailing text outside the JSON object.",
     "",
-    "JSON schema:",
-    JSON.stringify(chatterResponseSchema, null, 2),
+    "Output field guide (fields described as optional may be omitted):",
+    JSON.stringify(chatterResponseFieldGuide, null, 2),
     "",
     "Context:",
     JSON.stringify(
@@ -275,7 +275,7 @@ function buildPromptProjectMemory(
   };
 }
 
-const reviewResponseSchema = {
+const reviewResponseFieldGuide = {
   overview: {
     summary: "string",
     overallSeverity: "low | medium | high | critical",
@@ -295,19 +295,11 @@ const reviewResponseSchema = {
       severity: "low | medium | high | critical",
       category: "bug | correctness | security | performance | maintainability",
       confidence: "optional low | medium | high",
-      anchor: {
-        path: "string",
-        oldPath: "optional string",
-        startLine: 1,
-        endLine: 1,
-        side: "new | old",
-      },
-      suggestion: {
-        replacement: "string",
-        startLine: 1,
-        endLine: 1,
-      },
-      replyInDiscussion: false,
+      anchor:
+        "optional { path: string, oldPath?: string, startLine: positive integer, endLine: positive integer, side: new | old }",
+      suggestion:
+        "optional { replacement: string, startLine: positive integer, endLine: positive integer }",
+      replyInDiscussion: "optional boolean",
     },
   ],
   priorDispositions: [
@@ -318,25 +310,12 @@ const reviewResponseSchema = {
       resolution: "optional resolved | dismissed",
     },
   ],
-  replyHandoff: {
-    summary: "string",
-    targets: [
-      {
-        kind: "code-review-comment | discussion-reply | summary-discussion-reply | finding-discussion-reply",
-        commentId: 1,
-        discussionId:
-          "required for threaded reply kinds; optional for code-review-comment",
-        guidance: "string",
-      },
-    ],
-  },
+  replyHandoff:
+    "optional { summary: string, targets: Array<{ kind: code-review-comment | discussion-reply | summary-discussion-reply | finding-discussion-reply, commentId: positive integer, discussionId?: string (required unless kind is code-review-comment), guidance: string }> }",
 };
 
-const chatterResponseSchema = {
-  memory: {
-    status: "written | skipped",
-    summary: "string",
-  },
+const chatterResponseFieldGuide = {
+  memory: "optional null | { status: written | skipped, summary: string }",
   replies: [
     {
       target: {

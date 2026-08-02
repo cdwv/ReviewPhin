@@ -154,29 +154,58 @@ describe("buildReviewPrompt", () => {
     expect(renderPrompt("subagent.review-author", {})).not.toContain("unused");
   });
 
-  it("asks the reviewer to recheck unanchored findings without suppressing them", () => {
+  it("allows relevant diff context anchors without encouraging unrelated inline locations", () => {
     const prompt = buildReviewPrompt(createContext());
 
+    expect(prompt).toContain("line available in the review diff");
+    expect(prompt).toContain("unchanged context line inside a diff hunk");
     expect(prompt).toContain(
-      "Anchor a finding to the tightest valid changed-line range when it can be tied to specific code.",
+      "Use an old-side anchor only when removed code itself is the subject",
+    );
+    expect(prompt).toContain("does not need to be its only cause");
+    expect(prompt).toContain(
+      "Never choose an unrelated changed line merely to make the finding inline",
     );
     expect(prompt).toContain(
-      "Otherwise, report it without an anchor. Before returning, recheck every unanchored finding",
+      "omit the anchor and identify the file, symbol, and line in the body",
+    );
+    expect(prompt).toContain(
+      "recheck each anchor against the diff and each unanchored finding",
+    );
+    expect(prompt).not.toContain(
+      "anchor must point to the changed line that causes",
     );
   });
 
-  it("asks review authors for plain, structured, correctly anchored findings", () => {
+  it("asks for plain, structured findings without duplicating that guidance in the agent role", () => {
     const prompt = buildReviewPrompt(createContext());
     const authorPrompt = renderPrompt("subagent.review-author", {});
 
     expect(prompt).toContain("a developer who may not know this project");
-    expect(prompt).toContain("what is wrong, the concrete behavior or risk");
-    expect(prompt).toContain("short paragraphs or a compact Markdown list");
-    expect(prompt).toContain("changed line that causes the reported behavior");
-    expect(authorPrompt).toContain(
-      "problem, its concrete effect or risk, and the required change",
+    expect(prompt).toContain("problem, its concrete effect or risk");
+    expect(prompt).toContain("Use separate short paragraphs");
+    expect(prompt).toContain("Use a compact Markdown list");
+    expect(prompt).toContain("Put that formatting inside the finding's `body`");
+    expect(prompt).toContain("Do not compress distinct points");
+    expect(authorPrompt).not.toContain(
+      "a developer who may not know this project",
     );
-    expect(authorPrompt).toContain("do not pack them into one dense paragraph");
+  });
+
+  it("describes optional location fields consistently with the response validator", () => {
+    const prompt = buildReviewPrompt(createContext());
+
+    expect(prompt).toContain(
+      "Output field guide (fields described as optional may be omitted):",
+    );
+    expect(prompt).toContain(
+      '"anchor": "optional { path: string, oldPath?: string',
+    );
+    expect(prompt).toContain('"suggestion": "optional { replacement: string');
+    expect(prompt).toContain('"replyHandoff": "optional { summary: string');
+    expect(prompt).toContain(
+      "new-side anchor whose line range exactly matches the suggestion range",
+    );
   });
 
   it("uses the incremental summary-follow-up registered combination", () => {
@@ -477,15 +506,23 @@ describe("buildReviewPrompt", () => {
     );
     expect(prompt).toContain("Formatting contract:");
     expect(prompt).toContain(
-      "Return exactly one JSON object matching the schema below.",
+      "Return exactly one JSON object matching the output field guide below.",
     );
     expect(prompt).toContain(
       "Do not include Markdown fences, introductions, explanations, or trailing text outside the JSON object.",
     );
     expect(prompt).toContain("Match the language of the triggering request");
     expect(prompt).toContain("Lead with the answer or requested action");
+    expect(prompt).toContain("do not sacrifice structure for brevity");
     expect(prompt).toContain(
-      "short paragraphs or a compact Markdown list instead of compressing them into one dense paragraph",
+      "Use one paragraph only when the reply contains one idea",
+    );
+    expect(prompt).toContain(
+      "Separate distinct reasons or conditions into short paragraphs",
+    );
+    expect(prompt).toContain("Put that formatting inside `replyBody`");
+    expect(prompt).toContain(
+      '"memory": "optional null | { status: written | skipped',
     );
   });
 
