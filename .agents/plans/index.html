@@ -15,7 +15,7 @@
             ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
           >
           <p class="rail-label">Checked</p>
-          <p class="rail-value">25 July 2026</p>
+          <p class="rail-value">2 August 2026</p>
           <p class="rail-label">Database format</p>
           <p class="rail-value">storage-v006</p>
           <nav class="toc" aria-label="On this page">
@@ -29,14 +29,16 @@
       <main id="content">
         <header class="hero">
           <p class="eyebrow">Work we want to do</p>
-          <h1>Twelve plans, in the order that matters most.</h1>
+          <h1>Nine active plans and one parked draft.</h1>
           <p class="lede">
             Start at the top. The first plans fix things that can confuse users
             or produce bad review results. Later plans improve operator tools,
             documentation, and code health.
           </p>
           <div class="meta-grid">
-            <div class="meta-item"><span>Plans</span><strong>12</strong></div>
+            <div class="meta-item">
+              <span>Listed plans</span><strong>10</strong>
+            </div>
             <div class="meta-item">
               <span>Most urgent</span><strong>Safe publication</strong>
             </div>
@@ -165,6 +167,19 @@
                 an authenticated first webhook after proving project access.
               </p>
             </article>
+            <article class="card">
+              <span class="badge contract">14 · parked design draft</span>
+              <h3>
+                <a href="14.unified-finding-identity.html"
+                  >Use one durable key for each finding</a
+                >
+              </h3>
+              <p>
+                Preserve the proposed direction for unifying local and published
+                finding lifecycles. Do not implement it until atomic lifecycle
+                updates and recovery behavior are decided.
+              </p>
+            </article>
           </div>
         </section>
 
@@ -178,6 +193,13 @@
               </tr>
             </thead>
             <tbody>
+              <tr>
+                <td>14. Finding identity</td>
+                <td>
+                  Draft decision. No new field is expected, but an atomic batch
+                  update may require a storage contract revision.
+                </td>
+              </tr>
               <tr>
                 <td>2. Safe publication</td>
                 <td>

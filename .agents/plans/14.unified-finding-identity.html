@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Draft Plan 14 — Use one durable key for each finding</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="medium">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 14</p>
+          <p class="rail-value">One key per finding</p>
+          <p class="rail-label">Decision status</p>
+          <p class="rail-value">Draft · parked</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a>
+            <a href="#goal">What do we want?</a>
+            <a href="#fix">How do we fix it?</a>
+            <a href="#steps">Work steps</a>
+            <a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Draft Plan 14 · finding lifecycle</p>
+          <h1>
+            Give every review finding one durable key from creation to closure.
+          </h1>
+          <p class="lede">
+            A finding saved without publishing has no GitHub or GitLab thread.
+            Today the reviewer can close only findings that have a thread, so a
+            fixed local finding can remain open forever. The revised contract
+            gives the reviewer one finding key that works with or without a
+            published comment.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>Deferred design</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span
+              ><strong>Review readers and operators</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main area</span
+              ><strong>Finding state and review prompts</strong>
+            </div>
+            <div class="meta-item">
+              <span>Stored data</span><strong>Decision still required</strong>
+            </div>
+          </div>
+          <div class="callout warning">
+            <strong>Draft status:</strong> keep this plan as the preferred
+            direction, but do not implement it yet. Before work starts, decide
+            how several finding changes commit atomically, survive retries, and
+            behave when a worker loses its claim. That decision may require a
+            storage contract revision even if no new database fields are added.
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> the reviewer copies one durable
+            finding key when it continues, replaces, resolves, or dismisses an
+            earlier issue. ReviewPhin updates the saved finding and, when one
+            exists, the matching platform thread. No-publish and published
+            reviews follow the same finding rules.
+          </div>
+        </header>
+
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Local findings have no way to close</h3>
+              <p>
+                A no-publish review saves a finding but creates no platform
+                thread. A later review can see that the issue is fixed, yet it
+                cannot name the saved finding in its closure instructions.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Readiness can remain wrong forever</h3>
+              <p>
+                Once old findings correctly count toward readiness, an old local
+                finding stays active across every later review. Reports continue
+                to say that work is needed after the code is fixed.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The reviewer sees several kinds of identifiers</h3>
+              <p>
+                Saved findings, ReviewPhin discussion mappings, and platform
+                threads have different identifiers. Asking the reviewer to
+                choose among them makes the output contract harder to follow.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The old behavior only hid the gap</h3>
+              <p>
+                Earlier local reports could say “ready” because they ignored old
+                findings. That did not close the finding; it merely stopped
+                considering it when readiness was calculated.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="One finding key from prompt to closure">
+            <div>
+              <strong>1. Show one key</strong
+              ><span
+                >Every earlier finding or finding discussion gives the reviewer
+                the same durable finding key.</span
+              >
+            </div>
+            <div>
+              <strong>2. Copy the key</strong
+              ><span
+                >The reviewer copies that key when an issue continues, changes,
+                is fixed, or should be dismissed.</span
+              >
+            </div>
+            <div>
+              <strong>3. Apply the outcome</strong
+              ><span
+                >ReviewPhin calculates one lifecycle outcome, updates a platform
+                thread when needed, and commits the same saved state.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>
+              The reviewer uses one opaque finding key and never constructs or
+              edits it.
+            </li>
+            <li>
+              ReviewPhin assigns a key to a new finding. On later reviews, the
+              reviewer can only copy a key that ReviewPhin supplied in the
+              earlier-finding or discussion context.
+            </li>
+            <li>
+              The existing findings and prior-outcomes collections remain; no
+              second collection is added for local findings.
+            </li>
+            <li>
+              A current finding links to the key of the earlier finding it
+              continues or replaces. A prior outcome uses that same key to
+              resolve, dismiss, or reply about the earlier finding.
+            </li>
+            <li>
+              A closure must be explicit. Omitting an earlier finding never
+              silently marks it fixed.
+            </li>
+            <li>
+              Platform thread and comment identifiers stay inside publication
+              and conversation handling where they are actually needed.
+            </li>
+            <li>
+              Published and no-publish findings produce the same saved status
+              and the same readiness answer.
+            </li>
+            <li>
+              Existing stored findings and mappings are reused without a new
+              database column or migration.
+            </li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Problem</th>
+                <th>Planned change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  Earlier findings and discussions expose different identifiers.
+                </td>
+                <td>
+                  Give both prompt inputs the same durable finding key. Remove
+                  platform addresses from the reviewer-facing finding contract
+                  when the reviewer does not need them.
+                </td>
+              </tr>
+              <tr>
+                <td>A current finding must point back to an earlier issue.</td>
+                <td>
+                  Keep the existing finding object and let it copy the earlier
+                  finding key. ReviewPhin uses that link even when the title,
+                  wording, or line has changed.
+                </td>
+              </tr>
+              <tr>
+                <td>A closure currently names only a discussion.</td>
+                <td>
+                  Keep the existing prior-outcomes collection, but make every
+                  entry name the durable finding key. Do not add a second
+                  local-only outcome collection.
+                </td>
+              </tr>
+              <tr>
+                <td>A finding may or may not have a platform thread.</td>
+                <td>
+                  Always update saved finding state through the durable key. If
+                  a mapping exists, also update or resolve that platform thread.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  An unknown or ambiguous key could target the wrong issue.
+                </td>
+                <td>
+                  Validate every copied key against the context supplied to the
+                  reviewer. An unknown key never changes earlier saved state or
+                  a platform thread. A current finding with an unknown earlier
+                  key is still saved as a new finding so the issue is not lost.
+                  If one key maps to several live threads, the saved finding may
+                  still be updated by its exact key, but all platform mutations
+                  for that key are skipped. Record both cases as structured
+                  diagnostics.
+                </td>
+              </tr>
+              <tr>
+                <td>Older saved results contain the previous identifiers.</td>
+                <td>
+                  At the stored-result read boundary, retain their overview and
+                  findings but discard historical lifecycle pointers that name
+                  only a discussion or thread. Those pointers are not displayed
+                  in reports and cannot be converted safely into finding keys.
+                  The current model contract accepts only finding keys.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            <strong>Important boundary:</strong> this plan unifies identifiers
+            for the reviewer’s finding lifecycle. A conversational reply still
+            needs the exact message or thread target supplied to the chatter
+            role. Do not force finding keys into unrelated reply routing.
+          </div>
+          <div class="callout">
+            <strong>Lifecycle rule:</strong> a linked current finding means the
+            concern continues. If its newly calculated key differs from the
+            copied earlier key, ReviewPhin retires the earlier finding and saves
+            the current one as its replacement. A key cannot be both continued
+            and resolved or dismissed in the same response. Duplicate or
+            contradictory references make the response invalid before any
+            lifecycle change is applied.
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Build one finding-key lookup.</strong> Combine earlier
+                saved findings and bot-owned finding discussions by their
+                durable key. Keep every matching live thread so duplicate
+                mappings are detected instead of overwritten. Keep
+                conversation-only routing out of this lookup.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Give prompt inputs one finding key.</strong> Add the
+                durable key to earlier discussion context and stop exposing
+                unnecessary platform addresses to the reviewer. Keep the same
+                key already present on saved prior findings.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Simplify the current response contract.</strong> Reuse
+                the existing finding and prior-outcome objects. Make both copy
+                the durable key. Keep only resolve and reply as prior-outcome
+                actions; a linked current finding already represents keep or
+                update. Require either resolved or dismissed for closure, and
+                require the reply body for a reply. Generate the prompt schema
+                from the strict current response schema, with no legacy
+                alternatives.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Make the prompt rules direct.</strong> Tell the reviewer
+                to copy keys exactly, link every continued issue, explicitly
+                close fixed or invalid issues, and leave an issue open when the
+                evidence is uncertain. Remove instructions that still ask for a
+                discussion identifier.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Project one lifecycle outcome.</strong> Turn only
+                validated closures and replacements into an in-memory transition
+                set. Project active findings from that set, then calculate
+                readiness. Published and no-publish runs must compute the same
+                outcome, and neither may infer a closure from omission.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Update the platform when possible.</strong> Resolve or
+                update a mapped GitHub or GitLab thread from the same finding
+                key. With no matching thread, a closure remains local, a linked
+                current finding gets a new thread when publishing is enabled,
+                and a requested reply is skipped with a diagnostic. One match is
+                safe to mutate. More than one match is ambiguous, so skip the
+                platform change while preserving the saved finding outcome.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Commit the saved lifecycle safely.</strong> After the
+                platform phase succeeds—or immediately when publishing is
+                disabled—apply the same transition set while the run still owns
+                the job, then save the final result. A failed platform phase
+                must not commit closures or replacements that a retry can no
+                longer see.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Keep old reports readable.</strong> Normalize historical
+                results only when they are read. Drop old discussion-only
+                lifecycle pointers, retain report content, and do not weaken
+                validation of a new model response to accommodate old data.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Test complete lifecycles.</strong> Cover two local runs,
+                two published runs, changed finding text and anchors, unknown
+                keys, duplicate thread mappings, contradictory output, old saved
+                output, claim loss, and matching readiness across reports and
+                platform summaries.
+              </div>
+            </li>
+          </ol>
+
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <ul>
+              <li>
+                In <a href="../../src/review/types.ts"><code>types.ts</code></a
+                >, replace
+                <code>reviewFindingSchema.priorDiscussionId</code> with an
+                optional <code>priorIdentityKey</code>, and replace
+                <code>priorDispositionSchema.discussionId</code> with required
+                <code>identityKey</code>. Make prior dispositions a strict
+                discriminated union: <code>resolve</code> requires
+                <code>resolution</code>, and <code>reply</code> requires
+                <code>replyBody</code>. Remove the no-op <code>keep</code> and
+                <code>update</code> disposition actions. Add
+                <code>identityKey</code> to
+                <code>ProviderDiscussionContext</code>. Add response-level
+                validation for duplicate prior keys and for a key that is both
+                continued and resolved or dismissed.
+              </li>
+              <li>
+                Keep <code>reviewResultSchema</code> as the one current reviewer
+                response schema. Do not add a no-publish response schema or a
+                second top-level disposition array. The compact JSON Schema in
+                <a href="../../src/prompts/prompt-builders.ts"
+                  ><code>prompt-builders.ts</code></a
+                >
+                must continue to be generated directly from it.
+              </li>
+              <li>
+                Update <code>buildCompactReviewContext</code> so
+                <code>reviewScope.priorFindings</code>,
+                <code>reviewScope.targetDiscussion</code>, and
+                <code>priorDiscussions</code> expose the canonical
+                <code>identityKey</code>. Omit <code>findingId</code>,
+                <code>platformDiscussionId</code>, and
+                <code>platformCommentId</code> from reviewer prompt objects.
+                Keep provider identifiers in runtime and chatter objects that
+                need exact reply routing.
+              </li>
+              <li>
+                Update
+                <a href="../../prompts/review/main.md"><code>main.md</code></a
+                >,
+                <a href="../../prompts/review/incremental-rereview.md"
+                  ><code>incremental-rereview.md</code></a
+                >,
+                <a href="../../prompts/review/review-author.md"
+                  ><code>review-author.md</code></a
+                >, and
+                <a href="../../prompts/review/summary-follow-up.md"
+                  ><code>summary-follow-up.md</code></a
+                >. Search all review prompt fragments for conflicting
+                <code>priorDiscussionId</code>, <code>discussionId</code>,
+                reply, and resolution guidance before finalizing the wording.
+              </li>
+              <li>
+                In
+                <a href="../../src/reconcile/discussion-reconciler.ts"
+                  ><code>discussion-reconciler.ts</code></a
+                >, make <code>KnownDiscussion</code>,
+                <code>buildProviderDiscussions</code>, matching, replacement,
+                disposition application, and summary projection key off
+                <code>identityKey</code>. Set that key from the stored mapping
+                when one exists; for an unmapped ReviewPhin discussion, use the
+                same deterministic fallback already used when its state is
+                persisted. Build
+                <code>Map&lt;string, KnownDiscussion[]&gt;</code>, not a map
+                that silently keeps one discussion per key. A missing entry is a
+                local-only finding; when a linked current finding is being
+                published, queue it as a new discussion. One entry is safe to
+                mutate. More than one entry records an ambiguity and skips the
+                platform mutation. Return enough reconciliation outcome for the
+                worker to commit the matching saved transition only after the
+                platform phase finishes successfully; do not calculate readiness
+                from mid-reconciliation writes. Move prior-finding calls to
+                <code>updateReviewFindingStatus</code> and
+                <code>retireReplacedFinding</code> out of the reconciler; keep
+                discussion-mapping writes there.
+              </li>
+              <li>
+                In
+                <a href="../../src/review/active-findings.ts"
+                  ><code>active-findings.ts</code></a
+                >, consume finding dispositions directly by
+                <code>identityKey</code> and remove
+                <code>discussionIdentities</code>. A linked current finding
+                removes its <code>priorIdentityKey</code> before adding its
+                newly calculated key; a resolve outcome removes its
+                <code>identityKey</code>. Keep omission conservative: an open
+                prior finding remains active unless one of those explicit
+                actions retires it. Add focused unit coverage in a new
+                <code>test/active-findings.test.ts</code>.
+              </li>
+              <li>
+                Project active findings once in the worker and pass that result
+                into publication summary rendering. Remove the reconciler's
+                second storage-backed <code>projectActiveFindings</code> pass so
+                published and no-publish readiness cannot diverge because they
+                read lifecycle state at different moments.
+              </li>
+              <li>
+                In
+                <a href="../../src/jobs/review-worker.ts"
+                  ><code>review-worker.ts</code></a
+                >, build and validate the lifecycle transition set before
+                projecting active findings. Persist current-run findings, run
+                reconciliation when publishing is enabled, and only after it
+                succeeds apply prior-finding status changes through the
+                claim-scoped
+                <code>updateReviewFindingStatusForClaim</code> path. A
+                no-publish run skips directly to the same status application.
+                Update only prior rows, use
+                <code>currentStatuses: ["open"]</code> for closure and
+                replacement, and treat <code>false</code> as lease loss. Write
+                unknown and ambiguous key diagnostics to the structured run log
+                and an orchestration artifact.
+              </li>
+              <li>
+                GitHub and GitLab prompt contexts are built in
+                <a href="../../src/platforms/github/review-runtime.ts"
+                  ><code>github/review-runtime.ts</code></a
+                >
+                and
+                <a href="../../src/platforms/gitlab/review-runtime.ts"
+                  ><code>gitlab/review-runtime.ts</code></a
+                >. Keep provider thread IDs in runtime objects for actual API
+                calls even if they leave the reviewer prompt.
+              </li>
+              <li>
+                Extend
+                <a href="../../src/review/persisted-review-result.ts"
+                  ><code>persisted-review-result.ts</code></a
+                >
+                only for older records already in storage. Historical
+                <code>priorDiscussionId</code> and <code>discussionId</code> or
+                <code>threadId</code> values are not safe live mutation targets
+                without a verified mapping. Strip the old finding link and drop
+                those prior disposition entries while retaining the overview and
+                findings needed by reports and incremental history.
+              </li>
+              <li>
+                No new stored field is currently expected. Existing review
+                finding and discussion mapping records already contain
+                <code>identityKey</code>. However, the draft must not assume
+                that existing one-at-a-time status updates are sufficient.
+                Decide whether the transition set needs a claim-checked batch
+                operation or an explicitly idempotent recovery protocol. That
+                choice may require a storage contract revision. Run the
+                repository schema-verification skill before implementation is
+                approved and again before merging any storage change.
+              </li>
+              <li>
+                Focus tests in
+                <a href="../../test/review-result-schema.test.ts"
+                  ><code>review-result-schema.test.ts</code></a
+                >,
+                <a href="../../test/review-prompt.test.ts"
+                  ><code>review-prompt.test.ts</code></a
+                >,
+                <a href="../../test/review-scope.test.ts"
+                  ><code>review-scope.test.ts</code></a
+                >,
+                <a href="../../test/discussion-reconciler.test.ts"
+                  ><code>discussion-reconciler.test.ts</code></a
+                >,
+                <a href="../../test/review-worker-orchestration.test.ts"
+                  ><code>review-worker-orchestration.test.ts</code></a
+                >,
+                <a href="../../test/github-requested-action-happy-path.test.ts"
+                  ><code>github-requested-action-happy-path.test.ts</code></a
+                >, and
+                <a href="../../test/mr-report-cli.test.ts"
+                  ><code>mr-report-cli.test.ts</code></a
+                >.
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              A first no-publish run stores one open finding. A second
+              no-publish run explicitly resolves it, stores the old finding as
+              resolved, and produces a ready report.
+            </li>
+            <li>
+              Resolving the same kind of finding after publication updates the
+              stored status and resolves the matching platform thread when the
+              platform supports it.
+            </li>
+            <li>
+              A current finding can link to and replace an earlier finding even
+              after its title, explanation, file line, or anchor changes.
+            </li>
+            <li>
+              Merely omitting an earlier finding leaves it open and keeps
+              readiness conservative.
+            </li>
+            <li>
+              An unknown key does not change an earlier finding or any platform
+              thread. A duplicated thread mapping does not block an exact saved
+              finding outcome, but it changes no platform thread. Both cases
+              leave a structured diagnostic with the key and skipped action.
+            </li>
+            <li>
+              Duplicate references and a response that both continues and closes
+              the same key fail validation before saved or platform state
+              changes.
+            </li>
+            <li>
+              If publication fails before reconciliation finishes, the run does
+              not commit its prior-finding closures or replacements. A retry can
+              still see the earlier open state and complete the platform work.
+            </li>
+            <li>
+              The current prompt schema contains one finding identifier and no
+              legacy discussion-address alternative for finding lifecycle
+              actions. Prior outcomes expose only strict resolve and reply
+              variants.
+            </li>
+            <li>
+              Older saved results still open in CLI reports and incremental
+              history loading without weakening current model validation.
+            </li>
+            <li>
+              Platform summaries, stored reports, and later review context all
+              agree about the same set of active findings and readiness.
+            </li>
+            <li>
+              Chatter can still reply to an exact requested comment or thread;
+              finding-key cleanup does not break conversation routing.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> targeted response-schema, prompt,
+            review-scope, worker orchestration, reconciler, GitHub requested
+            action, and merge-request report tests, <code>pnpm typecheck</code>,
+            <code>pnpm lint</code>, <code>pnpm test</code>, and
+            <code>pnpm build</code>.
+          </p>
+        </section>
+
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="13.tenant-autoregistration.html">← Tenant onboarding</a
+          ><a href="index.html">All plans →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>
