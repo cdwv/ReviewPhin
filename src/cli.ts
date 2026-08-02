@@ -21,7 +21,8 @@ import {
   setReviewPublicationMode,
   type ReviewPublicationMode,
 } from "./review/publication.js";
-import { reviewResultSchema, type ReviewResult } from "./review/types.js";
+import type { ReviewResult } from "./review/types.js";
+import { parsePersistedReviewResult } from "./review/persisted-review-result.js";
 import {
   collectMetrics,
   displayUsageUnit,
@@ -2208,7 +2209,8 @@ async function loadCompletedReviewResult(
   if (!run.resultJson) {
     throw new Error(`Completed review run ${run.id} has no review result.`);
   }
-  return reviewResultSchema.parse(JSON.parse(run.resultJson) as unknown);
+  // Normalize only because a watched run may resolve to an older stored record.
+  return parsePersistedReviewResult(run.resultJson);
 }
 
 async function resolveLocalReviewSelector(

@@ -149,8 +149,20 @@ describe("mr report CLI", () => {
       );
 
       const reports = JSON.parse(stdout) as Array<{
-        result: { priorDispositions: Array<Record<string, unknown>> };
+        result: {
+          overview: {
+            overallAssessment: string;
+            mergeReadiness: { confidence: string };
+          };
+          priorDispositions: Array<Record<string, unknown>>;
+        };
       }>;
+      expect(reports[0]?.result.overview).toEqual(
+        expect.objectContaining({
+          overallAssessment: "Authorization boundaries need attention.",
+          mergeReadiness: expect.objectContaining({ confidence: "low" }),
+        }),
+      );
       expect(reports[0]?.result.priorDispositions).toEqual([
         expect.objectContaining({
           discussionId: "legacy-discussion",
@@ -232,6 +244,11 @@ async function createReportFixture(
     result: options.legacyDisposition
       ? {
           ...reviewResultWithSuggestion,
+          overview: {
+            summary: reviewResultWithSuggestion.overview.summary,
+            overallSeverity:
+              reviewResultWithSuggestion.overview.overallSeverity,
+          },
           priorDispositions: [
             { threadId: "legacy-discussion", action: "keep" },
             { action: "resolve", resolution: "dismissed" },
@@ -370,6 +387,12 @@ const reviewResultWithSuggestion: ReviewResult = {
   overview: {
     summary: "Authorization boundaries need attention.",
     overallSeverity: "high",
+    overallAssessment: "The authorization boundary is incomplete.",
+    mergeReadiness: {
+      status: "blocked",
+      confidence: "high",
+      summary: "Validate the tenant before merging.",
+    },
   },
   findings: [
     {

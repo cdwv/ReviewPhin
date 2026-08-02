@@ -5,11 +5,11 @@ import {
   type ReviewPublicationMode,
 } from "../review/publication.js";
 import {
-  reviewResultSchema,
   type CodeReviewChange,
   type ReviewResult,
   type ReviewTriggerKind,
 } from "../review/types.js";
+import { parsePersistedReviewResult } from "../review/persisted-review-result.js";
 import type {
   CodeReviewSnapshotRecord,
   InteractionJobRecord,
@@ -142,37 +142,11 @@ export async function loadStoredReviewReports(
       triggerType: triggerTypeByRunId.get(run.id) ?? null,
       startedAt: run.startedAt,
       finishedAt: run.finishedAt,
-      result: parseStoredReviewResult(run.resultJson!),
+      // Normalize only because CLI reports can read older records from storage.
+      result: parsePersistedReviewResult(run.resultJson!),
       changes: parseReviewChanges(snapshotByRunId.get(run.id)?.changesJson),
     };
   });
-}
-
-function parseStoredReviewResult(resultJson: string): ReviewResult {
-  const parsed = JSON.parse(resultJson) as unknown;
-  if (!isRecord(parsed) || !Array.isArray(parsed.priorDispositions)) {
-    return reviewResultSchema.parse(parsed);
-  }
-
-  return reviewResultSchema.parse({
-    ...parsed,
-    priorDispositions: parsed.priorDispositions.flatMap((disposition) => {
-      if (!isRecord(disposition)) {
-        return [];
-      }
-      if (typeof disposition.discussionId === "string") {
-        return [disposition];
-      }
-      if (typeof disposition.threadId === "string") {
-        return [{ ...disposition, discussionId: disposition.threadId }];
-      }
-      return [];
-    }),
-  });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export function formatStoredReviewReportsMarkdown(

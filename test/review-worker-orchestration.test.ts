@@ -1398,6 +1398,12 @@ describe("ReviewWorker orchestration", () => {
         overview: {
           summary: "No further issues found",
           overallSeverity: "low" as const,
+          overallAssessment: "No further issues were found.",
+          mergeReadiness: {
+            status: "ready" as const,
+            confidence: "high" as const,
+            summary: "The change is ready to merge.",
+          },
         },
         findings: [],
         priorDispositions: [],
@@ -1743,6 +1749,12 @@ describe("ReviewWorker orchestration", () => {
         overview: {
           summary: "No further issues found",
           overallSeverity: "low" as const,
+          overallAssessment: "No further issues were found.",
+          mergeReadiness: {
+            status: "ready" as const,
+            confidence: "high" as const,
+            summary: "The change is ready to merge.",
+          },
         },
         findings: [],
         priorDispositions: [],
@@ -1935,6 +1947,12 @@ describe("ReviewWorker orchestration", () => {
       overview: {
         summary: "No issues found.",
         overallSeverity: "low" as const,
+        overallAssessment: "No issues were found.",
+        mergeReadiness: {
+          status: "ready" as const,
+          confidence: "high" as const,
+          summary: "The change is ready to merge.",
+        },
       },
       findings: [],
       priorDispositions: [],

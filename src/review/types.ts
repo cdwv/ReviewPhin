@@ -105,7 +105,7 @@ export const reviewerReplyTargetHandoffSchema = z
 
 export const reviewerReplyHandoffSchema = z.object({
   summary: z.string().min(1),
-  targets: z.array(reviewerReplyTargetHandoffSchema).default([]),
+  targets: z.array(reviewerReplyTargetHandoffSchema),
 });
 
 export const reviewMergeReadinessSchema = z.object({
@@ -117,15 +117,15 @@ export const reviewMergeReadinessSchema = z.object({
 export const reviewOverviewSchema = z.object({
   summary: z.string().min(1),
   overallSeverity: z.enum(["low", "medium", "high", "critical"]),
-  overallAssessment: z.string().min(1).optional(),
-  mergeReadiness: reviewMergeReadinessSchema.optional(),
+  overallAssessment: z.string().min(1),
+  mergeReadiness: reviewMergeReadinessSchema,
   highlights: z.array(z.string().min(1)).max(5).optional(),
 });
 
 export const reviewResultSchema = z.object({
   overview: reviewOverviewSchema,
   findings: z.array(reviewFindingSchema),
-  priorDispositions: z.array(priorDispositionSchema).default([]),
+  priorDispositions: z.array(priorDispositionSchema),
   replyHandoff: reviewerReplyHandoffSchema.optional(),
 });
 
@@ -164,8 +164,8 @@ export const chatterReplySchema = z.object({
 });
 
 export const chatterBatchResultSchema = z.object({
-  memory: chatterMemoryOutcomeSchema.nullable().optional(),
-  replies: z.array(chatterReplySchema).default([]),
+  memory: chatterMemoryOutcomeSchema.nullable(),
+  replies: z.array(chatterReplySchema),
 });
 
 export type ReviewAnchor = z.infer<typeof reviewAnchorSchema>;

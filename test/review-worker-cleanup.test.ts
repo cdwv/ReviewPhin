@@ -298,6 +298,12 @@ describe("ReviewWorker cleanup", () => {
             overview: {
               summary: "Done",
               overallSeverity: "low" as const,
+              overallAssessment: "No issues found.",
+              mergeReadiness: {
+                status: "ready" as const,
+                confidence: "high" as const,
+                summary: "The change is ready to merge.",
+              },
             },
             findings: [],
             priorDispositions: [],
@@ -336,7 +342,10 @@ describe("ReviewWorker cleanup", () => {
       worker.processClaimedJob(job as never, createClaimContext(job.id)),
     ).resolves.toBeUndefined();
     expect(transitionInteractionRunForClaim).toHaveBeenCalledWith(
-      expect.objectContaining({ interactionRunId: "run_1", status: "completed" }),
+      expect.objectContaining({
+        interactionRunId: "run_1",
+        status: "completed",
+      }),
     );
     expect(transitionClaim).toHaveBeenCalledWith(
       expect.objectContaining({ jobId: job.id, status: "completed" }),

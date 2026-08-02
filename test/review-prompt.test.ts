@@ -209,8 +209,17 @@ describe("buildReviewPrompt", () => {
       "JSON Schema (properties not listed in `required` may be omitted):",
     );
     expect(extractPromptJsonSchemaText(prompt)).not.toContain("\n");
-    expect(schema.required).toEqual(["overview", "findings"]);
-    expect(overview.required).toEqual(["summary", "overallSeverity"]);
+    expect(schema.required).toEqual([
+      "overview",
+      "findings",
+      "priorDispositions",
+    ]);
+    expect(overview.required).toEqual([
+      "summary",
+      "overallSeverity",
+      "overallAssessment",
+      "mergeReadiness",
+    ]);
     expect(finding.required).toEqual(["title", "body", "severity", "category"]);
     expect(anchorObject.required).toEqual([
       "path",
@@ -224,9 +233,11 @@ describe("buildReviewPrompt", () => {
       "startLine",
       "endLine",
     ]);
-    expect(getSchemaProperty(schema, "priorDispositions").default).toEqual([]);
-    expect(replyHandoff.required).toEqual(["summary"]);
-    expect(handoffTargets.default).toEqual([]);
+    expect(
+      getSchemaProperty(schema, "priorDispositions").default,
+    ).toBeUndefined();
+    expect(replyHandoff.required).toEqual(["summary", "targets"]);
+    expect(handoffTargets.default).toBeUndefined();
     expect(handoffTarget.required).toEqual(["kind", "commentId", "guidance"]);
     expect(getSchemaProperty(handoffTarget, "discussionId").description).toBe(
       "Required unless kind is code-review-comment",
@@ -476,6 +487,8 @@ describe("buildReviewPrompt", () => {
   });
 
   it("renders registered standalone prompts and parameterized templates", () => {
+    const memoryPrompt = renderPrompt("reply.memory-update", {});
+
     expect(renderPrompt("subagent.context-analyst", {})).toContain(
       "You are a read-only context analyst.",
     );
@@ -485,9 +498,13 @@ describe("buildReviewPrompt", () => {
     expect(renderPrompt("reply.direct-mention", {})).toContain(
       "You are the lightweight interaction chatter",
     );
-    expect(renderPrompt("reply.memory-update", {})).toContain(
+    expect(memoryPrompt).toContain(
       "This phase runs before any optional reviewer pass.",
     );
+    expect(memoryPrompt).toContain(
+      "Return a `memory` result with status `written` or `skipped`",
+    );
+    expect(memoryPrompt).toContain("Return an empty `replies` array");
     expect(
       renderPrompt("memory.coalesce", {
         entries: [{ text: "Keep pnpm usage consistent." }],
@@ -512,6 +529,12 @@ describe("buildReviewPrompt", () => {
         overview: {
           summary: "Still needs one fix",
           overallSeverity: "medium",
+          overallAssessment: "The validation issue still applies.",
+          mergeReadiness: {
+            status: "needs_attention",
+            confidence: "high",
+            summary: "Add the missing validation before merging.",
+          },
         },
         findings: [],
         priorDispositions: [],
@@ -555,14 +578,18 @@ describe("buildReviewPrompt", () => {
       "Separate distinct reasons or conditions into short paragraphs",
     );
     expect(prompt).toContain("Put that formatting inside `replyBody`");
+    expect(prompt).toContain("Set `memory` to `null`");
+    expect(prompt).toContain(
+      "Return exactly one reply for every provided `responseTarget`",
+    );
     expect(extractPromptJsonSchemaText(prompt)).not.toContain("\n");
     const schema = extractPromptJsonSchema(prompt);
     const replies = getSchemaProperty(schema, "replies");
     const reply = asRecord(replies.items);
     const target = getSchemaProperty(reply, "target");
-    expect(schema.required).toBeUndefined();
+    expect(schema.required).toEqual(["memory", "replies"]);
     expect(getSchemaProperty(schema, "memory").anyOf).toBeInstanceOf(Array);
-    expect(replies.default).toEqual([]);
+    expect(replies.default).toBeUndefined();
     expect(getSchemaProperty(target, "discussionId").description).toContain(
       "Required unless kind is code-review-comment",
     );

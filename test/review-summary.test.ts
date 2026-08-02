@@ -116,6 +116,12 @@ describe("review summary comment", () => {
         overview: {
           summary: "One fix remains",
           overallSeverity: "high",
+          overallAssessment: "One high-severity correctness issue remains.",
+          mergeReadiness: {
+            status: "blocked",
+            confidence: "high",
+            summary: "Fix the prompt escaping issue before merging.",
+          },
         },
         findings: [
           {
@@ -238,6 +244,8 @@ describe("review summary comment", () => {
           summary:
             "One thread was dismissed, but merge readiness still depends on an older open storage fix.",
           overallSeverity: "medium",
+          overallAssessment:
+            "The targeted thread is resolved, but another issue remains.",
           mergeReadiness: {
             status: "needs_attention",
             confidence: "medium",

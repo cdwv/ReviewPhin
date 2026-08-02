@@ -582,6 +582,7 @@ describe("GitHubPlatformReviewRuntime", () => {
         codeReviewId: 42,
         plannedTargets: [issueTarget, threadTarget],
         result: {
+          memory: null,
           replies: [
             { target: issueTarget, replyBody: "Issue response" },
             { target: threadTarget, replyBody: "Thread response" },
@@ -620,6 +621,7 @@ describe("GitHubPlatformReviewRuntime", () => {
         codeReviewId: 42,
         plannedTargets: [delayedThreadTarget],
         result: {
+          memory: null,
           replies: [
             {
               target: delayedThreadTarget,
@@ -658,6 +660,7 @@ describe("GitHubPlatformReviewRuntime", () => {
         codeReviewId: 42,
         plannedTargets: [issueTarget],
         result: {
+          memory: null,
           replies: [
             { target: issueTarget, replyBody: "First response" },
             { target: issueTarget, replyBody: "Stale response" },

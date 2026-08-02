@@ -150,6 +150,12 @@ describe("buildScopedReviewContext", () => {
       "src/delta.ts",
     ]);
     expect(scoped.scope.previousReview?.reviewRunId).toBe("run_prev");
+    expect(scoped.scope.previousReview?.overviewSummary).toBe("Needs work");
+    expect(scoped.scope.previousReview?.mergeReadiness).toEqual({
+      status: "needs_attention",
+      confidence: "medium",
+      summary: "A prior issue remained open.",
+    });
     expect(scoped.scope.deltaSincePreviousReview?.changedFiles).toHaveLength(1);
   });
 

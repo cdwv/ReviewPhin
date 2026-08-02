@@ -55,20 +55,14 @@ describe("HarnessReviewProvider", () => {
       response: {
         data: {
           content: JSON.stringify({
-            overview: {
-              summary: "Looks good",
-              overallSeverity: "low",
-            },
+            overview: createCompleteOverview(),
             findings: [],
             priorDispositions: [],
           }),
         },
       },
       parsed: {
-        overview: {
-          summary: "Looks good",
-          overallSeverity: "low",
-        },
+        overview: createCompleteOverview(),
         findings: [],
         priorDispositions: [],
       },
@@ -124,19 +118,48 @@ describe("HarnessReviewProvider", () => {
     );
   });
 
+  it("rejects incomplete current model responses", async () => {
+    const run = vi.fn(async () => ({
+      response: { data: { content: "{}" } },
+      parsed: {
+        overview: {
+          summary: "Looks good",
+          overallSeverity: "low",
+        },
+        findings: [],
+      },
+      events: [],
+    }));
+    const provider = new HarnessReviewProvider({
+      logger: createLogger(),
+      modelConfig: createModelConfig(),
+      harnessRuntime: { run } as never,
+      memoryConsolidator: {
+        coalesce: vi.fn(async (input) => input.coalesceInput.entries),
+      } as never,
+      maxPromptMemoryChars: 5_000,
+    });
+
+    await expect(
+      provider.review(createReviewContext(), {
+        tenant: createTenantRuntimeContext(),
+      }),
+    ).rejects.toThrow(/overallAssessment/);
+  });
+
   it("enables git_readonly only for Git-ready reviewer sessions", async () => {
     const run = vi.fn(async () => ({
       response: {
         data: {
           content: JSON.stringify({
-            overview: { summary: "Looks good", overallSeverity: "low" },
+            overview: createCompleteOverview(),
             findings: [],
             priorDispositions: [],
           }),
         },
       },
       parsed: {
-        overview: { summary: "Looks good", overallSeverity: "low" },
+        overview: createCompleteOverview(),
         findings: [],
         priorDispositions: [],
       },
@@ -237,14 +260,14 @@ describe("HarnessReviewProvider", () => {
       response: {
         data: {
           content: JSON.stringify({
-            overview: { summary: "Looks good", overallSeverity: "low" },
+            overview: createCompleteOverview(),
             findings: [],
             priorDispositions: [],
           }),
         },
       },
       parsed: {
-        overview: { summary: "Looks good", overallSeverity: "low" },
+        overview: createCompleteOverview(),
         findings: [],
         priorDispositions: [],
       },
@@ -279,14 +302,14 @@ describe("HarnessReviewProvider", () => {
       response: {
         data: {
           content: JSON.stringify({
-            overview: { summary: "Looks good", overallSeverity: "low" },
+            overview: createCompleteOverview(),
             findings: [],
             priorDispositions: [],
           }),
         },
       },
       parsed: {
-        overview: { summary: "Looks good", overallSeverity: "low" },
+        overview: createCompleteOverview(),
         findings: [],
         priorDispositions: [],
       },
@@ -322,10 +345,7 @@ describe("HarnessReviewProvider", () => {
       response: {
         data: {
           content: JSON.stringify({
-            overview: {
-              summary: "Looks good",
-              overallSeverity: "low",
-            },
+            overview: createCompleteOverview(),
             findings: [],
             priorDispositions: [
               {
@@ -350,10 +370,7 @@ describe("HarnessReviewProvider", () => {
         },
       },
       parsed: {
-        overview: {
-          summary: "Looks good",
-          overallSeverity: "low",
-        },
+        overview: createCompleteOverview(),
         findings: [],
         priorDispositions: [
           {
@@ -432,6 +449,8 @@ describe("HarnessReviewProvider", () => {
             overview: {
               summary: "The rerun found no remaining blocking issues.",
               overallSeverity: "low",
+              overallAssessment:
+                "Everything needed for merge readiness is now addressed.",
               mergeReadiness: {
                 status: "ready",
                 confidence: "high",
@@ -465,6 +484,8 @@ describe("HarnessReviewProvider", () => {
         overview: {
           summary: "The rerun found no remaining blocking issues.",
           overallSeverity: "low",
+          overallAssessment:
+            "Everything needed for merge readiness is now addressed.",
           mergeReadiness: {
             status: "ready",
             confidence: "high",
@@ -641,6 +662,19 @@ function createReviewContext(): ReviewContext {
       interactionJobId: "job_1",
       tenantId: "tenant_1",
       runDirectory: tmpPath(),
+    },
+  };
+}
+
+function createCompleteOverview() {
+  return {
+    summary: "Looks good",
+    overallSeverity: "low" as const,
+    overallAssessment: "No issues were found.",
+    mergeReadiness: {
+      status: "ready" as const,
+      confidence: "high" as const,
+      summary: "The change is ready to merge.",
     },
   };
 }

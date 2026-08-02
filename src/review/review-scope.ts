@@ -8,7 +8,8 @@ import type {
 } from "./types.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
 import type { GitReadonlyCapability } from "../harness/git-readonly.js";
-import { GIT_CONTENT_SIGNATURE_PREFIX, reviewResultSchema } from "./types.js";
+import { GIT_CONTENT_SIGNATURE_PREFIX } from "./types.js";
+import { parsePersistedReviewResult } from "./persisted-review-result.js";
 import type {
   PriorReviewFindingContext,
   PreviousReviewContext,
@@ -268,9 +269,8 @@ function parsePreviousReviewResult(
   }
 
   try {
-    const parsed: unknown = JSON.parse(resultJson);
-    const validated = reviewResultSchema.safeParse(parsed);
-    return validated.success ? validated.data : null;
+    // Normalize only because incremental history may contain older stored records.
+    return parsePersistedReviewResult(resultJson);
   } catch {
     return null;
   }
