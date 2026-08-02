@@ -3,12 +3,25 @@ import { writeFile } from "node:fs/promises";
 import { Marked } from "marked";
 import { markedTerminal } from "marked-terminal";
 
-import type { ReviewAnchor, ReviewResult } from "../review/types.js";
+import type {
+  CodeReviewChange,
+  ReviewAnchor,
+  ReviewResult,
+} from "../review/types.js";
 import type { CliOutput } from "./output.js";
 
-export function formatReviewReportMarkdown(result: ReviewResult): string {
+export interface ReviewReportFormatOptions {
+  readonly changes?: readonly CodeReviewChange[] | undefined;
+  readonly headingLevel?: number | undefined;
+}
+
+export function formatReviewReportMarkdown(
+  result: ReviewResult,
+  options: ReviewReportFormatOptions = {},
+): string {
+  const headingLevel = options.headingLevel ?? 1;
   const lines = [
-    "# Review result",
+    heading(headingLevel, "Review result"),
     "",
     `**Overall severity:** ${capitalize(result.overview.overallSeverity)}`,
     "",
@@ -22,7 +35,7 @@ export function formatReviewReportMarkdown(result: ReviewResult): string {
   if (result.overview.mergeReadiness) {
     lines.push(
       "",
-      "## Merge readiness",
+      heading(headingLevel + 1, "Merge readiness"),
       "",
       `**Status:** ${formatLabel(result.overview.mergeReadiness.status)}`,
       "",
@@ -35,7 +48,7 @@ export function formatReviewReportMarkdown(result: ReviewResult): string {
   if (result.overview.highlights?.length) {
     lines.push(
       "",
-      "## Highlights",
+      heading(headingLevel + 1, "Highlights"),
       "",
       ...result.overview.highlights.map(
         (highlight) => `- ${escapeMarkdownText(highlight)}`,
@@ -43,13 +56,20 @@ export function formatReviewReportMarkdown(result: ReviewResult): string {
     );
   }
 
-  lines.push("", `## Findings (${result.findings.length})`, "");
+  lines.push(
+    "",
+    heading(headingLevel + 1, `Findings (${result.findings.length})`),
+    "",
+  );
   if (result.findings.length === 0) {
     lines.push("No findings.");
   } else {
     for (const [index, finding] of result.findings.entries()) {
       lines.push(
-        `### ${index + 1}. ${escapeMarkdownText(finding.title)}`,
+        heading(
+          headingLevel + 2,
+          `${index + 1}. ${escapeMarkdownText(finding.title)}`,
+        ),
         "",
         `- **Severity:** ${capitalize(finding.severity)}`,
         `- **Category:** ${capitalize(finding.category)}`,
@@ -62,9 +82,29 @@ export function formatReviewReportMarkdown(result: ReviewResult): string {
       }
       lines.push("", finding.body.trim());
       if (finding.suggestion) {
+        const source = extractSuggestionSource(
+          options.changes ?? [],
+          finding.anchor ?? null,
+          finding.suggestion.startLine,
+          finding.suggestion.endLine,
+        );
         lines.push(
           "",
-          "#### Suggested change",
+          heading(headingLevel + 3, "Suggested change"),
+          "",
+          ...(finding.anchor
+            ? [
+                `- **File:** ${inlineCode(finding.anchor.path)}`,
+                `- **Lines:** ${formatLineRange(
+                  finding.suggestion.startLine,
+                  finding.suggestion.endLine,
+                )}`,
+                "",
+              ]
+            : []),
+          ...(source !== null
+            ? ["**Replace:**", "", fencedCode(source, "text"), "", "**With:**"]
+            : ["**Replace the indicated lines with:**"]),
           "",
           fencedCode(finding.suggestion.replacement, "suggestion"),
         );
@@ -78,6 +118,17 @@ export function formatReviewReportMarkdown(result: ReviewResult): string {
 
 export function formatReviewReportForTerminal(
   result: ReviewResult,
+  output: CliOutput,
+  options: ReviewReportFormatOptions = {},
+): string {
+  return formatMarkdownForTerminal(
+    formatReviewReportMarkdown(result, options),
+    output,
+  );
+}
+
+export function formatMarkdownForTerminal(
+  markdown: string,
   output: CliOutput,
 ): string {
   const marked = new Marked();
@@ -104,7 +155,7 @@ export function formatReviewReportForTerminal(
       href: (value) => value,
     }),
   );
-  const rendered = marked.parse(formatReviewReportMarkdown(result));
+  const rendered = marked.parse(markdown);
   if (typeof rendered !== "string") {
     throw new Error("Terminal report rendering unexpectedly became async.");
   }
@@ -114,16 +165,66 @@ export function formatReviewReportForTerminal(
 export async function writeReviewReport(
   path: string,
   result: ReviewResult,
+  options: ReviewReportFormatOptions = {},
 ): Promise<void> {
-  await writeFile(path, formatReviewReportMarkdown(result), "utf8");
+  await writeFile(path, formatReviewReportMarkdown(result, options), "utf8");
+}
+
+function heading(level: number, value: string): string {
+  return `${"#".repeat(Math.max(1, level))} ${value}`;
 }
 
 function formatAnchor(anchor: ReviewAnchor): string {
-  const lineRange =
-    anchor.startLine === anchor.endLine
-      ? `line ${anchor.startLine}`
-      : `lines ${anchor.startLine}-${anchor.endLine}`;
+  const lineRange = formatLineRange(anchor.startLine, anchor.endLine);
   return `${inlineCode(anchor.path)}, ${lineRange} (${anchor.side} side)`;
+}
+
+function formatLineRange(startLine: number, endLine: number): string {
+  return startLine === endLine
+    ? `line ${startLine}`
+    : `lines ${startLine}-${endLine}`;
+}
+
+export function extractSuggestionSource(
+  changes: readonly CodeReviewChange[],
+  anchor: ReviewAnchor | null,
+  startLine: number,
+  endLine: number,
+): string | null {
+  if (!anchor || anchor.side !== "new") {
+    return null;
+  }
+  const change = changes.find((entry) => entry.newPath === anchor.path);
+  if (!change?.diff) {
+    return null;
+  }
+
+  const linesByNumber = new Map<number, string>();
+  let newLine: number | null = null;
+  for (const line of change.diff.replace(/\r\n/g, "\n").split("\n")) {
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (hunk) {
+      newLine = Number(hunk[1]);
+      continue;
+    }
+    if (newLine === null || line.startsWith("\\")) {
+      continue;
+    }
+    if (line.startsWith("-")) {
+      continue;
+    }
+    if (line.startsWith("+") || line.startsWith(" ")) {
+      if (newLine >= startLine && newLine <= endLine) {
+        linesByNumber.set(newLine, line.slice(1));
+      }
+      newLine += 1;
+    }
+  }
+
+  const source = Array.from({ length: endLine - startLine + 1 }, (_, index) =>
+    linesByNumber.get(startLine + index),
+  );
+  return source.every((line) => line !== undefined) ? source.join("\n") : null;
 }
 
 function inlineCode(value: string): string {

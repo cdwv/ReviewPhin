@@ -510,6 +510,38 @@ With `--output json`, watch mode emits JSONL events: `review_submitted`, `job_st
 
 The final summary contains `jobId`, `created`, `jobStatus`, `runId`, `runStatus`, `runLogDirectory`, `findingCount`, `error`, and `liveLogsAvailable`. Exit code `0` means a no-watch submission succeeded or a watched job completed. Validation and operational errors, or watched jobs ending as failed, cancelled, or expired, return `1`; interrupted watches return `130` for `SIGINT` and `143` for `SIGTERM`.
 
+### `mr report`
+
+Display completed review reports stored for a tenant. Reports include published reviews and local runs created with `--no-publish` or `--no-comment`.
+
+```bash
+reviewphin mr report \
+  --key https://gitlab.example.com::123 \
+  --latest
+```
+
+Without a result filter, the command displays every stored report for the tenant, newest first. Completed interaction runs without a review result, such as reply-only runs, are omitted.
+
+| Flag                        | Required | Description                                                                                                                |
+| --------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `--key`                     | Yes      | Stable tenant key printed by `tenant list`.                                                                                |
+| `--latest`                  | No       | Display only the newest report after applying the other filters. Cannot be combined with `--limit`.                        |
+| `--limit`                   | No       | Display at most this many reports. Must be a positive integer and cannot be combined with `--latest`.                      |
+| `--code-review-id`          | No       | Include only this merge request IID or pull request number.                                                                |
+| `--code-review`             | No       | Alias for `--code-review-id`.                                                                                              |
+| `--trigger-type`            | No       | Include only `manual-review`, `direct-mention`, `follow-up-comment`, or `summary-follow-up` reports.                       |
+| `--type`                    | No       | Alias for `--trigger-type`.                                                                                                |
+| `--publication-mode`        | No       | Include only `publish` or `no-publish` reports.                                                                            |
+| `--report`, `-r`            | No       | Write the matching reports as one UTF-8 Markdown document, replacing an existing file. No file is written when none match. |
+| `--sqlite-database-path`    | No       | Override the SQLite path.                                                                                                  |
+| `--storage-provider-module` | No       | Override the storage adapter module.                                                                                       |
+
+Trigger-type filters use persisted run metrics and fall back to trigger metadata where the type is unambiguous. Historical reports without either source remain visible as type `unknown`, but do not match a trigger-type filter.
+
+Human-readable reports identify the tenant, merge request or pull request, completion time, trigger and publication modes, head SHA, job, and run. Suggested changes show the filename, line range, and replacement. When the stored code-review snapshot contains those lines, the report also shows the exact code being replaced.
+
+With `--output json`, the command returns an array of report objects. Each object contains the stored result and a `suggestedChanges` array with `path`, `startLine`, `endLine`, `replacedText`, and `replacement`. `replacedText` is `null` when the stored diff does not contain the complete suggested range. With `--report`, JSON output instead includes the resolved report path, count, and matching report objects.
+
 ---
 
 ## Diagnostic commands
