@@ -19,6 +19,7 @@ Then make the instance reachable so platforms can deliver webhooks — see [expo
 
 - [Environment variables](environment-variables/) — the full runtime reference.
 - [Storage & migration](storage/) — SQLite, Flotiq, custom adapters, backups, and moving data.
+- [Review quality benchmark](../development/review-quality-benchmark/) — analyze exported review runs and run logs without connecting to reviewed repositories.
 
 ## What one container serves
 

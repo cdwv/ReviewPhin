@@ -1,0 +1,1323 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Review quality benchmark</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --paper: #f3f1ea;
+        --sheet: #fbfaf6;
+        --ink: #14213d;
+        --muted: #667085;
+        --line: #d7d9d3;
+        --line-strong: #b5bab3;
+        --cobalt: #3155d9;
+        --coral: #e66b4e;
+        --moss: #487c66;
+        --shadow: 0 18px 48px rgb(20 33 61 / 9%);
+        --radius: 18px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        background: var(--paper);
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        color: var(--ink);
+        background:
+          linear-gradient(rgb(49 85 217 / 3%) 1px, transparent 1px),
+          linear-gradient(90deg, rgb(49 85 217 / 3%) 1px, transparent 1px),
+          var(--paper);
+        background-size: 32px 32px;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      button,
+      select {
+        font: inherit;
+      }
+
+      button,
+      select,
+      [tabindex]:focus-visible {
+        outline: 3px solid rgb(49 85 217 / 28%);
+        outline-offset: 2px;
+      }
+
+      .shell {
+        width: min(1500px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 40px 0 64px;
+      }
+
+      .masthead {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 32px;
+        align-items: end;
+        padding: 8px 0 30px;
+        border-bottom: 2px solid var(--ink);
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--cobalt);
+        font:
+          750 12px/1.2 ui-monospace,
+          SFMono-Regular,
+          Consolas,
+          monospace;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 880px;
+        margin: 0;
+        font:
+          680 clamp(34px, 5vw, 68px)/0.98 Georgia,
+          serif;
+        letter-spacing: -0.04em;
+      }
+
+      .lede {
+        max-width: 760px;
+        margin: 18px 0 0;
+        color: #44506a;
+        font-size: 17px;
+      }
+
+      .status-stamp {
+        min-width: 190px;
+        padding: 16px 18px;
+        border: 1px solid var(--ink);
+        background: var(--sheet);
+        box-shadow: 6px 6px 0 var(--ink);
+      }
+
+      .status-stamp strong {
+        display: block;
+        font:
+          700 26px/1.1 Georgia,
+          serif;
+      }
+      .status-stamp span {
+        display: block;
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .toolbar {
+        position: sticky;
+        z-index: 5;
+        top: 0;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(130px, 1fr)) auto;
+        gap: 12px;
+        align-items: end;
+        margin: 24px 0;
+        padding: 14px;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        background: rgb(251 250 246 / 94%);
+        box-shadow: 0 8px 28px rgb(20 33 61 / 8%);
+        backdrop-filter: blur(14px);
+      }
+
+      .field label {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--muted);
+        font:
+          700 10px/1.2 ui-monospace,
+          monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      select {
+        width: 100%;
+        height: 38px;
+        padding: 0 34px 0 10px;
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        color: var(--ink);
+        background: white;
+      }
+
+      .reset {
+        height: 38px;
+        padding: 0 15px;
+        border: 1px solid var(--ink);
+        border-radius: 8px;
+        color: var(--ink);
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .reset:hover {
+        color: white;
+        background: var(--ink);
+      }
+
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+        margin: 0 0 24px;
+      }
+
+      .stat {
+        position: relative;
+        min-height: 128px;
+        padding: 18px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--sheet);
+      }
+
+      .stat::after {
+        position: absolute;
+        right: -18px;
+        bottom: -36px;
+        width: 92px;
+        height: 92px;
+        border: 18px solid rgb(49 85 217 / 7%);
+        border-radius: 50%;
+        content: "";
+      }
+      .stat-label {
+        color: var(--muted);
+        font:
+          700 11px/1.2 ui-monospace,
+          monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .stat-value {
+        display: block;
+        margin-top: 12px;
+        font:
+          700 40px/1 Georgia,
+          serif;
+      }
+      .stat-note {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .panel {
+        margin-top: 16px;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius);
+        background: var(--sheet);
+        box-shadow: var(--shadow);
+      }
+      .panel-head {
+        display: flex;
+        gap: 24px;
+        justify-content: space-between;
+        align-items: start;
+        padding: 22px 24px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+      .panel-head h2 {
+        margin: 0;
+        font:
+          680 25px/1.1 Georgia,
+          serif;
+        letter-spacing: -0.02em;
+      }
+      .panel-head p {
+        max-width: 680px;
+        margin: 7px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .panel-tag {
+        flex: none;
+        padding: 5px 9px;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        color: var(--muted);
+        font:
+          700 10px/1.2 ui-monospace,
+          monospace;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .panel-tools {
+        display: grid;
+        flex: none;
+        gap: 9px;
+        justify-items: end;
+      }
+      .scale-toggle {
+        display: inline-flex;
+        padding: 3px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        background: white;
+      }
+      .scale-button {
+        min-height: 31px;
+        padding: 0 11px;
+        border: 0;
+        border-radius: 7px;
+        color: var(--muted);
+        background: transparent;
+        font:
+          700 11px/1 ui-monospace,
+          monospace;
+        cursor: pointer;
+      }
+      .scale-button:hover {
+        color: var(--ink);
+        background: rgb(49 85 217 / 6%);
+      }
+      .scale-button[aria-pressed="true"] {
+        color: white;
+        background: var(--ink);
+      }
+
+      .chart-wrap {
+        overflow-x: auto;
+        padding: 18px 20px 10px;
+      }
+      .chart-wrap svg {
+        display: block;
+        max-width: none;
+        overflow: visible;
+      }
+      .lane-label {
+        fill: var(--ink);
+        font:
+          700 11px ui-monospace,
+          monospace;
+      }
+      .axis-label {
+        fill: var(--muted);
+        font:
+          10px ui-monospace,
+          monospace;
+      }
+      .grid-line {
+        stroke: var(--line);
+        stroke-width: 1;
+      }
+      .score-line {
+        fill: none;
+        stroke-width: 2.25;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+      .score-dot {
+        cursor: pointer;
+        stroke: var(--sheet);
+        stroke-width: 2.5;
+        transition: r 120ms ease;
+      }
+      .score-dot:hover,
+      .score-dot:focus {
+        r: 6.5;
+      }
+      .release-line {
+        stroke: var(--coral);
+        stroke-width: 1.5;
+        stroke-dasharray: 3 4;
+      }
+      .prompt-line {
+        stroke: var(--cobalt);
+        stroke-width: 1;
+        stroke-dasharray: 1 5;
+        opacity: 0.65;
+      }
+      .marker-label {
+        fill: var(--coral);
+        font:
+          700 9px ui-monospace,
+          monospace;
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        padding: 0 24px 20px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .legend span {
+        display: inline-flex;
+        gap: 7px;
+        align-items: center;
+      }
+      .swatch {
+        width: 17px;
+        height: 3px;
+        border-radius: 9px;
+        background: var(--swatch);
+      }
+      .swatch.release {
+        height: 12px;
+        width: 1px;
+        border-left: 2px dashed var(--coral);
+      }
+      .swatch.prompt {
+        height: 12px;
+        width: 1px;
+        border-left: 2px dotted var(--cobalt);
+      }
+
+      .dimension-grid {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(150px, 1fr));
+        gap: 10px;
+        padding: 18px 20px 22px;
+        overflow-x: auto;
+      }
+      .dimension {
+        min-width: 150px;
+        padding: 14px;
+        border-top: 4px solid var(--accent);
+        background: #fff;
+      }
+      .dimension strong {
+        display: block;
+        font:
+          700 27px/1 Georgia,
+          serif;
+      }
+      .dimension span {
+        display: block;
+        min-height: 32px;
+        margin-top: 5px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .dimension small {
+        display: block;
+        margin-top: 7px;
+        color: var(--muted);
+        line-height: 1.35;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        min-width: 930px;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 13px 16px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: middle;
+      }
+      th {
+        color: var(--muted);
+        font:
+          700 10px/1.2 ui-monospace,
+          monospace;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      tbody tr {
+        cursor: pointer;
+        transition: background 100ms ease;
+      }
+      tbody tr:hover {
+        background: rgb(49 85 217 / 4%);
+      }
+      tbody tr:focus {
+        background: rgb(49 85 217 / 7%);
+        outline-offset: -3px;
+      }
+      .run-title {
+        max-width: 330px;
+        font-weight: 700;
+      }
+      .run-meta {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font:
+          11px ui-monospace,
+          monospace;
+      }
+      .score-pill {
+        display: inline-block;
+        min-width: 35px;
+        padding: 3px 7px;
+        border-radius: 999px;
+        text-align: center;
+        font:
+          750 12px ui-monospace,
+          monospace;
+      }
+      .score-good {
+        color: #285944;
+        background: #dcece4;
+      }
+      .score-mid {
+        color: #725716;
+        background: #f5eacb;
+      }
+      .score-low {
+        color: #8b3d30;
+        background: #f6ddd7;
+      }
+      .score-na {
+        color: var(--muted);
+        background: #e8e9e5;
+      }
+      .version {
+        white-space: nowrap;
+        font:
+          11px ui-monospace,
+          monospace;
+      }
+
+      .empty {
+        padding: 48px 24px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .empty strong {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--ink);
+        font:
+          680 22px Georgia,
+          serif;
+      }
+
+      .foot {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 24px;
+        margin-top: 28px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line-strong);
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .foot code {
+        color: var(--ink);
+        font-family: ui-monospace, monospace;
+      }
+
+      dialog {
+        width: min(820px, calc(100% - 32px));
+        max-height: calc(100vh - 40px);
+        padding: 0;
+        overflow: hidden;
+        border: 1px solid var(--ink);
+        border-radius: 18px;
+        color: var(--ink);
+        background: var(--sheet);
+        box-shadow: 0 30px 90px rgb(20 33 61 / 28%);
+      }
+      dialog::backdrop {
+        background: rgb(20 33 61 / 45%);
+        backdrop-filter: blur(3px);
+      }
+      .dialog-head {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        gap: 20px;
+        padding: 22px 24px;
+        border-bottom: 1px solid var(--line);
+        background: var(--sheet);
+      }
+      .dialog-head h2 {
+        margin: 0;
+        font:
+          680 28px/1.1 Georgia,
+          serif;
+      }
+      .dialog-head p {
+        margin: 7px 0 0;
+        color: var(--muted);
+        font:
+          11px ui-monospace,
+          monospace;
+      }
+      .close {
+        flex: none;
+        width: 36px;
+        height: 36px;
+        border: 1px solid var(--line-strong);
+        border-radius: 50%;
+        color: var(--ink);
+        background: white;
+        cursor: pointer;
+      }
+      .dialog-body {
+        max-height: calc(100vh - 150px);
+        padding: 22px 24px 30px;
+        overflow-y: auto;
+      }
+      .detail-scores {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 9px;
+      }
+      .detail-score {
+        padding: 11px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .detail-score strong {
+        display: block;
+        font:
+          700 23px Georgia,
+          serif;
+      }
+      .detail-score span {
+        display: block;
+        margin-top: 3px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .detail-score p {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .detail-section {
+        margin-top: 24px;
+      }
+      .detail-section h3 {
+        margin: 0 0 10px;
+        font:
+          680 19px Georgia,
+          serif;
+      }
+      .detail-section ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+      .finding-card {
+        margin-top: 10px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--coral);
+        border-radius: 8px;
+        background: white;
+      }
+      .finding-card h4 {
+        margin: 0;
+        font-size: 14px;
+      }
+      .finding-card p {
+        margin: 8px 0 0;
+        color: #4d5870;
+        font-size: 13px;
+      }
+      .finding-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+
+      @media (max-width: 960px) {
+        .masthead {
+          grid-template-columns: 1fr;
+        }
+        .status-stamp {
+          width: max-content;
+        }
+        .toolbar {
+          position: static;
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .stat-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .detail-scores {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 560px) {
+        .shell {
+          width: min(100% - 22px, 1500px);
+          padding-top: 22px;
+        }
+        .toolbar,
+        .stat-grid {
+          grid-template-columns: 1fr;
+        }
+        .panel-head {
+          display: block;
+        }
+        .panel-tag {
+          display: inline-block;
+          margin-top: 12px;
+        }
+        .panel-tools {
+          justify-items: start;
+          margin-top: 14px;
+        }
+        .panel-tools .panel-tag {
+          margin-top: 0;
+        }
+        .foot {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        *,
+        *::before,
+        *::after {
+          transition-duration: 0.01ms !important;
+        }
+      }
+
+      @media print {
+        body {
+          background: white;
+        }
+        .shell {
+          width: 100%;
+          padding: 0;
+        }
+        .toolbar,
+        .close {
+          display: none;
+        }
+        .panel,
+        .stat {
+          break-inside: avoid;
+          box-shadow: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">ReviewPhin / quality telemetry</p>
+          <h1>Are review comments getting better?</h1>
+          <p class="lede" id="lede">
+            An evidence-relative benchmark of reviewer output over time.
+          </p>
+        </div>
+        <div class="status-stamp" aria-label="Benchmark coverage">
+          <strong id="coverage">—</strong>
+          <span id="coverage-note">scored runs</span>
+        </div>
+      </header>
+
+      <section class="toolbar" aria-label="Report filters">
+        <div class="field">
+          <label for="tenant-filter">Tenant</label
+          ><select id="tenant-filter"></select>
+        </div>
+        <div class="field">
+          <label for="mode-filter">Prompt mode</label
+          ><select id="mode-filter"></select>
+        </div>
+        <div class="field">
+          <label for="model-filter">Review model</label
+          ><select id="model-filter"></select>
+        </div>
+        <div class="field">
+          <label for="prompt-filter">Prompt fingerprint</label
+          ><select id="prompt-filter"></select>
+        </div>
+        <button class="reset" id="reset-filters" type="button">
+          Reset filters
+        </button>
+      </section>
+
+      <section
+        class="stat-grid"
+        id="stats"
+        aria-label="Benchmark summary"
+      ></section>
+
+      <section class="panel" aria-labelledby="timeline-heading">
+        <div class="panel-head">
+          <div>
+            <h2 id="timeline-heading">Quality lanes</h2>
+            <p>
+              Each dot is one completed review run. Gaps mean a category was not
+              applicable, not a zero. Select a dot to inspect its
+              evidence-relative score.
+            </p>
+          </div>
+          <div class="panel-tools">
+            <span class="panel-tag" id="scale-readout">Full scale · 0–10</span>
+            <div
+              class="scale-toggle"
+              role="group"
+              aria-label="Chart score range"
+            >
+              <button
+                class="scale-button"
+                type="button"
+                data-scale="fixed"
+                aria-pressed="true"
+              >
+                Full 0–10
+              </button>
+              <button
+                class="scale-button"
+                type="button"
+                data-scale="fitted"
+                aria-pressed="false"
+              >
+                Fit visible
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="chart-wrap" id="timeline"></div>
+        <div class="legend" id="legend"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="dimensions-heading">
+        <div class="panel-head">
+          <div>
+            <h2 id="dimensions-heading">Period profile</h2>
+            <p>
+              Mean scores for the current filter. Importance and targeting
+              exclude runs without findings.
+            </p>
+          </div>
+          <span class="panel-tag" id="profile-count">— runs</span>
+        </div>
+        <div class="dimension-grid" id="dimensions"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="ledger-heading">
+        <div class="panel-head">
+          <div>
+            <h2 id="ledger-heading">Run ledger</h2>
+            <p>
+              Open a run for score reasons, strengths, weaknesses, and
+              per-finding targeting checks.
+            </p>
+          </div>
+          <span class="panel-tag" id="ledger-count">— visible</span>
+        </div>
+        <div class="table-wrap" id="ledger"></div>
+      </section>
+
+      <footer class="foot">
+        <span id="generated"></span>
+        <span
+          >Evaluator <code id="evaluator"></code> · Judge
+          <code id="judge"></code
+        ></span>
+      </footer>
+    </main>
+
+    <dialog id="run-dialog" aria-labelledby="dialog-title">
+      <div class="dialog-head">
+        <div>
+          <h2 id="dialog-title"></h2>
+          <p id="dialog-meta"></p>
+        </div>
+        <button
+          class="close"
+          id="dialog-close"
+          type="button"
+          aria-label="Close run details"
+        >
+          ×
+        </button>
+      </div>
+      <div class="dialog-body" id="dialog-body"></div>
+    </dialog>
+
+    <script id="benchmark-data" type="application/json">
+      __REVIEW_BENCHMARK_DATA__
+    </script>
+    <script>
+      (() => {
+        "use strict";
+        const data = JSON.parse(
+          document.getElementById("benchmark-data").textContent,
+        );
+        const dimensions = data.dimensions || [];
+        const allRuns = [...(data.runs || [])].sort(
+          (a, b) => new Date(a.startedAt) - new Date(b.startedAt),
+        );
+        const state = {
+          tenantKey: "",
+          promptMode: "",
+          reviewModel: "",
+          promptFingerprint: "",
+        };
+        let scaleMode = "fixed";
+        const selectors = {
+          tenantKey: document.getElementById("tenant-filter"),
+          promptMode: document.getElementById("mode-filter"),
+          reviewModel: document.getElementById("model-filter"),
+          promptFingerprint: document.getElementById("prompt-filter"),
+        };
+        const fmtDate = new Intl.DateTimeFormat(undefined, {
+          dateStyle: "medium",
+          timeStyle: "short",
+        });
+        const fmtDay = new Intl.DateTimeFormat(undefined, {
+          month: "short",
+          day: "numeric",
+        });
+        const escapeHtml = (value) =>
+          String(value ?? "").replace(
+            /[&<>"']/g,
+            (character) =>
+              ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              })[character],
+          );
+        const scoreValue = (run, key) => run.categories?.[key]?.score ?? null;
+        const scoreClass = (value) =>
+          value == null
+            ? "score-na"
+            : value >= 8
+              ? "score-good"
+              : value >= 5
+                ? "score-mid"
+                : "score-low";
+        const shortHash = (value) =>
+          value ? String(value).slice(0, 8) : "unknown";
+        const mean = (values) => {
+          const numeric = values.filter(Number.isFinite);
+          return numeric.length
+            ? numeric.reduce((sum, value) => sum + value, 0) / numeric.length
+            : null;
+        };
+        const averageRunScore = (run) =>
+          mean(dimensions.map((dimension) => scoreValue(run, dimension.key)));
+        const visibleRuns = () =>
+          allRuns.filter((run) =>
+            Object.entries(state).every(
+              ([key, value]) => !value || String(run[key] ?? "") === value,
+            ),
+          );
+
+        function optionLabel(key, value) {
+          if (key === "promptFingerprint") return shortHash(value);
+          return value || "Unknown";
+        }
+
+        function populateFilters() {
+          for (const [key, select] of Object.entries(selectors)) {
+            const values = [
+              ...new Set(
+                allRuns
+                  .map((run) => run[key])
+                  .filter((value) => value != null && value !== ""),
+              ),
+            ].sort();
+            select.innerHTML = `<option value="">All</option>${values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(optionLabel(key, value))}</option>`).join("")}`;
+            select.addEventListener("change", () => {
+              state[key] = select.value;
+              render();
+            });
+          }
+          document
+            .getElementById("reset-filters")
+            .addEventListener("click", () => {
+              Object.keys(state).forEach((key) => {
+                state[key] = "";
+                selectors[key].value = "";
+              });
+              render();
+            });
+        }
+
+        function populateScaleToggle() {
+          document.querySelectorAll("[data-scale]").forEach((button) => {
+            button.addEventListener("click", () => {
+              scaleMode = button.dataset.scale;
+              document
+                .querySelectorAll("[data-scale]")
+                .forEach((candidate) =>
+                  candidate.setAttribute(
+                    "aria-pressed",
+                    String(candidate === button),
+                  ),
+                );
+              render();
+            });
+          });
+        }
+
+        function resolveScaleDomain(runs) {
+          if (scaleMode === "fixed") return { min: 0, max: 10 };
+          const scores = runs.flatMap((run) =>
+            dimensions
+              .map((dimension) => scoreValue(run, dimension.key))
+              .filter(Number.isFinite),
+          );
+          if (!scores.length) return { min: 0, max: 10 };
+          let min = Math.max(0, Math.floor(Math.min(...scores)));
+          let max = Math.min(10, Math.ceil(Math.max(...scores)));
+          if (min === max) {
+            min = Math.max(0, min - 1);
+            max = Math.min(10, max + 1);
+          } else if (max - min < 2) {
+            if (min > 0) min -= 1;
+            else max = Math.min(10, max + 1);
+          }
+          return { min, max };
+        }
+
+        function renderMetadata() {
+          const metadata = data.metadata;
+          const range = metadata.range;
+          document.getElementById("lede").textContent =
+            `${range.fromInput} through ${range.toInput} · ${metadata.modes.join(", ")} · UTC selection window`;
+          document.getElementById("coverage").textContent =
+            `${metadata.scoredCount}/${metadata.selectedCount}`;
+          document.getElementById("coverage-note").textContent =
+            metadata.missingCount
+              ? `scored runs · ${metadata.missingCount} awaiting assessment`
+              : "selected runs scored";
+          document.getElementById("generated").textContent =
+            `Generated ${fmtDate.format(new Date(metadata.generatedAt))} · ${metadata.cacheReuseCount} reused from cache · ${metadata.newlyAssessedCount} newly assessed`;
+          document.getElementById("evaluator").textContent = shortHash(
+            metadata.evaluatorVersion,
+          );
+          document.getElementById("judge").textContent = metadata.judgeModel;
+        }
+
+        function renderStats(runs) {
+          const overall = mean(runs.map(averageRunScore));
+          const versions = [
+            ...new Set(
+              runs.map((run) => run.reviewPhinVersion).filter(Boolean),
+            ),
+          ];
+          const prompts = new Set(
+            runs.map((run) => run.promptFingerprint).filter(Boolean),
+          );
+          const findingCount = runs.reduce(
+            (sum, run) => sum + (run.findingCount || 0),
+            0,
+          );
+          const stats = [
+            [
+              overall == null ? "—" : overall.toFixed(1),
+              "Mean quality",
+              `${dimensions.length} evidence-relative dimensions`,
+            ],
+            [
+              String(runs.length),
+              "Runs visible",
+              `${findingCount} emitted findings`,
+            ],
+            [
+              String(prompts.size),
+              "Prompt eras",
+              "Distinct reviewer prompt fingerprints",
+            ],
+            [
+              versions.length ? versions.length : "—",
+              "App versions",
+              versions.length
+                ? versions.join(" · ")
+                : "Not recorded in these runs",
+            ],
+          ];
+          document.getElementById("stats").innerHTML = stats
+            .map(
+              ([value, label, note]) =>
+                `<article class="stat"><span class="stat-label">${escapeHtml(label)}</span><strong class="stat-value">${escapeHtml(value)}</strong><span class="stat-note">${escapeHtml(note)}</span></article>`,
+            )
+            .join("");
+        }
+
+        function versionMarkers(runs) {
+          const markers = [];
+          let previous = null;
+          for (const run of runs) {
+            const version = run.reviewPhinVersion;
+            if (!version) continue;
+            if (version !== previous) markers.push({ run, version });
+            previous = version;
+          }
+          return markers;
+        }
+
+        function promptMarkers(runs) {
+          const markers = [];
+          let previous = null;
+          for (const run of runs) {
+            const fingerprint = run.promptFingerprint;
+            if (!fingerprint) continue;
+            if (previous && fingerprint !== previous)
+              markers.push({ run, fingerprint });
+            previous = fingerprint;
+          }
+          return markers;
+        }
+
+        function renderTimeline(runs) {
+          const host = document.getElementById("timeline");
+          const scale = resolveScaleDomain(runs);
+          document.getElementById("scale-readout").textContent =
+            `${scaleMode === "fixed" ? "Full scale" : "Fit visible"} · ${scale.min}–${scale.max}`;
+          if (!runs.length) {
+            host.innerHTML = `<div class="empty"><strong>No scored runs match these filters.</strong>Reset one or more filters to restore the timeline.</div>`;
+            document.getElementById("legend").innerHTML = "";
+            return;
+          }
+          const width = Math.max(
+            920,
+            host.clientWidth - 40,
+            runs.length * 45 + 210,
+          );
+          const left = 132,
+            right = 30,
+            top = 42,
+            laneHeight = 72,
+            bottom = 38;
+          const height = top + dimensions.length * laneHeight + bottom;
+          const timestamps = runs.map((run) =>
+            new Date(run.startedAt).getTime(),
+          );
+          let minTime = Math.min(...timestamps),
+            maxTime = Math.max(...timestamps);
+          if (minTime === maxTime) {
+            minTime -= 1;
+            maxTime += 1;
+          }
+          const x = (run) =>
+            left +
+            ((new Date(run.startedAt).getTime() - minTime) /
+              (maxTime - minTime)) *
+              (width - left - right);
+          const y = (lane, score) =>
+            top +
+            lane * laneHeight +
+            53 -
+            ((score - scale.min) / (scale.max - scale.min)) * 38;
+          const parts = [
+            `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-labelledby="chart-title chart-desc"><title id="chart-title">Review quality scores over time</title><desc id="chart-desc">Seven horizontal score lanes from ${scale.min} to ${scale.max}, with application release and prompt-change markers.</desc>`,
+          ];
+          dimensions.forEach((dimension, lane) => {
+            const topY = y(lane, scale.max),
+              middleY = y(lane, (scale.min + scale.max) / 2),
+              bottomY = y(lane, scale.min);
+            parts.push(
+              `<text class="lane-label" x="0" y="${middleY + 4}">${escapeHtml(dimension.shortLabel)}</text>`,
+            );
+            [topY, middleY, bottomY].forEach((lineY) =>
+              parts.push(
+                `<line class="grid-line" x1="${left}" x2="${width - right}" y1="${lineY}" y2="${lineY}"/>`,
+              ),
+            );
+            parts.push(
+              `<text class="axis-label" x="${left - 9}" y="${topY + 3}" text-anchor="end">${scale.max}</text><text class="axis-label" x="${left - 9}" y="${bottomY + 3}" text-anchor="end">${scale.min}</text>`,
+            );
+          });
+          for (const marker of promptMarkers(runs)) {
+            const markerX = x(marker.run);
+            parts.push(
+              `<line class="prompt-line" x1="${markerX}" x2="${markerX}" y1="${top}" y2="${height - bottom}"/>`,
+            );
+          }
+          for (const marker of versionMarkers(runs)) {
+            const markerX = x(marker.run);
+            parts.push(
+              `<line class="release-line" x1="${markerX}" x2="${markerX}" y1="24" y2="${height - bottom}"/><text class="marker-label" x="${Math.min(markerX + 4, width - 70)}" y="18">v${escapeHtml(marker.version)}</text>`,
+            );
+          }
+          dimensions.forEach((dimension, lane) => {
+            let segment = [];
+            const flush = () => {
+              if (segment.length > 1)
+                parts.push(
+                  `<path class="score-line" stroke="${dimension.color}" d="${segment.map((point, index) => `${index ? "L" : "M"}${point[0].toFixed(1)},${point[1].toFixed(1)}`).join(" ")}"/>`,
+                );
+              segment = [];
+            };
+            runs.forEach((run) => {
+              const score = scoreValue(run, dimension.key);
+              if (score == null) {
+                flush();
+                return;
+              }
+              segment.push([x(run), y(lane, score)]);
+            });
+            flush();
+            runs.forEach((run) => {
+              const score = scoreValue(run, dimension.key);
+              if (score == null) return;
+              const label = `${dimension.label}: ${score}/10 · ${run.title} · ${fmtDate.format(new Date(run.startedAt))}`;
+              parts.push(
+                `<circle class="score-dot" data-run-id="${escapeHtml(run.runId)}" tabindex="0" role="button" aria-label="${escapeHtml(label)}" cx="${x(run).toFixed(1)}" cy="${y(lane, score).toFixed(1)}" r="4.5" fill="${dimension.color}"><title>${escapeHtml(label)}</title></circle>`,
+              );
+            });
+          });
+          const ticks = [
+            ...new Set([0, Math.floor((runs.length - 1) / 2), runs.length - 1]),
+          ];
+          ticks.forEach((index) =>
+            parts.push(
+              `<text class="axis-label" x="${x(runs[index])}" y="${height - 9}" text-anchor="middle">${escapeHtml(fmtDay.format(new Date(runs[index].startedAt)))}</text>`,
+            ),
+          );
+          parts.push("</svg>");
+          host.innerHTML = parts.join("");
+          host.querySelectorAll(".score-dot").forEach((dot) => {
+            const open = () => openRun(dot.dataset.runId);
+            dot.addEventListener("click", open);
+            dot.addEventListener("keydown", (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                open();
+              }
+            });
+          });
+          document.getElementById("legend").innerHTML =
+            `${dimensions.map((dimension) => `<span><i class="swatch" style="--swatch:${dimension.color}"></i>${escapeHtml(dimension.shortLabel)}</span>`).join("")}<span><i class="swatch release"></i>ReviewPhin release</span><span><i class="swatch prompt"></i>Prompt change</span>`;
+        }
+
+        function renderDimensions(runs) {
+          document.getElementById("profile-count").textContent =
+            `${runs.length} run${runs.length === 1 ? "" : "s"}`;
+          document.getElementById("dimensions").innerHTML = dimensions
+            .map((dimension) => {
+              const values = runs.map((run) => scoreValue(run, dimension.key));
+              const value = mean(values);
+              const count = values.filter(Number.isFinite).length;
+              return `<article class="dimension" style="--accent:${dimension.color}"><strong>${value == null ? "—" : value.toFixed(1)}</strong><span>${escapeHtml(dimension.label)}</span><small>${escapeHtml(dimension.description)}<br>${count}/${runs.length} applicable</small></article>`;
+            })
+            .join("");
+        }
+
+        function renderLedger(runs) {
+          document.getElementById("ledger-count").textContent =
+            `${runs.length} visible`;
+          const host = document.getElementById("ledger");
+          if (!runs.length) {
+            host.innerHTML = `<div class="empty"><strong>No matching runs.</strong>Change the filters above.</div>`;
+            return;
+          }
+          host.innerHTML = `<table><thead><tr><th>Run</th><th>Date</th><th>Mode</th><th>Version</th><th>Mean</th><th>Findings</th><th>Scope</th><th>Evidence</th></tr></thead><tbody>${[
+            ...runs,
+          ]
+            .reverse()
+            .map((run) => {
+              const overall = averageRunScore(run);
+              const scope = scoreValue(run, "assessmentScope"),
+                groundedness = scoreValue(run, "groundedness");
+              return `<tr tabindex="0" data-run-id="${escapeHtml(run.runId)}"><td class="run-title">${escapeHtml(run.title)}<span class="run-meta">${escapeHtml(run.runId)}</span></td><td>${escapeHtml(fmtDate.format(new Date(run.startedAt)))}</td><td>${escapeHtml(run.promptMode)}</td><td class="version">${run.reviewPhinVersion ? `v${escapeHtml(run.reviewPhinVersion)}` : "unknown"}</td><td><span class="score-pill ${scoreClass(overall)}">${overall == null ? "—" : overall.toFixed(1)}</span></td><td>${run.findingCount}</td><td><span class="score-pill ${scoreClass(scope)}">${scope ?? "—"}</span></td><td><span class="score-pill ${scoreClass(groundedness)}">${groundedness ?? "—"}</span></td></tr>`;
+            })
+            .join("")}</tbody></table>`;
+          host.querySelectorAll("tbody tr").forEach((row) => {
+            const open = () => openRun(row.dataset.runId);
+            row.addEventListener("click", open);
+            row.addEventListener("keydown", (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                open();
+              }
+            });
+          });
+        }
+
+        function openRun(runId) {
+          const run = allRuns.find((candidate) => candidate.runId === runId);
+          if (!run) return;
+          document.getElementById("dialog-title").textContent = run.title;
+          document.getElementById("dialog-meta").textContent =
+            `${run.runId} · ${fmtDate.format(new Date(run.startedAt))} · ${run.promptMode} · ${run.reviewPhinVersion ? `ReviewPhin v${run.reviewPhinVersion}` : "ReviewPhin version unknown"}`;
+          const scoreCards = dimensions
+            .map((dimension) => {
+              const category = run.categories?.[dimension.key];
+              return `<article class="detail-score" style="border-top:3px solid ${dimension.color}"><strong>${category?.score ?? "—"}</strong><span>${escapeHtml(dimension.label)}</span><p>${escapeHtml(category?.reason || "Not applicable")}</p></article>`;
+            })
+            .join("");
+          const list = (items, empty) =>
+            items?.length
+              ? `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+              : `<p>${escapeHtml(empty)}</p>`;
+          const findingById = new Map(
+            (run.findings || []).map((finding) => [finding.id, finding]),
+          );
+          const findingCards = (run.findingAssessments || [])
+            .map((assessment) => {
+              const finding = findingById.get(assessment.findingId) || {};
+              const targeting = assessment.targeting || {};
+              return `<article class="finding-card"><h4>${escapeHtml(finding.title || assessment.findingId)}</h4><p>${escapeHtml(assessment.reason)}</p><div class="finding-metrics"><span class="score-pill ${scoreClass(assessment.importance)}">importance ${assessment.importance}</span><span class="score-pill ${scoreClass(targeting.score)}">targeting ${targeting.score}</span><span class="score-pill ${scoreClass(assessment.groundedness)}">evidence ${assessment.groundedness}</span></div><p><strong>Anchor:</strong> ${escapeHtml(targeting.anchorQuality || "Not assessed")}<br><strong>Suggestion:</strong> ${escapeHtml(targeting.suggestionQuality || "Not assessed")}</p></article>`;
+            })
+            .join("");
+          document.getElementById("dialog-body").innerHTML =
+            `<div class="detail-scores">${scoreCards}</div><section class="detail-section"><h3>Strengths</h3>${list(run.strengths, "No strengths recorded.")}</section><section class="detail-section"><h3>Weaknesses</h3>${list(run.weaknesses, "No weaknesses recorded.")}</section><section class="detail-section"><h3>Finding checks</h3>${findingCards || "<p>No findings were emitted, so importance and targeting are not applicable.</p>"}</section>`;
+          document.getElementById("run-dialog").showModal();
+        }
+
+        function render() {
+          const runs = visibleRuns();
+          renderStats(runs);
+          renderTimeline(runs);
+          renderDimensions(runs);
+          renderLedger(runs);
+        }
+
+        document
+          .getElementById("dialog-close")
+          .addEventListener("click", () =>
+            document.getElementById("run-dialog").close(),
+          );
+        document
+          .getElementById("run-dialog")
+          .addEventListener("click", (event) => {
+            if (event.target === event.currentTarget)
+              event.currentTarget.close();
+          });
+        populateFilters();
+        populateScaleToggle();
+        renderMetadata();
+        render();
+      })();
+    </script>
+  </body>
+</html>

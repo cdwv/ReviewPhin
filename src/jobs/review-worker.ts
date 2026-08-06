@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import { join } from "node:path";
 
+import { reviewPhinVersion } from "../app-version.js";
 import type {
   IPlatform,
   PlatformMaterializedWorkspace,
@@ -401,6 +402,7 @@ export class ReviewWorker {
       }
 
       await this.logRunEvent(runArtifacts, "info", "interaction run started", {
+        reviewPhinVersion,
         interactionJobId: job.id,
         interactionRunId: interactionRun.id,
         interactionJobClaimToken: context.claimToken,

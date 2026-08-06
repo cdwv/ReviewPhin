@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Quality Benchmark"
+  short_description: "Score review runs and chart quality over time"
+  default_prompt: "Use $review-quality-benchmark to score review runs from the requested period and generate an HTML quality report."

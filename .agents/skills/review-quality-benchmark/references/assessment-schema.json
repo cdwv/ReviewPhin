@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Review quality benchmark assessment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "inputDigest",
+    "evaluatorVersion",
+    "judgeModel",
+    "categories",
+    "findings",
+    "strengths",
+    "weaknesses"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "inputDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "evaluatorVersion": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "judgeModel": { "type": "string", "minLength": 1 },
+    "categories": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "noobFriendliness",
+        "unjargonity",
+        "readability",
+        "importance",
+        "targeting",
+        "assessmentScope",
+        "groundedness"
+      ],
+      "properties": {
+        "noobFriendliness": { "$ref": "#/$defs/score" },
+        "unjargonity": { "$ref": "#/$defs/score" },
+        "readability": { "$ref": "#/$defs/score" },
+        "importance": { "$ref": "#/$defs/nullableScore" },
+        "targeting": { "$ref": "#/$defs/nullableScore" },
+        "assessmentScope": { "$ref": "#/$defs/score" },
+        "groundedness": { "$ref": "#/$defs/score" }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/findingAssessment" }
+    },
+    "strengths": {
+      "type": "array",
+      "maxItems": 5,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "weaknesses": {
+      "type": "array",
+      "maxItems": 5,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "reason"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "nullableScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "reason"],
+      "properties": {
+        "score": {
+          "anyOf": [
+            { "type": "integer", "minimum": 0, "maximum": 10 },
+            { "type": "null" }
+          ]
+        },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "findingAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "findingId",
+        "importance",
+        "targeting",
+        "groundedness",
+        "reason"
+      ],
+      "properties": {
+        "findingId": { "type": "string", "minLength": 1 },
+        "importance": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "targeting": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "score",
+            "anchorExpected",
+            "anchorPresent",
+            "anchorQuality",
+            "suggestionExpected",
+            "suggestionPresent",
+            "suggestionQuality"
+          ],
+          "properties": {
+            "score": { "type": "integer", "minimum": 0, "maximum": 10 },
+            "anchorExpected": { "type": "boolean" },
+            "anchorPresent": { "type": "boolean" },
+            "anchorQuality": { "type": "string", "minLength": 1 },
+            "suggestionExpected": { "type": "boolean" },
+            "suggestionPresent": { "type": "boolean" },
+            "suggestionQuality": { "type": "string", "minLength": 1 }
+          }
+        },
+        "groundedness": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
