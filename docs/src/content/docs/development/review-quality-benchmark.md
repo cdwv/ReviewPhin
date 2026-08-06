@@ -57,7 +57,7 @@ benchmark-report/
   tmp/               normalized packets, manifest, and pending assessments
 ```
 
-The cache reuses a score only when the normalized evidence, rubric, assessment schema, judge prompt, and judge model still match. Widening the date range assesses only new or invalidated runs before rendering the complete requested period.
+The cache reuses a score only when the normalized evidence, rubric, assessment schema, judge prompt, and judge model still match. Widening the date range assesses only new or invalidated runs before rendering the complete requested period. A forced preparation invalidates matching scores for the selected runs before reassessment while preserving unrelated cache entries.
 
 The HTML report works offline. Use its filters to isolate tenants, review modes, models, or prompt fingerprints. Long periods scroll horizontally so the seven quality lanes keep a readable height. The score range can switch between the fixed 0–10 scale and one shared range fitted to the visible results.
 

@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -7,7 +13,7 @@ import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
 describe("review quality benchmark evidence", () => {
-  it("does not borrow a newer job snapshot for an older run", () => {
+  it("keeps snapshots run-scoped and invalidates forced cached scores", () => {
     const workspace = mkdtempSync(join(tmpdir(), "review-quality-benchmark-"));
     const databasePath = join(workspace, "review-worker.sqlite");
     const logsPath = join(workspace, "run-logs");
@@ -176,28 +182,26 @@ describe("review quality benchmark evidence", () => {
     }
 
     try {
-      execFileSync(
-        process.execPath,
-        [
-          resolve(
-            ".agents/skills/review-quality-benchmark/scripts/benchmark.mjs",
-          ),
-          "prepare",
-          "--workspace",
-          workspace,
-          "--db",
-          databasePath,
-          "--logs",
-          logsPath,
-          "--from",
-          "2026-04-28",
-          "--to",
-          "2026-04-28",
-          "--judge-model",
-          "test-judge",
-        ],
-        { stdio: "pipe" },
+      const scriptPath = resolve(
+        ".agents/skills/review-quality-benchmark/scripts/benchmark.mjs",
       );
+      const prepareArguments = [
+        scriptPath,
+        "prepare",
+        "--workspace",
+        workspace,
+        "--db",
+        databasePath,
+        "--logs",
+        logsPath,
+        "--from",
+        "2026-04-28",
+        "--to",
+        "2026-04-28",
+        "--judge-model",
+        "test-judge",
+      ];
+      execFileSync(process.execPath, prepareArguments, { stdio: "pipe" });
 
       const packet = JSON.parse(
         readFileSync(
@@ -211,6 +215,10 @@ describe("review quality benchmark evidence", () => {
           "utf8",
         ),
       ) as {
+        runId: string;
+        inputDigest: string;
+        evaluatorVersion: string;
+        judgeModel: string;
         evidence: {
           codeReview: { details: unknown; changedFiles: unknown[] };
         };
@@ -218,6 +226,75 @@ describe("review quality benchmark evidence", () => {
 
       expect(packet.evidence.codeReview.details).toBeNull();
       expect(packet.evidence.codeReview.changedFiles).toEqual([]);
+
+      const assessmentPath = join(
+        workspace,
+        "benchmark-report",
+        "tmp",
+        "assessments",
+        "run-old.json",
+      );
+      writeFileSync(
+        assessmentPath,
+        JSON.stringify({
+          schemaVersion: 1,
+          runId: packet.runId,
+          inputDigest: packet.inputDigest,
+          evaluatorVersion: packet.evaluatorVersion,
+          judgeModel: packet.judgeModel,
+          categories: {
+            noobFriendliness: { score: 8, reason: "Clear." },
+            unjargonity: { score: 8, reason: "Simple." },
+            readability: { score: 8, reason: "Readable." },
+            importance: { score: null, reason: "No findings." },
+            targeting: { score: null, reason: "No findings." },
+            assessmentScope: { score: 8, reason: "Complete." },
+            groundedness: { score: 8, reason: "Grounded." },
+          },
+          findings: [],
+          strengths: [],
+          weaknesses: [],
+        }),
+      );
+      execFileSync(
+        process.execPath,
+        [
+          scriptPath,
+          "store",
+          "--workspace",
+          workspace,
+          "--file",
+          assessmentPath,
+        ],
+        { stdio: "pipe" },
+      );
+
+      const cachePath = join(workspace, "benchmark-report", "cache.sqlite");
+      const cachedBeforeForce = new DatabaseSync(cachePath, { readOnly: true });
+      try {
+        expect(
+          cachedBeforeForce
+            .prepare("SELECT COUNT(*) AS count FROM assessments")
+            .get(),
+        ).toEqual({ count: 1 });
+      } finally {
+        cachedBeforeForce.close();
+      }
+
+      execFileSync(process.execPath, [...prepareArguments, "--force"], {
+        stdio: "pipe",
+      });
+
+      const cachedAfterForce = new DatabaseSync(cachePath, { readOnly: true });
+      try {
+        expect(
+          cachedAfterForce
+            .prepare("SELECT COUNT(*) AS count FROM assessments")
+            .get(),
+        ).toEqual({ count: 0 });
+      } finally {
+        cachedAfterForce.close();
+      }
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }

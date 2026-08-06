@@ -783,6 +783,28 @@ function prepare(options) {
       selectedRuns.push(summary);
       (cached ? cachedRuns : pendingRuns).push(run.id);
     }
+    if (options.force === true) {
+      const invalidate = cache.prepare(
+        `DELETE FROM assessments
+         WHERE run_id = ? AND input_digest = ?
+           AND evaluator_version = ? AND judge_model = ?`,
+      );
+      cache.exec("BEGIN IMMEDIATE");
+      try {
+        for (const selected of selectedRuns) {
+          invalidate.run(
+            selected.runId,
+            selected.inputDigest,
+            identity.evaluatorVersion,
+            identity.judgeModel,
+          );
+        }
+        cache.exec("COMMIT");
+      } catch (error) {
+        cache.exec("ROLLBACK");
+        throw error;
+      }
+    }
     const manifest = {
       schemaVersion: 1,
       generatedAt: new Date().toISOString(),

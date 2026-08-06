@@ -65,7 +65,7 @@ Benchmark reviewer output from recorded run evidence only. Keep judgment agentic
 - Cache identity includes normalized run evidence, rubric and judge-prompt content, assessment schema, and judge model identifier.
 - Reuse a cached assessment only when every identity component matches.
 - Widening a period must assess only new or invalidated runs and then rerender the complete requested period.
-- Never delete the cache automatically. Use the script's `--force` option during `prepare` only when the user explicitly requests reassessment.
+- Preserve unrelated cache entries. Use the script's `--force` option during `prepare` only when the user explicitly requests reassessment; it invalidates matching scores for the selected runs so interrupted reassessment cannot render stale results.
 
 ## Output behavior
 
