@@ -141,6 +141,10 @@ export default defineConfig({
           items: [
             { label: "Overview", slug: "docs/development" },
             { label: "Review flow", slug: "docs/development/review-flow" },
+            {
+              label: "Review quality benchmark",
+              slug: "docs/development/review-quality-benchmark",
+            },
             { label: "Providers", slug: "docs/development/providers" },
             {
               label: "Custom platform providers",

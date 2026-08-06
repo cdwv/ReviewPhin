@@ -48,6 +48,7 @@ Storage keeps tenants, platform connections, jobs, runs, findings, discussion ma
 ## In this area
 
 - [Review flow](review-flow/) — from webhook to published review.
+- [Review quality benchmark](review-quality-benchmark/) — compare recorded review output across prompt eras and releases.
 - [Providers](providers/) — the platform and storage provider model.
 - [Custom platform providers](custom-platforms/) — add a code review platform.
 - [Custom storage adapters](custom-storage/) — add a persistence backend.

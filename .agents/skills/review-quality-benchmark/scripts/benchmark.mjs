@@ -577,24 +577,15 @@ function selectRuns(source, fromInclusive, toExclusive, modes) {
 }
 
 function loadSnapshot(source, run) {
-  const direct = source
-    .prepare(
-      `SELECT * FROM code_review_snapshots
-       WHERE interaction_run_id = ?
-       ORDER BY created_at DESC
-       LIMIT 1`,
-    )
-    .get(run.id);
-  if (direct) return direct;
   return (
     source
       .prepare(
         `SELECT * FROM code_review_snapshots
-         WHERE interaction_job_id = ?
+         WHERE interaction_run_id = ?
          ORDER BY created_at DESC
          LIMIT 1`,
       )
-      .get(run.interaction_job_id) ?? null
+      .get(run.id) ?? null
   );
 }
 
