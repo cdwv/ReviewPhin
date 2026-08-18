@@ -1138,7 +1138,7 @@
             53 -
             ((score - scale.min) / (scale.max - scale.min)) * 38;
           const parts = [
-            `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-labelledby="chart-title chart-desc"><title id="chart-title">Review quality scores over time</title><desc id="chart-desc">Seven horizontal score lanes from ${scale.min} to ${scale.max}, with application release and prompt-change markers.</desc>`,
+            `<svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none" role="img" aria-labelledby="chart-title chart-desc"><title id="chart-title">Review quality scores over time</title><desc id="chart-desc">Seven horizontal score lanes from ${scale.min} to ${scale.max}, with application release and prompt-change markers.</desc>`,
           ];
           dimensions.forEach((dimension, lane) => {
             const topY = y(lane, scale.max),
