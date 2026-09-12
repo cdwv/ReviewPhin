@@ -11,6 +11,10 @@ import {
   DEFAULT_REPOSITORY_INSTRUCTION_FILES,
   isDefaultRepositoryInstructionFile,
 } from "../../harness/workspace.js";
+import {
+  isReviewPhinPath,
+  REVIEWPHIN_DIRECTORY,
+} from "../../harness/repository-customizations.js";
 import { GitLabApiError, type GitLabClient } from "./client.js";
 import type {
   GitLabMergeRequestChange,
@@ -133,7 +137,7 @@ export class WorkspaceMaterializer {
     await resetDirectory(rootPath);
 
     for (const change of input.changes) {
-      if (change.deleted_file) {
+      if (change.deleted_file || isReviewPhinPath(change.new_path)) {
         continue;
       }
 
@@ -192,11 +196,39 @@ export class WorkspaceMaterializer {
       }
     }
 
-    return {
-      rootPath,
-      cleanupRoot,
-      strategy: "targeted-files",
-    };
+    let customizationTree: Awaited<
+      ReturnType<GitLabClient["listRepositoryTree"]>
+    >;
+    try {
+      customizationTree = await input.client.listRepositoryTree(
+        input.projectId,
+        input.headSha,
+        REVIEWPHIN_DIRECTORY,
+        true,
+      );
+    } catch (error) {
+      if (!(error instanceof GitLabApiError) || error.status !== 404)
+        throw error;
+      customizationTree = [];
+    }
+    const customizationFiles = customizationTree.filter(
+      (entry) => entry.type === "blob" && isReviewPhinPath(entry.path),
+    );
+    for (const item of customizationFiles) {
+      if (item.mode !== "100644" && item.mode !== "100755") {
+        throw new Error(`Not a regular customization file: ${item.path}`);
+      }
+      const content = await input.client.getRawFileBytes(
+        input.projectId,
+        item.path,
+        input.headSha,
+      );
+      const outputPath = join(rootPath, ...item.path.split("/"));
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, content);
+    }
+
+    return { rootPath, cleanupRoot, strategy: "targeted-files" };
   }
 
   private async materializeFromGit(

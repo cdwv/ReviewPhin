@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const { createSessionMock, listModelsMock, startMock, stopMock } = vi.hoisted(
   () => ({
@@ -38,6 +41,76 @@ import type {
 import { tmpPath } from "./test-paths.js";
 
 describe("HarnessSessionRuntime", () => {
+  it.each([false, true])(
+    "adds repository customizations without replacing discovery (custom provider: %s)",
+    async (customProvider) => {
+      const root = await mkdtemp(
+        join(tmpdir(), "reviewphin-session-customizations-"),
+      );
+      try {
+        await mkdir(join(root, ".reviewphin/skills/review"), {
+          recursive: true,
+        });
+        await writeFile(join(root, ".reviewphin/AGENTS.md"), "Flipperly yours");
+        await writeFile(
+          join(root, ".reviewphin/rules.instructions.md"),
+          "Review rules",
+        );
+        await writeFile(
+          join(root, ".reviewphin/skills/review/SKILL.md"),
+          "Review skill",
+        );
+        createSessionMock.mockResolvedValue(createSession());
+        const runtime = new HarnessSessionRuntime({
+          logger: createLogger(),
+          runLogDir: join(root, "logs"),
+          timeoutMs: 1000,
+          maxPromptMemoryChars: 5000,
+        });
+        await runtime.run({
+          prompt: "Review this.",
+          modelConfig: {
+            ...createModelConfig(),
+            ...(customProvider
+              ? {
+                  provider: {
+                    baseUrl: "http://llm.internal/v1",
+                    type: "openai" as const,
+                  },
+                }
+              : {}),
+          },
+          workingDirectory: root,
+          tools: ["glob", "rg", "view"],
+          subagents: ["context-analyst", "review-author"],
+          agent: "review-author",
+        });
+        const options = createSessionMock.mock.calls[0]![0];
+        expect(options.workingDirectory).toBe(root);
+        expect(options.systemMessage).toEqual({
+          mode: "append",
+          content: expect.stringContaining("Flipperly yours"),
+        });
+        expect(options.instructionDirectories).toEqual([
+          join(root, ".reviewphin"),
+        ]);
+        expect(options.skillDirectories).toEqual([
+          join(root, ".reviewphin/skills"),
+        ]);
+        expect(options.enableSkills).toBe(true);
+        expect(options.enableConfigDiscovery).toBe(
+          customProvider ? false : undefined,
+        );
+        expect(options.availableTools).toEqual(["glob", "rg", "view", "skill"]);
+        for (const agent of options.customAgents)
+          expect(agent.tools).toEqual(["glob", "rg", "view", "skill"]);
+        expect(options).not.toHaveProperty("pluginDirectories");
+        expect(options).not.toHaveProperty("skipCustomInstructions");
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
   beforeEach(() => {
     createSessionMock.mockReset();
     listModelsMock.mockReset();

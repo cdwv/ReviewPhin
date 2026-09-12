@@ -23,6 +23,7 @@ import {
 } from "./response-format.js";
 import { resolveHarnessSubagents, resolveHarnessTools } from "./registry.js";
 import { HarnessRunLog } from "./run-log.js";
+import { loadRepositoryCustomizations } from "./repository-customizations.js";
 import { COPILOT_HARNESS, summarizeHarnessRunLog } from "./run-metrics.js";
 import type {
   HarnessRunAttachment,
@@ -112,15 +113,49 @@ export class HarnessSessionRuntime {
     let harnessSessionKey: string | null = null;
 
     try {
+      const customizations = await loadRepositoryCustomizations(
+        spec.workingDirectory,
+      );
+      const skillDirectories = customizations?.skillDirectories ?? [];
+      const hasSkills = skillDirectories.length > 0;
+      if (customizations) {
+        runLog.setRepositoryCustomizations(customizations);
+        this.logger.info(
+          {
+            instructionDirectories: customizations.instructionDirectories,
+            skillDirectories: customizations.skillDirectories,
+          },
+          "Configured ReviewPhin repository customizations",
+        );
+      }
       await client.start();
       const { registeredTools, availableTools, enabledToolIds } =
-        resolveHarnessTools(spec.tools, {
+        resolveHarnessTools(hasSkills ? [...spec.tools, "skill"] : spec.tools, {
           memoryService,
           gitReadonly: spec.gitReadonly,
         });
 
       const session = await client.createSession({
         onPermissionRequest: permissionHandler,
+        // The bundled CLI loads modular rules from extra directories, but not
+        // their AGENTS.md. Append only that file; preserve native shared rules.
+        ...(customizations?.instructions
+          ? {
+              systemMessage: {
+                mode: "append" as const,
+                content: `Repository review guidance from .reviewphin/AGENTS.md (alongside shared repository instructions and learned project memory):\n\n${customizations.instructions}`,
+              },
+            }
+          : {}),
+        ...(customizations?.instructionDirectories.length
+          ? { instructionDirectories: customizations.instructionDirectories }
+          : {}),
+        ...(hasSkills
+          ? {
+              skillDirectories,
+              enableSkills: true,
+            }
+          : {}),
         ...(spec.workingDirectory
           ? { workingDirectory: spec.workingDirectory }
           : {}),

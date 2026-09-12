@@ -13,7 +13,7 @@ export type HarnessSelectionSource =
   "code-review-override" | "tenant" | "default" | "fallback";
 export type HarnessProviderType = "openai" | "azure" | "anthropic" | null;
 export type HarnessToolId =
-  "glob" | "rg" | "view" | "git_readonly" | "add_memory_entry";
+  "glob" | "rg" | "view" | "skill" | "git_readonly" | "add_memory_entry";
 export type HarnessSubagentId = "context-analyst" | "review-author";
 export type HarnessRunAttachment = NonNullable<
   MessageOptions["attachments"]
