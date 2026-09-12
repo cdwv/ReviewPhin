@@ -103,6 +103,10 @@ export default defineConfig({
               label: "Comments and triggers",
               slug: "docs/using-reviewphin/comments-and-triggers",
             },
+            {
+              label: "Repository instructions and skills",
+              slug: "docs/using-reviewphin/repository-instructions",
+            },
           ],
         },
         {

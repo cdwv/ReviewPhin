@@ -293,6 +293,9 @@ Can you suggest a more readable variable name here?
 
 ### Teach the bot project conventions
 
+For committed review instructions and skills, add a `.reviewphin` directory.
+See [Repository instructions and skills](https://reviewphin.com/docs/using-reviewphin/repository-instructions/).
+
 To store a durable note in the project memory (written to the selected memory backend):
 
 ```

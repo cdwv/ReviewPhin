@@ -69,6 +69,11 @@ jobs:
       - name: Test with coverage
         run: pnpm test --coverage
 
+      - name: Check bundled CLI repository customizations
+        run: pnpm exec vitest run test/repository-customizations-cli.test.ts
+        env:
+          REVIEWPHIN_CLI_TESTS: "1"
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

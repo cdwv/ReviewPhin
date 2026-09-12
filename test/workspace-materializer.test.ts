@@ -258,6 +258,12 @@ describe("WorkspaceMaterializer", () => {
         return "Follow the review guide.\n";
       }
 
+      if (filePath === ".reviewphin/AGENTS.md") return "Flipperly yours\n";
+      if (filePath === ".reviewphin/skills/review/SKILL.md")
+        return "Review skill\n";
+      if (filePath === ".reviewphin/skills/review/references/checklist.md")
+        return "Review reference\n";
+
       throw new GitLabApiError(
         "not found",
         404,
@@ -293,6 +299,24 @@ describe("WorkspaceMaterializer", () => {
         }),
         getRawFile,
         listRepositoryTree: vi.fn(async () => [
+          ...[
+            ".reviewphin/AGENTS.md",
+            ".reviewphin/skills/review/SKILL.md",
+            ".reviewphin/skills/review/references/checklist.md",
+          ].map((path) => ({
+            id: path,
+            name: path.split("/").at(-1)!,
+            type: "blob",
+            path,
+            mode: "100644",
+          })),
+          {
+            id: "unsafe",
+            name: "escape.md",
+            type: "blob",
+            path: ".reviewphin/../escape.md",
+            mode: "100644",
+          },
           {
             id: "blob_1",
             name: "review.instructions.md",
@@ -327,6 +351,28 @@ describe("WorkspaceMaterializer", () => {
     });
 
     expect(workspace.strategy).toBe("targeted-files");
+    expect(
+      await readFile(join(workspace.rootPath, ".reviewphin/AGENTS.md"), "utf8"),
+    ).toBe("Flipperly yours\n");
+    expect(
+      await readFile(
+        join(
+          workspace.rootPath,
+          ".reviewphin/skills/review/references/checklist.md",
+        ),
+        "utf8",
+      ),
+    ).toBe("Review reference\n");
+    expect(getRawFile).toHaveBeenCalledWith(
+      1085,
+      ".reviewphin/AGENTS.md",
+      "abc123",
+    );
+    expect(getRawFile).not.toHaveBeenCalledWith(
+      1085,
+      ".reviewphin/../escape.md",
+      "abc123",
+    );
     expect(workspace.gitPreparationError).toBe("git failed");
     expect(
       await readFile(join(workspace.rootPath, "src", "index.ts"), "utf8"),

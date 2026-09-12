@@ -21,7 +21,12 @@ interface HarnessRegistryContext {
   gitReadonly?: GitReadonlyExecutionContext | null | undefined;
 }
 
-const BUILTIN_READ_ONLY_TOOL_IDS: HarnessToolId[] = ["glob", "rg", "view"];
+const BUILTIN_READ_ONLY_TOOL_IDS: HarnessToolId[] = [
+  "glob",
+  "rg",
+  "view",
+  "skill",
+];
 const REVIEW_READ_ONLY_TOOL_IDS: HarnessToolId[] = [
   ...BUILTIN_READ_ONLY_TOOL_IDS,
   "git_readonly",

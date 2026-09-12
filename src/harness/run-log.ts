@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { AssistantMessageEvent, SessionEvent } from "@github/copilot-sdk";
 
 import type { ModelReasoningEffort } from "../storage/contract/index.js";
+import type { RepositoryCustomizations } from "./repository-customizations.js";
 import { summarizeHarnessParseError } from "./response-format.js";
 import type {
   HarnessRunLoggingContext,
@@ -50,6 +51,7 @@ interface HarnessStructuredOutputAttemptRecord {
 }
 
 export interface HarnessRunLogRecord {
+  repositoryCustomizations?: Omit<RepositoryCustomizations, "instructions">;
   startedAt: string;
   finishedAt: string | null;
   sessionId: string | null;
@@ -72,6 +74,15 @@ export interface HarnessRunLogRecord {
 }
 
 export class HarnessRunLog {
+  public setRepositoryCustomizations(
+    customizations: RepositoryCustomizations,
+  ): void {
+    this.record.repositoryCustomizations = {
+      files: customizations.files,
+      instructionDirectories: customizations.instructionDirectories,
+      skillDirectories: customizations.skillDirectories,
+    };
+  }
   private readonly logDir: string;
   private readonly record: HarnessRunLogRecord;
 

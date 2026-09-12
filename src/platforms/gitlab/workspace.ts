@@ -11,6 +11,13 @@ import {
   DEFAULT_REPOSITORY_INSTRUCTION_FILES,
   isDefaultRepositoryInstructionFile,
 } from "../../harness/workspace.js";
+import {
+  isReviewPhinPath,
+  MAX_CUSTOMIZATION_BYTES,
+  MAX_CUSTOMIZATION_FILE_BYTES,
+  MAX_CUSTOMIZATION_FILES,
+  REVIEWPHIN_DIRECTORY,
+} from "../../harness/repository-customizations.js";
 import { GitLabApiError, type GitLabClient } from "./client.js";
 import type {
   GitLabMergeRequestChange,
@@ -192,11 +199,49 @@ export class WorkspaceMaterializer {
       }
     }
 
-    return {
-      rootPath,
-      cleanupRoot,
-      strategy: "targeted-files",
-    };
+    let customizationTree: Awaited<ReturnType<GitLabClient["listRepositoryTree"]>>;
+    try {
+      customizationTree = await input.client.listRepositoryTree(
+        input.projectId,
+        input.headSha,
+        REVIEWPHIN_DIRECTORY,
+        true,
+      );
+    } catch (error) {
+      if (!(error instanceof GitLabApiError) || error.status !== 404)
+        throw error;
+      customizationTree = [];
+    }
+    const customizationFiles = customizationTree.filter(
+      (entry) => entry.type === "blob" && isReviewPhinPath(entry.path),
+    );
+    if (customizationFiles.length > MAX_CUSTOMIZATION_FILES) {
+      throw new Error(".reviewphin exceeds the customization file limit");
+    }
+    let customizationBytes = 0;
+    for (const item of customizationFiles) {
+      if (item.mode !== "100644" && item.mode !== "100755") {
+        throw new Error(`Not a regular customization file: ${item.path}`);
+      }
+      const content = await input.client.getRawFile(
+        input.projectId,
+        item.path,
+        input.headSha,
+      );
+      const bytes = Buffer.byteLength(content, "utf8");
+      customizationBytes += bytes;
+      if (
+        bytes > MAX_CUSTOMIZATION_FILE_BYTES ||
+        customizationBytes > MAX_CUSTOMIZATION_BYTES
+      ) {
+        throw new Error(".reviewphin exceeds the customization size limit");
+      }
+      const outputPath = join(rootPath, ...item.path.split("/"));
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, content, "utf8");
+    }
+
+    return { rootPath, cleanupRoot, strategy: "targeted-files" };
   }
 
   private async materializeFromGit(
