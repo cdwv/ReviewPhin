@@ -3,6 +3,12 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v1.11.0 - 2026-09-12
+### Added
+- Support committed ReviewPhin-specific instructions and native review
+skills in `.reviewphin`, alongside existing repository guidance, with
+setup documentation and configured directories in run logs.
+
 ## v1.10.1 - 2026-09-12
 ### Changed
 - ReviewPhin now ships with Copilot CLI 1.0.83 and Copilot SDK 1.0.13.
