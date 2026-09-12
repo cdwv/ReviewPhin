@@ -1,0 +1,4 @@
+peerDependencyRules:
+  # Verified by test/review-report.test.ts; limit the exception to the tested pair.
+  allowedVersions:
+    "marked-terminal@7.3.0>marked": "18.0.12"

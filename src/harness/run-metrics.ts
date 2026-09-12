@@ -52,7 +52,11 @@ export function summarizeHarnessRunLog(
   const viewCounts = new Map<string, number>();
 
   for (const event of viewCalls) {
-    const path = event.data?.arguments?.path;
+    const args = event.data?.arguments;
+    if (typeof args !== "object" || args === null || Array.isArray(args)) {
+      continue;
+    }
+    const path = args.path;
     if (typeof path !== "string" || path.length === 0) {
       continue;
     }

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  formatMarkdownForTerminal,
   formatReviewReportForTerminal,
   formatReviewReportMarkdown,
   writeReviewReport,
@@ -48,6 +49,57 @@ const reviewResult: ReviewResult = {
 };
 
 describe("review report", () => {
+  it("renders GFM tables, nested lists, links, and code with Marked 18", () => {
+    const output = new CliOutput("pretty", {
+      stdout: createStringWriter(() => undefined),
+      stdoutIsTTY: true,
+      columns: 80,
+      color: false,
+    });
+    const report = formatMarkdownForTerminal(
+      [
+        "# Compatibility",
+        "",
+        "| File | Result |",
+        "| --- | --- |",
+        "| auth.ts | Passed |",
+        "",
+        "- Parent",
+        "  - Child",
+        "",
+        "> Quoted advice",
+        "",
+        "[Documentation](https://example.com/docs) and **bold** and ~~removed~~.",
+        "",
+        "```typescript",
+        "const value = 42;",
+        "```",
+      ].join("\n"),
+      output,
+    );
+
+    for (const text of [
+      "Compatibility",
+      "File",
+      "Result",
+      "auth.ts",
+      "Passed",
+      "Parent",
+      "Child",
+      "Quoted advice",
+      "Documentation",
+      "https://example.com/docs",
+      "bold",
+      "removed",
+      "const value = 42;",
+    ]) {
+      expect(report).toContain(text);
+    }
+    expect(report).not.toContain("[object Object]");
+    expect(report).not.toContain("**bold**");
+    expect(report).not.toContain("```typescript");
+  });
+
   it("renders a complete Markdown report", () => {
     const report = formatReviewReportMarkdown(reviewResult);
 
