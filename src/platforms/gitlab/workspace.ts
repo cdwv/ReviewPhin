@@ -140,7 +140,7 @@ export class WorkspaceMaterializer {
     await resetDirectory(rootPath);
 
     for (const change of input.changes) {
-      if (change.deleted_file) {
+      if (change.deleted_file || isReviewPhinPath(change.new_path)) {
         continue;
       }
 
@@ -199,7 +199,9 @@ export class WorkspaceMaterializer {
       }
     }
 
-    let customizationTree: Awaited<ReturnType<GitLabClient["listRepositoryTree"]>>;
+    let customizationTree: Awaited<
+      ReturnType<GitLabClient["listRepositoryTree"]>
+    >;
     try {
       customizationTree = await input.client.listRepositoryTree(
         input.projectId,
@@ -223,12 +225,12 @@ export class WorkspaceMaterializer {
       if (item.mode !== "100644" && item.mode !== "100755") {
         throw new Error(`Not a regular customization file: ${item.path}`);
       }
-      const content = await input.client.getRawFile(
+      const content = await input.client.getRawFileBytes(
         input.projectId,
         item.path,
         input.headSha,
       );
-      const bytes = Buffer.byteLength(content, "utf8");
+      const bytes = content.byteLength;
       customizationBytes += bytes;
       if (
         bytes > MAX_CUSTOMIZATION_FILE_BYTES ||
@@ -236,9 +238,17 @@ export class WorkspaceMaterializer {
       ) {
         throw new Error(".reviewphin exceeds the customization size limit");
       }
+      try {
+        new TextDecoder("utf-8", { fatal: true }).decode(content);
+      } catch (error) {
+        throw new Error(
+          `Cannot read customization as UTF-8 text: ${item.path}`,
+          { cause: error },
+        );
+      }
       const outputPath = join(rootPath, ...item.path.split("/"));
       await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, content, "utf8");
+      await writeFile(outputPath, content);
     }
 
     return { rootPath, cleanupRoot, strategy: "targeted-files" };

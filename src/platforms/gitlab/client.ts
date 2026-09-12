@@ -816,6 +816,16 @@ export class GitLabClient {
     filePath: string,
     ref: string,
   ): Promise<string> {
+    return new TextDecoder().decode(
+      await this.getRawFileBytes(projectId, filePath, ref),
+    );
+  }
+
+  public async getRawFileBytes(
+    projectId: number,
+    filePath: string,
+    ref: string,
+  ): Promise<Buffer> {
     const requestUrl = this.buildUrl(
       `/projects/${encodeURIComponent(String(projectId))}/repository/files/${encodeURIComponent(filePath)}/raw`,
       { ref },
@@ -843,8 +853,9 @@ export class GitLabClient {
       }),
     });
 
-    const responseBody = await response.text();
+    const responseBytes = Buffer.from(await response.arrayBuffer());
     if (!response.ok) {
+      const responseBody = new TextDecoder().decode(responseBytes);
       await this.logGitLabRequest({
         timestamp: new Date().toISOString(),
         requestId,
@@ -878,10 +889,10 @@ export class GitLabClient {
       durationMs: Date.now() - startedAt,
       response: {
         headers: summarizeHeaders(response.headers),
-        body: truncateForLog(responseBody),
+        body: { size: responseBytes.byteLength },
       },
     });
-    return responseBody;
+    return responseBytes;
   }
 
   public buildGitAuthEnv(

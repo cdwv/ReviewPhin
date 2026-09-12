@@ -12,7 +12,10 @@ import { tmpdir } from "node:os";
 import * as tar from "tar";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { GitLabApiError } from "../src/platforms/gitlab/client.js";
+import {
+  GitLabApiError,
+  GitLabClient,
+} from "../src/platforms/gitlab/client.js";
 import { WorkspaceMaterializer } from "../src/platforms/gitlab/workspace.js";
 import { createLogger } from "../src/logger.js";
 
@@ -20,12 +23,107 @@ describe("WorkspaceMaterializer", () => {
   const tempRoots: string[] = [];
 
   afterEach(async () => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     await Promise.all(
       tempRoots
         .splice(0)
         .map((path) => rm(path, { recursive: true, force: true })),
     );
   });
+
+  it.each([
+    { name: "invalid UTF-8", bytes: new Uint8Array([0xff]), valid: false },
+    {
+      name: "valid UTF-8 with BOM",
+      bytes: new Uint8Array([
+        0xef,
+        0xbb,
+        0xbf,
+        ...Buffer.from("Flipperly yours 🐬"),
+      ]),
+      valid: true,
+    },
+  ])(
+    "preserves raw customization bytes in targeted fallback: $name",
+    async ({ bytes, valid }) => {
+      const workspaceRoot = await createTempRoot();
+      const client = new GitLabClient({
+        baseUrl: "https://gitlab.example.com",
+        apiToken: "test-token",
+        logger: createLogger("silent"),
+      });
+      vi.spyOn(client, "getProject").mockRejectedValue(
+        new Error("git unavailable"),
+      );
+      vi.spyOn(client, "downloadRepositoryArchive").mockRejectedValue(
+        new Error("archive unavailable"),
+      );
+      const textRead = vi.spyOn(client, "getRawFile").mockResolvedValue("");
+      vi.spyOn(client, "listRepositoryTree").mockImplementation(
+        async (_project, _ref, path) =>
+          path === ".reviewphin"
+            ? [
+                {
+                  id: "blob",
+                  name: "AGENTS.md",
+                  path: ".reviewphin/AGENTS.md",
+                  type: "blob",
+                  mode: "100644",
+                },
+              ]
+            : [],
+      );
+      const fetchMock = vi.fn(async (url: URL | RequestInfo) => {
+        expect(String(url)).toBe(
+          "https://gitlab.example.com/api/v4/projects/1085/repository/files/.reviewphin%2FAGENTS.md/raw?ref=abc123",
+        );
+        return new Response(bytes);
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const materializer = new WorkspaceMaterializer({
+        workspaceRoot,
+        logger: createLogger("silent"),
+      });
+      const result = materializer.materialize({
+        client,
+        jobId: "raw-bytes",
+        projectId: 1085,
+        codeReviewId: 7,
+        baseSha: "base123",
+        headSha: "abc123",
+        changes: [
+          {
+            old_path: ".reviewphin/AGENTS.md",
+            new_path: ".reviewphin/AGENTS.md",
+            diff: "@@",
+            new_file: true,
+            renamed_file: false,
+            deleted_file: false,
+          },
+        ],
+      });
+      const outputPath = join(
+        workspaceRoot,
+        "raw-bytes/workspace/.reviewphin/AGENTS.md",
+      );
+      if (valid) {
+        expect((await result).strategy).toBe("targeted-files");
+        expect(await readFile(outputPath)).toEqual(Buffer.from(bytes));
+      } else {
+        await expect(result).rejects.toThrow(
+          "Cannot read customization as UTF-8 text: .reviewphin/AGENTS.md",
+        );
+        await expect(access(outputPath)).rejects.toThrow();
+      }
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(textRead).not.toHaveBeenCalledWith(
+        1085,
+        ".reviewphin/AGENTS.md",
+        "abc123",
+      );
+    },
+  );
 
   it("uses git checkout as the primary materialization strategy", async () => {
     const workspaceRoot = await createTempRoot();
@@ -245,32 +343,34 @@ describe("WorkspaceMaterializer", () => {
 
   it("falls back to targeted files when git and archive fail", async () => {
     const workspaceRoot = await createTempRoot();
-    const getRawFile = vi.fn(async (_projectId: number, filePath: string) => {
-      if (filePath === "src/index.ts") {
-        return "console.log('ok');\n";
-      }
+    const getRawFile = vi.fn(
+      async (_projectId: number, filePath: string, _ref?: string) => {
+        if (filePath === "src/index.ts") {
+          return "console.log('ok');\n";
+        }
 
-      if (filePath === "AGENTS.md") {
-        return "# File instructions\n";
-      }
+        if (filePath === "AGENTS.md") {
+          return "# File instructions\n";
+        }
 
-      if (filePath === ".github/instructions/review.instructions.md") {
-        return "Follow the review guide.\n";
-      }
+        if (filePath === ".github/instructions/review.instructions.md") {
+          return "Follow the review guide.\n";
+        }
 
-      if (filePath === ".reviewphin/AGENTS.md") return "Flipperly yours\n";
-      if (filePath === ".reviewphin/skills/review/SKILL.md")
-        return "Review skill\n";
-      if (filePath === ".reviewphin/skills/review/references/checklist.md")
-        return "Review reference\n";
+        if (filePath === ".reviewphin/AGENTS.md") return "Flipperly yours\n";
+        if (filePath === ".reviewphin/skills/review/SKILL.md")
+          return "Review skill\n";
+        if (filePath === ".reviewphin/skills/review/references/checklist.md")
+          return "Review reference\n";
 
-      throw new GitLabApiError(
-        "not found",
-        404,
-        "missing",
-        "https://gitlab.example.com",
-      );
-    });
+        throw new GitLabApiError(
+          "not found",
+          404,
+          "missing",
+          "https://gitlab.example.com",
+        );
+      },
+    );
 
     const materializer = new WorkspaceMaterializer({
       workspaceRoot,
@@ -298,6 +398,8 @@ describe("WorkspaceMaterializer", () => {
           );
         }),
         getRawFile,
+        getRawFileBytes: async (projectId: number, path: string, ref: string) =>
+          Buffer.from(await getRawFile(projectId, path, ref)),
         listRepositoryTree: vi.fn(async () => [
           ...[
             ".reviewphin/AGENTS.md",
