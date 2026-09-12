@@ -198,9 +198,11 @@
           <div class="callout warning">
             <strong>File handling:</strong> read the local AGENTS.md and
             register the instruction and skills directories with Copilot. Let
-            its native loaders discover their contents. Do not add recursive
-            validation or a file inventory. Record configured directories
-            separately from sources proven to have loaded.
+            its native loaders discover their contents. Check tree metadata to
+            reject links and special files before loading. Limit the main
+            instruction file to 256 KiB before reading it. Do not inspect
+            reference contents or build a file inventory. Record configured
+            directories separately from sources proven to have loaded.
           </div>
         </section>
         <section id="steps">

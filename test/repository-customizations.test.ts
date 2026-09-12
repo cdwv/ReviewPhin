@@ -1,8 +1,18 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadRepositoryCustomizations } from "../src/harness/repository-customizations.js";
+import {
+  loadRepositoryCustomizations,
+  MAX_REVIEWPHIN_INSTRUCTION_BYTES,
+} from "../src/harness/repository-customizations.js";
 
 const roots: string[] = [];
 async function fixture() {
@@ -82,6 +92,48 @@ describe("repository customizations", () => {
     );
     expect((await loadRepositoryCustomizations(root))?.instructions).toBe(
       "Review guidance",
+    );
+  });
+  it.each([
+    ".reviewphin",
+    ".reviewphin/AGENTS.md",
+    ".reviewphin/skills",
+    ".reviewphin/skills/security/references/linked",
+  ])("rejects linked customization content: %s", async (path) => {
+    const root = await fixture();
+    const outside = await fixture();
+    const target = path.endsWith("AGENTS.md")
+      ? join(outside, "private.md")
+      : outside;
+    if (path.endsWith("AGENTS.md"))
+      await writeFile(target, "Worker-local secret");
+    await rm(join(root, path), { recursive: true, force: true });
+    await symlink(
+      target,
+      join(root, path),
+      path.endsWith("AGENTS.md") ? "file" : "junction",
+    );
+    await expect(loadRepositoryCustomizations(root)).rejects.toThrow(
+      "Symbolic links",
+    );
+  });
+  it("bounds AGENTS.md while allowing larger binary skill assets", async () => {
+    const root = await fixture();
+    const path = join(root, ".reviewphin/AGENTS.md");
+    await writeFile(path, Buffer.alloc(MAX_REVIEWPHIN_INSTRUCTION_BYTES, 65));
+    await writeFile(
+      join(root, ".reviewphin/skills/security/references/data.bin"),
+      Buffer.alloc(MAX_REVIEWPHIN_INSTRUCTION_BYTES + 1, 0xff),
+    );
+    expect(
+      (await loadRepositoryCustomizations(root))?.instructions,
+    ).toHaveLength(MAX_REVIEWPHIN_INSTRUCTION_BYTES);
+    await writeFile(
+      path,
+      Buffer.alloc(MAX_REVIEWPHIN_INSTRUCTION_BYTES + 1, 65),
+    );
+    await expect(loadRepositoryCustomizations(root)).rejects.toThrow(
+      "256 KiB instruction limit",
     );
   });
 });

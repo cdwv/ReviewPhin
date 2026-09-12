@@ -101,7 +101,13 @@ all instructions are present in the request.
 
 ReviewPhin reads `.reviewphin/AGENTS.md` from the local workspace and passes the
 instruction and skills directories to Copilot. Copilot discovers the modular
-rules and skills; ReviewPhin does not scan or validate every file in the directory.
+rules and skills. Before registering the directories, ReviewPhin checks their
+file metadata and rejects symbolic links and special files, including links in
+nested skill directories. Keep customization files inside the workspace.
+
+The main `.reviewphin/AGENTS.md` has a 256 KiB limit, checked before reading it.
+This limit does not apply to skill reference assets. An unsupported link, special
+file, or oversized main instruction file fails session creation with an error.
 Skill reference assets retain their original bytes. How a skill can use an asset
 depends on the available model and tools.
 
