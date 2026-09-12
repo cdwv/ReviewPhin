@@ -4,6 +4,41 @@ import { summarizeHarnessRunLog } from "../src/harness/run-metrics.js";
 import { repoPath } from "./test-paths.js";
 
 describe("Copilot run metrics", () => {
+  it("ignores non-object and invalid view arguments while counting tool calls", () => {
+    const argumentsList = [
+      undefined,
+      null,
+      "src/a.ts",
+      42,
+      true,
+      ["src/a.ts"],
+      {},
+      { path: 42 },
+      { path: "" },
+      { path: "src/a.ts" },
+      { path: "src/a.ts" },
+    ];
+    const metrics = summarizeHarnessRunLog({
+      prompt: "Review",
+      events: argumentsList.map((args, index) => ({
+        id: `tool_${index}`,
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        type: "tool.execution_start" as const,
+        data: {
+          toolCallId: `call_${index}`,
+          toolName: "view",
+          ...(args === undefined ? {} : { arguments: args }),
+        },
+      })),
+    });
+
+    expect(metrics.toolExecutions).toBe(argumentsList.length);
+    expect(metrics.viewToolCalls).toBe(argumentsList.length);
+    expect(metrics.repeatedViewReads).toBe(1);
+    expect(metrics.repeatedViewPaths).toEqual([{ path: "src/a.ts", count: 2 }]);
+  });
+
   it("summarizes assistant usage and repeated view reads", () => {
     const workspacePath = repoPath();
     const alphaPath = repoPath("src", "alpha.ts");

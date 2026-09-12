@@ -18,7 +18,7 @@ RUN npm install --global corepack@latest \
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml tsconfig.json tsconfig.build.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.build.json ./
 COPY src ./src
 COPY prompts ./prompts
 COPY public ./public
@@ -32,7 +32,7 @@ RUN pnpm install --frozen-lockfile \
 
 FROM node:26-bookworm-slim AS runtime
 
-ARG COPILOT_CLI_VERSION=1.0.70
+ARG COPILOT_CLI_VERSION=1.0.83
 
 ENV NODE_ENV=production \
   HOST=0.0.0.0 \

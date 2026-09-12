@@ -62,7 +62,7 @@ The repository ships a multi-stage `Dockerfile`. The compose file builds it loca
 The runtime stage pins the bundled Copilot CLI to a fixed version for reproducible images. It defaults to `1.0.70` and can be overridden at build time:
 
 ```bash
-docker build --build-arg COPILOT_CLI_VERSION=1.0.70 -t reviewphin:local .
+docker build --build-arg COPILOT_CLI_VERSION=1.0.83 -t reviewphin:local .
 ```
 
 The image installs `@github/copilot` at that version and points `COPILOT_CLI_PATH` at `/usr/local/bin/copilot`. CLI `1.0.70` is the dependency resolved for the bundled `@github/copilot-sdk` `1.0.6`.
