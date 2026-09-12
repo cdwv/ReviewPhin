@@ -97,18 +97,18 @@ Avoid conflicting rules: this feature does not introduce a guaranteed precedence
 order between committed guidance and memory. Model compliance can vary even when
 all instructions are present in the request.
 
-## Limits and troubleshooting
+## Loading and troubleshooting
 
-The dedicated directory supports UTF-8 text files only, including skill references.
-It allows up to 128 files, 256 KiB per file, 2 MiB of file content in total, and
-256 entries counting files and subdirectories. Symbolic links and special files
-are rejected. An invalid directory fails the model session with an error rather
-than running a review with partially loaded guidance.
+ReviewPhin reads `.reviewphin/AGENTS.md` from the local workspace and passes the
+instruction and skills directories to Copilot. Copilot discovers the modular
+rules and skills; ReviewPhin does not scan or validate every file in the directory.
+Skill reference assets retain their original bytes. How a skill can use an asset
+depends on the available model and tools.
 
-Run logs include a `repositoryCustomizations` record listing file paths, sizes
-and configured native directories. This records the sources supplied to the
-runtime, not proof that the model followed each rule or activated every skill.
-Normal application logs do not print the instruction contents.
+Run logs include a `repositoryCustomizations` record with the configured native
+directories. This does not prove that Copilot loaded every file or that the model
+followed each rule or activated every skill. Normal application logs do not print
+the instruction contents.
 
 A missing `.reviewphin` directory leaves existing behavior unchanged. For local
 verification, add an easily observable instruction, such as a distinctive review

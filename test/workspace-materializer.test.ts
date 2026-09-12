@@ -33,7 +33,7 @@ describe("WorkspaceMaterializer", () => {
   });
 
   it.each([
-    { name: "invalid UTF-8", bytes: new Uint8Array([0xff]), valid: false },
+    { name: "binary reference asset", bytes: new Uint8Array([0xff]) },
     {
       name: "valid UTF-8 with BOM",
       bytes: new Uint8Array([
@@ -42,11 +42,10 @@ describe("WorkspaceMaterializer", () => {
         0xbf,
         ...Buffer.from("Flipperly yours 🐬"),
       ]),
-      valid: true,
     },
   ])(
     "preserves raw customization bytes in targeted fallback: $name",
-    async ({ bytes, valid }) => {
+    async ({ bytes }) => {
       const workspaceRoot = await createTempRoot();
       const client = new GitLabClient({
         baseUrl: "https://gitlab.example.com",
@@ -66,8 +65,8 @@ describe("WorkspaceMaterializer", () => {
             ? [
                 {
                   id: "blob",
-                  name: "AGENTS.md",
-                  path: ".reviewphin/AGENTS.md",
+                  name: "data.bin",
+                  path: ".reviewphin/skills/probe/references/data.bin",
                   type: "blob",
                   mode: "100644",
                 },
@@ -76,7 +75,7 @@ describe("WorkspaceMaterializer", () => {
       );
       const fetchMock = vi.fn(async (url: URL | RequestInfo) => {
         expect(String(url)).toBe(
-          "https://gitlab.example.com/api/v4/projects/1085/repository/files/.reviewphin%2FAGENTS.md/raw?ref=abc123",
+          "https://gitlab.example.com/api/v4/projects/1085/repository/files/.reviewphin%2Fskills%2Fprobe%2Freferences%2Fdata.bin/raw?ref=abc123",
         );
         return new Response(bytes);
       });
@@ -94,8 +93,8 @@ describe("WorkspaceMaterializer", () => {
         headSha: "abc123",
         changes: [
           {
-            old_path: ".reviewphin/AGENTS.md",
-            new_path: ".reviewphin/AGENTS.md",
+            old_path: ".reviewphin/skills/probe/references/data.bin",
+            new_path: ".reviewphin/skills/probe/references/data.bin",
             diff: "@@",
             new_file: true,
             renamed_file: false,
@@ -105,21 +104,14 @@ describe("WorkspaceMaterializer", () => {
       });
       const outputPath = join(
         workspaceRoot,
-        "raw-bytes/workspace/.reviewphin/AGENTS.md",
+        "raw-bytes/workspace/.reviewphin/skills/probe/references/data.bin",
       );
-      if (valid) {
-        expect((await result).strategy).toBe("targeted-files");
-        expect(await readFile(outputPath)).toEqual(Buffer.from(bytes));
-      } else {
-        await expect(result).rejects.toThrow(
-          "Cannot read customization as UTF-8 text: .reviewphin/AGENTS.md",
-        );
-        await expect(access(outputPath)).rejects.toThrow();
-      }
+      expect((await result).strategy).toBe("targeted-files");
+      expect(await readFile(outputPath)).toEqual(Buffer.from(bytes));
       expect(fetchMock).toHaveBeenCalledOnce();
       expect(textRead).not.toHaveBeenCalledWith(
         1085,
-        ".reviewphin/AGENTS.md",
+        ".reviewphin/skills/probe/references/data.bin",
         "abc123",
       );
     },

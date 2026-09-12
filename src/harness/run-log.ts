@@ -78,7 +78,6 @@ export class HarnessRunLog {
     customizations: RepositoryCustomizations,
   ): void {
     this.record.repositoryCustomizations = {
-      files: customizations.files,
       instructionDirectories: customizations.instructionDirectories,
       skillDirectories: customizations.skillDirectories,
     };

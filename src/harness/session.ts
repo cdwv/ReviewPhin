@@ -121,7 +121,10 @@ export class HarnessSessionRuntime {
       if (customizations) {
         runLog.setRepositoryCustomizations(customizations);
         this.logger.info(
-          { files: customizations.files },
+          {
+            instructionDirectories: customizations.instructionDirectories,
+            skillDirectories: customizations.skillDirectories,
+          },
           "Configured ReviewPhin repository customizations",
         );
       }

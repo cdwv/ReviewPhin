@@ -13,9 +13,6 @@ import {
 } from "../../harness/workspace.js";
 import {
   isReviewPhinPath,
-  MAX_CUSTOMIZATION_BYTES,
-  MAX_CUSTOMIZATION_FILE_BYTES,
-  MAX_CUSTOMIZATION_FILES,
   REVIEWPHIN_DIRECTORY,
 } from "../../harness/repository-customizations.js";
 import { GitLabApiError, type GitLabClient } from "./client.js";
@@ -217,10 +214,6 @@ export class WorkspaceMaterializer {
     const customizationFiles = customizationTree.filter(
       (entry) => entry.type === "blob" && isReviewPhinPath(entry.path),
     );
-    if (customizationFiles.length > MAX_CUSTOMIZATION_FILES) {
-      throw new Error(".reviewphin exceeds the customization file limit");
-    }
-    let customizationBytes = 0;
     for (const item of customizationFiles) {
       if (item.mode !== "100644" && item.mode !== "100755") {
         throw new Error(`Not a regular customization file: ${item.path}`);
@@ -230,22 +223,6 @@ export class WorkspaceMaterializer {
         item.path,
         input.headSha,
       );
-      const bytes = content.byteLength;
-      customizationBytes += bytes;
-      if (
-        bytes > MAX_CUSTOMIZATION_FILE_BYTES ||
-        customizationBytes > MAX_CUSTOMIZATION_BYTES
-      ) {
-        throw new Error(".reviewphin exceeds the customization size limit");
-      }
-      try {
-        new TextDecoder("utf-8", { fatal: true }).decode(content);
-      } catch (error) {
-        throw new Error(
-          `Cannot read customization as UTF-8 text: ${item.path}`,
-          { cause: error },
-        );
-      }
       const outputPath = join(rootPath, ...item.path.split("/"));
       await mkdir(dirname(outputPath), { recursive: true });
       await writeFile(outputPath, content);

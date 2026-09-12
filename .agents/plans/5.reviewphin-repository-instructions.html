@@ -196,10 +196,10 @@
             separately tested prompt policy.
           </p>
           <div class="callout warning">
-            <strong>File handling:</strong> define supported reference files,
-            size and file-count limits, and encoding before implementation.
-            Reject paths or links that escape the workspace. Report invalid or
-            skipped sources clearly. Record discovered and configured sources
+            <strong>File handling:</strong> read the local AGENTS.md and
+            register the instruction and skills directories with Copilot. Let
+            its native loaders discover their contents. Do not add recursive
+            validation or a file inventory. Record configured directories
             separately from sources proven to have loaded.
           </div>
         </section>
@@ -225,9 +225,10 @@
             </li>
             <li>
               <div>
-                <strong>Extend workspace hydration.</strong> Use shared path
-                rules for both platforms. Include targeted-file fallback and the
-                reference files needed by supported instructions and skills.
+                <strong>Extend workspace hydration.</strong> Use the local
+                checkout or archive workspace. Preserve dedicated files and
+                reference assets when the existing GitLab targeted-file recovery
+                is used.
               </div>
             </li>
             <li>
@@ -240,10 +241,10 @@
             </li>
             <li>
               <div>
-                <strong>Document and expose the result.</strong> Record safe
-                source metadata in run artifacts. Explain layouts, native path
-                behavior, skill availability, memory conflicts and skipped-file
-                behavior. Do not store instruction text in new database fields.
+                <strong>Document and expose the result.</strong> Record
+                configured directories in run artifacts. Explain layouts, native
+                path behavior, skill availability and memory conflicts. Do not
+                store instruction text in new database fields.
               </div>
             </li>
           </ol>
@@ -416,10 +417,10 @@
               unrelated repository configuration.
             </li>
             <li>
-              Missing, oversized, malformed, duplicate and unsafe sources have
-              explicit tested outcomes. Run artifacts distinguish configured
-              sources from observed loading; normal logs omit instruction
-              contents.
+              Missing directories and optional AGENTS.md have explicit tested
+              outcomes. Skill reference assets are not decoded by the loader.
+              Run artifacts distinguish configured directories from observed
+              loading; normal logs omit instruction contents.
             </li>
             <li>
               No storage schema change is required. Memory and trigger guidance

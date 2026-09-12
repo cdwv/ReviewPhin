@@ -1,18 +1,8 @@
-import {
-  mkdtemp,
-  mkdir,
-  readFile,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  loadRepositoryCustomizations,
-  MAX_CUSTOMIZATION_FILE_BYTES,
-} from "../src/harness/repository-customizations.js";
+import { loadRepositoryCustomizations } from "../src/harness/repository-customizations.js";
 
 const roots: string[] = [];
 async function fixture() {
@@ -59,38 +49,39 @@ describe("repository customizations", () => {
     expect(result?.skillDirectories).toEqual([
       join(root, ".reviewphin/skills"),
     ]);
-    expect(result?.files.map((file) => file.path)).toEqual([
-      ".reviewphin/AGENTS.md",
-      ".reviewphin/paths.instructions.md",
-      ".reviewphin/skills/security/SKILL.md",
-      ".reviewphin/skills/security/references/checklist.md",
-    ]);
     expect(await readFile(join(root, "AGENTS.md"), "utf8")).toBe(
       "Shared rules",
     );
   });
-  it("does not enable skill loading for an empty skills directory", async () => {
-    const result = await loadRepositoryCustomizations(await fixture());
-    expect(result?.skillDirectories).toEqual([]);
-  });
-  it("rejects linked directories before exposing them to the SDK", async () => {
+  it("leaves skill discovery to Copilot even when the directory is empty", async () => {
     const root = await fixture();
-    const outside = await fixture();
-    await symlink(outside, join(root, ".reviewphin/linked"), "junction");
-    await expect(loadRepositoryCustomizations(root)).rejects.toThrow(
-      "Symbolic links",
-    );
+    const result = await loadRepositoryCustomizations(root);
+    expect(result?.skillDirectories).toEqual([
+      join(root, ".reviewphin/skills"),
+    ]);
+    expect(result?.instructions).toBeUndefined();
   });
-  it("rejects oversized and malformed text", async () => {
+  it("registers modular instructions without requiring AGENTS.md or skills", async () => {
     const root = await fixture();
+    await rm(join(root, ".reviewphin/skills"), { recursive: true });
     await writeFile(
-      join(root, ".reviewphin/AGENTS.md"),
-      Buffer.alloc(MAX_CUSTOMIZATION_FILE_BYTES + 1),
+      join(root, ".reviewphin/review.instructions.md"),
+      "Review guidance",
     );
-    await expect(loadRepositoryCustomizations(root)).rejects.toThrow(
-      "size limit",
+    expect(await loadRepositoryCustomizations(root)).toEqual({
+      instructionDirectories: [join(root, ".reviewphin")],
+      skillDirectories: [],
+    });
+  });
+  it("does not decode or validate skill reference assets", async () => {
+    const root = await fixture();
+    await writeFile(join(root, ".reviewphin/AGENTS.md"), "Review guidance");
+    await writeFile(
+      join(root, ".reviewphin/skills/security/references/data.bin"),
+      Buffer.from([0xff, 0x00]),
     );
-    await writeFile(join(root, ".reviewphin/AGENTS.md"), Buffer.from([0xff]));
-    await expect(loadRepositoryCustomizations(root)).rejects.toThrow();
+    expect((await loadRepositoryCustomizations(root))?.instructions).toBe(
+      "Review guidance",
+    );
   });
 });
