@@ -1,0 +1,1090 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 15 — Show the workflows that readers need</title>
+    <link rel="stylesheet" href="_plan.css" />
+  </head>
+  <body data-priority="medium">
+    <a class="skip-link" href="#content">Skip to plan</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-inner">
+          <a class="brand" href="index.html"
+            ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
+          >
+          <p class="rail-label">Plan 15</p>
+          <p class="rail-value">Useful, repeatable docs media</p>
+          <p class="rail-label">Audited</p>
+          <p class="rail-value">13 September 2026</p>
+          <nav class="toc" aria-label="On this page">
+            <a href="#problem">What is wrong?</a
+            ><a href="#goal">What do we want?</a
+            ><a href="#fix">Placement and scenarios</a
+            ><a href="#steps">Work steps and stack</a
+            ><a href="#done">How do we know it works?</a>
+          </nav>
+        </div>
+      </aside>
+      <main id="content">
+        <header class="hero">
+          <p class="eyebrow">Plan 15 · Documentation media</p>
+          <h1>Show the workflows readers need to recognize.</h1>
+          <p class="lede">
+            Replace four published media placeholders with useful evidence of
+            setup and review behavior. Correct the surrounding instructions
+            first, then capture small reusable scenes with an automated local
+            workflow and supervised platform recordings.
+          </p>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Importance</span><strong>Medium</strong>
+            </div>
+            <div class="meta-item">
+              <span>Who notices</span><strong>Developers and operators</strong>
+            </div>
+            <div class="meta-item">
+              <span>Main area</span><strong>Docs and capture tooling</strong>
+            </div>
+            <div class="meta-item">
+              <span>Stored data</span><strong>No production changes</strong>
+            </div>
+          </div>
+          <div class="outcome">
+            <strong>Finished result:</strong> Readers can recognize a working
+            installation, configure the platform handoff, trigger a review, and
+            find its output. Every visual has a purpose, a text equivalent, and
+            a reproducible source scenario.
+          </div>
+        </header>
+
+        <section id="problem">
+          <h2>What is wrong today?</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Four placeholders, no walkthrough assets</h3>
+              <p>
+                The docs home, Docker, merge request, and pull request pages
+                display production notes asking for recordings. The docs asset
+                directory contains a favicon; the platform illustrations have
+                not been captured.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The difficult handoffs are missing</h3>
+              <p>
+                GitHub App registration crosses a terminal, ReviewPhin setup
+                pages, and GitHub. GitLab requires manual webhook configuration.
+                Neither journey has screenshots, although both require
+                recognizing unfamiliar controls.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Some proposed scenes promise too much</h3>
+              <p>
+                A 90-second setup montage omits credential preparation and
+                GitLab webhook creation. A 20-second first Docker boot hides
+                image build time. A pending GitHub review is an intermediate
+                publication state, not the result a reader should look for.
+              </p>
+            </article>
+            <article class="card">
+              <h3>More motion is not always useful</h3>
+              <p>
+                The homepage already has a decorative review illustration and
+                styled command examples. Reference tables, command disclosures,
+                and text diagrams are useful existing media. Replacing these
+                with recordings would make them harder to scan and copy.
+              </p>
+            </article>
+          </div>
+          <p>
+            <strong>Audit boundary:</strong> Checked the documentation media
+            inventory, homepage composition, and source behind the proposed
+            setup and review scenes. This is a plan, not a completed live GitLab
+            or GitHub rehearsal. Platform UI labels, account permissions, and
+            actual model output still require capture-day verification.
+            Unrelated storage and provider reference content has not received a
+            full factual audit.
+          </p>
+        </section>
+
+        <section id="goal">
+          <h2>What do we want instead?</h2>
+          <div class="flow" aria-label="Media production gates">
+            <div>
+              <strong>1. Verify the claim</strong
+              ><span>Trace behavior to code and rehearse prerequisites.</span>
+            </div>
+            <div>
+              <strong>2. Capture the evidence</strong
+              ><span>Record one observable action and its real result.</span>
+            </div>
+            <div>
+              <strong>3. Publish and maintain</strong
+              ><span
+                >Place it beside the task, with captions and a refresh
+                rule.</span
+              >
+            </div>
+          </div>
+          <ul class="checklist">
+            <li>
+              Use screenshots for locating controls and understanding output;
+              use video only where an action or transition matters.
+            </li>
+            <li>
+              Keep all commands copyable and every essential step in text. Put
+              media after the explanation it supports.
+            </li>
+            <li>
+              Use GitLab first and give GitHub its own complete setup and review
+              coverage.
+            </li>
+            <li>
+              Never present an edited wait as a speed promise, or a sample page
+              as a real connected account.
+            </li>
+          </ul>
+        </section>
+
+        <section id="fix">
+          <h2>How do we fix it?</h2>
+          <h3>Correct these claims before recording</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Current wording or assumption</th>
+                <th>Correction and capture consequence</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  Docker introduction describes the published image, while the
+                  walkthrough uses the checked-in Compose configuration.
+                </td>
+                <td>
+                  Add a standalone production Compose file using the published
+                  image pinned to the full release version. Keep the existing
+                  local-build file for development. Make the production file the
+                  default Docker documentation and capture path, and update its
+                  image tag automatically in Happy Changelog's post-version
+                  script. Health proves the server responds, not model access or
+                  successful review delivery.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  The docs-home first-run path goes from tenant creation
+                  straight to triggering a review.
+                </td>
+                <td>
+                  Insert the GitLab project webhook step. Establish the public
+                  address before connection creation; if a tunnel changes it,
+                  update the environment and recreate the running container with
+                  the new configuration before GitHub App registration.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  GitLab summary is promised “at the top of the discussion
+                  list.”
+                </td>
+                <td>
+                  Describe a single updateable summary comment in the merge
+                  request activity. Do not promise a pinned position or a
+                  particular discussion sort order.
+                </td>
+              </tr>
+              <tr>
+                <td>The GitHub placeholder asks to show a “pending review.”</td>
+                <td>
+                  Show published inline findings, any fallback issue comment,
+                  and the updateable summary. Explain that pending review
+                  creation is part of batching before submission, not the final
+                  reviewer-facing result.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  The management glossary calls webhook secrets per-tenant for
+                  all platforms.
+                </td>
+                <td>
+                  Scope that definition to GitLab. GitHub uses the generated App
+                  webhook secret; its tenant registration does not take a
+                  separate webhook secret.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  The local prerequisites imply that a custom model profile
+                  replaces the Copilot CLI requirement.
+                </td>
+                <td>
+                  Explain that all supported profiles still use the Copilot CLI
+                  harness. A different backend changes model access, not the
+                  harness. Verify CLI availability even for a custom backend
+                  rehearsal.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  A GitLab test delivery returning an accepted status is
+                  presented as sufficient confirmation.
+                </td>
+                <td>
+                  Inspect the response body: a delivery may be accepted without
+                  a trigger or a job. Finish the scenario with a real merge
+                  request mention and evidence of a queued job and posted
+                  result. A generic test payload may not satisfy the merge
+                  request schema.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            Coordinate authentication wording with the existing Copilot token
+            and GitLab permission documentation plans before filming credentials
+            setup. Do not turn unresolved permission or model availability
+            assumptions into narration.
+          </p>
+
+          <h3>Placement decisions across the site</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Page and position</th>
+                <th>Decision and reader benefit</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Docs home, after “First run, end to end”</td>
+                <td>
+                  <strong
+                    >Replace placeholder; defer the overview video.</strong
+                  >
+                  First ship a small ordered setup diagram and links to the
+                  canonical scenes. Later assemble a chaptered 2–3 minute
+                  orientation using their footage. The current “highest-value
+                  recording” claim is an editorial assumption; platform setup
+                  stills are the first priority.
+                </td>
+              </tr>
+              <tr>
+                <td>Docker, after health and CLI checks</td>
+                <td>
+                  <strong>Move and shorten.</strong> A 20–35 second terminal
+                  clip demonstrates expected output after configuration.
+                  Preserve commands above it. Remove the placeholder at the page
+                  opening.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Merge requests, after “Trigger a review” and at “Where reviews
+                  arrive”
+                </td>
+                <td>
+                  <strong>Keep the idea, split the purpose.</strong> Put the
+                  action clip after the trigger command. Put an annotated result
+                  still beside publication behavior. No promised top-of-list
+                  position.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Pull requests, after “Native trigger” and at “How findings are
+                  published”
+                </td>
+                <td>
+                  <strong>Keep and move.</strong> Crop the check action clearly;
+                  show an output still explaining inline findings versus summary
+                  and fallback comments. A single tiny full-page screenshot
+                  cannot show all three legibly.
+                </td>
+              </tr>
+              <tr>
+                <td>Platform connections, GitHub “Create the connection”</td>
+                <td>
+                  <strong>Add first.</strong> Three numbered stills: ReviewPhin
+                  manifest/start screen, GitHub repository selection, ReviewPhin
+                  completion. Link to an optional 45–75 second clip. Put local
+                  sample screenshots only in the preview-templates subsection
+                  and label them.
+                </td>
+              </tr>
+              <tr>
+                <td>Exposing webhooks, GitLab webhook table and Verify</td>
+                <td>
+                  <strong>Add first.</strong> One crop for URL, masked secret
+                  and Note events; another for the delivery response. Keep the
+                  existing simple network diagram and explain accepted delivery
+                  versus accepted review.
+                </td>
+              </tr>
+              <tr>
+                <td>Tenants, after GitLab and GitHub registration</td>
+                <td>
+                  <strong>Reuse.</strong> Link to the setup scenes. Optional
+                  terminal still of the two demo tenants belongs after “List and
+                  remove”; do not add a second setup video.
+                </td>
+              </tr>
+              <tr>
+                <td>Run locally, after “Submit a review without a webhook”</td>
+                <td>
+                  <strong>Add second.</strong> Terminal recording of a local
+                  test, watch progress, and final report. Link from the CLI
+                  review reference rather than embedding twice.
+                </td>
+              </tr>
+              <tr>
+                <td>Comments and triggers, feedback and follow-up sections</td>
+                <td>
+                  <strong>Keep the table and disclosures.</strong> Reuse a
+                  tightly cropped thread still only if it shows where to reply.
+                  The emoji table already explains reactions better than a
+                  separate animation.
+                </td>
+              </tr>
+              <tr>
+                <td>Both platform “Ask about an image” sections</td>
+                <td>
+                  <strong>Add second.</strong> Before/after stills of an
+                  attachment and a model response explicitly discussing it.
+                  Separate fixture for unavailable-image behavior. Do not imply
+                  that arbitrary external image hosts are supported.
+                </td>
+              </tr>
+              <tr>
+                <td>Model profiles, after resolution order</td>
+                <td>
+                  <strong>Optional static improvement.</strong> A four-stage
+                  precedence diagram may help scanning. Keep the numbered text;
+                  skip videos of typing profile flags and account-dependent
+                  model catalogs.
+                </td>
+              </tr>
+              <tr>
+                <td>Management overview and repository instructions</td>
+                <td>
+                  <strong>Keep text-first.</strong> Existing relationship
+                  diagram and copyable file examples are sufficient. Add a
+                  repository tree only if it clarifies skill discovery; no
+                  editor tour needed.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Deployment overview, Kubernetes, environment and storage
+                  reference; development and provider pages
+                </td>
+                <td>
+                  <strong>No new recordings in this batch.</strong> Keep
+                  commands, tables, and flow descriptions. Cloud dashboards and
+                  migration videos age quickly. A future architecture diagram
+                  should come from a separate behavior audit.
+                </td>
+              </tr>
+              <tr>
+                <td>Homepage hero and quickstart</td>
+                <td>
+                  <strong>Keep code-native artwork and terminals.</strong>
+                  Identify command output as an example and provide setup
+                  prerequisites through links. Reuse one real result still below
+                  the product introduction if it remains readable. Do not add
+                  autoplay or a competing second decorative animation.
+                </td>
+              </tr>
+              <tr>
+                <td>README and Docker Hub copy</td>
+                <td>
+                  <strong>Link to canonical demos.</strong> Reuse one poster
+                  only if it adds immediate context; avoid maintaining separate
+                  walkthrough variants.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>Capture scenarios</h3>
+          <p>
+            Durations below are edited viewing targets, not execution-time
+            guarantees. Use a small disposable repository with one deliberately
+            introduced boundary-condition bug, a second change without a valid
+            inline anchor, and a fix commit. Reuse the same story on both
+            platforms. Freeze the fixture revision; record the actual observed
+            result and review it before choosing footage.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Scenario and prerequisites</th>
+                <th>Shots, outcome, and reset</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <strong>A · Docker health</strong><br />First batch; terminal;
+                  20–35 seconds.<br />Fresh isolated data, configured
+                  environment, production Compose file from a published release,
+                  and its tagged image available in the registry.
+                </td>
+                <td>
+                  0–5s: show the pinned release and pull its image. Label any
+                  download wait removed in editing. 5–15s: start the production
+                  Compose service and wait for health. 15–25s: query health and
+                  list tenants. End on the actual empty list; explain
+                  registration comes next. Poll for readiness with a timeout.
+                  Reset only the scenario's isolated containers and data; never
+                  the developer's normal volumes.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>B · GitLab connection and webhook</strong><br />First
+                  batch; two stills plus 45–60 second optional clip.<br />Demo
+                  token prepared off-camera, public URL stable, permissions
+                  rehearsed.
+                </td>
+                <td>
+                  Show the credential-free connection result, tenant
+                  registration, then project webhook settings. Point to the
+                  endpoint and Note events. Save and inspect a delivery; then
+                  send a real merge request mention to prove admission. End on
+                  an accepted job and link to scene D. Reset using a new demo
+                  project or remove only the scenario-owned webhook and local
+                  records.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>C · GitHub App setup</strong><br />First batch; three
+                  stills and 45–75 second clip.<br />Demo account with App
+                  creation/install rights; reachable worker and stable URL.
+                </td>
+                <td>
+                  Show CLI issuing the setup link without exposing its token;
+                  start recording the browser after navigation. Show ReviewPhin
+                  start, GitHub creation/install and selected repository, then
+                  completion. Register the tenant and show the current-head Run
+                  Review check. Pause capture for login or sensitive fields. New
+                  disposable connection/App per run; supervise remote cleanup.
+                  Sample gallery cannot prove installation success.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>D · GitLab review and reply</strong><br />First batch;
+                  30–45 second clip and output still.<br />Connected tenant,
+                  working webhook, fixture merge request, no prior review for
+                  first run.
+                </td>
+                <td>
+                  0–7s: show changed code and post the actual bot mention.
+                  7–12s: show acknowledgment if present. Insert a labeled wait
+                  cut. 12–30s: open one real finding and summary. 30–45s: reply
+                  in the bot thread and show the continuation. Capture a
+                  separate fixed-commit rerun if demonstrating incremental
+                  behavior. Use a new merge request to reset first-run state.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>E · GitHub review and output</strong><br />First
+                  batch; 25–40 second clip, two result crops.<br />Installed
+                  App, registered repository, current-head check, fixture pull
+                  request.
+                </td>
+                <td>
+                  0–8s: open check and click Run Review. Show queued/running
+                  feedback actually observed. Label the wait cut. End on
+                  submitted inline findings and the summary issue comment; show
+                  an unanchored fallback only if produced in the real run. Use a
+                  fresh pull request for reset. Stale-head action rejection is a
+                  separate optional troubleshooting still, not part of the happy
+                  path.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>F · Local test and report</strong><br />Second batch;
+                  terminal; 30–45 seconds.<br />Worker and CLI share the
+                  scenario storage and run logs; valid platform credentials.
+                </td>
+                <td>
+                  Submit a plain-text review with publication disabled, show the
+                  interactive watch dashboard, and finish on the stored report.
+                  Verify the remote review surface is unchanged. A second short
+                  take can show leaving the watcher and later retrieving the
+                  report; explain leaving the watch does not cancel work. A new
+                  text submission makes a fresh run; use a dedicated report
+                  output file.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>G · Image-aware review</strong><br />Second batch; two
+                  stills per platform.<br />Small synthetic UI screenshot,
+                  supported platform attachment URL, vision-capable selected
+                  model.
+                </td>
+                <td>
+                  Show the attached image and a specific question, then a real
+                  answer addressing a visible detail. In a separate run, use a
+                  non-vision model or controlled unavailable attachment and show
+                  the omission outcome actually observed. Do not promise exact
+                  model wording. Record attachment size and selected model in
+                  the capture manifest. Reset with a fresh comment or review.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>H · First-run overview</strong><br />Last; chaptered
+                  video; 2–3 minutes.<br />Approved A–E scenes, one consistent
+                  environment.
+                </td>
+                <td>
+                  Assemble deploy → expose → connection → tenant/webhook →
+                  review/result. GitLab is the main chapter; offer the GitHub
+                  setup branch explicitly. Link every chapter to the canonical
+                  instructions. Keep authentication preparation and edited waits
+                  visible as chapter notes. Regenerate only when the underlying
+                  scenes change.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout">
+            <strong>Capture hygiene:</strong> Use synthetic code, identities,
+            and attachments. Inject real credentials off-camera; never type them
+            into the recorded command line. Screenshot masking does not sanitize
+            video, terminal scrollback, traces, or browser storage. Keep raw
+            captures private until reviewed, then publish only approved exports.
+            No live platform changes or model calls are part of preparing this
+            plan.
+          </div>
+        </section>
+
+        <section id="steps">
+          <h2>Work steps</h2>
+          <ol class="sequence">
+            <li>
+              <div>
+                <strong>Prepare the production Docker path.</strong> Add a
+                standalone Compose configuration with a full release image tag,
+                the worker environment, health check, port mapping, and
+                persistent mounts. It must run without application source or an
+                image build. Extend the existing Happy Changelog post-version
+                script to update and commit the image tag with the other release
+                version changes. Point Docker setup instructions and the capture
+                scenario at this file; retain source-build instructions as a
+                separate development path. Use a published release for the demo,
+                since a version bump can precede image publication. Keep public
+                URL, model authentication, persistence, and HTTPS setup
+                explicit.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Fix and rehearse the text.</strong> Apply the
+                corrections above and reconcile the two authentication
+                documentation plans. Verify a complete setup on each demo
+                platform before recording. If a step fails, keep the explanatory
+                text and mark the scene blocked in the manifest rather than
+                generating a convincing success screen.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Build a small capture kit.</strong> Use TypeScript to
+                coordinate fixtures, health checks, scene assertions and export
+                metadata. Reuse the repository's Node and pnpm toolchain. Keep
+                recording dependencies in development tooling. Do not introduce
+                a media backend or a second docs framework.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Automate local scenes first.</strong> Capture the local
+                setup sample gallery with Playwright and terminal scenarios with
+                VHS. Run repeatable renders in pinned Linux containers or WSL2
+                on Windows. Model-backed scenes still require credentials and
+                are opt-in. A deterministic sample render verifies presentation,
+                not a working integration.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Capture live platform scenes under supervision.</strong>
+                Seed disposable repositories through platform APIs, then use
+                Playwright for browser framing and recording after
+                authentication. Keep App creation, login, permission choices,
+                and cleanup supervised. Assert semantic page states with bounded
+                waits, not fixed delays. Record real model results without
+                promising identical prose across reruns.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Export and place the first batch.</strong> Ship B–E
+                stills and A, D, E clips first, then optional setup clips. Add F
+                and G next; assemble H last. A still can ship before its
+                companion video. Remove the corresponding published placeholder
+                when the still and complete instructions are ready.
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>Make refreshes routine.</strong> Store a scene owner,
+                source revision, platform version/date, prerequisites, commands,
+                expected state, duration, alt text, transcript, artifact hashes,
+                and source-file dependencies in one manifest. Flag affected
+                scenes when their dependencies change; manually review remote UI
+                at release time and at least quarterly.
+              </div>
+            </li>
+          </ol>
+
+          <h3>The stack I would implement</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Choice and tradeoff</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Browser screenshots and videos</td>
+                <td>
+                  <strong>Playwright with TypeScript and Chromium.</strong>
+                  Reuse browser automation for capture assertions and docs
+                  rendering checks. Set both viewport and video size to 1440 ×
+                  900; close the context to finalize videos. Use cropped stills
+                  for details. External authentication and UI changes limit
+                  unattended reliability. See
+                  <a href="https://playwright.dev/docs/screenshots"
+                    >screenshot documentation</a
+                  >
+                  and
+                  <a href="https://playwright.dev/docs/videos"
+                    >video documentation</a
+                  >.
+                </td>
+              </tr>
+              <tr>
+                <td>Scripted terminal recordings</td>
+                <td>
+                  <strong>VHS in a pinned Linux capture image.</strong>
+                  Text-based tapes make dimensions, typing, commands and timing
+                  reviewable. Run real commands against the isolated
+                  environment; hide only setup, never failed results. Use 110 ×
+                  30 characters as a starting frame and a legible fixed font.
+                  Export video rather than an animated GIF.
+                  <a href="https://github.com/charmbracelet/vhs"
+                    >VHS supports scripted tapes and container execution</a
+                  >.
+                </td>
+              </tr>
+              <tr>
+                <td>Interactive terminal replay</td>
+                <td>
+                  <strong>Optional asciinema.</strong> Add only if selectable
+                  text and replay controls are worth another player dependency.
+                  Keep recordings local and self-host the player; retain plain
+                  transcripts. Do not install both terminal approaches in the
+                  first batch.
+                  <a href="https://docs.asciinema.org/getting-started/"
+                    >asciinema supports local recordings and a self-hosted
+                    player</a
+                  >.
+                </td>
+              </tr>
+              <tr>
+                <td>Encoding and still optimization</td>
+                <td>
+                  <strong>FFmpeg and existing Sharp.</strong> Use FFmpeg for
+                  trimming, consistent video exports and poster extraction; use
+                  Sharp for reviewed still resizing and lossless WebP/PNG.
+                  Deliver MP4 with a poster, optional WebM, and separate WebVTT
+                  captions. Validate output with ffprobe.
+                  <a href="https://ffmpeg.org/ffmpeg-formats.html"
+                    >FFmpeg format documentation</a
+                  >.
+                </td>
+              </tr>
+              <tr>
+                <td>Diagrams and publication</td>
+                <td>
+                  <strong
+                    >Existing Astro/Starlight plus static HTML/SVG.</strong
+                  >
+                  Use code-native diagrams with adjacent equivalent text. A
+                  small shared media component can provide a figure, caption,
+                  native video controls, poster, transcript and download link.
+                  No remote video service is required.
+                </td>
+              </tr>
+              <tr>
+                <td>Continuous integration</td>
+                <td>
+                  <strong>GitHub Actions with pinned tools.</strong> Ordinary
+                  changes validate manifests, asset links, dimensions, captions
+                  and byte budgets without credentials. Explicit capture jobs
+                  regenerate local samples. Live platform/model captures are
+                  manually dispatched, with limited demo credentials and private
+                  temporary artifacts; never run them for untrusted pull
+                  requests.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            <strong>Proposed delivery budgets:</strong> Prefer stills under 250
+            KB, clips under 8 MB, and the overview under 20 MB. Review
+            exceptions for text legibility instead of compressing blindly. Load
+            videos only on demand, use native controls without autoplay or
+            looping, reserve their aspect ratio, and keep a readable poster and
+            transcript available with JavaScript disabled. At mobile widths,
+            provide a full-size still link instead of shrinking tiny text
+            further.
+          </p>
+
+          <details>
+            <summary>Technical notes for the implementing agent</summary>
+            <h3>Evidence and source mapping</h3>
+            <p>
+              Repository inspected at commit <code>78d9fd4</code>, 13 September
+              2026. These are source-based findings; live accounts were not
+              exercised.
+            </p>
+            <ul>
+              <li>
+                Existing placeholders:
+                <a href="../../docs/src/content/docs/index.md">docs home</a>,
+                <a href="../../docs/src/content/docs/deployment/docker.md"
+                  >Docker</a
+                >,
+                <a
+                  href="../../docs/src/content/docs/using-reviewphin/merge-requests.md"
+                  >merge requests</a
+                >, and
+                <a
+                  href="../../docs/src/content/docs/using-reviewphin/pull-requests.md"
+                  >pull requests</a
+                >. Capture and placement IDs A–H above map to these pages and
+                the following task pages.
+              </li>
+              <li>
+                Setup destinations:
+                <a
+                  href="../../docs/src/content/docs/management/platform-connections.md"
+                  >platform connections</a
+                >,
+                <a href="../../docs/src/content/docs/management/tenants.md"
+                  >tenants</a
+                >,
+                <a
+                  href="../../docs/src/content/docs/deployment/exposing-webhooks.md"
+                  >exposing webhooks</a
+                >. Correct the
+                <a href="../../docs/src/content/docs/management/index.md"
+                  >management glossary</a
+                >
+                secret definition.
+              </li>
+              <li>
+                <a href="../../docker-compose.yml">Compose</a> builds
+                <code>reviewphin:local</code>, loads <code>.env.docker</code>,
+                and shares data and workspace mounts.
+                <a href="../../Dockerfile">Dockerfile</a> bundles Copilot CLI
+                1.0.83 and the CLI entrypoint.
+                <a href="../../src/app.ts">app routes</a> implement
+                <code>/healthz</code>, <code>/github/setup/samples</code> in
+                development, and webhook responses where HTTP 202 can include
+                <code>accepted: false</code>.
+                <a href="../../src/platforms/gitlab/webhook.ts"
+                  >GitLab payload schema</a
+                >
+                requires merge-request fields.
+              </li>
+              <li>
+                For the local prerequisites correction, compare
+                <a href="../../docs/src/content/docs/deployment/run-locally.md"
+                  >run locally</a
+                >,
+                <a
+                  href="../../docs/src/content/docs/management/model-profiles.md"
+                  >model profiles</a
+                >, and
+                <a href="../../src/harness/session.ts"
+                  >Copilot session creation</a
+                >. Coordinate
+                <a href="11.copilot-token-documentation.html">Plan 11</a> and
+                <a href="12.gitlab-token-permissions-documentation.html"
+                  >Plan 12</a
+                >; do not pin recording captions to an unverified model catalog.
+              </li>
+              <li>
+                Review evidence:
+                <a
+                  href="../../src/platforms/gitlab/review-publication-adapter.ts"
+                  >GitLab publication</a
+                >,
+                <a href="../../src/platforms/github/client.ts">GitHub client</a
+                >,
+                <a
+                  href="../../src/platforms/github/review-publication-adapter.ts"
+                  >GitHub publication</a
+                >,
+                <a href="../../test/github-review-publication-adapter.test.ts"
+                  >publication tests</a
+                >, and
+                <a href="../../test/github-requested-action-happy-path.test.ts"
+                  >requested-action test</a
+                >. Follow-up and reaction expectations come from
+                <a
+                  href="../../docs/src/content/docs/using-reviewphin/comments-and-triggers.md"
+                  >comments and triggers</a
+                >
+                and platform lifecycle implementations.
+              </li>
+              <li>
+                Local-test evidence: <a href="../../src/cli.ts">CLI</a>,
+                <a href="../../src/cli/review-watch.ts">watch renderer</a>,
+                <a href="../../test/mr-review-cli.test.ts">review CLI tests</a>,
+                and <a href="../../test/mr-report-cli.test.ts">report tests</a>.
+                Use the real TTY path for dashboard media; redirected output is
+                append-only. Image fixtures must follow
+                <a href="../../test/gitlab-image-attachments.test.ts"
+                  >GitLab image tests</a
+                >
+                and
+                <a href="../../test/github-image-attachments.test.ts"
+                  >GitHub image tests</a
+                >.
+              </li>
+              <li>
+                Existing illustrations and text terminals:
+                <a href="../../docs/src/pages/[...homepage].astro">homepage</a>.
+                Existing publication routing:
+                <a href="../../docs/astro.config.mjs">Astro configuration</a>,
+                <a href="../../scripts/publish-docs-container.mjs"
+                  >container publisher</a
+                >, and
+                <a
+                  href="../../docs/src/content/docs/development/contributing-docs.md"
+                  >docs contribution guide</a
+                >.
+              </li>
+            </ul>
+            <h3>Proposed files and commands</h3>
+            <p>
+              Add <code>docker-compose.prod.yml</code> at the repository root as
+              a standalone file, not an override layered on the development
+              Compose file. Set <code>services.worker.image</code> to
+              <code>cdwv/reviewphin:1.11.0</code> for the version audited here;
+              initialize it from the actual package version at implementation
+              time. Do not include <code>build</code> or use a moving
+              <code>latest</code> tag. Preserve the existing worker environment,
+              health check, port mapping, and data/workspace mounts. Document
+              the required <code>.env.docker</code> alongside the file.
+            </p>
+            <p>
+              Extend <code>post-version-script</code> in
+              <a href="../../.github/workflows/update-changelog.yml"
+                >the Happy Changelog update workflow</a
+              >. It already reads <code>process.env.NEW_VERSION</code>, updates
+              chart and documentation versions, and explicitly stages changed
+              files. Update exactly the production worker image tag using that
+              same version and add <code>docker-compose.prod.yml</code> to its
+              <code>git add</code>
+              list. Fail if the expected image entry is missing or ambiguous;
+              repeated execution with the same version must be unchanged. Leave
+              the development image and unrelated service images untouched.
+              <a href="../../.github/workflows/release.yml"
+                >The release workflow</a
+              >
+              publishes both prefixed and unprefixed version tags; use the full
+              unprefixed version consistently. The bump does not itself publish
+              the image: use the Compose file from a completed release, and fail
+              clearly if its tag cannot be pulled instead of falling back to
+              another image.
+            </p>
+            <p>
+              Update the canonical Docker page and its homepage/README
+              quickstart commands to select
+              <code>-f docker-compose.prod.yml</code>. Explain how to obtain the
+              file and environment example from the same release, and keep the
+              existing source-build path under its own heading. Regenerate
+              Docker Hub copy through its existing generator if the source copy
+              changes. Extend the release-publication docs to include this
+              additional versioned file.
+            </p>
+            <p>
+              Create capture tooling under <code>scripts/docs-media/</code>: a
+              manifest, fixtures, Playwright scenes, VHS tapes, orchestration,
+              and validation. Suggested package scripts are
+              <code>docs:media:check</code>,
+              <code>docs:media:capture -- &lt;scene&gt;</code>, and
+              <code>docs:media:export -- &lt;scene&gt;</code>; these do not
+              exist yet. Add Playwright as a development dependency and pin
+              browser/tool images. Keep captures outside the default unit-test
+              suite.
+            </p>
+            <p>
+              Use <code>docs/public/docs/media/</code> for approved static
+              exports: this is the docs project's public directory and its
+              nested <code>docs/</code> output is already copied into runtime
+              <code>public/docs/</code>. Avoid <code>docs/public/media/</code>,
+              which the current container publisher does not copy. Do not
+              hand-edit generated runtime docs. Serve media with the configured
+              base prefix. If a static capture HTML template is needed, keep it
+              in <code>public/</code> under a dedicated capture folder; reuse
+              existing setup templates instead of generating server HTML
+              strings.
+            </p>
+            <p>
+              Use a proposed
+              <code>docs/src/components/DocMedia.astro</code> only if repeated
+              markup justifies it; convert affected Markdown pages to MDX and
+              configure the integration if required. Alternatively use native
+              figure/video HTML with a build-time transform for base-aware URLs.
+              Verify root hosting, a non-root docs base, and container hosting
+              before choosing the component integration.
+            </p>
+            <pre><code># Scene A: published release configuration and isolated Compose project
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+curl --fail http://localhost:3000/healthz
+docker compose -f docker-compose.prod.yml run --rm worker reviewphin tenant list
+
+# Scene F: real registered demo tenant, worker already running
+pnpm cli mr review --key https://gitlab.example.com::123 --code-review-id 42 --trigger-text "Review the current changes." --no-publish
+# Separate take to save a report; replace identifiers with the demo fixture
+pnpm cli mr review --key https://gitlab.example.com::123 --code-review-id 42 --trigger-text "Review the current changes." --no-publish --report ./tmp/docs-media-report.md</code></pre>
+            <p>
+              Inject the scenario's real identifiers from the manifest; example
+              domains are not executable fixtures. The Compose capture override
+              must use unique host ports and bind mounts, and the health command
+              must use that selected port. Do not let the default data mounts
+              target the developer database. Record source SHA, demo review
+              ID/head SHA, observed job outcome and editing notes. Never commit
+              credentials, browser storage state, traces, raw session URLs, or
+              production review content.
+            </p>
+            <p>
+              Manifest fields:
+              <code
+                >id, owner, pages, kind, prerequisites, sourceFiles,
+                fixtureRevision, commands, assertions, reset, capturedAt,
+                appRevision, platformVersion, toolVersions, viewport, artifacts,
+                alt, transcript, editedWaits</code
+              >. Reject missing files, missing captions/transcripts,
+              unrecognized scene IDs and accidental secret patterns. Review
+              pixels and terminal text manually as well; pattern matching is not
+              proof of sanitization.
+            </p>
+            <p>
+              No storage contract changes are proposed. Capture fixtures create
+              disposable local records and, for opt-in live scenes, demo
+              platform objects. Reuse normal registration APIs and CLI; do not
+              hard-code SQL rows or alter production behavior to make
+              screenshots deterministic.
+            </p>
+            <p>
+              <strong>Focused implementation checks:</strong>
+              <code
+                >pnpm exec prettier --check
+                .agents/plans/15.documentation-media-capture.html</code
+              >; run the proposed media validator once implemented,
+              <code>pnpm docs:build</code>, and the container docs build in an
+              isolated checkout. Verify each media URL with a root and prefixed
+              base. For touched setup/publication/CLI behavior run the linked
+              focused Vitest tests; a media-only change does not require
+              inventing behavioral unit tests.
+            </p>
+            <p>
+              Validate the production file with
+              <code>docker compose -f docker-compose.prod.yml config</code>
+              using a synthetic environment file. Assert the resolved worker
+              image has the expected full tag and no build configuration.
+              Exercise the version hook in an isolated fixture: a new version
+              updates the image, a second pass is unchanged, and a
+              missing/duplicate target fails. Check the staged file list and
+              smoke-test a published image through this Compose file: pull,
+              start, health, and CLI help. Confirm documented CLI commands
+              select the same production file.
+            </p>
+          </details>
+        </section>
+
+        <section id="done">
+          <h2>How do we know it works?</h2>
+          <ul class="checklist">
+            <li>
+              The production Compose configuration runs a tagged published image
+              without a source build. Happy Changelog updates and stages that
+              tag with every release version bump, and a repeat of the same bump
+              leaves it unchanged. Docker docs and recordings use this path.
+            </li>
+            <li>
+              All four media placeholders have been replaced or removed, and the
+              text alone completes the task. The overview can remain a linked
+              diagram until its video is ready.
+            </li>
+            <li>
+              A new reader can identify the GitLab webhook fields, the GitHub
+              installation completion, the Run Review action, an inline finding,
+              and the summary without scrubbing a video.
+            </li>
+            <li>
+              The Docker scene distinguishes server health from review
+              readiness. Live platform scenes end on actual published output;
+              sample scenes are labeled.
+            </li>
+            <li>
+              Each asset has an owner, verified revision, reproducible scenario,
+              accessible text equivalent, and reviewed export. Credential-free
+              local scenes can be regenerated with one documented command.
+            </li>
+            <li>
+              Videos have controls, posters, captions and transcripts. No
+              autoplay is needed. Mobile layout, keyboard focus, reduced motion,
+              and no-JavaScript reading work.
+            </li>
+            <li>
+              Public and container builds both load media, including under a
+              path prefix. No runtime setup, health, or webhook routes are
+              shadowed.
+            </li>
+            <li>
+              Capture failures stop that export with useful diagnostics;
+              approved existing assets remain intact. No unattended job
+              publishes live reviews or uploads raw recordings.
+            </li>
+          </ul>
+          <p>
+            <strong>Checks to run:</strong> targeted formatting, plan links,
+            docs/media validation, docs builds, desktop and narrow browser
+            inspection, and a human review of each final capture against its
+            adjacent text.
+          </p>
+        </section>
+        <nav class="footer-nav" aria-label="Plan navigation">
+          <a href="12.gitlab-token-permissions-documentation.html"
+            >← GitLab permission docs</a
+          ><a href="13.tenant-autoregistration.html"
+            >Next: tenant onboarding →</a
+          >
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>
