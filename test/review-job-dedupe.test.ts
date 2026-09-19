@@ -1,3 +1,4 @@
+import { fixtureRouter } from "./helpers/interaction-router.js";
 import { describe, expect, it, vi } from "vitest";
 
 import type { GitLabNoteHookPayload } from "../src/platforms/gitlab/types.js";
@@ -72,6 +73,14 @@ describe("review job dedupe", () => {
 
     const storage = {
       stores: {
+        interactionJobs: {
+          admitInteractionTrigger: vi.fn(
+            async ({ request }: { request: CreateInteractionJobInput }) => {
+              const result = await storage.createOrGetInteractionJob(request);
+              return { ...result, request, outcome: "duplicate" };
+            },
+          ),
+        },
         platformConnections: {
           get: vi.fn(async () => createGitLabConnectionRecord()),
         },
@@ -99,6 +108,7 @@ describe("review job dedupe", () => {
     };
 
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
       storage: storage as never,
       tenantRegistry: {} as never,
       reviewProviderFactory: {} as never,

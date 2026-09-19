@@ -141,6 +141,12 @@ export const chatterMemoryOutcomeSchema = z.discriminatedUnion("status", [
 ]);
 
 export const chatterReplySchema = z.object({
+  coveredRequestIds: z
+    .array(z.string().min(1))
+    .optional()
+    .describe(
+      "For a collected batch, identify every request answered by this reply",
+    ),
   target: z
     .object({
       kind: responseTargetSchema.shape.kind,
@@ -412,7 +418,13 @@ export interface ReviewScopeContext {
   deltaSincePreviousReview: ReviewDeltaContext | null;
 }
 
+export interface InteractionRequestContext {
+  id: string;
+  trigger: CommentReviewTriggerContext;
+}
+
 export interface ReviewContext {
+  requests?: InteractionRequestContext[];
   attachments: ReviewAttachment[];
   attachmentIssues: ReviewAttachmentIssue[];
   workspacePath: string;

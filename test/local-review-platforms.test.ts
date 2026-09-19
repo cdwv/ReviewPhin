@@ -365,6 +365,7 @@ function createJob(input: {
     claimedBy: null,
     claimExpiresAt: null,
     latestInteractionRunId: null,
+    batchKind: null,
   };
 }
 

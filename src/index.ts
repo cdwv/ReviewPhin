@@ -1,3 +1,4 @@
+import { InteractionRouter } from "./review/interaction-router.js";
 import { loadConfig } from "./config.js";
 import { HarnessSessionRuntime } from "./harness/session.js";
 import { StorageBackedJobRunner } from "./jobs/storage-backed-job-runner.js";
@@ -57,6 +58,8 @@ async function main(): Promise<void> {
   });
 
   const reviewWorker = new ReviewWorker({
+    interactionRouter: new InteractionRouter(harnessRuntime),
+    debounceMs: config.jobDebounceMs,
     storage,
     tenantRegistry,
     reviewProviderFactory,
@@ -82,9 +85,9 @@ async function main(): Promise<void> {
 
   if (storage.stores.interactionJobs.claimMode === "single-worker") {
     logger.warn(
-      "Storage adapter reports single-worker claim mode: exactly one ReviewPhin " +
-        "process may run the job runner. Additional HTTP replicas must set " +
-        "REVIEWPHIN_JOB_RUNNER_ENABLED=false to disable job execution.",
+      "This storage adapter queues related writes inside each running copy of ReviewPhin. " +
+        "It cannot coordinate those writes between separate copies. Run only one copy " +
+        "that receives comment webhooks and executes jobs for this storage.",
     );
   }
 
@@ -160,7 +163,9 @@ async function main(): Promise<void> {
       "Bot indexing is blocked by default and allowed only for /docs on configured hosts.",
     );
   } else {
-    logger.info("Bot indexing is blocked by default for all routes, including /docs.");
+    logger.info(
+      "Bot indexing is blocked by default for all routes, including /docs.",
+    );
   }
 
   if (isPnpmDevServer()) {

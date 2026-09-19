@@ -1,3 +1,9 @@
+import {
+  batchReadyAt,
+  canAppendRequest,
+  createBatchJob,
+  createInteractionRequest,
+} from "../interaction-batches.js";
 import { createId } from "../../utils/ids.js";
 import type {
   CodeReviewSnapshotFilters,
@@ -7,6 +13,9 @@ import type {
   DiscussionMappingFilters,
   DiscussionMappingOrderField,
   DiscussionMappingRecord,
+  AdmitInteractionResult,
+  InteractionRequestRecord,
+  InteractionRequestStore,
   EntityStore,
   InteractionJobFilters,
   InteractionJobOrderField,
@@ -58,6 +67,7 @@ type MappingStore = EntityStore<
 >;
 
 export interface SingleWorkerInteractionJobStoreOptions {
+  readonly requests: InteractionRequestStore;
   readonly jobs: JobStore;
   readonly runs: RunStore;
   readonly reviewFindings: FindingStore;
@@ -81,8 +91,9 @@ const RUN_COMPLETION_UNCONFIRMED_MESSAGE =
  * atomic compare-and-set across selection and update. It exhaustively pages
  * candidate jobs, filters and sorts in memory, and confirms every claim with a
  * read-back of the persisted claim token. It reports `claimMode: "single-worker"`
- * and only guarantees single-review execution when exactly one process runs the
- * job runner.
+ * and queues admission and claim operations inside this helper instance. Only
+ * one running copy of ReviewPhin may receive comment webhooks and execute jobs
+ * for this storage: separate copies do not share this queue.
  *
  * The provided stores must be raw (unguarded) stores so internal claim writes do
  * not trip the public mutation guards this helper adds to the returned store.
@@ -214,6 +225,94 @@ export function createSingleWorkerInteractionJobStore(
     assertMutable(await jobs.get(id), id);
   }
 
+  async function requestList(
+    filters: Parameters<InteractionRequestStore["find"]>[0],
+  ): Promise<InteractionRequestRecord[]> {
+    const all: InteractionRequestRecord[] = [];
+    for (let page = 1; ; page++) {
+      const records = await options.requests.list({
+        filters,
+        order: [{ field: "id", direction: "asc" }],
+        page,
+        pageSize,
+      });
+      all.push(...records);
+      if (records.length < pageSize) return all;
+    }
+  }
+  async function attachRequest(
+    request: InteractionRequestRecord,
+    at: string,
+  ): Promise<AdmitInteractionResult> {
+    let job = request.interactionJobId
+      ? await jobs.get(request.interactionJobId)
+      : null;
+    let outcome: AdmitInteractionResult["outcome"] = "appended";
+    if (!job) {
+      const legacy =
+        (await jobs.get(createBatchJob(request).id)) ??
+        (await jobs.find({
+          tenantId: { eq: request.tenantId },
+          dedupeKey: { eq: request.dedupeKey },
+        }));
+      if (legacy) {
+        job = legacy;
+        outcome = "duplicate";
+      } else {
+        const candidates = (
+          await listAllJobs({
+            tenantId: { eq: request.tenantId },
+            codeReviewId: { eq: request.codeReviewId },
+            status: { eq: "queued" },
+          })
+        ).sort((a, b) => b.enqueuedAt.localeCompare(a.enqueuedAt));
+        for (const candidate of candidates) {
+          if (
+            candidate.batchKind !== "comment" ||
+            candidate.startedAt !== null ||
+            candidate.retryCount !== 0 ||
+            candidate.availableAt <= at
+          )
+            continue;
+          const members = await requestList({
+            interactionJobId: { eq: candidate.id },
+          });
+          if (canAppendRequest(candidate, members, request, at)) {
+            job = candidate;
+            break;
+          }
+          if (request.debounceMs > 0)
+            await jobs.patch({ id: candidate.id, value: { availableAt: at } });
+        }
+        if (!job) {
+          job = createBatchJob(request);
+          await jobs.upsert(job);
+          outcome = "created";
+        }
+      }
+      request = { ...request, interactionJobId: job.id };
+      await options.requests.upsert(request);
+    }
+    if (job.status === "in_progress" && outcome !== "duplicate")
+      throw new Error("Cannot attach a request to a claimed batch");
+    if (
+      job.batchKind === "comment" &&
+      job.startedAt === null &&
+      job.retryCount === 0
+    ) {
+      const members = await requestList({ interactionJobId: { eq: job.id } });
+      job = { ...job, availableAt: batchReadyAt(members) };
+      await jobs.replace(job);
+    }
+    request = { ...request, admittedAt: at };
+    await options.requests.upsert(request);
+    return { job, request, outcome };
+  }
+  async function recoverAdmissions(at: string): Promise<void> {
+    for (const request of await requestList({ admittedAt: { isNull: true } }))
+      await attachRequest(request, at);
+  }
+
   return {
     get: (id) => jobs.get(id),
     getMany: (ids) => jobs.getMany(ids),
@@ -281,9 +380,54 @@ export function createSingleWorkerInteractionJobStore(
       }),
 
     claimMode: "single-worker",
+    admitInteractionTrigger(input) {
+      return serializeJobMutation(async () => {
+        await recoverAdmissions(input.now);
+        const request = createInteractionRequest(input);
+        const duplicate = await options.requests.get(request.id);
+        if (duplicate) {
+          const job = duplicate.interactionJobId
+            ? await jobs.get(duplicate.interactionJobId)
+            : null;
+          if (!job) throw new Error("Request has no owning job");
+          return { job, request: duplicate, outcome: "duplicate" };
+        }
+        await options.requests.upsert(request);
+        return attachRequest(request, input.now);
+      });
+    },
+    setInteractionJobHeadForClaim(input) {
+      return serializeJobMutation(async () => {
+        if (!(await isJobOwned(input.jobId, input.claimToken))) return false;
+        await jobs.patch({
+          id: input.jobId,
+          value: { headSha: input.headSha },
+        });
+        return true;
+      });
+    },
+    saveInteractionRunRepliesForClaim(input) {
+      return serializeJobMutation(async () => {
+        if (!(await isJobOwned(input.jobId, input.claimToken))) return false;
+        const run = await runs.get(input.interactionRunId);
+        if (
+          !run ||
+          run.interactionJobId !== input.jobId ||
+          run.status !== "in_progress" ||
+          run.interactionJobClaimToken !== input.claimToken
+        )
+          return false;
+        await runs.patch({
+          id: run.id,
+          value: { repliesJson: input.repliesJson },
+        });
+        return true;
+      });
+    },
 
     claimNext(input) {
       return serializeJobMutation(async () => {
+        await recoverAdmissions(input.now);
         const inProgress = await listAllJobs({
           status: { eq: "in_progress" },
         });
@@ -338,7 +482,16 @@ export function createSingleWorkerInteractionJobStore(
               job.availableAt <= input.now,
           )
           .sort(compareEligible);
-        const candidate = eligible[0];
+        const candidate = (
+          await Promise.all(
+            eligible.map(async (job) =>
+              job.batchKind === "comment" &&
+              !(await requestList({ interactionJobId: { eq: job.id } })).length
+                ? null
+                : job,
+            ),
+          )
+        ).find((job) => job !== null);
         if (!candidate) {
           return null;
         }
@@ -471,6 +624,7 @@ export function createSingleWorkerInteractionJobStore(
           providerType: input.run.providerType,
           textGenerationModel: input.run.textGenerationModel,
           status: "in_progress",
+          repliesJson: null,
           resultJson: null,
           error: null,
           startedAt: now,

@@ -44,6 +44,8 @@ function createProfile(
     textGenerationModel: null,
     reviewReasoningEffort: null,
     textGenerationReasoningEffort: null,
+    routingModel: null,
+    routingReasoningEffort: null,
     isDefault: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -52,6 +54,41 @@ function createProfile(
 }
 
 describe("model profile resolution", () => {
+  it.each([
+    [{}, "chatter", "medium"],
+    [{ routingModel: "gpt-5.6-luna" }, "gpt-5.6-luna", "medium"],
+    [{ routingReasoningEffort: "low" }, "chatter", "low"],
+    [
+      { routingModel: "gpt-5.6-luna", routingReasoningEffort: "low" },
+      "gpt-5.6-luna",
+      "low",
+    ],
+  ] as const)(
+    "resolves routing defaults independently of review settings: %j",
+    async (overrides, model, effort) => {
+      const resolved = await resolveReviewProviderConfig({
+        storage: {
+          stores: {
+            modelProfiles: {
+              get: async () =>
+                createProfile("inherited", {
+                  textGenerationModel: "chatter",
+                  textGenerationReasoningEffort: "medium",
+                  reviewReasoningEffort: "high",
+                  ...overrides,
+                }),
+              find: async () => null,
+            },
+          },
+        },
+        tenant,
+        codeReview: { description: "" },
+      });
+      expect(resolved.routingModel).toBe(model);
+      expect(resolved.routingReasoningEffort).toBe(effort);
+    },
+  );
+
   it("extracts code review overrides from descriptions", () => {
     expect(
       extractCodeReviewModelProfileOverride(

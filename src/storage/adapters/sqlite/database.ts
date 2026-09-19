@@ -1,9 +1,20 @@
+import {
+  batchReadyAt,
+  canAppendRequest,
+  createBatchJob,
+  createInteractionRequest,
+} from "../../interaction-batches.js";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { createId } from "../../../utils/ids.js";
 import type {
+  AdmitInteractionInput,
+  AdmitInteractionResult,
+  InteractionRequestRecord,
+  InteractionRequestStore,
+  InteractionRequestQueryField,
   CreateInteractionRunInput,
   CreateReviewFindingInput,
   CreateCodeReviewSnapshotInput,
@@ -101,6 +112,7 @@ export class SqliteStoreDatabase {
 
   public createStores(): StorageStores {
     return {
+      interactionRequests: this.createInteractionRequestStore(),
       modelProfiles: {
         get: (id) => this.getModelProfileByName(id),
         getMany: (ids) => this.getModelProfilesByNames(ids),
@@ -519,11 +531,12 @@ export class SqliteStoreDatabase {
             text_generation_model,
             review_reasoning_effort,
             text_generation_reasoning_effort,
+            routing_model, routing_reasoning_effort,
             is_default,
             created_at,
             updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(name) DO UPDATE SET
             provider_base_url = excluded.provider_base_url,
             provider_type = excluded.provider_type,
@@ -533,6 +546,7 @@ export class SqliteStoreDatabase {
             text_generation_model = excluded.text_generation_model,
             review_reasoning_effort = excluded.review_reasoning_effort,
             text_generation_reasoning_effort = excluded.text_generation_reasoning_effort,
+            routing_model = excluded.routing_model, routing_reasoning_effort = excluded.routing_reasoning_effort,
             is_default = excluded.is_default,
             updated_at = excluded.updated_at
         `,
@@ -547,6 +561,8 @@ export class SqliteStoreDatabase {
           resolvedInput.textGenerationModel,
           resolvedInput.reviewReasoningEffort,
           resolvedInput.textGenerationReasoningEffort,
+          resolvedInput.routingModel,
+          resolvedInput.routingReasoningEffort,
           resolvedInput.isDefault ? 1 : 0,
           now,
           now,
@@ -750,6 +766,33 @@ export class SqliteStoreDatabase {
         });
       },
       claimMode: "atomic",
+      admitInteractionTrigger: (input) => this.admitInteractionTrigger(input),
+      setInteractionJobHeadForClaim: async (input) =>
+        this.withImmediateTransaction((db) => {
+          const result = db
+            .prepare(
+              "UPDATE interaction_jobs SET head_sha = ? WHERE id = ? AND claim_token = ? AND status = 'in_progress' AND claim_expires_at > ?",
+            )
+            .run(input.headSha, input.jobId, input.claimToken, this.now());
+          return Number(result.changes) === 1;
+        }),
+      saveInteractionRunRepliesForClaim: async (input) =>
+        this.withImmediateTransaction((db) => {
+          const result = db
+            .prepare(
+              "UPDATE interaction_runs SET replies_json = ? WHERE id = ? AND interaction_job_id = ? AND status = 'in_progress' AND interaction_job_claim_token = ? AND EXISTS (SELECT 1 FROM interaction_jobs WHERE id = ? AND claim_token = ? AND status = 'in_progress' AND claim_expires_at > ?)",
+            )
+            .run(
+              input.repliesJson,
+              input.interactionRunId,
+              input.jobId,
+              input.claimToken,
+              input.jobId,
+              input.claimToken,
+              this.now(),
+            );
+          return Number(result.changes) === 1;
+        }),
       claimNext: (input) => this.claimNextInteractionJob(input),
       expireQueued: (input) => this.expireQueuedInteractionJobs(input),
       renewClaim: (input) => this.renewInteractionJobClaim(input),
@@ -771,6 +814,174 @@ export class SqliteStoreDatabase {
       reconcileOrphanedInteractionRuns: (input) =>
         this.reconcileOrphanedInteractionRuns(input),
     };
+  }
+
+  private readRequests(jobId: string): InteractionRequestRecord[] {
+    return (
+      this.getDb()
+        .prepare(
+          "SELECT * FROM interaction_requests WHERE interaction_job_id = ? ORDER BY received_at, id",
+        )
+        .all(jobId) as Row[]
+    ).map(mapInteractionRequestRow);
+  }
+
+  private writeRequest(request: InteractionRequestRecord): void {
+    const columns = Object.values(interactionRequestColumns);
+    const values = Object.keys(interactionRequestColumns).map(
+      (key) => request[key as InteractionRequestQueryField],
+    );
+    this.getDb()
+      .prepare(
+        `INSERT INTO interaction_requests (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")}) ON CONFLICT(id) DO UPDATE SET ${columns
+          .filter((c) => c !== "id")
+          .map((c) => `${c}=excluded.${c}`)
+          .join(",")}`,
+      )
+      .run(...values);
+  }
+
+  private createInteractionRequestStore(): InteractionRequestStore {
+    const get = (id: string): InteractionRequestRecord | null => {
+      const row = this.getDb()
+        .prepare("SELECT * FROM interaction_requests WHERE id = ?")
+        .get(id) as Row | undefined;
+      return row ? mapInteractionRequestRow(row) : null;
+    };
+    const put = async (record: InteractionRequestRecord): Promise<void> => {
+      this.writeRequest(record);
+    };
+    const patch: InteractionRequestStore["patch"] = async ({ id, value }) => {
+      const record = get(id);
+      if (!record) throw new Error(`Unknown interaction request ${id}`);
+      this.writeRequest({ ...record, ...value, id });
+    };
+    return {
+      get: async (id) => get(id),
+      getMany: async (ids) =>
+        selectRowsByIds(
+          this.getDb(),
+          "interaction_requests",
+          "id",
+          ids,
+          mapInteractionRequestRow,
+        ),
+      find: async (filters) =>
+        findRow(
+          this.getDb(),
+          "interaction_requests",
+          filters,
+          interactionRequestColumns,
+          mapInteractionRequestRow,
+        ),
+      list: async (input) =>
+        listRows(
+          this.getDb(),
+          "interaction_requests",
+          input,
+          interactionRequestColumns,
+          interactionRequestColumns,
+          mapInteractionRequestRow,
+        ),
+      upsert: put,
+      upsertMany: async (records) => {
+        for (const record of records) this.writeRequest(record);
+      },
+      replace: put,
+      replaceMany: async (records) => {
+        for (const record of records) this.writeRequest(record);
+      },
+      update: async ({ value }) => put(value),
+      updateMany: async (inputs) => {
+        for (const { value } of inputs) this.writeRequest(value);
+      },
+      patch,
+      patchMany: async (inputs) => {
+        for (const input of inputs) await patch(input);
+      },
+      delete: async (id) => {
+        this.getDb()
+          .prepare("DELETE FROM interaction_requests WHERE id = ?")
+          .run(id);
+      },
+      deleteMany: async (ids) => {
+        deleteRowsByIds(this.getDb(), "interaction_requests", "id", ids);
+      },
+    };
+  }
+
+  private async admitInteractionTrigger(
+    input: AdmitInteractionInput,
+  ): Promise<AdmitInteractionResult> {
+    const request = createInteractionRequest(input);
+    return this.withImmediateTransaction((db) => {
+      const duplicate = db
+        .prepare(
+          "SELECT * FROM interaction_requests WHERE tenant_id = ? AND dedupe_key = ?",
+        )
+        .get(request.tenantId, request.dedupeKey) as Row | undefined;
+      if (duplicate) {
+        const existing = mapInteractionRequestRow(duplicate);
+        const job = db
+          .prepare("SELECT * FROM interaction_jobs WHERE id = ?")
+          .get(existing.interactionJobId) as Row | undefined;
+        if (!job) throw new Error("Request has no owning job");
+        return {
+          job: mapInteractionJobRow(job),
+          request: existing,
+          outcome: "duplicate",
+        };
+      }
+      // Single-request/manual jobs created since the migration retain their original dedupe identity.
+      const legacy = db
+        .prepare(
+          "SELECT * FROM interaction_jobs WHERE tenant_id = ? AND dedupe_key = ?",
+        )
+        .get(request.tenantId, request.dedupeKey) as Row | undefined;
+      if (legacy) {
+        const job = mapInteractionJobRow(legacy);
+        const linked = {
+          ...request,
+          interactionJobId: job.id,
+          admittedAt: input.now,
+        };
+        this.writeRequest(linked);
+        return { job, request: linked, outcome: "duplicate" };
+      }
+      const candidates = (
+        db
+          .prepare(
+            "SELECT * FROM interaction_jobs WHERE tenant_id = ? AND code_review_id = ? AND batch_kind = 'comment' AND status = 'queued' AND started_at IS NULL AND retry_count = 0 AND available_at > ? ORDER BY enqueued_at DESC, id DESC",
+          )
+          .all(request.tenantId, request.codeReviewId, input.now) as Row[]
+      ).map(mapInteractionJobRow);
+      let job: InteractionJobRecord | undefined;
+      let members: InteractionRequestRecord[] = [];
+      for (const candidate of candidates) {
+        const items = this.readRequests(candidate.id);
+        if (canAppendRequest(candidate, items, request, input.now)) {
+          job = candidate;
+          members = items;
+          break;
+        }
+        if (request.debounceMs > 0)
+          this.patchInteractionJobRecord(candidate.id, {
+            availableAt: input.now,
+          });
+      }
+      const outcome = job ? "appended" : "created";
+      job ??= this.upsertInteractionJobRecord(createBatchJob(request));
+      const linked = {
+        ...request,
+        interactionJobId: job.id,
+        admittedAt: input.now,
+      };
+      this.writeRequest(linked);
+      job = this.patchInteractionJobRecord(job.id, {
+        availableAt: batchReadyAt([...members, linked]),
+      });
+      return { job, request: linked, outcome };
+    });
   }
 
   private assertInteractionJobMutable(id: string): void {
@@ -1464,6 +1675,8 @@ export class SqliteStoreDatabase {
       textGenerationModel: entity.textGenerationModel,
       reviewReasoningEffort: entity.reviewReasoningEffort,
       textGenerationReasoningEffort: entity.textGenerationReasoningEffort,
+      routingModel: entity.routingModel,
+      routingReasoningEffort: entity.routingReasoningEffort,
       isDefault: entity.isDefault,
     });
   }
@@ -1720,9 +1933,9 @@ export class SqliteStoreDatabase {
           claim_token,
           claimed_by,
           claim_expires_at,
-          latest_interaction_run_id
+          latest_interaction_run_id, batch_kind
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(dedupe_key) DO UPDATE SET
           dedupe_key = interaction_jobs.dedupe_key
       `,
@@ -1747,6 +1960,7 @@ export class SqliteStoreDatabase {
         entity.claimedBy,
         entity.claimExpiresAt,
         entity.latestInteractionRunId,
+        entity.batchKind ?? null,
       );
 
     const row = database
@@ -1770,7 +1984,7 @@ export class SqliteStoreDatabase {
         SET tenant_id = ?, dedupe_key = ?, code_review_id = ?, comment_id = ?, trigger_json = ?, head_sha = ?,
             status = ?, payload_json = ?, retry_count = ?, last_error = ?, enqueued_at = ?, available_at = ?,
             started_at = ?, finished_at = ?, claim_token = ?, claimed_by = ?, claim_expires_at = ?,
-            latest_interaction_run_id = ?
+            latest_interaction_run_id = ?, batch_kind = ?
         WHERE id = ?
       `,
       )
@@ -1793,6 +2007,7 @@ export class SqliteStoreDatabase {
         entity.claimedBy,
         entity.claimExpiresAt,
         entity.latestInteractionRunId,
+        entity.batchKind ?? null,
         entity.id,
       );
     if (result.changes === 0) {
@@ -2048,9 +2263,9 @@ export class SqliteStoreDatabase {
           finished_at,
           interaction_job_claim_token,
           review_reasoning_effort,
-          text_generation_reasoning_effort
+          text_generation_reasoning_effort, replies_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           interaction_job_id = excluded.interaction_job_id,
           tenant_id = excluded.tenant_id,
@@ -2067,7 +2282,7 @@ export class SqliteStoreDatabase {
           finished_at = excluded.finished_at,
           interaction_job_claim_token = excluded.interaction_job_claim_token,
           review_reasoning_effort = excluded.review_reasoning_effort,
-          text_generation_reasoning_effort = excluded.text_generation_reasoning_effort
+          text_generation_reasoning_effort = excluded.text_generation_reasoning_effort, replies_json = excluded.replies_json
       `,
       )
       .run(
@@ -2088,6 +2303,7 @@ export class SqliteStoreDatabase {
         entity.interactionJobClaimToken,
         entity.reviewReasoningEffort,
         entity.textGenerationReasoningEffort,
+        entity.repliesJson ?? null,
       );
 
     return (await this.getInteractionRunRecord(entity.id))!;
@@ -2982,6 +3198,10 @@ function mapModelProfileRow(row: Row): ModelProfileRecord {
     textGenerationReasoningEffort: asNullableReasoningEffort(
       row.text_generation_reasoning_effort,
     ),
+    routingModel: asNullableString(row.routing_model),
+    routingReasoningEffort: asNullableReasoningEffort(
+      row.routing_reasoning_effort,
+    ),
     isDefault: asBoolean(row.is_default),
     createdAt: asString(row.created_at),
     updatedAt: asString(row.updated_at),
@@ -3044,6 +3264,9 @@ function mapInteractionJobRow(row: Row): InteractionJobRecord {
     claimedBy: asNullableString(row.claimed_by),
     claimExpiresAt: asNullableString(row.claim_expires_at),
     latestInteractionRunId: asNullableString(row.latest_interaction_run_id),
+    batchKind: asNullableString(
+      row.batch_kind,
+    ) as InteractionJobRecord["batchKind"],
   };
 }
 
@@ -3522,6 +3745,7 @@ function mapInteractionRunRow(row: Row): InteractionRunRecord {
     textGenerationModel: asNullableString(row.text_generation_model),
     status: asString(row.status) as InteractionRunRecord["status"],
     resultJson: asNullableString(row.result_json),
+    repliesJson: asNullableString(row.replies_json),
     error: asNullableString(row.error),
     startedAt: asString(row.started_at),
     finishedAt: asNullableString(row.finished_at),
@@ -3548,5 +3772,37 @@ function mapReviewFindingRow(row: Row): ReviewFindingRecord {
     suggestionJson: asNullableString(row.suggestion_json),
     status: asString(row.status) as ReviewFindingStatus,
     createdAt: asString(row.created_at),
+  };
+}
+
+const interactionRequestColumns: Record<InteractionRequestQueryField, string> =
+  {
+    id: "id",
+    tenantId: "tenant_id",
+    codeReviewId: "code_review_id",
+    dedupeKey: "dedupe_key",
+    interactionJobId: "interaction_job_id",
+    commentId: "comment_id",
+    triggerJson: "trigger_json",
+    payloadJson: "payload_json",
+    headSha: "head_sha",
+    receivedAt: "received_at",
+    admittedAt: "admitted_at",
+    debounceMs: "debounce_ms",
+  };
+function mapInteractionRequestRow(row: Row): InteractionRequestRecord {
+  return {
+    id: asString(row.id),
+    tenantId: asString(row.tenant_id),
+    codeReviewId: asNumber(row.code_review_id),
+    dedupeKey: asString(row.dedupe_key),
+    interactionJobId: asNullableString(row.interaction_job_id),
+    commentId: asNullableNumber(row.comment_id),
+    triggerJson: asString(row.trigger_json),
+    payloadJson: asString(row.payload_json),
+    headSha: asString(row.head_sha),
+    receivedAt: asString(row.received_at),
+    admittedAt: asNullableString(row.admitted_at),
+    debounceMs: asNumber(row.debounce_ms),
   };
 }

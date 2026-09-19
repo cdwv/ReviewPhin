@@ -1,3 +1,4 @@
+import { batchRequest } from "./helpers/batch-request.js";
 import { describe, expect, it } from "vitest";
 
 import { buildScopedReviewContext } from "../src/review/review-scope.js";
@@ -15,6 +16,38 @@ const codeReview = {
 };
 
 describe("buildScopedReviewContext", () => {
+  it("includes every requested finding thread when a batch exceeds normal context limits", () => {
+    const requests = Array.from({ length: 20 }, (_, i) =>
+      batchRequest(i + 1, "Please reassess", "discussion-" + i),
+    );
+    const discussions = requests.map((r, i) =>
+      createThread(
+        r.trigger.targetDiscussionId!,
+        "platform-" + i,
+        "Finding " + i,
+        "src/" + i + ".ts",
+        true,
+      ),
+    );
+    const context = buildScopedReviewContext({
+      workspacePath: repoPath(),
+      codeReview,
+      changes: discussions.map((_, i) =>
+        createChange("src/" + i + ".ts", "@@ -1 +1 @@\n-old\n+new"),
+      ),
+      comments: [],
+      discussions: [],
+      trigger: requests[0]!.trigger,
+      requests,
+      priorDiscussions: discussions,
+      previousReview: null,
+    });
+    expect(context.scope.mode).toBe("first-pass-full");
+    expect(context.requests).toHaveLength(20);
+    expect(context.priorDiscussions.map((d) => d.discussionId).sort()).toEqual(
+      discussions.map((d) => d.discussionId).sort(),
+    );
+  });
   it("scopes manual review actions without comment metadata", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),

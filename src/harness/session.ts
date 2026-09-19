@@ -81,6 +81,9 @@ export class HarnessSessionRuntime {
   public async run<TParsed = unknown>(
     spec: HarnessRunSpec<TParsed>,
   ): Promise<HarnessRunResult<TParsed>> {
+    const deadline = spec.overallTimeoutMs
+      ? Date.now() + spec.overallTimeoutMs
+      : null;
     const client = new CopilotClient({
       ...(!spec.modelConfig.provider && spec.modelConfig.authToken
         ? { gitHubToken: spec.modelConfig.authToken }
@@ -166,7 +169,9 @@ export class HarnessSessionRuntime {
         ...(spec.modelConfig.provider
           ? { provider: spec.modelConfig.provider }
           : {}),
-        ...(spec.modelConfig.provider ? { enableConfigDiscovery: false } : {}),
+        ...(spec.modelConfig.provider || spec.tools.length === 0
+          ? { enableConfigDiscovery: false }
+          : {}),
         tools: registeredTools,
         availableTools,
         customAgents: resolveHarnessSubagents(spec.subagents, enabledToolIds),
@@ -193,6 +198,8 @@ export class HarnessSessionRuntime {
         let prompt = preparedInput.prompt;
 
         for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+          if (deadline !== null && Date.now() >= deadline)
+            throw new Error("Harness session deadline exceeded");
           const eventStartIndex = events.length;
           const startedAt = Date.now();
           const response: AssistantMessageEvent | undefined =
@@ -205,7 +212,9 @@ export class HarnessSessionRuntime {
                   ? { attachments: preparedInput.attachments }
                   : {}),
               },
-              timeoutMs,
+              deadline === null
+                ? timeoutMs
+                : Math.max(1, Math.min(timeoutMs, deadline - Date.now())),
             );
           runLog.setResponse(response);
           const structuredResponse = parseHarnessStructuredResponse(

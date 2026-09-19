@@ -1,3 +1,4 @@
+import { fixtureRouter } from "./helpers/interaction-router.js";
 import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
@@ -237,6 +238,7 @@ describe("ReviewWorker orchestration", () => {
     });
 
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
       storage: {
         stores: {
           interactionJobs: jobStore,
@@ -456,12 +458,14 @@ describe("ReviewWorker orchestration", () => {
             kind: "code-review-comment" as const,
             commentId: 55,
           },
+          coveredRequestIds: [job.id],
           replyBody: "Here is what changed.",
         },
       ],
     }));
 
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter({ review: false, reply: true }),
       storage: {
         stores: {
           interactionJobs: jobStore,
@@ -683,12 +687,14 @@ describe("ReviewWorker orchestration", () => {
             kind: "code-review-comment" as const,
             commentId: 55,
           },
+          coveredRequestIds: [job.id],
           replyBody: "Here is what changed.",
         },
       ],
     }));
 
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter({ review: false, reply: true }),
       storage: {
         stores: {
           interactionJobs: createClaimAwareJobStoreFake({
@@ -817,7 +823,7 @@ describe("ReviewWorker orchestration", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("completes the run even when chatter reply publishing fails", async () => {
+  it("retries the run when chatter reply publishing fails", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(
       async (input: URL | RequestInfo, init?: RequestInit) => {
@@ -886,6 +892,7 @@ describe("ReviewWorker orchestration", () => {
     const { transitionInteractionRunForClaim, transitionClaim } = jobStore;
 
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter({ review: false, reply: true }),
       storage: {
         stores: {
           interactionJobs: jobStore,
@@ -967,6 +974,7 @@ describe("ReviewWorker orchestration", () => {
                   kind: "code-review-comment" as const,
                   commentId: 56,
                 },
+                coveredRequestIds: [job.id],
                 replyBody: "Here is what changed.",
               },
             ],
@@ -989,11 +997,11 @@ describe("ReviewWorker orchestration", () => {
     expect(transitionInteractionRunForClaim).toHaveBeenCalledWith(
       expect.objectContaining({
         interactionRunId: "run_2",
-        status: "completed",
+        status: "failed",
       }),
     );
     expect(transitionClaim).toHaveBeenCalledWith(
-      expect.objectContaining({ jobId: job.id, status: "completed" }),
+      expect.objectContaining({ jobId: job.id, status: "queued" }),
     );
 
     globalThis.fetch = originalFetch;
@@ -1084,6 +1092,7 @@ describe("ReviewWorker orchestration", () => {
     };
 
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter({ review: false, reply: true }),
       storage: {
         stores: {
           interactionJobs: createClaimAwareJobStoreFake({
@@ -1188,6 +1197,7 @@ describe("ReviewWorker orchestration", () => {
                   commentId: 77,
                   discussionId: "disc_individual",
                 },
+                coveredRequestIds: [job.id],
                 replyBody: "Here is the explanation.",
               },
             ],
@@ -1478,6 +1488,7 @@ describe("ReviewWorker orchestration", () => {
     });
 
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
       storage: {
         stores: {
           interactionJobs: jobStore,
@@ -1829,6 +1840,7 @@ describe("ReviewWorker orchestration", () => {
     });
 
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
       storage: {
         stores: {
           interactionJobs: jobStore,
@@ -2014,6 +2026,7 @@ describe("ReviewWorker orchestration", () => {
     const reconciler = { reconcile: vi.fn() };
 
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
       storage: {
         stores: {
           interactionJobs: jobStore,
@@ -2031,6 +2044,7 @@ describe("ReviewWorker orchestration", () => {
           interactionJobId: "job-prior",
           finishedAt: "2026-08-01T10:00:00.000Z",
           headSha: "previous-head",
+          repliesJson: null,
           resultJson: JSON.stringify({
             overview: {
               summary: "One earlier issue remains.",

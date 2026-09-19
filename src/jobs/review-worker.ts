@@ -1,3 +1,14 @@
+import {
+  batchCheckpointSchema,
+  replyPublicationMarker,
+  type BatchCheckpoint,
+} from "../review/batch-checkpoint.js";
+import {
+  type InteractionRouter,
+  reduceRoutingDecisions,
+  validateReplyCoverage,
+  type InteractionRoutingResult,
+} from "../review/interaction-router.js";
 import type { Logger } from "pino";
 import { join } from "node:path";
 
@@ -22,7 +33,7 @@ import type {
 } from "../reconcile/discussion-reconciler.js";
 import type { HarnessChatterRunnerFactory } from "../review/harness-chatter.js";
 import { projectActiveReviewFindings } from "../review/active-findings.js";
-import { buildInteractionPlan } from "../review/interaction-plan.js";
+import { buildManualReviewPlan } from "../review/interaction-plan.js";
 import type { HarnessSessionMetricsEnvelope } from "../harness/types.js";
 import {
   ModelProfileConfigurationError,
@@ -33,6 +44,7 @@ import type { ReviewProviderFactory } from "../review/provider.js";
 import { InteractionRunArtifacts } from "../review/run-artifacts.js";
 import { resolveReviewOverview } from "../review/summary.js";
 import type {
+  InteractionRequestContext,
   ReviewContext,
   ReviewResult,
   WebhookReviewTrigger,
@@ -67,6 +79,8 @@ interface ReviewRuntimeFactoryInput {
 }
 
 interface ReviewWorkerOptions {
+  debounceMs?: number | undefined;
+  interactionRouter: Pick<InteractionRouter, "route">;
   storage: StorageHelpers;
   tenantRegistry: TenantRegistry;
   reviewProviderFactory: ReviewProviderFactory;
@@ -84,6 +98,8 @@ interface ReviewWorkerOptions {
 }
 
 export class ReviewWorker {
+  private readonly debounceMs: number;
+  private readonly interactionRouter: Pick<InteractionRouter, "route">;
   private readonly storage: StorageHelpers;
   private readonly tenantRegistry: TenantRegistry;
   private readonly reviewProviderFactory: ReviewProviderFactory;
@@ -101,6 +117,8 @@ export class ReviewWorker {
   ) => PlatformReviewRuntime;
 
   public constructor(options: ReviewWorkerOptions) {
+    this.debounceMs = options.debounceMs ?? 15000;
+    this.interactionRouter = options.interactionRouter;
     this.storage = options.storage;
     this.tenantRegistry = options.tenantRegistry;
     this.reviewProviderFactory = options.reviewProviderFactory;
@@ -148,7 +166,7 @@ export class ReviewWorker {
       trigger,
       storage: this.storage,
     });
-    const createdJob = await this.storage.createOrGetInteractionJob({
+    const request = {
       tenantId: resolvedTenant.tenant.id,
       dedupeKey: interactionJob.dedupeKey,
       codeReviewId: interactionJob.codeReviewId,
@@ -156,11 +174,28 @@ export class ReviewWorker {
       triggerJson: interactionJob.triggerJson,
       headSha: interactionJob.headSha,
       payloadJson: interactionJob.payloadJson,
-    });
+    };
+    const admission =
+      trigger.kind === "check-run-requested-action"
+        ? null
+        : await this.storage.stores.interactionJobs.admitInteractionTrigger({
+            request,
+            now: new Date().toISOString(),
+            debounceMs: this.debounceMs,
+          });
+    const createdJob = admission
+      ? { job: admission.job, created: admission.outcome !== "duplicate" }
+      : await this.storage.createOrGetInteractionJob(request);
+    const lifecycleJob = {
+      ...createdJob.job,
+      commentId: request.commentId ?? null,
+      triggerJson: request.triggerJson ?? createdJob.job.triggerJson,
+      payloadJson: request.payloadJson,
+    };
 
     const lifecycle = platform.createTriggerLifecycle({
       resolvedTenant,
-      job: createdJob.job,
+      job: lifecycleJob,
       logger: this.logger,
     });
     await syncPlatformTriggerLifecycleForJob({
@@ -186,7 +221,7 @@ export class ReviewWorker {
       if (!platform) {
         return;
       }
-      const lifecycle = this.createTriggerLifecycle(
+      const lifecycle = await this.createBatchTriggerLifecycle(
         platform,
         resolvedTenant,
         job,
@@ -293,7 +328,7 @@ export class ReviewWorker {
     const platform = this.resolvePlatform(tenant.platform);
     const publicationEnabled =
       getReviewPublicationMode(job.triggerJson) === "publish";
-    const triggerLifecycle = this.createTriggerLifecycle(
+    const triggerLifecycle = await this.createBatchTriggerLifecycle(
       platform,
       resolvedTenant,
       job,
@@ -308,6 +343,7 @@ export class ReviewWorker {
     });
     context.assertOwned();
 
+    let checkpoint: BatchCheckpoint | null = null;
     let interactionRunId: string | null = null;
     let runArtifacts: InteractionRunArtifacts | null = null;
     const workspacesToCleanup: PlatformMaterializedWorkspace[] = [];
@@ -328,6 +364,52 @@ export class ReviewWorker {
         memoryEnabled: this.memoryEnabled,
       });
       cleanupWorkspace = (workspace) => runtime.cleanupWorkspace(workspace);
+      if (job.batchKind === "comment") {
+        const attempts = await listAll(this.storage.stores.interactionRuns, {
+          filters: { interactionJobId: { eq: job.id } },
+          order: [{ field: "startedAt", direction: "desc" }],
+        });
+        const saved = attempts.find((attempt) => attempt.repliesJson !== null);
+        if (saved?.repliesJson)
+          checkpoint = batchCheckpointSchema.parse(
+            JSON.parse(saved.repliesJson),
+          );
+      }
+      if (job.batchKind === "comment" && runtime.getCurrentHead) {
+        const headSha = await runtime.getCurrentHead(job);
+        if (checkpoint && checkpoint.headSha !== headSha) {
+          if (
+            checkpoint.reviewPublished ||
+            checkpoint.publishedReplyKeys.length
+          )
+            throw new AbandonedReviewError(
+              "Code review head changed after partial batch publication; request a new review for the new head",
+            );
+          checkpoint = null;
+        }
+        context.assertOwned();
+        if (
+          !(await jobStore.setInteractionJobHeadForClaim({
+            jobId: job.id,
+            claimToken: context.claimToken,
+            headSha,
+          }))
+        )
+          throw new LeaseLostError();
+        job = { ...job, headSha };
+      }
+      const requestRecords =
+        job.batchKind === "comment"
+          ? await listAll(this.storage.stores.interactionRequests, {
+              filters: { interactionJobId: { eq: job.id } },
+              order: [
+                { field: "receivedAt", direction: "asc" },
+                { field: "id", direction: "asc" },
+              ],
+            })
+          : [];
+      if (job.batchKind === "comment" && !requestRecords.length)
+        throw new Error("Collected job has no requests");
       const parsedPayload = JSON.parse(job.payloadJson) as unknown;
       context.assertOwned();
       let routingContext = await this.loadRoutingContext({
@@ -369,6 +451,18 @@ export class ReviewWorker {
           resolvedProviderConfig.textGenerationReasoningEffort,
       });
       interactionRunId = interactionRun.id;
+      const saveCheckpoint = async () => {
+        if (
+          checkpoint &&
+          !(await jobStore.saveInteractionRunRepliesForClaim({
+            jobId: job.id,
+            claimToken: context.claimToken,
+            interactionRunId: interactionRun.id,
+            repliesJson: JSON.stringify(checkpoint),
+          }))
+        )
+          throw new LeaseLostError();
+      };
       runArtifacts = new InteractionRunArtifacts(
         this.runLogDir,
         interactionRun.id,
@@ -458,13 +552,44 @@ export class ReviewWorker {
         context: routingContext,
         mappings,
       });
-      const trigger = runtime.buildReviewTriggerContext({
+      let trigger = runtime.buildReviewTriggerContext({
         job,
         payload: parsedPayload,
         context: routingContext,
         priorDiscussions,
         mappings,
       });
+      const requests: InteractionRequestContext[] = requestRecords.map(
+        (request) => {
+          const requestTrigger = runtime.buildReviewTriggerContext({
+            job: {
+              ...job,
+              commentId: request.commentId,
+              triggerJson: request.triggerJson,
+              payloadJson: request.payloadJson,
+            },
+            payload: JSON.parse(request.payloadJson) as unknown,
+            context: routingContext,
+            priorDiscussions,
+            mappings,
+          });
+          if (requestTrigger.kind === "manual-review")
+            throw new Error("Manual trigger cannot belong to a comment batch");
+          return { id: request.id, trigger: requestTrigger };
+        },
+      );
+      // Jobs queued before batching was introduced still use model routing.
+      if (!requests.length && trigger.kind !== "manual-review")
+        requests.push({ id: job.id, trigger });
+      for (const request of requests) {
+        context.assertOwned();
+        await runRuntime.resolveTriggerCommentReference({
+          codeReviewId: job.codeReviewId,
+          commentId: request.trigger.commentId,
+          triggerJson: requestRecords.find((r) => r.id === request.id)
+            ?.triggerJson,
+        });
+      }
       const previousInteraction =
         await this.storage.getLatestCompletedInteractionForCodeReview(
           tenant.id,
@@ -476,11 +601,88 @@ export class ReviewWorker {
         routingContext.codeReviewId,
         job.id,
       );
-      const interactionPlan = buildInteractionPlan({
-        trigger,
-        previousReviewExists: previousInteraction !== null,
-        priorFindings,
-      });
+      let routing: InteractionRoutingResult | null = null;
+      if (requests.length) {
+        const routingStartedAt = Date.now();
+        routing =
+          checkpoint?.routing ??
+          (await this.interactionRouter.route(
+            {
+              requests,
+              previousReviewExists: previousInteraction !== null,
+              priorFindings,
+              discussions: priorDiscussions,
+              memoryEnabled: routingContext.projectMemory.enabled,
+            },
+            resolvedProviderConfig,
+            {
+              interactionRunId: interactionRun.id,
+              interactionJobId: job.id,
+              tenantId: tenant.id,
+              runDirectory: runArtifacts.runDirectory,
+              onMetrics: this.createMetricsSink(jobStore, context, {
+                interactionRunId: interactionRun.id,
+                triggerKind: trigger.kind,
+                promptMode: "routing",
+                promptContextChangedFiles: 0,
+                promptContextPriorDiscussions: priorDiscussions.length,
+                promptContextComments: requests.length,
+              }),
+            },
+          ));
+        context.assertOwned();
+        // Prefer a reviewing request as the representative used by legacy scope helpers.
+        trigger =
+          requests.find((r) =>
+            routing?.decisions.some((d) => d.requestId === r.id && d.review),
+          )?.trigger ?? requests[0]!.trigger;
+        await runArtifacts.writeJsonArtifact(
+          join("orchestration", "routing.json"),
+          {
+            ...routing,
+            promptVersion: 1,
+            model:
+              routing.model !== undefined
+                ? routing.model
+                : (resolvedProviderConfig.routingModel ?? null),
+            reasoningEffort:
+              routing.reasoningEffort !== undefined
+                ? routing.reasoningEffort
+                : (resolvedProviderConfig.routingReasoningEffort ?? null),
+            elapsedMs: Date.now() - routingStartedAt,
+            recovered: checkpoint !== null,
+            requestCount: requests.length,
+          },
+        );
+      }
+      if (routing && job.batchKind === "comment") {
+        if (
+          checkpoint &&
+          JSON.stringify(checkpoint.requestIds) !==
+            JSON.stringify(requests.map((r) => r.id))
+        )
+          throw new Error(
+            "Saved batch membership does not match the claimed job",
+          );
+        checkpoint ??= {
+          version: 1,
+          headSha: job.headSha,
+          requestIds: requests.map((r) => r.id),
+          routing,
+          memoryDone: false,
+          reviewResult: null,
+          reviewPublished: false,
+          replyResult: null,
+          publishedReplyKeys: [],
+        };
+        await saveCheckpoint();
+      }
+      const replyRequests = requests.filter((r) =>
+        routing?.decisions.some((d) => d.requestId === r.id && d.reply),
+      );
+      const interactionPlan = routing
+        ? reduceRoutingDecisions(requests, routing.decisions)
+        : buildManualReviewPlan(trigger);
 
       await runArtifacts.writeJsonArtifact(
         join("orchestration", "plan.json"),
@@ -501,9 +703,13 @@ export class ReviewWorker {
         context: routingContext,
         runArtifacts,
         trigger,
+        ...(requests.length
+          ? { triggers: requests.map((request) => request.trigger) }
+          : {}),
       });
       context.assertOwned();
       let chatterContext = runtime.buildPromptContext({
+        ...(requests.length ? { requests } : {}),
         attachments: imageAttachments.breadcrumbs,
         attachmentIssues: imageAttachments.issues,
         interactionRunId: interactionRun.id,
@@ -517,7 +723,11 @@ export class ReviewWorker {
         previousInteraction,
       });
 
-      if (interactionPlan.memoryCandidate && trigger.kind !== "manual-review") {
+      if (
+        interactionPlan.memoryCandidate &&
+        !checkpoint?.memoryDone &&
+        trigger.kind !== "manual-review"
+      ) {
         context.assertOwned();
         const memoryResult = await chatterRunner.run(
           {
@@ -526,6 +736,7 @@ export class ReviewWorker {
             responseTargets: interactionPlan.responseTargets,
             projectMemory: chatterContext.projectMemory,
             replyStyle: interactionPlan.replyStyle,
+            ...(requests.length ? { requests } : {}),
             phase: "memory",
             reviewContext: chatterContext,
             logging: {
@@ -571,13 +782,17 @@ export class ReviewWorker {
           memoryResult,
         );
         context.assertOwned();
-        routingContext = await this.loadRoutingContext({
-          runtime: runRuntime,
-          job,
-        });
+        if (checkpoint) {
+          checkpoint.memoryDone = true;
+          await saveCheckpoint();
+        }
+        routingContext = runRuntime.refreshProjectMemory
+          ? await runRuntime.refreshProjectMemory(job, routingContext)
+          : routingContext;
         context.assertOwned();
         workspacesToCleanup.push(routingContext.workspace);
         chatterContext = runtime.buildPromptContext({
+          ...(requests.length ? { requests } : {}),
           attachments: imageAttachments.breadcrumbs,
           attachmentIssues: imageAttachments.issues,
           interactionRunId: interactionRun.id,
@@ -619,6 +834,7 @@ export class ReviewWorker {
           job.id,
         );
         reviewContext = runRuntime.buildPromptContext({
+          ...(requests.length ? { requests } : {}),
           attachments: imageAttachments.breadcrumbs,
           attachmentIssues: imageAttachments.issues,
           interactionRunId: interactionRun.id,
@@ -666,28 +882,30 @@ export class ReviewWorker {
         );
 
         context.assertOwned();
-        const modelReviewResult = await reviewProvider.review(reviewContext, {
-          attachments: imageAttachments.attachments,
-          tenant: this.buildHarnessTenantContext({
-            platform,
-            tenant,
-            connection,
-            interactionRunId: interactionRun.id,
-            interactionJobId: job.id,
-            runDirectory: runArtifacts.runDirectory,
-            memoryEnabled: hydratedContext.projectMemory.enabled,
-            platformWritesEnabled: publicationEnabled,
-            onMetrics: this.createMetricsSink(jobStore, context, {
+        const modelReviewResult =
+          checkpoint?.reviewResult ??
+          (await reviewProvider.review(reviewContext, {
+            attachments: imageAttachments.attachments,
+            tenant: this.buildHarnessTenantContext({
+              platform,
+              tenant,
+              connection,
               interactionRunId: interactionRun.id,
-              triggerKind: reviewContext.trigger.kind,
-              promptMode: "memory-consolidation",
-              promptContextChangedFiles: reviewContext.changes.length,
-              promptContextPriorDiscussions:
-                reviewContext.priorDiscussions.length,
-              promptContextComments: reviewContext.comments.length,
+              interactionJobId: job.id,
+              runDirectory: runArtifacts.runDirectory,
+              memoryEnabled: hydratedContext.projectMemory.enabled,
+              platformWritesEnabled: publicationEnabled,
+              onMetrics: this.createMetricsSink(jobStore, context, {
+                interactionRunId: interactionRun.id,
+                triggerKind: reviewContext.trigger.kind,
+                promptMode: "memory-consolidation",
+                promptContextChangedFiles: reviewContext.changes.length,
+                promptContextPriorDiscussions:
+                  reviewContext.priorDiscussions.length,
+                promptContextComments: reviewContext.comments.length,
+              }),
             }),
-          }),
-        });
+          }));
         const activeFindings = projectActiveReviewFindings({
           priorFindings: reviewContext.scope.priorFindings,
           discussionIdentities: mappings.map((mapping) => ({
@@ -701,6 +919,10 @@ export class ReviewWorker {
           ...modelReviewResult,
           overview: resolveReviewOverview(modelReviewResult, activeFindings),
         };
+        if (checkpoint) {
+          checkpoint.reviewResult = reviewResult;
+          await saveCheckpoint();
+        }
         await runArtifacts.writeJsonArtifact(
           join("orchestration", "review-result.json"),
           reviewResult,
@@ -743,7 +965,8 @@ export class ReviewWorker {
           throw new LeaseLostError();
         }
 
-        if (publicationEnabled) {
+        if (publicationEnabled && !checkpoint?.reviewPublished) {
+          await this.assertCurrentHead(runRuntime, job, context);
           context.assertOwned();
           reconcileSummary = await this.reconciler.reconcile({
             platform,
@@ -753,7 +976,32 @@ export class ReviewWorker {
             mappings,
             interactionJobId: job.id,
             interactionRunId: interactionRun.id,
-            reviewResult,
+            reviewResult: requests.length
+              ? {
+                  ...reviewResult,
+                  priorDispositions: reviewResult.priorDispositions.map(
+                    (disposition) => {
+                      if (
+                        !replyRequests.some(
+                          (request) =>
+                            request.trigger.targetDiscussionId ===
+                            disposition.discussionId,
+                        )
+                      )
+                        return disposition;
+                      const { replyBody: _replyBody, ...stateChange } =
+                        disposition;
+                      return {
+                        ...stateChange,
+                        action:
+                          stateChange.action === "reply"
+                            ? ("keep" as const)
+                            : stateChange.action,
+                      };
+                    },
+                  ),
+                }
+              : reviewResult,
             storage: scoped,
             guard: context,
             publicationAdapter: runRuntime.createReviewPublicationAdapter({
@@ -769,6 +1017,11 @@ export class ReviewWorker {
             };
           }
           context.assertOwned();
+          if (checkpoint) {
+            checkpoint.reviewPublished = true;
+            checkpoint.reviewResult = reviewResult;
+            await saveCheckpoint();
+          }
 
           await this.logRunEvent(
             runArtifacts,
@@ -791,104 +1044,124 @@ export class ReviewWorker {
 
       if (interactionPlan.replyNeeded && trigger.kind !== "manual-review") {
         context.assertOwned();
-        const replyResult = await chatterRunner.run(
-          {
-            attachments: imageAttachments.attachments,
-            trigger,
-            responseTargets: interactionPlan.responseTargets,
-            projectMemory:
-              reviewContext?.projectMemory ?? chatterContext.projectMemory,
-            replyStyle: interactionPlan.replyStyle,
-            phase: "reply",
-            reviewContext: reviewContext ?? chatterContext,
-            reviewerReplyHandoff: reviewResult?.replyHandoff ?? null,
-            reviewResult,
-            logging: {
-              interactionRunId: interactionRun.id,
-              interactionJobId: job.id,
-              tenantId: tenant.id,
-              runDirectory: runArtifacts.runDirectory,
-              onMetrics: this.createMetricsSink(jobStore, context, {
+        const replyResult =
+          checkpoint?.replyResult ??
+          (await chatterRunner.run(
+            {
+              attachments: imageAttachments.attachments,
+              trigger,
+              responseTargets: interactionPlan.responseTargets,
+              projectMemory:
+                reviewContext?.projectMemory ?? chatterContext.projectMemory,
+              replyStyle: interactionPlan.replyStyle,
+              ...(requests.length ? { requests: replyRequests } : {}),
+              phase: "reply",
+              reviewContext: reviewContext ?? chatterContext,
+              reviewerReplyHandoff: reviewResult?.replyHandoff ?? null,
+              reviewResult,
+              logging: {
                 interactionRunId: interactionRun.id,
-                triggerKind: trigger.kind,
-                promptMode: "reply",
-                promptContextChangedFiles:
-                  reviewContext?.changes.length ??
-                  chatterContext.changes.length,
-                promptContextPriorDiscussions:
-                  reviewContext?.priorDiscussions.length ??
-                  chatterContext.priorDiscussions.length,
-                promptContextComments:
-                  reviewContext?.comments.length ??
-                  chatterContext.comments.length,
+                interactionJobId: job.id,
+                tenantId: tenant.id,
+                runDirectory: runArtifacts.runDirectory,
+                onMetrics: this.createMetricsSink(jobStore, context, {
+                  interactionRunId: interactionRun.id,
+                  triggerKind: trigger.kind,
+                  promptMode: "reply",
+                  promptContextChangedFiles:
+                    reviewContext?.changes.length ??
+                    chatterContext.changes.length,
+                  promptContextPriorDiscussions:
+                    reviewContext?.priorDiscussions.length ??
+                    chatterContext.priorDiscussions.length,
+                  promptContextComments:
+                    reviewContext?.comments.length ??
+                    chatterContext.comments.length,
+                }),
+              },
+            },
+            {
+              tenant: this.buildHarnessTenantContext({
+                platform,
+                tenant,
+                connection,
+                interactionRunId: interactionRun.id,
+                interactionJobId: job.id,
+                runDirectory: runArtifacts.runDirectory,
+                memoryEnabled:
+                  reviewContext?.projectMemory.enabled ??
+                  routingContext.projectMemory.enabled,
+                platformWritesEnabled: publicationEnabled,
+                onMetrics: this.createMetricsSink(jobStore, context, {
+                  interactionRunId: interactionRun.id,
+                  triggerKind: trigger.kind,
+                  promptMode: "memory-consolidation",
+                  promptContextChangedFiles:
+                    reviewContext?.changes.length ??
+                    chatterContext.changes.length,
+                  promptContextPriorDiscussions:
+                    reviewContext?.priorDiscussions.length ??
+                    chatterContext.priorDiscussions.length,
+                  promptContextComments:
+                    reviewContext?.comments.length ??
+                    chatterContext.comments.length,
+                }),
               }),
             },
-          },
-          {
-            tenant: this.buildHarnessTenantContext({
-              platform,
-              tenant,
-              connection,
-              interactionRunId: interactionRun.id,
-              interactionJobId: job.id,
-              runDirectory: runArtifacts.runDirectory,
-              memoryEnabled:
-                reviewContext?.projectMemory.enabled ??
-                routingContext.projectMemory.enabled,
-              platformWritesEnabled: publicationEnabled,
-              onMetrics: this.createMetricsSink(jobStore, context, {
-                interactionRunId: interactionRun.id,
-                triggerKind: trigger.kind,
-                promptMode: "memory-consolidation",
-                promptContextChangedFiles:
-                  reviewContext?.changes.length ??
-                  chatterContext.changes.length,
-                promptContextPriorDiscussions:
-                  reviewContext?.priorDiscussions.length ??
-                  chatterContext.priorDiscussions.length,
-                promptContextComments:
-                  reviewContext?.comments.length ??
-                  chatterContext.comments.length,
-              }),
-            }),
-          },
-        );
+          ));
         await runArtifacts.writeJsonArtifact(
           join("orchestration", "reply-result.json"),
           replyResult,
         );
 
         context.assertOwned();
-        const publishOutcomes = publicationEnabled
-          ? await runRuntime.publishChatterReplies({
+        if (requests.length) validateReplyCoverage(replyRequests, replyResult);
+        if (publicationEnabled)
+          await this.assertCurrentHead(runRuntime, job, context);
+        if (checkpoint) {
+          checkpoint.replyResult = replyResult;
+          await saveCheckpoint();
+        }
+        const publishOutcomes = [];
+        if (publicationEnabled) {
+          for (const reply of replyResult.replies) {
+            context.assertOwned();
+            const marker = checkpoint
+              ? replyPublicationMarker(job.id, reply.coveredRequestIds ?? [])
+              : null;
+            if (marker && checkpoint?.publishedReplyKeys.includes(marker))
+              continue;
+            await this.assertCurrentHead(runRuntime, job, context);
+            const outcomes = await runRuntime.publishChatterReplies({
               codeReviewId: routingContext.codeReviewId,
-              result: replyResult,
+              result: {
+                memory: null,
+                replies: [
+                  {
+                    ...reply,
+                    replyBody: marker
+                      ? reply.replyBody + "\n\n" + marker
+                      : reply.replyBody,
+                  },
+                ],
+              },
               plannedTargets: interactionPlan.responseTargets,
               guard: context,
-            })
-          : [];
-        context.assertOwned();
+            });
+            context.assertOwned();
+            publishOutcomes.push(...outcomes);
+            if (outcomes.length !== 1 || outcomes[0]?.status !== "published")
+              throw new Error("A planned chatter reply failed to publish");
+            if (marker && checkpoint) {
+              checkpoint.publishedReplyKeys.push(marker);
+              await saveCheckpoint();
+            }
+          }
+        }
         await runArtifacts.writeJsonArtifact(
           join("orchestration", "reply-publish-outcomes.json"),
           publishOutcomes,
         );
-        const failedPublishOutcomes = publishOutcomes.filter(
-          (outcome) => outcome.status === "failed",
-        );
-        if (failedPublishOutcomes.length > 0) {
-          await this.logRunEvent(
-            runArtifacts,
-            "warn",
-            "some chatter replies failed to publish",
-            {
-              interactionRunId: interactionRun.id,
-              failedReplyCount: failedPublishOutcomes.length,
-              publishedReplyCount:
-                publishOutcomes.length - failedPublishOutcomes.length,
-              publishOutcomes,
-            },
-          );
-        }
       }
 
       // Commit order: findings/metrics, run terminal transition, then job
@@ -965,17 +1238,30 @@ export class ReviewWorker {
       }
 
       if (interactionRunId) {
-        await jobStore.replaceReviewFindingsForClaim({
-          jobId: context.jobId,
-          claimToken: context.claimToken,
-          interactionRunId,
-          findings: [],
-        });
+        if (!checkpoint?.reviewPublished)
+          await jobStore.replaceReviewFindingsForClaim({
+            jobId: context.jobId,
+            claimToken: context.claimToken,
+            interactionRunId,
+            findings: [],
+          });
         try {
           if (isAbandonedReview) {
             await scoped.cancelInteractionRun(interactionRunId, errorMessage);
           } else {
-            await scoped.failInteractionRun(interactionRunId, errorMessage);
+            if (checkpoint?.reviewResult) {
+              const saved = await jobStore.transitionInteractionRunForClaim({
+                jobId: job.id,
+                claimToken: context.claimToken,
+                interactionRunId,
+                status: "failed",
+                resultJson: JSON.stringify(checkpoint.reviewResult),
+                error: errorMessage,
+                finishedAt: new Date().toISOString(),
+              });
+              if (!saved) throw new LeaseLostError();
+            } else
+              await scoped.failInteractionRun(interactionRunId, errorMessage);
           }
         } catch (transitionError) {
           if (!(transitionError instanceof LeaseLostError)) {
@@ -1103,6 +1389,59 @@ export class ReviewWorker {
         }
       }
     }
+  }
+
+  private async assertCurrentHead(
+    runtime: PlatformReviewRuntime,
+    job: InteractionJobRecord,
+    context: JobClaimContext,
+  ): Promise<void> {
+    context.assertOwned();
+    if (
+      job.batchKind === "comment" &&
+      runtime.getCurrentHead &&
+      (await runtime.getCurrentHead(job)) !== job.headSha
+    )
+      throw new Error("Code review head changed before publication");
+    context.assertOwned();
+  }
+
+  private async createBatchTriggerLifecycle(
+    platform: IPlatform,
+    tenant: ResolvedTenant,
+    job: InteractionJobRecord,
+  ): Promise<PlatformTriggerLifecycle> {
+    const requests =
+      job.batchKind === "comment"
+        ? await listAll(this.storage.stores.interactionRequests, {
+            filters: { interactionJobId: { eq: job.id } },
+          })
+        : [];
+    const lifecycles = requests.length
+      ? requests.map((r) =>
+          this.createTriggerLifecycle(platform, tenant, {
+            ...job,
+            commentId: r.commentId,
+            triggerJson: r.triggerJson,
+            payloadJson: r.payloadJson,
+          }),
+        )
+      : [this.createTriggerLifecycle(platform, tenant, job)];
+    const each = async (
+      fn: (lifecycle: PlatformTriggerLifecycle) => Promise<void>,
+    ) => {
+      // A failed reaction on one comment must not hide the remaining comments.
+      const results = await Promise.allSettled(lifecycles.map(fn));
+      const failure = results.find((r) => r.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+    };
+    return {
+      queued: () => each((l) => l.queued()),
+      inProgress: () => each((l) => l.inProgress()),
+      completed: (outcome) => each((l) => l.completed(outcome)),
+      retry: (error) => each((l) => l.retry(error)),
+      failed: (error) => each((l) => l.failed(error)),
+    };
   }
 
   private async logRunEvent(

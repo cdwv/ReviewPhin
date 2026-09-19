@@ -33,6 +33,7 @@ interface PreviousReviewSource {
 type FullRescanReason = "explicit" | "signature-transition" | null;
 
 interface BuildScopedReviewContextInput {
+  requests?: ReviewContext["requests"];
   attachments?: ReviewAttachment[] | undefined;
   attachmentIssues?: ReviewAttachmentIssue[] | undefined;
   workspacePath: string;
@@ -71,7 +72,9 @@ export function buildScopedReviewContext(
     input.previousReview?.changesJson ?? null,
   );
   const explicitFullRescan = hasExplicitFullRescanInstruction(
-    input.trigger.instruction,
+    input.requests
+      ?.map((r) => r.trigger.instruction ?? r.trigger.body)
+      .join("\n") ?? input.trigger.instruction,
   );
   const signatureTransition =
     input.previousReview !== null &&
@@ -81,11 +84,25 @@ export function buildScopedReviewContext(
     : signatureTransition
       ? "signature-transition"
       : null;
-  const mode = determineReviewMode(
-    input.trigger,
-    input.previousReview,
-    fullRescanReason !== null,
-  );
+  const narrowBatch =
+    !input.requests ||
+    input.requests.every(
+      (r) =>
+        r.trigger.kind === "follow-up-comment" &&
+        input.trigger.kind === "follow-up-comment" &&
+        r.trigger.targetDiscussionId === input.trigger.targetDiscussionId,
+    );
+  const mode =
+    (!narrowBatch || (input.requests && explicitFullRescan)) &&
+    input.trigger.kind === "follow-up-comment"
+      ? input.previousReview && fullRescanReason === null
+        ? "incremental-rereview"
+        : "first-pass-full"
+      : determineReviewMode(
+          input.trigger,
+          input.previousReview,
+          fullRescanReason !== null,
+        );
   const priorFindings = input.priorFindings ?? [];
   const targetDiscussionId =
     input.trigger.kind === "manual-review"
@@ -119,6 +136,16 @@ export function buildScopedReviewContext(
       : input.changes;
   const widenScopeHints = collectWidenScopeHints(widenedInputChanges);
 
+  const requestedDiscussionIds = new Set(
+    input.requests?.map((r) => r.trigger.targetDiscussionId).filter(Boolean),
+  );
+  for (const discussion of input.priorDiscussions) {
+    if (!requestedDiscussionIds.has(discussion.discussionId)) continue;
+    if (discussion.anchor?.path)
+      targetDiscussionPaths.add(discussion.anchor.path);
+    if (discussion.anchor?.oldPath)
+      targetDiscussionPaths.add(discussion.anchor.oldPath);
+  }
   const focusPaths = new Set<string>();
   for (const path of targetDiscussionPaths) {
     focusPaths.add(path);
@@ -178,6 +205,13 @@ export function buildScopedReviewContext(
     mode,
     targetDiscussion,
   });
+  for (const discussion of input.priorDiscussions) {
+    if (
+      requestedDiscussionIds.has(discussion.discussionId) &&
+      !selectedPriorDiscussions.includes(discussion)
+    )
+      selectedPriorDiscussions.push(discussion);
+  }
   const selectedPriorDiscussionIds = new Set(
     selectedPriorDiscussions.map(
       (discussion) => discussion.platformDiscussionId,
@@ -215,6 +249,7 @@ export function buildScopedReviewContext(
   });
 
   return {
+    ...(input.requests ? { requests: input.requests } : {}),
     attachments: input.attachments ?? [],
     attachmentIssues: input.attachmentIssues ?? [],
     workspacePath: input.workspacePath,

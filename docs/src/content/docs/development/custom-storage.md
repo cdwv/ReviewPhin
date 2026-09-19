@@ -19,7 +19,7 @@ Adapters must report the current storage contract revision:
 
 ```ts
 getSupportedStorageContract(): string {
-  return "storage-v006";
+  return "storage-v007";
 }
 ```
 
@@ -28,7 +28,7 @@ They must implement all stores required by the current contract and return a val
 ```ts
 return {
   providerId: "my-adapter",
-  storageContractRevision: "storage-v006",
+  storageContractRevision: "storage-v007",
   appliedMigrationIds: [],
 };
 ```
@@ -50,12 +50,13 @@ Use `src/storage/adapters/README.md` and the SQLite adapter as implementation re
 Pick a claim mode by what your backend can guarantee:
 
 - **`atomic`** — the backend can select-and-claim in one atomic step (like SQLite's `BEGIN IMMEDIATE`). Global single-review execution holds even with many runner processes.
-- **`single-worker`** — the backend has no cross-request compare-and-set. Only one runner process may execute jobs; additional replicas must set `REVIEWPHIN_JOB_RUNNER_ENABLED=false`. ReviewPhin ships a reusable single-worker queue helper on top of the generic entity store that you can reuse when declaring this topology.
+- **`single-worker`** — the backend has no cross-request compare-and-set. The built-in helper puts batch updates and job claims in a queue inside the adapter and completes one before starting the next. Run only one copy of ReviewPhin receiving comment webhooks and executing jobs when using this helper. Disabling job execution in a second copy does not make its batch writes safe. A custom adapter needs shared coordination to support multiple copies.
 
 The claim token fences an abandoned attempt after its lease expires. Because a third-party provider request cannot be made transactional with the storage lease, an in-flight external call may still finish after lease loss; exactly-once external side effects remain outside the fencing guarantee. Project-memory writes are also outside claim fencing by design.
 
 ## Contract revision notes
 
+- `storage-v007` (breaking) adds `interactionRequests`, nullable `batchKind` on jobs, nullable `repliesJson` on runs, and nullable routing model and effort on profiles. Implement `admitInteractionTrigger`, `setInteractionJobHeadForClaim`, and `saveInteractionRunRepliesForClaim`. Admission must deduplicate by tenant and provider event, append only to unclaimed collecting jobs, and serialize membership/deadline changes with claims. SQLite uses a transaction. The reusable single-worker helper stages requests and recovers interrupted remote writes before admission or claim; its queue protects only one running copy of ReviewPhin, as described above. `repliesJson` is a versioned batch checkpoint containing routing decisions, saved review/reply output, phase completion, and reply publication markers. `resultJson` remains a review result. Backfill one request for every legacy job without rewriting its payload or opening it for collection.
 - `storage-v006` (breaking) changes interaction-run metrics from one record per run to one record per harness session. Adapters identify a session by interaction run, harness, and harness-native session key. `sessionType` and `usageUnit` are open strings, not enumerations. `usageUnit` and `usageAmount` must either both be present or both be absent. Per-model usage JSON uses the same unit. Existing premium-request rows must keep their counters, receive deterministic legacy session identity, and allocate their usage to the `unknown` model. Preserve provider-managed timestamps where the backend permits it; Flotiq retains `createdAt` but advances `updatedAt` when the row is backfilled, and cross-adapter migration may assign both timestamps again. Filters add inclusive `gte` and exclusive `lt` range operators; adapters must return the same boundary behavior and should translate supported ranges to backend filters before pagination.
 
 - `storage-v003` added provider-owned interaction trigger identity through `InteractionJobRecord.triggerJson` and made `commentId` nullable. Built-in migrations preserve existing GitLab jobs and synthesize trigger JSON from the existing comment id.

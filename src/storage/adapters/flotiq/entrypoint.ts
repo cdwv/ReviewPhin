@@ -5,6 +5,7 @@ import type {
   DiscussionMapping,
   DiscussionMappingHydrated,
   DiscussionMappingHydratedTwice,
+  InteractionRequest,
   InteractionJob,
   InteractionJobHydrated,
   InteractionJobHydratedTwice,
@@ -35,6 +36,9 @@ import {
   type DiscussionMappingFilters,
   type DiscussionMappingOrderField,
   type DiscussionMappingRecord,
+  type InteractionRequestRecord,
+  type InteractionRequestFilters,
+  type InteractionRequestQueryField,
   type InteractionJobFilters,
   type InteractionJobOrderField,
   type InteractionJobRecord,
@@ -73,6 +77,7 @@ import ensureV002CtdsExist from "./migrations/v002.js";
 import ensureV003CtdsExist from "./migrations/v003.js";
 import ensureV004CtdsExist from "./migrations/v004.js";
 import ensureV005CtdsExist from "./migrations/v005.js";
+import ensureV007CtdsExist from "./migrations/v007.js";
 import ensureV006CtdsExist from "./migrations/v006.js";
 import { createFlotiqEntityStore } from "./store.js";
 import { createSingleWorkerInteractionJobStore } from "../single-worker-interaction-job-store.js";
@@ -136,7 +141,7 @@ export function createStorageProvider(
       return "flotiq";
     },
     getSupportedStorageContract() {
-      return "storage-v006";
+      return "storage-v007";
     },
     async open() {
       // Flotiq is accessed over HTTP, so there is no persistent connection.
@@ -167,6 +172,12 @@ export function createStorageProvider(
           ),
         v006: () =>
           ensureV006CtdsExist(
+            parsedEnv.FLOTIQ_API_KEY,
+            flotiqClient,
+            logger?.child({ component: "migrations" }),
+          ),
+        v007: () =>
+          ensureV007CtdsExist(
             parsedEnv.FLOTIQ_API_KEY,
             flotiqClient,
             logger?.child({ component: "migrations" }),
@@ -223,6 +234,34 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
   const createStoreLogger = (store: string): Logger | undefined =>
     logger?.child({ store });
 
+  const interactionRequests = createFlotiqEntityStore<
+    InteractionRequestRecord,
+    InteractionRequestFilters,
+    InteractionRequestQueryField,
+    InteractionRequest,
+    keyof InteractionRequest
+  >({
+    logger: createStoreLogger("interactionRequests"),
+    api: flotiqClient.content.interaction_request,
+    ctdName: "interaction_request",
+    toRecord: (entity) => ({
+      id: readRequiredString(entity, "id"),
+      tenantId: readRequiredString(entity, "tenantId"),
+      codeReviewId: entity.codeReviewId,
+      dedupeKey: readRequiredString(entity, "dedupeKey"),
+      interactionJobId: readNullableString(entity, "interactionJobId"),
+      commentId: entity.commentId ?? null,
+      triggerJson: readRequiredString(entity, "triggerJson"),
+      payloadJson: readRequiredString(entity, "payloadJson"),
+      headSha: readRequiredString(entity, "headSha"),
+      receivedAt: readRequiredString(entity, "receivedAt"),
+      admittedAt: readNullableString(entity, "admittedAt"),
+      debounceMs: entity.debounceMs,
+    }),
+    toRemote: mapIdentityEntity,
+    emptyStringNullFields: ["interactionJobId", "admittedAt"],
+    explicitNullFields: ["commentId"],
+  });
   const modelProfiles = createFlotiqEntityStore<
     ModelProfileRecord,
     ModelProfileFilters,
@@ -244,6 +283,8 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
       "textGenerationModel",
       "reviewReasoningEffort",
       "textGenerationReasoningEffort",
+      "routingModel",
+      "routingReasoningEffort",
     ],
   });
   const platformConnections = createFlotiqEntityStore<
@@ -315,6 +356,7 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
       "claimedBy",
       "claimExpiresAt",
       "latestInteractionRunId",
+      "batchKind",
     ],
     relationFields: interactionJobRelationFields,
   });
@@ -355,6 +397,7 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
       "providerType",
       "textGenerationModel",
       "resultJson",
+      "repliesJson",
       "error",
       "finishedAt",
       "interactionJobClaimToken",
@@ -420,6 +463,7 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
     relationFields: discussionMappingRelationFields,
   });
   const interactionJobs = createSingleWorkerInteractionJobStore({
+    requests: interactionRequests,
     jobs: rawInteractionJobs,
     runs: interactionRuns,
     reviewFindings,
@@ -429,6 +473,7 @@ function createStores(flotiqClient: Flotiq, logger?: Logger): StorageStores {
   });
 
   return {
+    interactionRequests,
     modelProfiles,
     platformConnections,
     tenants,
@@ -459,6 +504,11 @@ function mapModelProfileRecord(entity: ModelProfile): ModelProfileRecord {
       entity,
       "textGenerationReasoningEffort",
     ),
+    routingModel: readNullableString(entity, "routingModel"),
+    routingReasoningEffort: readNullableReasoningEffort(
+      entity,
+      "routingReasoningEffort",
+    ),
     isDefault: readBoolean(entity, "isDefault") ?? false,
     createdAt: readInternalTimestamp(entity, "createdAt"),
     updatedAt: readInternalTimestamp(entity, "updatedAt"),
@@ -479,6 +529,8 @@ function mapModelProfileEntity(
     textGenerationModel: entity.textGenerationModel,
     reviewReasoningEffort: entity.reviewReasoningEffort,
     textGenerationReasoningEffort: entity.textGenerationReasoningEffort,
+    routingModel: entity.routingModel,
+    routingReasoningEffort: entity.routingReasoningEffort,
     isDefault: entity.isDefault,
   };
 }
@@ -538,6 +590,10 @@ function mapProjectMemoryRecord(entity: ProjectMemory): ProjectMemoryRecord {
 
 function mapInteractionJobRecord(entity: InteractionJob): InteractionJobRecord {
   return {
+    batchKind: readNullableString(
+      entity,
+      "batchKind",
+    ) as InteractionJobRecord["batchKind"],
     id: readRequiredString(entity, "id"),
     tenantId: readRequiredRelationId(entity, "tenantId"),
     dedupeKey: readRequiredString(entity, "dedupeKey"),
@@ -619,6 +675,7 @@ function mapInteractionRunRecord(entity: InteractionRun): InteractionRunRecord {
       "status",
     ) as InteractionRunRecord["status"],
     resultJson: readNullableString(entity, "resultJson"),
+    repliesJson: readNullableString(entity, "repliesJson"),
     error: readNullableString(entity, "error"),
     startedAt: readRequiredString(entity, "startedAt"),
     finishedAt: readNullableString(entity, "finishedAt"),

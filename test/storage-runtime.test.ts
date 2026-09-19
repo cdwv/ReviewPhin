@@ -44,6 +44,7 @@ describe("storage runtime", () => {
         "sqlite:0010_v4_project_memories",
         "sqlite:0011_v5_job_claims_and_reasoning_effort",
         "sqlite:0012_v6_session_metrics",
+        "sqlite:0013_v7_interaction_batches",
       ]);
     } finally {
       await runtime.provider.close();

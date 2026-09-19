@@ -124,6 +124,14 @@ export class CodeReviewContextHydrator {
         ),
         client.listCodeReviewVersions(tenantConfig.projectId, job.codeReviewId),
       ]);
+    if (
+      job.batchKind === "comment" &&
+      (mergeRequest.diff_refs?.head_sha ??
+        [...versions].sort((a, b) =>
+          b.created_at.localeCompare(a.created_at),
+        )[0]?.head_commit_sha) !== job.headSha
+    )
+      throw new Error("Merge request head changed during batch preparation");
     const matchingVersion = versions
       .slice()
       .sort(
@@ -167,7 +175,7 @@ export class CodeReviewContextHydrator {
     };
   }
 
-  private async loadProjectMemorySafely(input: {
+  public async loadProjectMemorySafely(input: {
     client: GitLabClient;
     tenant: TenantRecord;
     job: InteractionJobRecord;

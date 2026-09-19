@@ -111,7 +111,7 @@
               >
             </div>
             <div>
-              <strong>2. Load the full review only when needed</strong
+              <strong>2. Load the shared batch context</strong
               ><span
                 >Then fetch code, workspace, memory, all thread pages, images,
                 and review history.</span
@@ -149,6 +149,14 @@
 
         <section id="fix">
           <h2>How do we fix it?</h2>
+          <div class="callout">
+            <strong>Batch workspace rule:</strong>
+            group requests first, then prepare one shared checkout per attempt
+            for memory, review, and chatter. A reply-only or memory-only batch
+            may need source files. Optimize repeated loading and avoid clearly
+            unnecessary work; do not gate repository access solely on whether a
+            review is requested.
+          </div>
           <ol>
             <li>
               <strong>Measure first.</strong> Count API calls and time for an

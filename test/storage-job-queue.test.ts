@@ -54,19 +54,20 @@ function makeJob(
     claimedBy: null,
     claimExpiresAt: null,
     latestInteractionRunId: null,
+    batchKind: null,
     ...overrides,
   };
 }
 
 const QUEUED_AFTER = "2020-01-01T00:00:00.000Z";
 
-describe("storage-v006 contract history", () => {
-  it("reports storage-v006 as the current breaking revision", () => {
-    expect(CURRENT_STORAGE_CONTRACT_REVISION).toBe("storage-v006");
+describe("storage-v007 contract history", () => {
+  it("reports storage-v007 as the current breaking revision", () => {
+    expect(CURRENT_STORAGE_CONTRACT_REVISION).toBe("storage-v007");
     const last = STORAGE_CONTRACT_HISTORY.at(-1);
-    expect(last?.id).toBe("storage-v006");
+    expect(last?.id).toBe("storage-v007");
     expect(last?.changeKind).toBe("breaking");
-    expect(last?.affectedSurfaces).toContain("interaction-run-metrics");
+    expect(last?.affectedSurfaces).toContain("interaction-requests");
   });
 
   it("keeps historical revisions unchanged", () => {
@@ -78,16 +79,17 @@ describe("storage-v006 contract history", () => {
       "storage-v004",
       "storage-v005",
       "storage-v006",
+      "storage-v007",
     ]);
   });
 });
 
 describe("sqlite adapter revision", () => {
-  it("reports storage-v006", () => {
+  it("reports storage-v007", () => {
     const provider = new SqliteStorageProvider({
       databasePath: ":memory:",
     });
-    expect(provider.getSupportedStorageContract()).toBe("storage-v006");
+    expect(provider.getSupportedStorageContract()).toBe("storage-v007");
   });
 });
 
@@ -1068,13 +1070,13 @@ describe("sqlite claim-aware interaction job store", () => {
 });
 
 describe("flotiq adapter revision", () => {
-  it("reports storage-v006 without touching the network", async () => {
+  it("reports storage-v007 without touching the network", async () => {
     // Import lazily so the SDK mock in other suites does not interfere.
     const { createStorageProvider } =
       await import("../src/storage/adapters/flotiq/entrypoint.js");
     const provider = createStorageProvider({
       env: { FLOTIQ_API_KEY: "test-key" },
     });
-    expect(provider.getSupportedStorageContract()).toBe("storage-v006");
+    expect(provider.getSupportedStorageContract()).toBe("storage-v007");
   });
 });

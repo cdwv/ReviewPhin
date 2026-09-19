@@ -75,6 +75,8 @@ export async function resolveReviewProviderConfig(input: {
     textGenerationModel: null,
     reviewReasoningEffort: null,
     textGenerationReasoningEffort: null,
+    routingModel: null,
+    routingReasoningEffort: null,
     authToken: null,
     provider: undefined,
     providerBaseUrl: null,
@@ -107,6 +109,12 @@ function mapResolvedProfile(
     textGenerationModel: profile.textGenerationModel ?? profile.reviewModel,
     reviewReasoningEffort: profile.reviewReasoningEffort,
     textGenerationReasoningEffort: profile.textGenerationReasoningEffort,
+    routingModel:
+      profile.routingModel?.trim() ||
+      profile.textGenerationModel ||
+      profile.reviewModel,
+    routingReasoningEffort:
+      profile.routingReasoningEffort ?? profile.textGenerationReasoningEffort,
     authToken: profile.authToken,
     provider: buildProviderConfig(profile),
     providerBaseUrl: profile.providerBaseUrl,

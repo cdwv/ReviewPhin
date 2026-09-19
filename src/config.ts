@@ -32,6 +32,12 @@ const envSchema = z.object({
   ),
   RUN_LOG_DIR: z.string().min(1).optional(),
   WORKSPACE_ROOT: z.string().min(1).default("./tmp/review-workspaces"),
+  REVIEWPHIN_JOB_DEBOUNCE: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(60000)
+    .default(15000),
   MAX_JOB_RETRIES: z.coerce.number().int().min(0).default(3),
   RETRY_BACKOFF_MS: z.coerce.number().int().min(0).default(5_000),
   REVIEWPHIN_JOB_POLL_INTERVAL_MS: z.coerce
@@ -80,6 +86,7 @@ export interface AppConfig {
   workspaceRoot: string;
   maxJobRetries: number;
   retryBackoffMs: number;
+  jobDebounceMs?: number;
   jobPollIntervalMs: number;
   maxQueuedJobAgeMs: number;
   jobLeaseMs: number;
@@ -88,13 +95,7 @@ export interface AppConfig {
   memoryEnabled: boolean;
   maxPromptMemoryChars: number;
   copilotSdkLogLevel?:
-    | "none"
-    | "error"
-    | "warning"
-    | "info"
-    | "debug"
-    | "all"
-    | undefined;
+    "none" | "error" | "warning" | "info" | "debug" | "all" | undefined;
   copilotCliPath?: string | undefined;
   allowBotIndexing: boolean;
   botIndexingAllowedHosts: string[];
@@ -110,12 +111,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     PLATFORM_MODULES: env.PLATFORM_MODULES,
     RUN_LOG_DIR: env.RUN_LOG_DIR,
     WORKSPACE_ROOT: env.WORKSPACE_ROOT,
+    REVIEWPHIN_JOB_DEBOUNCE: env.REVIEWPHIN_JOB_DEBOUNCE,
     MAX_JOB_RETRIES: env.MAX_JOB_RETRIES,
     RETRY_BACKOFF_MS: env.RETRY_BACKOFF_MS,
     REVIEWPHIN_JOB_POLL_INTERVAL_MS: env.REVIEWPHIN_JOB_POLL_INTERVAL_MS,
     REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS: env.REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS,
     REVIEWPHIN_JOB_LEASE_MS: env.REVIEWPHIN_JOB_LEASE_MS,
-    REVIEWPHIN_JOB_RUNNER_ENABLED: env.REVIEWPHIN_JOB_RUNNER_ENABLED?.toLowerCase(),
+    REVIEWPHIN_JOB_RUNNER_ENABLED:
+      env.REVIEWPHIN_JOB_RUNNER_ENABLED?.toLowerCase(),
     COPILOT_TIMEOUT_MS: env.COPILOT_TIMEOUT_MS,
     REVIEWPHIN_MEMORY_ENABLED: env.REVIEWPHIN_MEMORY_ENABLED?.toLowerCase(),
     REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS: env.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,
@@ -140,6 +143,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     workspaceRoot: resolve(parsedEnv.WORKSPACE_ROOT),
     maxJobRetries: parsedEnv.MAX_JOB_RETRIES,
     retryBackoffMs: parsedEnv.RETRY_BACKOFF_MS,
+    jobDebounceMs: parsedEnv.REVIEWPHIN_JOB_DEBOUNCE,
     jobPollIntervalMs: parsedEnv.REVIEWPHIN_JOB_POLL_INTERVAL_MS,
     maxQueuedJobAgeMs: parsedEnv.REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS,
     jobLeaseMs: parsedEnv.REVIEWPHIN_JOB_LEASE_MS,

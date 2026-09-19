@@ -9,17 +9,21 @@ ReviewPhin turns platform events into idempotent review work. The review worker 
 Platform event -> /webhooks/<platform> -> validate + classify
 CLI request    -> mr review             -> resolve + construct trigger
   -> tenant resolution          map trigger to a configured tenant
-  -> interaction job            deduplicated, persisted
-  -> review worker              runner claims a leased job
+  -> collected comment batch    deduplicated, persisted; manual actions stay separate
+  -> job runner                 claim the job before preparing its workspace
+  -> shared checkout            current head, after collection
+  -> request router             model classification; inherits chatter settings when unset
+  -> memory phase               once, then refresh memory without another checkout
   -> model harness              Reviewer (context-analyst -> review-author)
-  -> finding reconciliation     Chatter: replies + memory
+  -> finding reconciliation     apply the review result
+  -> chatter                    answer each requested question
   -> platform publication       publishing reviews: create/update/resolve/reply
                                 local tests: skipped
 ```
 
 ## 1. Receive
 
-The app captures raw request bodies for `/webhooks/*` and `/setup/*`, then asks the platform provider to parse the payload. The Router validates the platform signature and deduplicates concurrent jobs. No model calls happen here.
+The app captures raw request bodies for `/webhooks/*` and `/setup/*`, then asks the platform provider to parse the payload. The platform adapter validates the signature and classifies the trigger. Storage deduplicates provider events and collects comment requests. No model calls happen in webhook admission.
 
 ## 2. Resolve
 
@@ -39,7 +43,7 @@ Each enabled runner process polls for work, while storage permits only one activ
 - On startup and every poll, the runner first reconciles already-orphaned runs. Claiming then recovers expired job leases; any run orphaned by that recovery is reconciled on a later poll.
 - Worker-failure retries preserve backoff across restarts: a retried job stays queued with a future `availableAt` (`RETRY_BACKOFF_MS` scaled by attempt), and the runner — not an in-memory timer — decides when it becomes eligible. Lease recovery requeues immediately while retries remain.
 - Jobs that stay queued past `REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS` (default `21600000`, 6 hours from the original enqueue time) are expired rather than run. A previously retried job can therefore expire after earlier attempts.
-- `REVIEWPHIN_JOB_RUNNER_ENABLED=false` starts an HTTP-only replica that accepts webhooks but never claims jobs.
+- `REVIEWPHIN_JOB_RUNNER_ENABLED=false` starts a copy that accepts webhooks but never executes jobs. Extra copies accepting comment webhooks require storage that coordinates writes between copies, such as SQLite; the Flotiq adapter requires one copy for both receiving comments and executing jobs.
 
 On shutdown, ReviewPhin first stops accepting and drains HTTP requests. It then stops the runner from taking new claims, keeps the active attempt's heartbeat alive until it settles, and finally closes storage. A second signal terminates the process and leaves the unfinished lease for another runner to recover.
 
@@ -51,7 +55,7 @@ Project-memory consolidation writes are intentionally outside the v005 claim fen
 
 ## 3. Classify
 
-The worker decides whether the event should create review work, continue a conversation, update lifecycle state, or be ignored.
+For comments, the routing model decides whether to review, update memory, reply, combine these actions, or do nothing. Unset router settings inherit the chatter model and reasoning. A failed router can be replaced by the chatter model; if model classification still fails, the job retries without guessing actions. Explicit manual-review commands already specify the action and go straight to review.
 
 ## 4. Review
 
@@ -79,6 +83,8 @@ It selects one of three modes from the trigger context:
 - **first-pass-full** — first review of the code review, or an explicit full rescan.
 - **incremental-rereview** — focused on files changed since the last review.
 - **follow-up-discussion** — scoped to one existing discussion.
+
+For a collected batch, the router emits one decision per request. One reducer selects the phases. The full batch remains in review context; the reply task identifies each request that needs an answer, and multiple finding threads widen the scope beyond a single discussion. The worker saves routing and completed model output in a claim-scoped batch checkpoint, so publication retries can resume without another model call.
 
 ## 5. Publish
 

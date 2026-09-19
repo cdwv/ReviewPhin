@@ -10,6 +10,7 @@ import providerTriggersMigration from "./0009-v3-provider-triggers.js";
 import projectMemoriesMigration from "./0010-v4-project-memories.js";
 import jobClaimsAndReasoningEffortMigration from "./0011-v5-job-claims-and-reasoning-effort.js";
 import sessionMetricsMigration from "./0012-v6-session-metrics.js";
+import interactionBatchesMigration from "./0013-v7-interaction-batches.js";
 import type { SqliteMigration } from "./types.js";
 
 export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
@@ -25,4 +26,5 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
   projectMemoriesMigration,
   jobClaimsAndReasoningEffortMigration,
   sessionMetricsMigration,
+  interactionBatchesMigration,
 ];

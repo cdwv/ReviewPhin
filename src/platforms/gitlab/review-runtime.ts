@@ -1,3 +1,5 @@
+import { dedupeImageAttachmentReferences } from "../image-attachments.js";
+import { findReplyPublicationMarker } from "../../review/batch-checkpoint.js";
 import { join } from "node:path";
 
 import type { Logger } from "pino";
@@ -120,6 +122,39 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     return this.wrapContext(context);
   }
 
+  public async getCurrentHead(job: InteractionJobRecord): Promise<string> {
+    const mr = await this.client.getCodeReview(
+      getGitLabTenantConfig(this.tenant).projectId,
+      job.codeReviewId,
+    );
+    const head =
+      mr.diff_refs?.head_sha ??
+      (
+        await this.client.listCodeReviewVersions(
+          getGitLabTenantConfig(this.tenant).projectId,
+          job.codeReviewId,
+        )
+      ).sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+        ?.head_commit_sha;
+    if (!head) throw new Error("Merge request head is unavailable");
+    return head;
+  }
+
+  public async refreshProjectMemory(
+    job: InteractionJobRecord,
+    context: PlatformReviewRoutingContext,
+  ): Promise<PlatformReviewRoutingContext> {
+    const raw = context.platformContext as LightweightMergeRequestContext;
+    return this.wrapContext({
+      ...raw,
+      projectMemory: await this.hydrator.loadProjectMemorySafely({
+        client: this.client,
+        tenant: this.tenant,
+        job,
+      }),
+    });
+  }
+
   public async hydrate(input: {
     job: InteractionJobRecord;
     context?: PlatformReviewRoutingContext | undefined;
@@ -197,6 +232,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   }
 
   public buildPromptContext(input: {
+    requests?: ReviewContext["requests"];
     attachments: ReviewContext["attachments"];
     attachmentIssues: ReviewContext["attachmentIssues"];
     interactionRunId: string;
@@ -213,6 +249,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   }): ReviewContext {
     const context = this.unwrapContext(input.context);
     return buildScopedReviewContext({
+      requests: input.requests,
       attachments: input.attachments,
       attachmentIssues: input.attachmentIssues,
       workspacePath: context.workspace.rootPath,
@@ -413,6 +450,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
   }
 
   public async materializeAttachments(input: {
+    triggers?: ReviewContext["trigger"][];
     context: PlatformReviewRoutingContext;
     trigger: ReviewContext["trigger"];
     runArtifacts: InteractionRunArtifacts;
@@ -430,15 +468,22 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     }
 
     const context = this.unwrapContext(input.context);
-    const references = discoverGitLabImageAttachmentReferences({
-      gitLabBaseUrl: getGitLabConnectionConfig(this.resolvedTenant.connection)
-        .baseUrl,
-      mergeRequest: context.mergeRequest,
-      triggerNote: {
-        body: input.trigger.body,
-        commentId: input.trigger.commentId,
-      },
-    });
+    const references = dedupeImageAttachmentReferences(
+      (input.triggers ?? [input.trigger]).flatMap((trigger) =>
+        trigger.kind === "manual-review"
+          ? []
+          : discoverGitLabImageAttachmentReferences({
+              gitLabBaseUrl: getGitLabConnectionConfig(
+                this.resolvedTenant.connection,
+              ).baseUrl,
+              mergeRequest: context.mergeRequest,
+              triggerNote: {
+                body: trigger.body,
+                commentId: trigger.commentId,
+              },
+            }),
+      ),
+    );
     if (references.length === 0) {
       return {
         attachments: [],
@@ -516,6 +561,19 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     }> = [];
     const tenantConfig = getGitLabTenantConfig(this.tenant);
 
+    const hasMarkers = input.result.replies.some((reply) =>
+      findReplyPublicationMarker(reply.replyBody),
+    );
+    const previousReplies = hasMarkers
+      ? await this.client.listCodeReviewNotes(
+          tenantConfig.projectId,
+          input.codeReviewId,
+          { noCache: true },
+        )
+      : [];
+    const botUserId = getGitLabConnectionConfig(
+      this.resolvedTenant.connection,
+    ).botUserId;
     for (const reply of input.result.replies) {
       const matchingTarget =
         input.plannedTargets.find(
@@ -532,18 +590,27 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
 
       input.guard.assertOwned();
       try {
-        const published = matchingTarget.discussionId
-          ? await this.client.replyToDiscussion(
-              tenantConfig.projectId,
-              input.codeReviewId,
-              matchingTarget.discussionId,
-              reply.replyBody,
+        const marker = findReplyPublicationMarker(reply.replyBody);
+        const existing = marker
+          ? previousReplies.find(
+              (note) =>
+                note.author.id === botUserId && note.body.includes(marker),
             )
-          : await this.client.createCodeReviewNote(
-              tenantConfig.projectId,
-              input.codeReviewId,
-              reply.replyBody,
-            );
+          : null;
+        const published =
+          existing ??
+          (matchingTarget.discussionId
+            ? await this.client.replyToDiscussion(
+                tenantConfig.projectId,
+                input.codeReviewId,
+                matchingTarget.discussionId,
+                reply.replyBody,
+              )
+            : await this.client.createCodeReviewNote(
+                tenantConfig.projectId,
+                input.codeReviewId,
+                reply.replyBody,
+              ));
         outcomes.push({
           target: matchingTarget,
           status: "published",

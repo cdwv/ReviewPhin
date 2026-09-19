@@ -173,6 +173,8 @@ export class StoreBackedStorage implements StorageHelpers {
       textGenerationModel: resolved.textGenerationModel,
       reviewReasoningEffort: resolved.reviewReasoningEffort,
       textGenerationReasoningEffort: resolved.textGenerationReasoningEffort,
+      routingModel: resolved.routingModel,
+      routingReasoningEffort: resolved.routingReasoningEffort,
       isDefault: resolved.isDefault,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
@@ -499,6 +501,12 @@ export class StoreBackedStorage implements StorageHelpers {
     );
     await this.stores.projectMemories.delete(tenant.id);
     await this.stores.interactionRuns.deleteMany(summary.interactionRunIds);
+    const requests = await listAll(this.stores.interactionRequests, {
+      filters: { tenantId: { eq: tenant.id } },
+    });
+    await this.stores.interactionRequests.deleteMany(
+      requests.map((request) => request.id),
+    );
     await this.stores.interactionJobs.deleteMany(summary.interactionJobIds);
     await this.stores.tenants.delete(tenant.id);
 
@@ -543,6 +551,7 @@ export class StoreBackedStorage implements StorageHelpers {
       retryCount: 0,
       lastError: null,
       enqueuedAt: now,
+      batchKind: null,
       availableAt: now,
       startedAt: null,
       finishedAt: null,
@@ -681,6 +690,7 @@ export class StoreBackedStorage implements StorageHelpers {
       providerType: input.providerType,
       textGenerationModel: input.textGenerationModel,
       status: "in_progress",
+      repliesJson: null,
       resultJson: null,
       error: null,
       startedAt: now,

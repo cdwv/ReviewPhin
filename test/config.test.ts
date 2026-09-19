@@ -3,6 +3,15 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 
 describe("loadConfig", () => {
+  it("parses the comment debounce setting including zero and rejects invalid durations", () => {
+    expect(loadConfig({}).jobDebounceMs).toBe(15000);
+    expect(loadConfig({ REVIEWPHIN_JOB_DEBOUNCE: "0" }).jobDebounceMs).toBe(0);
+    expect(loadConfig({ REVIEWPHIN_JOB_DEBOUNCE: "5000" }).jobDebounceMs).toBe(
+      5000,
+    );
+    for (const value of ["-1", "1.5", "60001", "invalid"])
+      expect(() => loadConfig({ REVIEWPHIN_JOB_DEBOUNCE: value })).toThrow();
+  });
   it("treats a blank PLATFORM_MODULES value as the default module list", () => {
     const config = loadConfig({
       PLATFORM_MODULES: "",

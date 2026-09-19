@@ -20,6 +20,7 @@ describe("storage migrate ordering", () => {
       modelProfiles: [] as unknown[],
       platformConnections: [] as unknown[],
       tenants: [] as unknown[],
+      interactionRequests: [] as unknown[],
       interactionJobs: [] as unknown[],
       codeReviewSnapshots: [] as unknown[],
       interactionRuns: [] as unknown[],
@@ -61,6 +62,16 @@ describe("storage migrate ordering", () => {
             },
           ],
           orderCalls.projectMemories,
+        ),
+        interactionRequests: createSourceStore(
+          [
+            {
+              id: "request-1",
+              interactionJobId: "job-1",
+              tenantId: "tenant-1",
+            },
+          ],
+          orderCalls.interactionRequests,
         ),
         interactionJobs: createSourceStore(
           [
@@ -129,6 +140,7 @@ describe("storage migrate ordering", () => {
         platformConnections: createTargetStore(),
         tenants: createTargetStore(),
         projectMemories: createTargetStore(),
+        interactionRequests: createTargetStore(),
         interactionJobs: createTargetStore(),
         codeReviewSnapshots: createTargetStore(),
         interactionRuns: createTargetStore(),

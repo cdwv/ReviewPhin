@@ -1,3 +1,4 @@
+import { fixtureRouter } from "./helpers/interaction-router.js";
 import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
@@ -163,6 +164,7 @@ describe("ReviewWorker cleanup", () => {
             providerType: null,
             textGenerationModel: null,
             status: "in_progress",
+            repliesJson: null,
             resultJson: null,
             error: null,
             startedAt: new Date().toISOString(),
@@ -281,6 +283,7 @@ describe("ReviewWorker cleanup", () => {
     });
 
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
       storage: storage as never,
       tenantRegistry: {
         getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
@@ -452,6 +455,7 @@ describe("ReviewWorker cleanup", () => {
             providerType: null,
             textGenerationModel: null,
             status: "in_progress",
+            repliesJson: null,
             resultJson: null,
             error: null,
             startedAt: new Date().toISOString(),
@@ -568,6 +572,7 @@ describe("ReviewWorker cleanup", () => {
     );
 
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
       storage: storage as never,
       tenantRegistry: {
         getResolvedTenantById: vi.fn(async () => ({

@@ -1,3 +1,4 @@
+import { fixtureRouter } from "./helpers/interaction-router.js";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -759,6 +760,11 @@ function createWorker(input: {
         get: vi.fn(async () => connection),
       },
       interactionJobs: {
+        admitInteractionTrigger: vi.fn(async () => ({
+          job,
+          request: {},
+          outcome: "created",
+        })),
         get: vi.fn(async () => job),
         createInteractionRunForClaim: vi.fn(async () => ({
           id: "run_1",
@@ -771,6 +777,7 @@ function createWorker(input: {
           providerType: null,
           textGenerationModel: null,
           status: "in_progress" as const,
+          repliesJson: null,
           resultJson: null,
           error: null,
           startedAt: new Date().toISOString(),
@@ -889,6 +896,7 @@ function createWorker(input: {
   const cleanupWorkspace = vi.fn(async () => {});
 
   const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
     storage: storage as never,
     tenantRegistry: {
       getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),

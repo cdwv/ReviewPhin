@@ -27,6 +27,8 @@ export interface HarnessModelConfig {
   textGenerationModel: string | null;
   reviewReasoningEffort: ModelReasoningEffort | null;
   textGenerationReasoningEffort: ModelReasoningEffort | null;
+  routingModel?: string | null;
+  routingReasoningEffort?: ModelReasoningEffort | null;
   authToken: string | null;
   provider: ProviderConfig | undefined;
   providerBaseUrl: string | null;
@@ -119,6 +121,7 @@ export interface HarnessRunSpec<TParsed = unknown> {
   logging?: HarnessRunLoggingContext | undefined;
   metadata?: HarnessRunMetadata | undefined;
   timeoutMs?: number | undefined;
+  overallTimeoutMs?: number | undefined;
   responseFormat?: HarnessResponseFormat<TParsed> | undefined;
 }
 
