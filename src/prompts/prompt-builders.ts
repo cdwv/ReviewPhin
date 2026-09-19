@@ -54,7 +54,6 @@ export function buildChatterPrompt(context: ChatterRunContext): string {
     renderPrompt(getChatterPromptTemplateId(context), {}),
     ...buildAttachmentRuntimeNote(context.reviewContext),
     "",
-    "For collected requests, answer every request in requests. Set coveredRequestIds on each reply. Combine answers only within the same discussion; separate code-review-comment targets need separate replies. The review result is context, not proof that a question has been answered. Do not omit answers merely because a review also ran.",
     "Formatting contract:",
     "- Return exactly one JSON object matching the JSON Schema below.",
     "- Put all human-facing reply text inside JSON string fields such as `replies[].replyBody`.",

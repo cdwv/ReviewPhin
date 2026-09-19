@@ -289,11 +289,12 @@ Models are sorted by ID. Catalog or authentication failures exit with code 1; JS
 Create or update a named model profile.
 
 ```bash
-# GitHub Copilot with an explicit model
+# GitHub Copilot with the suggested review, chatter, and routing models
 reviewphin model-profile add \
-  --name copilot-gpt5.4 \
-  --review-model gpt-5.4 \
-  --text-generation-model gpt-5.4-mini \
+  --name copilot-default \
+  --review-model gpt-5.6-terra \
+  --review-reasoning-effort high \
+  --text-generation-model claude-sonnet-4.6 \
   --routing-model gpt-5.6-luna \
   --routing-reasoning-effort low \
   --default

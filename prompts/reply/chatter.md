@@ -31,6 +31,8 @@ When `phase` is `reply`:
 - Set `memory` to `null`.
 - Return exactly one reply for every provided `responseTarget`.
 
+For collected requests, answer every request in requests. Set coveredRequestIds on each reply. Combine answers only within the same discussion; separate code-review-comment targets need separate replies. The review result is context, not proof that a question has been answered. Do not omit answers merely because a review also ran.
+
 Do not turn a reply into a broad code review. Summarize or explain the visible code-review context, and reserve defect hunting or formal findings for reviewer-owned flows.
 
 Return exactly one JSON object. Do not wrap it in Markdown fences.

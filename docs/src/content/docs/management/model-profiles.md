@@ -30,13 +30,14 @@ COPILOT_GITHUB_TOKEN=github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 The token owner needs GitHub Copilot access. If Copilot access comes through an organization or enterprise, Copilot CLI must also be enabled by policy. For local interactive runs, `copilot auth login` can be used instead of a PAT.
 
-Create a native Copilot profile when you want to pin a model while keeping Copilot's own backend:
+Create a native Copilot profile when you want to pin models while keeping Copilot's own backend. Our default examples use `gpt-5.6-terra` with `high` reasoning for reviews, `claude-sonnet-4.6` for chatter, and `gpt-5.6-luna` with `low` reasoning for routing. These are suggested profile settings; they do not change the fallback when no profile is active.
 
 ```bash
 reviewphin model-profile add \
-  --name copilot-gpt5.4 \
-  --review-model gpt-5.4 \
-  --text-generation-model gpt-5.4-mini \
+  --name copilot-default \
+  --review-model gpt-5.6-terra \
+  --review-reasoning-effort high \
+  --text-generation-model claude-sonnet-4.6 \
   --routing-model gpt-5.6-luna \
   --routing-reasoning-effort low \
   --default
@@ -125,13 +126,14 @@ Use `--wire-api completions` only for compatibility endpoints that do not suppor
 
 ## Review and text models
 
-For cost efficiency, configure a stronger review model and a lighter text-generation model:
+Use separate models for review, chatter, and routing:
 
 ```bash
 reviewphin model-profile add \
   --name production \
-  --review-model gpt-5.4 \
-  --text-generation-model gpt-5.4-mini \
+  --review-model gpt-5.6-terra \
+  --review-reasoning-effort high \
+  --text-generation-model claude-sonnet-4.6 \
   --routing-model gpt-5.6-luna \
   --routing-reasoning-effort low \
   --default
@@ -168,11 +170,10 @@ Set reasoning effort with `--review-reasoning-effort`, `--text-generation-reason
 
 ```bash
 reviewphin model-profile add \
-  --name gpt56-review \
-  --review-model gpt-5.6 \
+  --name production \
+  --review-model gpt-5.6-terra \
   --review-reasoning-effort high \
-  --text-generation-model gpt-5.6-mini \
-  --text-generation-reasoning-effort low \
+  --text-generation-model claude-sonnet-4.6 \
   --routing-model gpt-5.6-luna \
   --routing-reasoning-effort low \
   --default
@@ -185,14 +186,14 @@ When review or chatter effort is left unset (or cleared), the harness keeps its 
 Clear a previously set effort with the matching clear flag:
 
 ```bash
-reviewphin model-profile add --name gpt56-review --clear-review-reasoning-effort
-reviewphin model-profile add --name gpt56-review --clear-text-generation-reasoning-effort
+reviewphin model-profile add --name production --clear-review-reasoning-effort
+reviewphin model-profile add --name production --clear-text-generation-reasoning-effort
 ```
 
 If a review or chatter model does not support the chosen reasoning effort, ReviewPhin reports the provider error. Routing first tries the chatter model and reasoning setting, as described above; if that also fails, the job retries.
 
 :::note[Model availability]
-GPT-5.6 models are shown as examples. Availability depends on the account or organization entitlement of the token or key backing the profile — not every account can use every model or effort.
+The suggested models are examples. Availability depends on the account or organization entitlement of the token or key backing the profile — not every account can use every model or effort. Provider-specific examples use models or deployment names for that endpoint; all models in a profile use the same provider and credentials.
 :::
 
 ## Save-time model validation

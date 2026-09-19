@@ -7,6 +7,7 @@ import {
 } from "./instruction-helpers.js";
 
 const promptFragments = {
+  "routing/classify.md": definePromptFragment(),
   "review/main.md": definePromptFragment(),
   "review/context-analyst.md": definePromptFragment(),
   "review/review-author.md": definePromptFragment(),
@@ -35,6 +36,9 @@ const promptFragments = {
 } as const;
 
 export const instructionTemplates = {
+  "routing.classify": buildStaticPromptTemplate(promptFragments, [
+    "routing/classify.md",
+  ] as const),
   "review.first-pass-full": buildStaticPromptTemplate(promptFragments, [
     "review/main.md",
     "review/first-pass-full.md",
