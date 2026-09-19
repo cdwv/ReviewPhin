@@ -39,7 +39,8 @@ export interface InteractionRoutingResult {
   decisions: RoutingDecision[];
   source: "model" | "chatter";
   model?: string | null | undefined;
-  reasoningEffort?: HarnessModelConfig["textGenerationReasoningEffort"] | undefined;
+  reasoningEffort?:
+    HarnessModelConfig["textGenerationReasoningEffort"] | undefined;
   fallbackReason?: string | undefined;
 }
 

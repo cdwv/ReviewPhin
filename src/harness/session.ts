@@ -81,9 +81,6 @@ export class HarnessSessionRuntime {
   public async run<TParsed = unknown>(
     spec: HarnessRunSpec<TParsed>,
   ): Promise<HarnessRunResult<TParsed>> {
-    const deadline = spec.overallTimeoutMs
-      ? Date.now() + spec.overallTimeoutMs
-      : null;
     const client = new CopilotClient({
       ...(!spec.modelConfig.provider && spec.modelConfig.authToken
         ? { gitHubToken: spec.modelConfig.authToken }
@@ -192,6 +189,9 @@ export class HarnessSessionRuntime {
           spec,
         );
         const timeoutMs = spec.timeoutMs ?? this.timeoutMs;
+        const deadline = spec.overallTimeoutMs
+          ? Date.now() + spec.overallTimeoutMs
+          : null;
         const maximumAttempts = spec.responseFormat
           ? STRUCTURED_OUTPUT_CORRECTION_LIMIT + 1
           : 1;

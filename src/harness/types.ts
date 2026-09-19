@@ -121,6 +121,7 @@ export interface HarnessRunSpec<TParsed = unknown> {
   logging?: HarnessRunLoggingContext | undefined;
   metadata?: HarnessRunMetadata | undefined;
   timeoutMs?: number | undefined;
+  /** Shared response budget across correction attempts, excluding session setup. */
   overallTimeoutMs?: number | undefined;
   responseFormat?: HarnessResponseFormat<TParsed> | undefined;
 }

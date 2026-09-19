@@ -41,63 +41,69 @@ import type {
 import { tmpPath } from "./test-paths.js";
 
 describe("HarnessSessionRuntime", () => {
-  it("exposes no tools for routing and shares the response deadline across repairs", async () => {
-    let time = Date.now();
-    const clock = vi.spyOn(Date, "now").mockImplementation(() => time);
-    try {
-      const session = createSession({
-        responses: [
-          { content: "invalid JSON" },
-          { content: '{"items":["fixed"]}' },
-        ],
-      });
-      const send = session.sendAndWait.getMockImplementation()!;
-      session.sendAndWait.mockImplementation(async () => {
-        const result = await send();
-        time += 15000;
-        return result;
-      });
-      createSessionMock.mockResolvedValue(session);
-      const runtime = new HarnessSessionRuntime({
-        logger: createLogger(),
-        runLogDir: tmpPath(),
-        timeoutMs: 60000,
-        maxPromptMemoryChars: 5000,
-      });
-      const result = await runtime.run({
-        prompt: "Classify",
-        modelConfig: createModelConfig(),
-        model: "router",
-        tools: [],
-        subagents: [],
-        overallTimeoutMs: 20000,
-        responseFormat: { schema: z.object({ items: z.array(z.string()) }) },
-      });
-      expect(result.parsed).toEqual({ items: ["fixed"] });
-      expect(session.sendAndWait).toHaveBeenNthCalledWith(
-        1,
-        expect.any(Object),
-        20000,
-      );
-      expect(session.sendAndWait).toHaveBeenNthCalledWith(
-        2,
-        expect.any(Object),
-        5000,
-      );
-      expect(createSessionMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          availableTools: [],
+  it.each([0, 25000])(
+    "exposes no routing tools and shares the response budget across repairs after %i ms of setup",
+    async (startupMs) => {
+      let time = Date.now();
+      const clock = vi.spyOn(Date, "now").mockImplementation(() => time);
+      try {
+        startMock.mockImplementation(async () => {
+          time += startupMs;
+        });
+        const session = createSession({
+          responses: [
+            { content: "invalid JSON" },
+            { content: '{"items":["fixed"]}' },
+          ],
+        });
+        const send = session.sendAndWait.getMockImplementation()!;
+        session.sendAndWait.mockImplementation(async () => {
+          const result = await send();
+          time += 15000;
+          return result;
+        });
+        createSessionMock.mockResolvedValue(session);
+        const runtime = new HarnessSessionRuntime({
+          logger: createLogger(),
+          runLogDir: tmpPath(),
+          timeoutMs: 60000,
+          maxPromptMemoryChars: 5000,
+        });
+        const result = await runtime.run({
+          prompt: "Classify",
+          modelConfig: createModelConfig(),
+          model: "router",
           tools: [],
-          customAgents: [],
-          enableConfigDiscovery: false,
-        }),
-      );
-      expect(session.disconnect).toHaveBeenCalled();
-      expect(stopMock).toHaveBeenCalled();
-    } finally {
-      clock.mockRestore();
-    }
-  });
+          subagents: [],
+          overallTimeoutMs: 20000,
+          responseFormat: { schema: z.object({ items: z.array(z.string()) }) },
+        });
+        expect(result.parsed).toEqual({ items: ["fixed"] });
+        expect(session.sendAndWait).toHaveBeenNthCalledWith(
+          1,
+          expect.any(Object),
+          20000,
+        );
+        expect(session.sendAndWait).toHaveBeenNthCalledWith(
+          2,
+          expect.any(Object),
+          5000,
+        );
+        expect(createSessionMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            availableTools: [],
+            tools: [],
+            customAgents: [],
+            enableConfigDiscovery: false,
+          }),
+        );
+        expect(session.disconnect).toHaveBeenCalled();
+        expect(stopMock).toHaveBeenCalled();
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
   it.each([false, true])(
     "adds repository customizations without replacing discovery (custom provider: %s)",
     async (customProvider) => {
