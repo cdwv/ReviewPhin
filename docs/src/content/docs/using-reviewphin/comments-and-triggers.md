@@ -21,13 +21,13 @@ Use an `@bot` mention on GitLab merge requests. GitHub pull request comments als
 </details>
 
 <details>
-<summary><strong>Full review (ignore prior context)</strong></summary>
+<summary><strong>Full review (reassess all changes)</strong></summary>
 
 ```text
 @reviewphin full review
 ```
 
-Use a full review when you want ReviewPhin to ignore prior incremental context and rescan the code review more broadly. Also accepts `full rescan`, `fresh full review`, `full review from scratch`, and `rescan everything`.
+Use a full review when you want ReviewPhin to reassess all changed files. Existing findings remain available so the new pass can update them without creating duplicates. The routing model interprets your intent: phrases such as `review everything afresh` work too. Mentioning or quoting “full review” does not by itself request one.
 
 </details>
 

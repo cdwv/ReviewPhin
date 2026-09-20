@@ -143,7 +143,7 @@ When `--text-generation-model` is omitted, ReviewPhin uses the review model for 
 
 ## Routing collected requests
 
-Every comment request is classified by a model before ReviewPhin chooses review, memory work, replies, or a combination. The router reads the collected comments together and returns a decision for each one. It has no tools or subagents.
+Every comment request is classified by a model before ReviewPhin chooses review, memory work, replies, or a combination. The router reads the collected comments together and returns a decision for each one, including whether review should be incremental or full. It respects later corrections and cancellations. ReviewPhin upgrades incremental requests to full when there is no previous review. Discussion references identify concerns to reassess within that scope. The router has no tools or subagents.
 
 Our Copilot examples use `gpt-5.6-luna` with `low` reasoning for routing. Add it to an existing profile:
 

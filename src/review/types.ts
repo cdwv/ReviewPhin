@@ -189,8 +189,7 @@ export type ReviewResult = z.infer<typeof reviewResultSchema>;
 export type ChatterMemoryOutcome = z.infer<typeof chatterMemoryOutcomeSchema>;
 export type ChatterReply = z.infer<typeof chatterReplySchema>;
 export type ChatterBatchResult = z.infer<typeof chatterBatchResultSchema>;
-export type ReviewMode =
-  "first-pass-full" | "incremental-rereview" | "follow-up-discussion";
+export type ReviewMode = "first-pass-full" | "incremental-rereview";
 export type ReplyStyle =
   | "none"
   | "direct-answer"
@@ -382,6 +381,7 @@ export interface PlannedResponseAction {
 }
 
 export interface InteractionPlan {
+  reviewScope: "none" | "incremental" | "full";
   initiatingTrigger: ReviewTriggerContext;
   responseTargets: ResponseTarget[];
   plannedResponses: PlannedResponseAction[];

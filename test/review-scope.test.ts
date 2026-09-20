@@ -488,76 +488,84 @@ describe("buildScopedReviewContext", () => {
     ).toEqual(["src/delta.ts"]);
   });
 
-  it("keeps follow-up reviews focused on the target thread and related file", () => {
+  it.each([false, true])(
+    "keeps discussion focus within the review boundary (previous review: %s)",
+    (hasPreviousReview) => {
+      const targetDiscussion = createThread(
+        "map_target",
+        "disc_target",
+        "Target finding",
+        "src/target.ts",
+        false,
+      );
+      const otherThread = createThread(
+        "map_other",
+        "disc_other",
+        "Other finding",
+        "src/other.ts",
+        false,
+      );
+      const scoped = buildScopedReviewContext({
+        workspacePath: repoPath(),
+        codeReview,
+        changes: [
+          createChange("src/target.ts", "@@ -1 +1 @@\n-old\n+new"),
+          createChange("src/other.ts", "@@ -1 +1 @@\n-old\n+new"),
+        ],
+        comments: [createNote(1, "General MR note")],
+        discussions: [
+          {
+            id: "disc_target",
+            resolved: false,
+            comments: [createDiscussionNote(10, "Target finding")],
+          },
+          {
+            id: "disc_other",
+            resolved: false,
+            comments: [createDiscussionNote(11, "Other finding")],
+          },
+        ],
+        trigger: {
+          kind: "follow-up-comment",
+          commentId: 77,
+          authorUsername: "developer",
+          body: "Please reword this.",
+          instruction: "Please reword this.",
+          targetDiscussionId: "map_target",
+          targetPlatformDiscussionId: "disc_target",
+          targetDiscussionTitle: "Target finding",
+          responseTarget: createResponseTarget(
+            "follow-up-comment",
+            77,
+            "Please reword this.",
+            "Please reword this.",
+            "disc_target",
+          ),
+        },
+        priorDiscussions: [targetDiscussion, otherThread],
+        reviewScope: "incremental",
+        previousReview: hasPreviousReview ? previousReview() : null,
+      });
+
+      expect(scoped.scope.mode).toBe(
+        hasPreviousReview ? "incremental-rereview" : "first-pass-full",
+      );
+      expect(scoped.priorDiscussions).toEqual([targetDiscussion, otherThread]);
+      expect(scoped.scope.targetDiscussion).toEqual(targetDiscussion);
+      expect(scoped.scope.allChangedFiles[0]?.reason).toBe("target discussion");
+      expect(scoped.changes).toHaveLength(2);
+      expect(scoped.changes[0]?.newPath).toBe("src/target.ts");
+      expect(scoped.comments).toHaveLength(1);
+    },
+  );
+
+  it("retains a resolved target discussion even when its file is no longer changed", () => {
     const targetDiscussion = createThread(
       "map_target",
       "disc_target",
       "Target finding",
       "src/target.ts",
-      false,
-    );
-    const otherThread = createThread(
-      "map_other",
-      "disc_other",
-      "Other finding",
-      "src/other.ts",
-      false,
-    );
-    const scoped = buildScopedReviewContext({
-      workspacePath: repoPath(),
-      codeReview,
-      changes: [
-        createChange("src/target.ts", "@@ -1 +1 @@\n-old\n+new"),
-        createChange("src/other.ts", "@@ -1 +1 @@\n-old\n+new"),
-      ],
-      comments: [createNote(1, "General MR note")],
-      discussions: [
-        {
-          id: "disc_target",
-          resolved: false,
-          comments: [createDiscussionNote(10, "Target finding")],
-        },
-        {
-          id: "disc_other",
-          resolved: false,
-          comments: [createDiscussionNote(11, "Other finding")],
-        },
-      ],
-      trigger: {
-        kind: "follow-up-comment",
-        commentId: 77,
-        authorUsername: "developer",
-        body: "Please reword this.",
-        instruction: "Please reword this.",
-        targetDiscussionId: "map_target",
-        targetPlatformDiscussionId: "disc_target",
-        targetDiscussionTitle: "Target finding",
-        responseTarget: createResponseTarget(
-          "follow-up-comment",
-          77,
-          "Please reword this.",
-          "Please reword this.",
-          "disc_target",
-        ),
-      },
-      priorDiscussions: [targetDiscussion, otherThread],
-      previousReview: null,
-    });
-
-    expect(scoped.scope.mode).toBe("follow-up-discussion");
-    expect(scoped.priorDiscussions).toEqual([targetDiscussion]);
-    expect(scoped.changes).toHaveLength(1);
-    expect(scoped.changes[0]?.newPath).toBe("src/target.ts");
-    expect(scoped.comments).toEqual([]);
-  });
-
-  it("keeps follow-up reviews pinned to focused files even when the target file is no longer in MR changes", () => {
-    const targetDiscussion = createThread(
-      "map_target",
-      "disc_target",
-      "Target finding",
-      "src/target.ts",
-      false,
+      true,
     );
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
@@ -589,14 +597,14 @@ describe("buildScopedReviewContext", () => {
         ),
       },
       priorDiscussions: [targetDiscussion],
-      previousReview: null,
+      reviewScope: "incremental",
+      previousReview: previousReview(),
     });
 
-    expect(scoped.scope.mode).toBe("follow-up-discussion");
+    expect(scoped.scope.mode).toBe("incremental-rereview");
     expect(scoped.priorDiscussions).toEqual([targetDiscussion]);
-    expect(scoped.changes).toEqual([]);
-    expect(scoped.scope.omittedChangedFiles).toHaveLength(1);
-    expect(scoped.scope.omittedChangedFiles[0]?.path).toBe("src/other.ts");
+    expect(scoped.changes).toHaveLength(1);
+    expect(scoped.scope.omittedChangedFiles).toHaveLength(0);
   });
 
   it("keeps every changed file in first-pass reviews", () => {
@@ -637,49 +645,79 @@ describe("buildScopedReviewContext", () => {
     expect(scoped.scope.omittedChangedFiles).toHaveLength(0);
   });
 
-  it("allows an explicit full rescan override even when previous review data exists", () => {
-    const scoped = buildScopedReviewContext({
-      workspacePath: repoPath(),
-      codeReview,
-      changes: [createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new")],
-      comments: [],
-      discussions: [],
-      trigger: {
-        kind: "direct-mention",
-        commentId: 89,
-        authorUsername: "developer",
-        body: "@review-bot full rescan please",
-        instruction: "full rescan please",
-        targetDiscussionId: null,
-        targetPlatformDiscussionId: null,
-        targetDiscussionTitle: null,
-        responseTarget: createResponseTarget(
-          "direct-mention",
-          89,
-          "@review-bot full rescan please",
-          "full rescan please",
-        ),
-      },
-      priorDiscussions: [],
-      previousReview: {
-        reviewRunId: "run_prev",
-        finishedAt: "2026-04-27T12:00:00.000Z",
-        headSha: "prevhead",
-        resultJson: JSON.stringify({
-          overview: {
-            summary: "Prior pass",
-            overallSeverity: "low",
-          },
-          findings: [],
-          priorDispositions: [],
-        }),
-        changesJson: JSON.stringify([]),
-      },
-    });
+  it.each([
+    ["full", "Look at all of it afresh", "first-pass-full"],
+    [
+      "incremental",
+      "Do not run a full review; check the updates",
+      "incremental-rereview",
+    ],
+    [
+      "incremental",
+      "The earlier request said full rescan, but that was cancelled",
+      "incremental-rereview",
+    ],
+  ] as const)(
+    "uses the routed %s scope for %s",
+    (reviewScope, instruction, expectedMode) => {
+      const scoped = buildScopedReviewContext({
+        reviewScope,
+        workspacePath: repoPath(),
+        codeReview,
+        changes: [createChange("src/delta.ts", "@@ -1 +1 @@\n-old\n+new")],
+        comments: [],
+        discussions: [],
+        trigger: {
+          kind: "direct-mention",
+          commentId: 89,
+          authorUsername: "developer",
+          body: "@review-bot full rescan please",
+          instruction,
+          targetDiscussionId: null,
+          targetPlatformDiscussionId: null,
+          targetDiscussionTitle: null,
+          responseTarget: createResponseTarget(
+            "direct-mention",
+            89,
+            "@review-bot full rescan please",
+            "full rescan please",
+          ),
+        },
+        priorDiscussions: [],
+        previousReview: {
+          reviewRunId: "run_prev",
+          finishedAt: "2026-04-27T12:00:00.000Z",
+          headSha: "prevhead",
+          resultJson: JSON.stringify({
+            overview: {
+              summary: "Prior pass",
+              overallSeverity: "low",
+            },
+            findings: [],
+            priorDispositions: [],
+          }),
+          changesJson: JSON.stringify([]),
+        },
+      });
 
-    expect(scoped.scope.mode).toBe("first-pass-full");
-  });
+      expect(scoped.scope.mode).toBe(expectedMode);
+    },
+  );
 });
+
+function previousReview() {
+  return {
+    reviewRunId: "run_prev",
+    finishedAt: "2026-04-27T12:00:00.000Z",
+    headSha: "prevhead",
+    resultJson: JSON.stringify({
+      overview: { summary: "Prior review", overallSeverity: "low" },
+      findings: [],
+      priorDispositions: [],
+    }),
+    changesJson: "[]",
+  };
+}
 
 function createChange(path: string, diff: string) {
   return {

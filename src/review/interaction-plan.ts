@@ -12,6 +12,7 @@ export function buildManualReviewPlan(
     plannedResponses: [],
     memoryCandidate: false,
     reviewNeeded: true,
+    reviewScope: "incremental",
     replyNeeded: false,
     replyStyle: "none",
     rerunReason: "manual-review",

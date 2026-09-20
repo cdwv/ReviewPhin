@@ -634,13 +634,15 @@ export class ReviewWorker {
         // Prefer a reviewing request as the representative used by legacy scope helpers.
         trigger =
           requests.find((r) =>
-            routing?.decisions.some((d) => d.requestId === r.id && d.review),
+            routing?.decisions.some(
+              (d) => d.requestId === r.id && d.review !== "none",
+            ),
           )?.trigger ?? requests[0]!.trigger;
         await runArtifacts.writeJsonArtifact(
           join("orchestration", "routing.json"),
           {
             ...routing,
-            promptVersion: 1,
+            promptVersion: 2,
             model:
               routing.model !== undefined
                 ? routing.model
@@ -665,7 +667,7 @@ export class ReviewWorker {
             "Saved batch membership does not match the claimed job",
           );
         checkpoint ??= {
-          version: 1,
+          version: 2,
           headSha: job.headSha,
           requestIds: requests.map((r) => r.id),
           routing,
@@ -709,6 +711,7 @@ export class ReviewWorker {
       });
       context.assertOwned();
       let chatterContext = runtime.buildPromptContext({
+        reviewScope: interactionPlan.reviewScope,
         ...(requests.length ? { requests } : {}),
         attachments: imageAttachments.breadcrumbs,
         attachmentIssues: imageAttachments.issues,
@@ -792,6 +795,7 @@ export class ReviewWorker {
         context.assertOwned();
         workspacesToCleanup.push(routingContext.workspace);
         chatterContext = runtime.buildPromptContext({
+          reviewScope: interactionPlan.reviewScope,
           ...(requests.length ? { requests } : {}),
           attachments: imageAttachments.breadcrumbs,
           attachmentIssues: imageAttachments.issues,
@@ -834,6 +838,7 @@ export class ReviewWorker {
           job.id,
         );
         reviewContext = runRuntime.buildPromptContext({
+          reviewScope: interactionPlan.reviewScope,
           ...(requests.length ? { requests } : {}),
           attachments: imageAttachments.breadcrumbs,
           attachmentIssues: imageAttachments.issues,

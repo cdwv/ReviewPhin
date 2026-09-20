@@ -465,7 +465,7 @@ describe("ReviewWorker orchestration", () => {
     }));
 
     const worker = new ReviewWorker({
-      interactionRouter: fixtureRouter({ review: false, reply: true }),
+      interactionRouter: fixtureRouter({ review: "none", reply: true }),
       storage: {
         stores: {
           interactionJobs: jobStore,
@@ -694,7 +694,7 @@ describe("ReviewWorker orchestration", () => {
     }));
 
     const worker = new ReviewWorker({
-      interactionRouter: fixtureRouter({ review: false, reply: true }),
+      interactionRouter: fixtureRouter({ review: "none", reply: true }),
       storage: {
         stores: {
           interactionJobs: createClaimAwareJobStoreFake({
@@ -892,7 +892,7 @@ describe("ReviewWorker orchestration", () => {
     const { transitionInteractionRunForClaim, transitionClaim } = jobStore;
 
     const worker = new ReviewWorker({
-      interactionRouter: fixtureRouter({ review: false, reply: true }),
+      interactionRouter: fixtureRouter({ review: "none", reply: true }),
       storage: {
         stores: {
           interactionJobs: jobStore,
@@ -1092,7 +1092,7 @@ describe("ReviewWorker orchestration", () => {
     };
 
     const worker = new ReviewWorker({
-      interactionRouter: fixtureRouter({ review: false, reply: true }),
+      interactionRouter: fixtureRouter({ review: "none", reply: true }),
       storage: {
         stores: {
           interactionJobs: createClaimAwareJobStoreFake({

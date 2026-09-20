@@ -18,7 +18,7 @@ import type {
 const decisionSchema = z
   .object({
     requestId: z.string().min(1),
-    review: z.boolean(),
+    review: z.enum(["none", "incremental", "full"]),
     memory: z.boolean(),
     reply: z.boolean(),
     reason: z.string().min(1).max(300),
@@ -194,22 +194,28 @@ export function reduceRoutingDecisions(
       ]),
     ).values(),
   ];
+  const reviewScope = decisions.some((d) => d.review === "full")
+    ? "full"
+    : decisions.some((d) => d.review === "incremental")
+      ? "incremental"
+      : "none";
   return {
     initiatingTrigger: first.trigger,
     responseTargets,
     plannedResponses: responseTargets.map((target) => ({
       target,
       replyStyle: "direct-answer",
-      reviewNeeded: decisions.some((d) => d.review),
+      reviewNeeded: reviewScope !== "none",
       memoryCandidate: decisions.some((d) => d.memory),
     })),
     memoryCandidate: decisions.some((d) => d.memory),
-    reviewNeeded: decisions.some((d) => d.review),
+    reviewNeeded: reviewScope !== "none",
+    reviewScope,
     replyNeeded: replies.length > 0,
     replyStyle: replies.length ? "direct-answer" : "none",
     rerunReason:
       decisions
-        .filter((d) => d.review)
+        .filter((d) => d.review !== "none")
         .map((d) => d.reason)
         .join("; ") || null,
   };

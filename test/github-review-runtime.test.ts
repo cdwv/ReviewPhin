@@ -479,7 +479,7 @@ describe("GitHubPlatformReviewRuntime", () => {
       previousInteraction: null,
     });
     expect(fallbackPromptContext.scope).toMatchObject({
-      mode: "follow-up-discussion",
+      mode: "first-pass-full",
       targetDiscussion: {
         discussionId: "mapping-github",
         platformDiscussionId: "review-comment:300",

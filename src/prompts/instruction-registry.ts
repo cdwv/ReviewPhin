@@ -13,7 +13,6 @@ const promptFragments = {
   "review/review-author.md": definePromptFragment(),
   "review/first-pass-full.md": definePromptFragment(),
   "review/incremental-rereview.md": definePromptFragment(),
-  "review/follow-up-discussion.md": definePromptFragment(),
   "review/summary-follow-up.md": definePromptFragment(),
   "reply/chatter.md": definePromptFragment(),
   "reply/direct-mention.md": definePromptFragment(),
@@ -63,10 +62,6 @@ export const instructionTemplates = {
       "review/summary-follow-up.md",
     ] as const,
   ),
-  "review.follow-up-discussion": buildStaticPromptTemplate(promptFragments, [
-    "review/main.md",
-    "review/follow-up-discussion.md",
-  ] as const),
   "subagent.context-analyst": buildStaticPromptTemplate(promptFragments, [
     "review/context-analyst.md",
   ] as const),

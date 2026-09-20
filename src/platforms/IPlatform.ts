@@ -144,6 +144,7 @@ export interface PlatformReviewRuntime {
   }): TriggerCommentReference;
   buildPromptContext(input: {
     requests?: ReviewContext["requests"];
+    reviewScope?: "none" | "incremental" | "full" | undefined;
     attachments: ReviewContext["attachments"];
     attachmentIssues: ReviewContext["attachmentIssues"];
     interactionRunId: string;

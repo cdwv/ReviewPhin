@@ -233,6 +233,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
 
   public buildPromptContext(input: {
     requests?: ReviewContext["requests"];
+    reviewScope?: "none" | "incremental" | "full" | undefined;
     attachments: ReviewContext["attachments"];
     attachmentIssues: ReviewContext["attachmentIssues"];
     interactionRunId: string;
@@ -250,6 +251,7 @@ export class GitLabReviewRuntime implements PlatformReviewRuntime {
     const context = this.unwrapContext(input.context);
     return buildScopedReviewContext({
       requests: input.requests,
+      reviewScope: input.reviewScope,
       attachments: input.attachments,
       attachmentIssues: input.attachmentIssues,
       workspacePath: context.workspace.rootPath,

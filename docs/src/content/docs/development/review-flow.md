@@ -55,7 +55,11 @@ Project-memory consolidation writes are intentionally outside the v005 claim fen
 
 ## 3. Classify
 
-For comments, the routing model decides whether to review, update memory, reply, combine these actions, or do nothing. Unset router settings inherit the chatter model and reasoning. A failed router can be replaced by the chatter model; if model classification still fails, the job retries without guessing actions. Explicit manual-review commands already specify the action and go straight to review.
+For comments, the routing model decides whether to review, update memory, reply, combine these actions, or do nothing. It receives the ordered requests, whether a previous review exists, prior finding statuses, relevant discussion excerpts, and whether memory is enabled. It returns one decision per request: `{ requestId, review: "none" | "incremental" | "full", memory, reply, reason }`.
+
+The router handles later corrections and cancellations before the worker combines decisions. Any remaining full-review request makes the shared review full; otherwise an incremental request makes it incremental. Questions and memory updates keep their own flags. A plain review request does not need a separate conversational reply because the review publishes its own result.
+
+Unset router settings inherit the chatter model and reasoning. A failed router can be replaced by the chatter model; if model classification still fails, the job retries without guessing actions. Explicit manual-review commands already specify the action and go straight to review, using an incremental scope when a previous review exists.
 
 ## 4. Review
 
@@ -78,13 +82,14 @@ For Git-ready workspaces, ReviewPhin prepares the platform's exact comparison ba
 
 If trusted Git preparation fails, ReviewPhin uses the complete platform diff only when that fallback is available and fits the prompt budget. Otherwise the review fails clearly instead of publishing a silently partial result.
 
-It selects one of three modes from the trigger context:
+The worker passes the selected scope through the platform adapter into review-context preparation. The code upgrades an incremental request to full when no previous review exists, or when stored change signatures cannot be compared with the current format. The resulting modes are:
 
 - **first-pass-full** — first review of the code review, or an explicit full rescan.
-- **incremental-rereview** — focused on files changed since the last review.
-- **follow-up-discussion** — scoped to one existing discussion.
+- **incremental-rereview** — prioritizes changed files and referenced findings while retaining the complete current change boundary and prior finding state.
 
-For a collected batch, the router emits one decision per request. One reducer selects the phases. The full batch remains in review context; the reply task identifies each request that needs an answer, and multiple finding threads widen the scope beyond a single discussion. The worker saves routing and completed model output in a claim-scoped batch checkpoint, so publication retries can resume without another model call.
+Discussion references tell the Reviewer which concerns to reassess; they are not a separate review type. Every requested discussion remains available, including resolved threads. The full ordered batch remains in review context, and the reply task identifies each request that needs an answer.
+
+The worker saves routing and completed model output in a claim-scoped batch checkpoint, so publication retries can resume without another model call. Checkpoint version 2 stores the review scope. Version 1 checkpoints are upgraded when read: `false` becomes `none`, and `true` becomes `full` because the old record did not retain scope intent. Completed model results and publication progress are preserved. This payload upgrade applies to both storage adapters and does not change the storage contract or database columns.
 
 ## 5. Publish
 

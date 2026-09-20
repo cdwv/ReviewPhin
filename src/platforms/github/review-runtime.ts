@@ -271,6 +271,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
 
   public buildPromptContext(input: {
     requests?: ReviewContext["requests"];
+    reviewScope?: "none" | "incremental" | "full" | undefined;
     attachments: ReviewContext["attachments"];
     attachmentIssues: ReviewContext["attachmentIssues"];
     interactionRunId: string;
@@ -300,6 +301,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
     );
     return buildScopedReviewContext({
       requests: input.requests,
+      reviewScope: input.reviewScope,
       attachments: input.attachments,
       attachmentIssues: input.attachmentIssues,
       workspacePath: context.workspace.rootPath,

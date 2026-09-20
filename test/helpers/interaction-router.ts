@@ -12,7 +12,7 @@ export function fixtureRouter(
       source: "model",
       decisions: requests.map(({ id }) => ({
         requestId: id,
-        review: true,
+        review: "incremental",
         reply: false,
         memory: false,
         ...actions,

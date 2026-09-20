@@ -5,6 +5,7 @@ import {
   reduceRoutingDecisions,
   validateReplyCoverage,
   type RoutingInput,
+  type RoutingDecision,
 } from "../src/review/interaction-router.js";
 import type { HarnessModelConfig } from "../src/harness/types.js";
 import { batchRequest } from "./helpers/batch-request.js";
@@ -35,6 +36,24 @@ const input: RoutingInput = {
 };
 
 describe("model-assisted interaction routing", () => {
+  it.each([
+    [["none", "none"], "none"],
+    [["incremental", "none"], "incremental"],
+    [["incremental", "full"], "full"],
+    [["full", "incremental"], "full"],
+    [["none", "incremental"], "incremental"],
+  ] as const)("reduces %j to one %s review", (scopes, expected) => {
+    const decisions: RoutingDecision[] = requests.map((r, i) => ({
+      requestId: r.id,
+      review: scopes[i]!,
+      memory: false,
+      reply: false,
+      reason: "Selected by router",
+    }));
+    const plan = reduceRoutingDecisions(requests, decisions);
+    expect(plan.reviewScope).toBe(expected);
+    expect(plan.reviewNeeded).toBe(expected !== "none");
+  });
   it("propagates claim loss instead of substituting fallback work", async () => {
     const router = new InteractionRouter({
       run: async () => {
@@ -49,14 +68,14 @@ describe("model-assisted interaction routing", () => {
     const decisions = [
       {
         requestId: "request-1",
-        review: true,
+        review: "incremental",
         memory: false,
         reply: true,
         reason: "review and question",
       },
       {
         requestId: "request-2",
-        review: false,
+        review: "none",
         memory: true,
         reply: true,
         reason: "stable guidance",
@@ -92,7 +111,7 @@ describe("model-assisted interaction routing", () => {
     async (failure) => {
       const decision = {
         requestId: "request-1",
-        review: false,
+        review: "none",
         memory: false,
         reply: false,
         reason: "test",
@@ -136,7 +155,9 @@ describe("model-assisted interaction routing", () => {
         requests.map((r) => r.id),
       );
       expect(
-        result.decisions.every((d) => !d.review && !d.memory && !d.reply),
+        result.decisions.every(
+          (d) => d.review === "none" && !d.memory && !d.reply,
+        ),
       ).toBe(true);
     },
   );
@@ -153,7 +174,7 @@ describe("model-assisted interaction routing", () => {
         parsed: {
           decisions: requests.map((r) => ({
             requestId: r.id,
-            review: false,
+            review: "none",
             memory: false,
             reply: true,
             reason: "model decision",
@@ -178,7 +199,7 @@ describe("model-assisted interaction routing", () => {
       parsed: {
         decisions: requests.map((r) => ({
           requestId: r.id,
-          review: false,
+          review: "none",
           memory: false,
           reply: true,
           reason: "model decision",
@@ -236,7 +257,7 @@ describe("model-assisted interaction routing", () => {
   it("allows reply-only and no-op decisions and clamps memory to capability", async () => {
     const decisions = requests.map((r, i) => ({
       requestId: r.id,
-      review: false,
+      review: "none",
       memory: true,
       reply: i === 0,
       reason: "question",

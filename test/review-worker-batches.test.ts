@@ -11,7 +11,11 @@ import type {
 } from "../src/platforms/IPlatform.js";
 import { buildScopedReviewContext } from "../src/review/review-scope.js";
 import type { ChatterRunContext } from "../src/review/harness-chatter.js";
-import type { ChatterBatchResult, ReviewResult } from "../src/review/types.js";
+import type {
+  ChatterBatchResult,
+  ReviewResult,
+  ReviewContext,
+} from "../src/review/types.js";
 import { listAll } from "../src/storage/storage-helpers.js";
 import { openSqliteTestStorage, type TestStorage } from "./helpers/storage.js";
 import {
@@ -20,6 +24,7 @@ import {
 } from "./helpers/gitlab-tenant.js";
 import { createClaimContext } from "./helpers/claim.js";
 import { batchRequest } from "./helpers/batch-request.js";
+import { batchCheckpointSchema } from "../src/review/batch-checkpoint.js";
 import type { RoutingInput } from "../src/review/interaction-router.js";
 
 const cleanup: Array<{ root: string; storage: TestStorage }> = [];
@@ -43,6 +48,8 @@ const reviewResult: ReviewResult = {
 async function setup(
   options: {
     review?: boolean;
+    reviewScope?: "incremental" | "full";
+    previousReview?: boolean;
     memory?: boolean;
     failReplyOnce?: boolean;
     missingAnswer?: boolean;
@@ -55,6 +62,19 @@ async function setup(
   });
   cleanup.push({ root, storage });
   const tenant = await storage.upsertTenant(createGitLabTenantInput());
+  if (options.previousReview) {
+    vi.spyOn(
+      storage,
+      "getLatestCompletedInteractionForCodeReview",
+    ).mockResolvedValue({
+      interactionRunId: "previous-run",
+      interactionJobId: "previous-job",
+      finishedAt: "2026-09-18T10:00:00.000Z",
+      headSha: "previous-head",
+      resultJson: JSON.stringify(reviewResult),
+      snapshot: { changesJson: "[]" },
+    } as never);
+  }
   const events: string[] = [];
   const lifecycle = {
     queued: vi.fn(async () => {}),
@@ -135,8 +155,17 @@ async function setup(
         projectMemory: input.context.projectMemory,
         trigger: input.trigger,
         requests: input.requests,
+        reviewScope: input.reviewScope,
         priorDiscussions: [],
-        previousReview: null,
+        previousReview: input.previousInteraction
+          ? {
+              reviewRunId: input.previousInteraction.interactionRunId,
+              finishedAt: input.previousInteraction.finishedAt,
+              headSha: input.previousInteraction.headSha,
+              resultJson: input.previousInteraction.resultJson,
+              changesJson: input.previousInteraction.snapshot.changesJson,
+            }
+          : null,
       }),
     syncDiscussionFindingStatuses: async () => [],
     createReviewPublicationAdapter: () => ({}) as never,
@@ -182,14 +211,17 @@ async function setup(
       source: "model" as const,
       decisions: input.requests.map((r) => ({
         requestId: r.id,
-        review: options.review ?? true,
+        review:
+          options.review === false
+            ? ("none" as const)
+            : (options.reviewScope ?? ("incremental" as const)),
         memory: options.memory ?? true,
         reply: true,
         reason: "fixture decision",
       })),
     };
   });
-  const review = vi.fn(async () => {
+  const review = vi.fn(async (_context: ReviewContext) => {
     events.push("review");
     return reviewResult;
   });
@@ -304,6 +336,22 @@ async function setup(
 }
 
 describe("collected request execution with real SQLite", () => {
+  it.each([
+    ["incremental", false, "first-pass-full"],
+    ["incremental", true, "incremental-rereview"],
+    ["full", true, "first-pass-full"],
+  ] as const)(
+    "delivers routed %s scope to the reviewer (history: %s)",
+    async (reviewScope, previousReview, mode) => {
+      const test = await setup({ reviewScope, previousReview });
+      expect((await test.process(1))?.status).toBe("completed");
+      expect(test.review).toHaveBeenCalledTimes(1);
+      expect(test.review.mock.calls[0]?.[0].scope.mode).toBe(mode);
+      expect(test.route.mock.calls[0]?.[0].previousReviewExists).toBe(
+        previousReview,
+      );
+    },
+  );
   it("retries failed model classification without running review, memory, or replies", async () => {
     const test = await setup();
     test.route.mockRejectedValueOnce(new Error("Routing models unavailable"));
@@ -358,20 +406,47 @@ describe("collected request execution with real SQLite", () => {
     expect(test.published).toEqual([1, 2]);
   });
 
-  it("retries only the unpublished answer without rerouting, remembering, reviewing, or regenerating replies", async () => {
-    const test = await setup({ failReplyOnce: true });
-    expect((await test.process(1))?.status).toBe("queued");
-    expect(test.published).toEqual([1]);
-    expect((await test.process(2))?.status).toBe("completed");
-    expect(test.published).toEqual([1, 2]);
-    expect(test.route).toHaveBeenCalledTimes(1);
-    expect(test.review).toHaveBeenCalledTimes(1);
-    expect(test.reconcile).toHaveBeenCalledTimes(1);
-    expect(test.chatterRun).toHaveBeenCalledTimes(2);
-    expect(test.runtime.loadRoutingContext).toHaveBeenCalledTimes(2);
-    const runs = await listAll(test.storage.stores.interactionRuns);
-    expect(runs.map((r) => r.status).sort()).toEqual(["completed", "failed"]);
-  });
+  it.each([1, 2])(
+    "resumes checkpoint v%s without repeating completed work",
+    async (version) => {
+      const test = await setup({ failReplyOnce: true });
+      expect((await test.process(1))?.status).toBe("queued");
+      expect(test.published).toEqual([1]);
+      const [failedRun] = await listAll(test.storage.stores.interactionRuns);
+      if (version === 1) {
+        const checkpoint = batchCheckpointSchema.parse(
+          JSON.parse(failedRun!.repliesJson!),
+        );
+        await test.storage.stores.interactionRuns.replace({
+          ...failedRun!,
+          repliesJson: JSON.stringify({
+            ...checkpoint,
+            version: 1,
+            routing: {
+              ...checkpoint.routing,
+              decisions: checkpoint.routing.decisions.map((d) => ({
+                ...d,
+                review: d.review !== "none",
+              })),
+            },
+          }),
+        });
+      }
+      expect((await test.process(2))?.status).toBe("completed");
+      expect(test.published).toEqual([1, 2]);
+      expect(test.route).toHaveBeenCalledTimes(1);
+      expect(test.review).toHaveBeenCalledTimes(1);
+      expect(test.reconcile).toHaveBeenCalledTimes(1);
+      expect(test.chatterRun).toHaveBeenCalledTimes(2);
+      expect(test.runtime.loadRoutingContext).toHaveBeenCalledTimes(2);
+      const runs = await listAll(test.storage.stores.interactionRuns);
+      expect(runs.map((r) => r.status).sort()).toEqual(["completed", "failed"]);
+      expect(
+        JSON.parse(runs.find((r) => r.status === "completed")!.repliesJson!)
+          .version,
+      ).toBe(2);
+    },
+  );
 
   it("rejects incomplete answer coverage before publishing any reply", async () => {
     const test = await setup({
