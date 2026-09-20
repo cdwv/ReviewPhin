@@ -42,6 +42,7 @@ function makeJob(
     claimedBy: null,
     claimExpiresAt: null,
     latestInteractionRunId: null,
+    batchKind: null,
     ...overrides,
   };
 }

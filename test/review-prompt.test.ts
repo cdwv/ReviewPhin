@@ -260,16 +260,12 @@ describe("buildReviewPrompt", () => {
     );
   });
 
-  it.each([
-    "first-pass-full",
-    "incremental-rereview",
-    "follow-up-discussion",
-  ] as const)(
+  it.each(["first-pass-full", "incremental-rereview"] as const)(
     "requires %s overviews to summarize the entire code review",
     (mode) => {
       const context = createContext(
         null,
-        mode === "follow-up-discussion"
+        mode === "incremental-rereview"
           ? "follow-up-comment"
           : "direct-mention",
         mode,
@@ -394,7 +390,7 @@ describe("buildReviewPrompt", () => {
     for (const [triggerKind, scopeMode] of [
       ["direct-mention", "first-pass-full"],
       ["direct-mention", "incremental-rereview"],
-      ["follow-up-comment", "follow-up-discussion"],
+      ["follow-up-comment", "incremental-rereview"],
     ] as const) {
       const context = createContext(undefined, triggerKind, scopeMode);
       context.gitInspection = {
@@ -453,7 +449,7 @@ describe("buildReviewPrompt", () => {
     const context = createContext(
       undefined,
       "follow-up-comment",
-      "follow-up-discussion",
+      "incremental-rereview",
     );
     context.gitInspection = {
       baseRef: "refs/reviewphin/base",
@@ -485,13 +481,13 @@ describe("buildReviewPrompt", () => {
     expect(compact.gitInspection.available).toBe(true);
   });
 
-  it("uses the follow-up-discussion registered combination without the summary overlay", () => {
+  it("uses the incremental registered combination for a discussion without the summary overlay", () => {
     const prompt = buildReviewPrompt(
-      createContext(null, "follow-up-comment", "follow-up-discussion"),
+      createContext(null, "follow-up-comment", "incremental-rereview"),
     );
 
     expect(prompt).toContain(
-      "This is a focused follow-up on an existing bot-owned discussion.",
+      "This code review has already been reviewed before.",
     );
     expect(prompt).not.toContain(
       "The latest user instruction came from a reply to the bot's code review summary comment.",

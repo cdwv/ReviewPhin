@@ -23,7 +23,7 @@ These hold across GitLab and GitHub.
 
 - **First run is a full review.** The first pass over a code review covers all changed files. Later passes are incremental and focus on what changed since the last run.
 - **Replies continue the thread.** Replying inside a ReviewPhin-owned discussion continues that finding without a new top-level trigger.
-- **You can force a fresh pass.** A full review ignores prior incremental context and rescans more broadly.
+- **You can request a fresh pass.** A full review reassesses all changed files while retaining existing findings for updates and resolution.
 - **You can pin a model per review.** A `/reviewphin-profile <name>` directive in the code review description selects a named [model profile](../management/model-profiles/) for every run on that review.
 
 ## Pick your platform

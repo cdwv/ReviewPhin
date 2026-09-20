@@ -270,7 +270,11 @@
                 <a href="../../src/storage/contract/history/storage-v005.d.ts"
                   ><code>InteractionRunRecord.resultJson</code></a
                 >
-                for the saved result. Do not add a second result column.
+                for the final review result. Comment batches now save a versioned
+                checkpoint in <code>repliesJson</code>, including review and
+                reply output for publication recovery. Reuse that recovery path
+                where it applies; the remaining work here also covers legacy and
+                manual review publication.
               </li>
               <li>
                 The store may need a claim-checked method such as
@@ -344,8 +348,8 @@
 
         <nav class="footer-nav" aria-label="Plan navigation">
           <a href="index.html">← All plans</a
-          ><a href="3.interaction-admission-grouping-and-revisions.html"
-            >Next: group requests →</a
+          ><a href="4.github-setup-security-and-operations.html"
+            >Next: GitHub setup →</a
           >
         </nav>
       </main>

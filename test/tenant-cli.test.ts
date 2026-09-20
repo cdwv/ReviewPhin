@@ -431,6 +431,10 @@ describe("tenant CLI", () => {
       "effort",
       "--review-model",
       "gpt-5.6",
+      "--routing-model",
+      "custom-text",
+      "--routing-reasoning-effort",
+      "medium",
       "--review-reasoning-effort",
       "high",
       "--text-generation-reasoning-effort",
@@ -445,6 +449,8 @@ describe("tenant CLI", () => {
     const storage = await openSqliteTestStorage(databasePath);
     expect(await storage.stores.modelProfiles.get("effort")).toMatchObject({
       name: "effort",
+      routingModel: "custom-text",
+      routingReasoningEffort: "medium",
       reviewReasoningEffort: "high",
       textGenerationReasoningEffort: "low",
     });
@@ -471,6 +477,35 @@ describe("tenant CLI", () => {
 
     listSpy.mockRestore();
     expect(listExitCode).toBe(0);
+    expect(listStdout).toContain('"routingModel":"custom-text"');
+    expect(listStdout).toContain('"routingReasoningEffort":"medium"');
+    await storage.close();
+    expect(
+      await runCli([
+        "model-profile",
+        "add",
+        "--sqlite-database-path",
+        databasePath,
+        "--name",
+        "effort",
+        "--clear-routing-model",
+      ]),
+    ).toBe(0);
+    const cleared = await openSqliteTestStorage(databasePath);
+    expect(await cleared.stores.modelProfiles.get("effort")).toMatchObject({
+      routingModel: null,
+      routingReasoningEffort: null,
+      reviewReasoningEffort: "high",
+    });
+    await cleared.upsertModelProfile({
+      name: "effort",
+      routingReasoningEffort: "medium",
+    });
+    expect(await cleared.stores.modelProfiles.get("effort")).toMatchObject({
+      routingModel: null,
+      routingReasoningEffort: "medium",
+    });
+    await cleared.close();
     expect(listStdout).toContain('"reviewReasoningEffort":"high"');
     expect(listStdout).toContain('"textGenerationReasoningEffort":"low"');
   });

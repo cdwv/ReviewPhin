@@ -64,7 +64,11 @@ export async function validateProfileModels(
   config: AppConfig,
   dependencies: ModelCatalogDependencies,
 ): Promise<ModelValidationResult> {
-  const checkedModels = [profile.reviewModel, profile.textGenerationModel]
+  const checkedModels = [
+    profile.reviewModel,
+    profile.textGenerationModel,
+    profile.routingModel,
+  ]
     .filter((model): model is string => model !== null)
     .filter((model, index, models) => models.indexOf(model) === index)
     .toSorted(compareStrings);

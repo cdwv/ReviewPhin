@@ -33,6 +33,8 @@ interface PreviousReviewSource {
 type FullRescanReason = "explicit" | "signature-transition" | null;
 
 interface BuildScopedReviewContextInput {
+  requests?: ReviewContext["requests"];
+  reviewScope?: "none" | "incremental" | "full" | undefined;
   attachments?: ReviewAttachment[] | undefined;
   attachmentIssues?: ReviewAttachmentIssue[] | undefined;
   workspacePath: string;
@@ -52,13 +54,11 @@ interface BuildScopedReviewContextInput {
 const COMMENT_LIMIT_BY_MODE: Record<ReviewMode, number> = {
   "first-pass-full": 12,
   "incremental-rereview": 8,
-  "follow-up-discussion": 0,
 };
 
 const THREAD_LIMIT_BY_MODE: Record<ReviewMode, number> = {
   "first-pass-full": 12,
   "incremental-rereview": 10,
-  "follow-up-discussion": 1,
 };
 
 export function buildScopedReviewContext(
@@ -70,22 +70,19 @@ export function buildScopedReviewContext(
   const previousReviewChanges = parsePreviousReviewChanges(
     input.previousReview?.changesJson ?? null,
   );
-  const explicitFullRescan = hasExplicitFullRescanInstruction(
-    input.trigger.instruction,
-  );
   const signatureTransition =
     input.previousReview !== null &&
     hasIncompatibleChangeSignatureFormats(input.changes, previousReviewChanges);
-  const fullRescanReason: FullRescanReason = explicitFullRescan
-    ? "explicit"
-    : signatureTransition
-      ? "signature-transition"
-      : null;
-  const mode = determineReviewMode(
-    input.trigger,
-    input.previousReview,
-    fullRescanReason !== null,
-  );
+  const fullRescanReason: FullRescanReason =
+    input.reviewScope === "full"
+      ? "explicit"
+      : signatureTransition
+        ? "signature-transition"
+        : null;
+  const mode: ReviewMode =
+    !input.previousReview || fullRescanReason !== null
+      ? "first-pass-full"
+      : "incremental-rereview";
   const priorFindings = input.priorFindings ?? [];
   const targetDiscussionId =
     input.trigger.kind === "manual-review"
@@ -119,6 +116,19 @@ export function buildScopedReviewContext(
       : input.changes;
   const widenScopeHints = collectWidenScopeHints(widenedInputChanges);
 
+  const requestedDiscussionIds = new Set(
+    [
+      targetDiscussionId,
+      ...(input.requests?.map((r) => r.trigger.targetDiscussionId) ?? []),
+    ].filter(Boolean),
+  );
+  for (const discussion of input.priorDiscussions) {
+    if (!requestedDiscussionIds.has(discussion.discussionId)) continue;
+    if (discussion.anchor?.path)
+      targetDiscussionPaths.add(discussion.anchor.path);
+    if (discussion.anchor?.oldPath)
+      targetDiscussionPaths.add(discussion.anchor.oldPath);
+  }
   const focusPaths = new Set<string>();
   for (const path of targetDiscussionPaths) {
     focusPaths.add(path);
@@ -163,11 +173,7 @@ export function buildScopedReviewContext(
     return toChangeSummary(change, reason);
   });
 
-  const selectedChanges = selectChanges({
-    changes: input.changes,
-    focusPaths,
-    mode,
-  });
+  const selectedChanges = input.changes.slice();
   const selectedPathSet = new Set(
     selectedChanges.map((change) => getChangePath(change)),
   );
@@ -176,24 +182,23 @@ export function buildScopedReviewContext(
     priorDiscussions: input.priorDiscussions,
     focusPaths: selectedPathSet,
     mode,
-    targetDiscussion,
   });
+  for (const discussion of input.priorDiscussions) {
+    if (
+      requestedDiscussionIds.has(discussion.discussionId) &&
+      !selectedPriorDiscussions.includes(discussion)
+    )
+      selectedPriorDiscussions.push(discussion);
+  }
   const selectedPriorDiscussionIds = new Set(
     selectedPriorDiscussions.map(
       (discussion) => discussion.platformDiscussionId,
     ),
   );
   const selectedComments = selectComments(input.comments, mode);
-  const selectedDiscussions =
-    mode === "follow-up-discussion"
-      ? input.discussions.filter(
-          (discussion) =>
-            targetDiscussion !== null &&
-            discussion.id === targetDiscussion.platformDiscussionId,
-        )
-      : input.discussions.filter((discussion) =>
-          selectedPriorDiscussionIds.has(discussion.id),
-        );
+  const selectedDiscussions = input.discussions.filter((discussion) =>
+    selectedPriorDiscussionIds.has(discussion.id),
+  );
 
   const omittedChangedFiles = input.changes
     .filter((change) => !selectedChanges.includes(change))
@@ -206,7 +211,6 @@ export function buildScopedReviewContext(
     previousReview: input.previousReview,
     previousReviewResult,
     priorFindings,
-    selectedChanges,
     allChangedFiles,
     omittedChangedFiles,
     deltaChanges,
@@ -215,6 +219,7 @@ export function buildScopedReviewContext(
   });
 
   return {
+    ...(input.requests ? { requests: input.requests } : {}),
     attachments: input.attachments ?? [],
     attachmentIssues: input.attachmentIssues ?? [],
     workspacePath: input.workspacePath,
@@ -233,32 +238,6 @@ export function buildScopedReviewContext(
     scope,
     ...(input.logging ? { logging: input.logging } : {}),
   };
-}
-
-function determineReviewMode(
-  trigger: ReviewTriggerContext,
-  previousReview: PreviousReviewSource | null,
-  explicitFullRescan: boolean,
-): ReviewMode {
-  if (trigger.kind === "follow-up-comment") {
-    return "follow-up-discussion";
-  }
-
-  if (!previousReview || explicitFullRescan) {
-    return "first-pass-full";
-  }
-
-  return "incremental-rereview";
-}
-
-function hasExplicitFullRescanInstruction(instruction: string | null): boolean {
-  if (!instruction) {
-    return false;
-  }
-
-  return /\b(full\s+rescan|full\s+review|fresh\s+full\s+review|full\s+review\s+from\s+scratch|rescan\s+everything)\b/i.test(
-    instruction,
-  );
 }
 
 function parsePreviousReviewResult(
@@ -338,20 +317,6 @@ function getChangeSignatureFormats(
   );
 }
 
-function selectChanges(input: {
-  changes: CodeReviewChange[];
-  focusPaths: Set<string>;
-  mode: ReviewMode;
-}): CodeReviewChange[] {
-  const focusedChanges = input.changes.filter((change) => {
-    const path = getChangePath(change);
-    return input.focusPaths.has(path) || input.focusPaths.has(change.oldPath);
-  });
-  return input.mode === "follow-up-discussion"
-    ? focusedChanges
-    : input.changes.slice();
-}
-
 function collectWidenScopeHints(changes: CodeReviewChange[]): string[] {
   const hints = new Set<string>();
 
@@ -385,12 +350,7 @@ function selectPriorDiscussions(input: {
   priorDiscussions: ProviderDiscussionContext[];
   focusPaths: Set<string>;
   mode: ReviewMode;
-  targetDiscussion: ProviderDiscussionContext | null;
 }): ProviderDiscussionContext[] {
-  if (input.mode === "follow-up-discussion") {
-    return input.targetDiscussion ? [input.targetDiscussion] : [];
-  }
-
   const candidateDiscussions =
     input.mode === "incremental-rereview"
       ? input.priorDiscussions.filter((discussion) => !discussion.resolved)
@@ -436,7 +396,6 @@ function buildScope(input: {
   previousReview: PreviousReviewSource | null;
   previousReviewResult: ReviewResult | null;
   priorFindings: PriorReviewFindingContext[];
-  selectedChanges: CodeReviewChange[];
   allChangedFiles: ReviewChangeSummary[];
   omittedChangedFiles: ReviewChangeSummary[];
   deltaChanges: CodeReviewChange[];
@@ -458,8 +417,7 @@ function buildScope(input: {
         }
       : null;
 
-  const selectedChangeCount = input.selectedChanges.length;
-  const scopeSummary = buildScopeSummary(input, selectedChangeCount);
+  const scopeSummary = buildScopeSummary(input);
 
   return {
     mode: input.mode,
@@ -474,30 +432,19 @@ function buildScope(input: {
   };
 }
 
-function buildScopeSummary(
-  input: {
-    mode: ReviewMode;
-    trigger: ReviewTriggerContext;
-    targetDiscussion: ProviderDiscussionContext | null;
-    previousReview: PreviousReviewSource | null;
-    previousReviewResult: ReviewResult | null;
-    priorFindings: PriorReviewFindingContext[];
-    selectedChanges: CodeReviewChange[];
-    allChangedFiles: ReviewChangeSummary[];
-    omittedChangedFiles: ReviewChangeSummary[];
-    deltaChanges: CodeReviewChange[];
-    widenScopeHints: string[];
-    fullRescanReason: FullRescanReason;
-  },
-  selectedChangeCount: number,
-) {
-  if (input.mode === "follow-up-discussion") {
-    const discussionTitle = input.targetDiscussion
-      ? ` "${input.targetDiscussion.title}"`
-      : "";
-    return `Focus on the target bot-owned discussion${discussionTitle} and the ${selectedChangeCount} directly related changed file(s).`;
-  }
-
+function buildScopeSummary(input: {
+  mode: ReviewMode;
+  trigger: ReviewTriggerContext;
+  targetDiscussion: ProviderDiscussionContext | null;
+  previousReview: PreviousReviewSource | null;
+  previousReviewResult: ReviewResult | null;
+  priorFindings: PriorReviewFindingContext[];
+  allChangedFiles: ReviewChangeSummary[];
+  omittedChangedFiles: ReviewChangeSummary[];
+  deltaChanges: CodeReviewChange[];
+  widenScopeHints: string[];
+  fullRescanReason: FullRescanReason;
+}) {
   if (input.mode === "incremental-rereview") {
     const parts = [];
 
@@ -511,10 +458,8 @@ function buildScopeSummary(
       parts.push(
         "A reply on the bot-owned summary comment requested another review pass.",
       );
-    } else if (input.trigger.instruction) {
-      parts.push("Repeated direct mention requested a new review pass.");
     } else {
-      parts.push("Repeated direct mention requested another review pass.");
+      parts.push("The collected requests require another review pass.");
     }
 
     if (input.previousReview) {

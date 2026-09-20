@@ -1,3 +1,5 @@
+import { dedupeImageAttachmentReferences } from "../image-attachments.js";
+import { findReplyPublicationMarker } from "../../review/batch-checkpoint.js";
 import { join } from "node:path";
 
 import type { Logger } from "pino";
@@ -103,6 +105,30 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
     job: InteractionJobRecord,
   ): Promise<PlatformReviewRoutingContext> {
     return this.wrapContext(await this.loadContext(job));
+  }
+
+  public async getCurrentHead(job: InteractionJobRecord): Promise<string> {
+    const { tenantConfig } = await new GitHubRepositoryContextResolver({
+      storage: this.options.storage,
+      client: this.options.client,
+      logger: this.options.logger,
+    }).resolve(this.tenant);
+    return (
+      await this.options.client.getPullRequest(
+        tenantConfig.repositoryFullName,
+        job.codeReviewId,
+      )
+    ).head.sha;
+  }
+
+  public async refreshProjectMemory(
+    job: InteractionJobRecord,
+    context: PlatformReviewRoutingContext,
+  ): Promise<PlatformReviewRoutingContext> {
+    return this.wrapContext({
+      ...this.unwrapContext(context),
+      projectMemory: await this.loadProjectMemorySafely(job),
+    });
   }
 
   public async hydrate(input: {
@@ -244,6 +270,8 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
   }
 
   public buildPromptContext(input: {
+    requests?: ReviewContext["requests"];
+    reviewScope?: "none" | "incremental" | "full" | undefined;
     attachments: ReviewContext["attachments"];
     attachmentIssues: ReviewContext["attachmentIssues"];
     interactionRunId: string;
@@ -272,6 +300,8 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       }),
     );
     return buildScopedReviewContext({
+      requests: input.requests,
+      reviewScope: input.reviewScope,
       attachments: input.attachments,
       attachmentIssues: input.attachmentIssues,
       workspacePath: context.workspace.rootPath,
@@ -453,6 +483,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
   }
 
   public async materializeAttachments(input: {
+    triggers?: ReviewContext["trigger"][];
     context: PlatformReviewRoutingContext;
     trigger: ReviewContext["trigger"];
     runArtifacts: InteractionRunArtifacts;
@@ -462,17 +493,21 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
     issues: ReviewContext["attachmentIssues"];
   }> {
     const context = this.unwrapContext(input.context);
-    const references = discoverGitHubImageAttachmentReferences({
-      pullRequest: context.pullRequest,
-      ...(input.trigger.kind === "manual-review"
-        ? {}
-        : {
-            triggerComment: {
-              body: input.trigger.body,
-              commentId: input.trigger.commentId,
-            },
-          }),
-    });
+    const references = dedupeImageAttachmentReferences(
+      (input.triggers ?? [input.trigger]).flatMap((trigger) =>
+        discoverGitHubImageAttachmentReferences({
+          pullRequest: context.pullRequest,
+          ...(trigger.kind === "manual-review"
+            ? {}
+            : {
+                triggerComment: {
+                  body: trigger.body,
+                  commentId: trigger.commentId,
+                },
+              }),
+        }),
+      ),
+    );
     if (references.length === 0) {
       return { attachments: [], breadcrumbs: [], issues: [] };
     }
@@ -541,6 +576,21 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       client: this.options.client,
       logger: this.options.logger,
     }).resolve(this.tenant);
+    const hasMarkers = input.result.replies.some((reply) =>
+      findReplyPublicationMarker(reply.replyBody),
+    );
+    const previousReplies = hasMarkers
+      ? [
+          ...(await this.options.client.listIssueComments(
+            tenantConfig.repositoryFullName,
+            input.codeReviewId,
+          )),
+          ...(await this.options.client.listReviewComments(
+            tenantConfig.repositoryFullName,
+            input.codeReviewId,
+          )),
+        ]
+      : [];
     const plannedKeys = new Set(input.plannedTargets.map(responseTargetKey));
     const reviewThreads = input.plannedTargets.some(
       (target) =>
@@ -568,8 +618,17 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
       }
       input.guard.assertOwned();
       try {
+        const marker = findReplyPublicationMarker(reply.replyBody);
+        const existing = marker
+          ? previousReplies.find(
+              (comment) =>
+                comment.user?.login?.toLowerCase() === this.botLogin &&
+                comment.body?.includes(marker),
+            )
+          : null;
         const published =
-          target.kind === "code-review-comment" ||
+          existing ??
+          (target.kind === "code-review-comment" ||
           target.discussionId?.startsWith("issue-comment:")
             ? await this.options.client.createIssueComment({
                 repositoryFullName: tenantConfig.repositoryFullName,
@@ -586,7 +645,7 @@ export class GitHubPlatformReviewRuntime implements PlatformReviewRuntime {
                   parseReviewCommentDiscussionId(target.discussionId ?? "") ??
                   target.commentId,
                 body: reply.replyBody,
-              });
+              }));
         outcomes.push({
           target,
           status: "published" as const,

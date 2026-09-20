@@ -22,6 +22,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         claimedBy: null,
         claimExpiresAt: null,
         latestInteractionRunId: null,
+        batchKind: null,
         tenantId: tenant.id,
         dedupeKey: "previous",
         codeReviewId: 18,
@@ -43,6 +44,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         claimedBy: null,
         claimExpiresAt: null,
         latestInteractionRunId: null,
+        batchKind: null,
         tenantId: tenant.id,
         dedupeKey: "current",
         codeReviewId: 18,
@@ -64,6 +66,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         claimedBy: null,
         claimExpiresAt: null,
         latestInteractionRunId: null,
+        batchKind: null,
         tenantId: "tenant-2",
         dedupeKey: "other-tenant",
         codeReviewId: 18,
@@ -94,6 +97,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         providerType: null,
         textGenerationModel: null,
         status: "completed",
+        repliesJson: null,
         resultJson: '{"summary":"previous"}',
         error: null,
         startedAt: "2026-05-08T09:00:02.000Z",
@@ -113,6 +117,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         providerType: null,
         textGenerationModel: null,
         status: "completed",
+        repliesJson: null,
         resultJson: '{"summary":"other tenant"}',
         error: null,
         startedAt: "2026-05-08T11:00:02.000Z",
@@ -282,6 +287,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         claimedBy: null,
         claimExpiresAt: null,
         latestInteractionRunId: null,
+        batchKind: null,
         tenantId: tenant.id,
         dedupeKey: "job-tenant-1",
         codeReviewId: 18,
@@ -303,6 +309,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
         claimedBy: null,
         claimExpiresAt: null,
         latestInteractionRunId: null,
+        batchKind: null,
         tenantId: "tenant-2",
         dedupeKey: "job-tenant-2",
         codeReviewId: 18,
@@ -321,8 +328,7 @@ describe("StoreBackedStorage Flotiq MR lookup regression", () => {
     const interactionJobList = vi.fn(
       async (input?: { filters?: Record<string, unknown> }) => {
         const filters = input?.filters as
-          | { tenantId?: { eq?: string } }
-          | undefined;
+          { tenantId?: { eq?: string } } | undefined;
         return interactionJobs.filter(
           (job) => !filters?.tenantId || job.tenantId === filters.tenantId.eq,
         );

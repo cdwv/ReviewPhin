@@ -21,13 +21,13 @@ Use an `@bot` mention on GitLab merge requests. GitHub pull request comments als
 </details>
 
 <details>
-<summary><strong>Full review (ignore prior context)</strong></summary>
+<summary><strong>Full review (reassess all changes)</strong></summary>
 
 ```text
 @reviewphin full review
 ```
 
-Use a full review when you want ReviewPhin to ignore prior incremental context and rescan the code review more broadly. Also accepts `full rescan`, `fresh full review`, `full review from scratch`, and `rescan everything`.
+Use a full review when you want ReviewPhin to reassess all changed files. Existing findings remain available so the new pass can update them without creating duplicates. The routing model interprets your intent: phrases such as `review everything afresh` work too. Mentioning or quoting “full review” does not by itself request one.
 
 </details>
 
@@ -65,6 +65,16 @@ Add this to the code review **description**, not a comment:
 Selects a named [model profile](../../management/model-profiles/) for every run on that review.
 
 </details>
+
+## Several comments in a row
+
+ReviewPhin collects comment requests for the same tenant and pull or merge request before starting work. The default quiet period is 15 seconds after the latest comment, with a maximum wait of 60 seconds. A batch also closes at 32 requests or 256 KiB of trigger and payload data. An oversized individual request is retained and processed separately. Duplicate webhook deliveries do not extend the wait.
+
+The collected requests share one branch checkout and at most one reviewer session per attempt. Chatter and memory work can use the same checkout. ReviewPhin checks the current branch head when the batch starts and again before publication. Comments arriving after a batch closes form a later batch. CLI requests and GitHub's **Run Review** action remain separate jobs.
+
+Questions in different comment targets receive separate answers. Several questions in one discussion can share an answer that covers each request. ReviewPhin checks answer coverage before publishing replies. If one answer fails to publish, the job retries from saved output and skips replies already published. A new branch head after partial publication cancels that batch; submit a fresh request for the new revision.
+
+A [routing model](../../management/model-profiles/#routing-collected-requests) decides whether a batch needs review, replies, memory work, or a combination. If no router override is configured, it uses the chatter model and reasoning. ReviewPhin reviews existing changes and answers questions; it does not edit code or create pull requests.
 
 ## See when ReviewPhin is working
 

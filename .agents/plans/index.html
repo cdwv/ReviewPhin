@@ -15,9 +15,9 @@
             ><span class="brand-mark">◉</span><span>ReviewPhin plans</span></a
           >
           <p class="rail-label">Checked</p>
-          <p class="rail-value">2 August 2026</p>
+          <p class="rail-value">19 September 2026</p>
           <p class="rail-label">Database format</p>
-          <p class="rail-value">storage-v006</p>
+          <p class="rail-value">storage-v007</p>
           <nav class="toc" aria-label="On this page">
             <a href="#order">What to do first</a>
             <a href="#data">Database changes</a>
@@ -29,15 +29,15 @@
       <main id="content">
         <header class="hero">
           <p class="eyebrow">Work we want to do</p>
-          <h1>Nine active plans and one parked draft.</h1>
+          <h1>Eight active plans and one parked draft.</h1>
           <p class="lede">
             Start at the top. The first plans fix things that can confuse users
             or produce bad review results. Later plans improve operator tools,
-            documentation, and code health.
+            documentation, media coverage, and code health.
           </p>
           <div class="meta-grid">
             <div class="meta-item">
-              <span>Listed plans</span><strong>10</strong>
+              <span>Listed plans</span><strong>9</strong>
             </div>
             <div class="meta-item">
               <span>Most urgent</span><strong>Safe publication</strong>
@@ -69,18 +69,6 @@
               <p>
                 If posting stops halfway, a retry must finish the same review
                 without making duplicate or different comments.
-              </p>
-            </article>
-            <article class="card">
-              <span class="badge contract">3 · queue safety</span>
-              <h3>
-                <a href="3.interaction-admission-grouping-and-revisions.html"
-                  >Group comments that arrive together</a
-                >
-              </h3>
-              <p>
-                Several requests on one merge request or pull request should
-                become one clear review run, without losing a request in a race.
               </p>
             </article>
             <article class="card">
@@ -144,6 +132,18 @@
               </p>
             </article>
             <article class="card">
+              <span class="badge no-schema">15 · docs media</span>
+              <h3>
+                <a href="15.documentation-media-capture.html"
+                  >Capture helpful docs media</a
+                >
+              </h3>
+              <p>
+                Replace visible media placeholders with factual screenshots,
+                videos, and terminal clips that can be refreshed from scripts.
+              </p>
+            </article>
+            <article class="card">
               <span class="badge contract">13 · tenant onboarding</span>
               <h3>
                 <a href="13.tenant-autoregistration.html"
@@ -196,24 +196,10 @@
                 </td>
               </tr>
               <tr>
-                <td>3. Grouped comments</td>
-                <td>
-                  Use the job fields that exist now. Add one safe “add this
-                  request to the group” operation, but no new column.
-                </td>
-              </tr>
-              <tr>
                 <td>4. GitHub setup</td>
                 <td>
                   Add one small store for short-lived setup sessions. Store a
                   token hash, never the raw token.
-                </td>
-              </tr>
-              <tr>
-                <td>5. Repository instructions</td>
-                <td>
-                  No database change. Read files from the repository being
-                  reviewed.
                 </td>
               </tr>
               <tr>
@@ -224,24 +210,10 @@
                 </td>
               </tr>
               <tr>
-                <td>7. Model output recovery</td>
-                <td>
-                  No new field. Record correction attempts in existing run logs
-                  and save only the validated result.
-                </td>
-              </tr>
-              <tr>
                 <td>8. Tenant reassignment</td>
                 <td>
                   No new field. Update the existing connection assignment only
                   after an explicit choice.
-                </td>
-              </tr>
-              <tr>
-                <td>9. No-publish review</td>
-                <td>
-                  No new field expected. Store the mode in the existing request
-                  JSON and use the current run result.
                 </td>
               </tr>
               <tr>
@@ -257,6 +229,13 @@
                 <td>
                   Add connection registration policy and a live connection
                   profile fallback in a new storage contract revision.
+                </td>
+              </tr>
+              <tr>
+                <td>15. Documentation media</td>
+                <td>
+                  No database change. Replace docs placeholders and add capture
+                  scripts and static media assets.
                 </td>
               </tr>
             </tbody>

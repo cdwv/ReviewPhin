@@ -289,11 +289,14 @@ Models are sorted by ID. Catalog or authentication failures exit with code 1; JS
 Create or update a named model profile.
 
 ```bash
-# GitHub Copilot with an explicit model
+# GitHub Copilot with the suggested review, chatter, and routing models
 reviewphin model-profile add \
-  --name copilot-gpt5.4 \
-  --review-model gpt-5.4 \
-  --text-generation-model gpt-5.4-mini \
+  --name copilot-default \
+  --review-model gpt-5.6-terra \
+  --review-reasoning-effort high \
+  --text-generation-model claude-sonnet-4.6 \
+  --routing-model gpt-5.6-luna \
+  --routing-reasoning-effort low \
   --default
 
 # BYOK: self-hosted vLLM
@@ -325,6 +328,8 @@ reviewphin model-profile add \
 | `--auth-token`                             | No       | API key for the BYOK provider, or an override GitHub PAT for Copilot profiles. Always masked in CLI output.       |
 | `--review-model`                           | No       | Model identifier for review runs. Required when `--base-url` is set.                                              |
 | `--text-generation-model`                  | No       | Model for memory coalescing and lightweight generation. Defaults to `--review-model` when omitted.                |
+| `--routing-model`                          | No       | Model for classifying collected comments. Unset inherits the chatter model.                    |
+| `--routing-reasoning-effort`               | No       | Routing effort: `low`, `medium`, `high`, or `xhigh`. Unset inherits chatter effort.                                    |
 | `--review-reasoning-effort`                | No       | Reasoning effort for review runs: `low`, `medium`, `high`, or `xhigh`. Omitted from the session when unset.       |
 | `--text-generation-reasoning-effort`       | No       | Reasoning effort for text-generation runs. Independent of the review effort; omitted from the session when unset. |
 | `--default`                                | No       | Mark this profile as the database default.                                                                        |
@@ -335,6 +340,8 @@ reviewphin model-profile add \
 | `--clear-auth-token`                       | No       | Clear the stored auth token.                                                                                      |
 | `--clear-review-model`                     | No       | Clear the stored review model.                                                                                    |
 | `--clear-text-generation-model`            | No       | Clear the stored text-generation model.                                                                           |
+| `--clear-routing-model`                    | No       | Clear routing model and reasoning overrides; restore chatter defaults.                                                                     |
+| `--clear-routing-reasoning-effort`         | No       | Clear routing effort; inherit chatter effort.                                                                                        |
 | `--clear-review-reasoning-effort`          | No       | Clear the stored review reasoning effort (revert to the harness default).                                         |
 | `--clear-text-generation-reasoning-effort` | No       | Clear the stored text-generation reasoning effort (revert to the harness default).                                |
 | `--sqlite-database-path`                   | No       | Override the SQLite path.                                                                                         |

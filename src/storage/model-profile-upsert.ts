@@ -14,6 +14,8 @@ export interface ResolvedModelProfileUpsertInput {
   readonly textGenerationModel: string | null;
   readonly reviewReasoningEffort: ModelReasoningEffort | null;
   readonly textGenerationReasoningEffort: ModelReasoningEffort | null;
+  readonly routingModel: string | null;
+  readonly routingReasoningEffort: ModelReasoningEffort | null;
   readonly isDefault: boolean;
 }
 
@@ -55,6 +57,14 @@ export function resolveModelProfileUpsertInput(
     textGenerationReasoningEffort: resolveDefined(
       input.textGenerationReasoningEffort,
       existing?.textGenerationReasoningEffort ?? null,
+    ),
+    routingModel: resolveDefined(
+      input.routingModel,
+      existing?.routingModel ?? null,
+    ),
+    routingReasoningEffort: resolveDefined(
+      input.routingReasoningEffort,
+      existing?.routingReasoningEffort ?? null,
     ),
     isDefault: resolveDefined(input.isDefault, existing?.isDefault ?? false),
   };

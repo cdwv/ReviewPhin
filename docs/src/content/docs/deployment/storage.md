@@ -64,7 +64,13 @@ STORAGE_PROVIDER_MODULE=flotiq
 
 The API key must be able to manage content type definitions. On first startup the adapter creates or updates the required content type definitions.
 
-Flotiq has no compare-and-set transaction spanning job selection and update, so it reports `claimMode: "single-worker"`. Only **one** ReviewPhin process may run the job runner. Any additional HTTP replicas must set `REVIEWPHIN_JOB_RUNNER_ENABLED=false`. Every process using a single-worker adapter logs a warning that restates this topology. Global single-review execution across competing runner processes is guaranteed only by `atomic` adapters like SQLite. CLI processes may administer and observe storage under either claim mode because they never claim or execute jobs.
+The Flotiq adapter saves a request, attaches it to a batch, and updates the batch's ready time through separate API calls. Another operation must not start claiming that batch halfway through those writes.
+
+The adapter solves this by keeping an internal queue: it finishes one batch update or job claim before starting the next. That queue belongs to one running copy of ReviewPhin. A second copy has its own queue, so the two copies cannot protect each other from conflicting writes.
+
+**Run one copy of ReviewPhin to receive comment webhooks and execute jobs when using Flotiq.** Do not send comment webhooks to a second copy, even with its job runner disabled. SQLite protects the same operations with database transactions, which coordinate all copies sharing that database.
+
+This difference stays inside the storage adapters. The worker calls the same storage methods for both. The app displays a startup warning when an adapter reports this single-copy requirement. CLI commands can still administer and inspect storage because they do not collect webhook comment batches or claim jobs.
 
 ## Custom adapters
 
@@ -74,7 +80,13 @@ Set the module path or package name:
 STORAGE_PROVIDER_MODULE=@my-org/reviewphin-postgres
 ```
 
-A custom adapter must report the current storage contract revision, `storage-v006`, implement claim-aware interaction-job operations, and store one metrics record per harness session. Implementation details are in [custom storage adapters](../../development/custom-storage/).
+A custom adapter must report the current storage contract revision, `storage-v007`, implement claim-aware interaction-job operations, and store one metrics record per harness session. Implementation details are in [custom storage adapters](../../development/custom-storage/).
+
+### Upgrading to storage-v007
+
+Stop older service processes and back up storage before upgrading. SQLite migration `sqlite:0013_v7_interaction_batches` adds an interaction-request table, a nullable job batch marker, saved batch output on runs, and routing-model settings on profiles. Every existing job receives one request record containing its original trigger, payload, revision, and enqueue time. Existing jobs remain separate and closed to grouping; existing results, metrics, and other data stay intact.
+
+Flotiq v007 adds the same fields and creates deterministic request records in pages. It verifies each backfill before recording migration completion, so an interrupted migration can resume. Existing Flotiq objects are not rewritten. If a restart interrupts the separate API writes, the adapter finishes assigning the saved request before accepting another request or claiming a job. Follow the single-copy deployment requirement above.
 
 ### Upgrading to storage-v006
 

@@ -463,6 +463,7 @@ function createJob(
     claimedBy: null,
     claimExpiresAt: null,
     latestInteractionRunId: null,
+    batchKind: null,
     ...overrides,
   };
 }
@@ -486,6 +487,7 @@ function createRun(
     reviewReasoningEffort: null,
     textGenerationReasoningEffort: null,
     status: "in_progress",
+    repliesJson: null,
     resultJson: null,
     error: null,
     startedAt,

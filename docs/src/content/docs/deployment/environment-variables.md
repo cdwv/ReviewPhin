@@ -39,10 +39,11 @@ Persisted interaction jobs are the queue source of truth. Enabled runner process
 
 | Variable                           | Default    | Purpose                                                                                                                                                                                 |
 | ---------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REVIEWPHIN_JOB_DEBOUNCE` | `15000` | Comment collection quiet period in milliseconds (0–60000). Set 0 to process comments separately. Batches close after at most 60 seconds, 32 requests, or 256 KiB of trigger and payload data. |
 | `REVIEWPHIN_JOB_POLL_INTERVAL_MS`  | `2000`     | How often the runner polls storage for a claimable job. Must be a positive integer.                                                                                                     |
 | `REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS` | `21600000` | Maximum age (6 hours) a job may stay queued before it is expired, measured from its original enqueue time. Must be a positive integer.                                                  |
 | `REVIEWPHIN_JOB_LEASE_MS`          | `120000`   | Claim lease duration. The runner renews the lease on a heartbeat derived internally as one third of this value. Minimum `1000`.                                                         |
-| `REVIEWPHIN_JOB_RUNNER_ENABLED`    | `true`     | Set to `false` to run an HTTP-only replica that accepts webhooks but never claims or executes jobs. Required for extra replicas on `single-worker` storage; see [storage](../storage/). |
+| `REVIEWPHIN_JOB_RUNNER_ENABLED`    | `true`     | Set to `false` to run an HTTP-only replica that accepts webhooks but never claims or executes jobs. Extra copies receiving comment webhooks require an atomic adapter such as SQLite; Flotiq requires one running copy. See [storage](../storage/). |
 
 ## Model runtime
 

@@ -1,3 +1,4 @@
+import { fixtureRouter } from "./helpers/interaction-router.js";
 import { describe, expect, it, vi } from "vitest";
 
 import { ReviewWorker } from "../src/jobs/review-worker.js";
@@ -86,7 +87,17 @@ describe("ReviewWorker provider trigger lifecycle", () => {
         createTriggerLifecycle: vi.fn(() => lifecycle),
       } as unknown as IPlatform;
       const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
         storage: {
+          stores: {
+            interactionJobs: {
+              admitInteractionTrigger: vi.fn(async () => ({
+                job,
+                request: {},
+                outcome: "duplicate",
+              })),
+            },
+          },
           createOrGetInteractionJob: vi.fn(async () => ({
             job,
             created: false,
@@ -179,6 +190,7 @@ describe("ReviewWorker provider trigger lifecycle", () => {
       createTriggerLifecycle: vi.fn(() => lifecycle),
     } as unknown as IPlatform;
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
       storage: {
         stores: {
           interactionJobs: {
@@ -285,6 +297,7 @@ describe("ReviewWorker provider trigger lifecycle", () => {
       createTriggerLifecycle: vi.fn(() => lifecycle),
     } as unknown as IPlatform;
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
       storage: {
         stores: {
           interactionJobs: {
@@ -347,6 +360,7 @@ describe("ReviewWorker provider trigger lifecycle", () => {
       createTriggerLifecycle: vi.fn(() => lifecycle),
     } as unknown as IPlatform;
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
       storage: {
         stores: {
           interactionJobs: {
@@ -396,6 +410,7 @@ describe("ReviewWorker provider trigger lifecycle", () => {
       createTriggerLifecycle: vi.fn(),
     } as unknown as IPlatform;
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
       storage: {
         stores: {
           interactionJobs: {

@@ -1,3 +1,4 @@
+import { replyPublicationMarker } from "../src/review/batch-checkpoint.js";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,6 +35,46 @@ describe("GitHubPlatformReviewRuntime", () => {
         .splice(0)
         .map((path) => rm(path, { recursive: true, force: true })),
     );
+  });
+
+  it("recovers a reply accepted by GitHub before local acknowledgement", async () => {
+    const client = createClient({ archive: Buffer.from([]) });
+    const marker = replyPublicationMarker("job-batch", ["request-1"]);
+    vi.mocked(client.listIssueComments).mockResolvedValue([
+      {
+        id: 901,
+        body: "Saved reply\n" + marker,
+        user: { login: "reviewphin-octo-org[bot]" },
+      },
+    ] as never);
+    const runtime = createRuntime({
+      workspaceRoot: "tmp",
+      tenant: createTenant("octo-org/reviewphin"),
+      client,
+      patch: vi.fn(),
+      createCodeReviewSnapshot: vi.fn(),
+    });
+    const target = {
+      kind: "code-review-comment" as const,
+      locationType: "code-review-comment" as const,
+      triggerKind: "direct-mention" as const,
+      commentId: 100,
+      authorUsername: "dev",
+      body: "Why?",
+      instruction: "Why?",
+    };
+    const outcomes = await runtime.publishChatterReplies({
+      codeReviewId: 42,
+      plannedTargets: [target],
+      result: {
+        memory: null,
+        replies: [{ target, replyBody: "Saved reply\n" + marker }],
+      },
+      guard: { assertOwned() {} },
+    });
+    expect(outcomes).toEqual([{ target, status: "published", commentId: 901 }]);
+    expect(client.createIssueComment).not.toHaveBeenCalled();
+    expect(client.replyToReviewComment).not.toHaveBeenCalled();
   });
 
   it("is constructed through the GitHub platform boundary", () => {
@@ -438,7 +479,7 @@ describe("GitHubPlatformReviewRuntime", () => {
       previousInteraction: null,
     });
     expect(fallbackPromptContext.scope).toMatchObject({
-      mode: "follow-up-discussion",
+      mode: "first-pass-full",
       targetDiscussion: {
         discussionId: "mapping-github",
         platformDiscussionId: "review-comment:300",
@@ -1089,6 +1130,7 @@ function createJob(): InteractionJobRecord {
     claimedBy: null,
     claimExpiresAt: null,
     latestInteractionRunId: null,
+    batchKind: null,
     tenantId: "tenant-github",
     dedupeKey: "dedupe",
     codeReviewId: 42,

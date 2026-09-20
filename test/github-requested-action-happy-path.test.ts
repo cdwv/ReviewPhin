@@ -1,3 +1,4 @@
+import { fixtureRouter } from "./helpers/interaction-router.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -87,6 +88,7 @@ describe("GitHub requested-action happy path", () => {
     }));
     const reconciler = new DiscussionReconciler({ storage, logger });
     const worker = new ReviewWorker({
+      interactionRouter: fixtureRouter(),
       storage,
       tenantRegistry: {
         getResolvedTenantById: vi.fn(async () => ({ tenant, connection })),
@@ -276,6 +278,7 @@ function createStorage(job: InteractionJobRecord): StorageHelpers {
           providerType: null,
           textGenerationModel: null,
           status: "in_progress" as const,
+          repliesJson: null,
           resultJson: null,
           error: null,
           startedAt: "2026-06-14T00:00:00.000Z",
@@ -645,6 +648,7 @@ function createJob(): InteractionJobRecord {
     claimedBy: null,
     claimExpiresAt: null,
     latestInteractionRunId: null,
+    batchKind: null,
     tenantId: "tenant-github",
     dedupeKey: "delivery-1",
     codeReviewId: 42,

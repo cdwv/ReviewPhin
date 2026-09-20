@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createSingleWorkerInteractionJobStore } from "../src/storage/adapters/single-worker-interaction-job-store.js";
 import type {
   EntityStore,
+  InteractionRequestRecord,
   InteractionJobRecord,
   InteractionRunRecord,
   StoreValueFilter,
@@ -10,7 +11,10 @@ import type {
 
 type WithId = { id: string };
 
-function matchesFilter(value: unknown, filter: StoreValueFilter<unknown>): boolean {
+function matchesFilter(
+  value: unknown,
+  filter: StoreValueFilter<unknown>,
+): boolean {
   if (filter.eq !== undefined && value !== filter.eq) {
     return false;
   }
@@ -47,7 +51,9 @@ function createInMemoryStore<T extends WithId>(): EntityStore<
       return true;
     }
     return Object.entries(filters).every(([field, filter]) =>
-      filter ? matchesFilter((row as Record<string, unknown>)[field], filter) : true,
+      filter
+        ? matchesFilter((row as Record<string, unknown>)[field], filter)
+        : true,
     );
   }
 
@@ -72,11 +78,9 @@ function createInMemoryStore<T extends WithId>(): EntityStore<
       if (order) {
         results = results.sort((left, right) => {
           const a = (left as Record<string, unknown>)[order.field] as
-            | string
-            | number;
+            string | number;
           const b = (right as Record<string, unknown>)[order.field] as
-            | string
-            | number;
+            string | number;
           const cmp = a < b ? -1 : a > b ? 1 : 0;
           return order.direction === "desc" ? -cmp : cmp;
         });
@@ -141,7 +145,9 @@ function makeStores(
   const runs = createInMemoryStore<InteractionRunRecord>();
   const metrics = createInMemoryStore();
   const snapshots = createInMemoryStore();
+  const requests = createInMemoryStore<InteractionRequestRecord>();
   const store = createSingleWorkerInteractionJobStore({
+    requests,
     jobs: jobs,
     runs: runs,
     reviewFindings: createInMemoryStore() as never,
@@ -151,10 +157,12 @@ function makeStores(
     pageSize,
     now,
   });
-  return { jobs, runs, metrics, snapshots, store };
+  return { jobs, runs, metrics, snapshots, requests, store };
 }
 
-function makeJob(overrides: Partial<InteractionJobRecord> & { id: string }): InteractionJobRecord {
+function makeJob(
+  overrides: Partial<InteractionJobRecord> & { id: string },
+): InteractionJobRecord {
   return {
     tenantId: "tenant-1",
     dedupeKey: overrides.id,
@@ -174,6 +182,7 @@ function makeJob(overrides: Partial<InteractionJobRecord> & { id: string }): Int
     claimedBy: null,
     claimExpiresAt: null,
     latestInteractionRunId: null,
+    batchKind: null,
     ...overrides,
   };
 }
@@ -470,10 +479,7 @@ describe("single-worker interaction job store", () => {
   });
 
   it("does not renew a claim at or after its persisted lease deadline", async () => {
-    const { jobs, store } = makeStores(
-      5,
-      () => "2026-06-01T01:02:00.000Z",
-    );
+    const { jobs, store } = makeStores(5, () => "2026-06-01T01:02:00.000Z");
     await jobs.upsert(makeJob({ id: "job-expired-renewal" }));
     await store.claimNext({
       workerId: "worker-1",
@@ -778,6 +784,7 @@ describe("single-worker interaction job store", () => {
       providerType: null,
       textGenerationModel: null,
       status: "completed",
+      repliesJson: null,
       resultJson: '{"ok":true}',
       error: null,
       startedAt: "2026-06-01T01:00:00.000Z",
@@ -800,5 +807,110 @@ describe("single-worker interaction job store", () => {
 
     expect(second.map((run) => run.id)).toEqual(["run-z"]);
     expect(await runs.get("run-z")).toMatchObject({ status: "failed" });
+  });
+});
+
+describe("single-service recoverable batch admission", () => {
+  it.each(["stage", "job", "link", "deadline", "finish"])(
+    "recovers after interruption at %s without losing or duplicating requests",
+    async (point) => {
+      const at = "2026-06-01T00:00:00.000Z";
+      const { jobs, requests, store } = makeStores(2, () => at);
+      const request = {
+        tenantId: "tenant-1",
+        codeReviewId: 7,
+        commentId: 1,
+        dedupeKey: "event-1",
+        triggerJson: "{}",
+        payloadJson: '{"body":"original"}',
+        headSha: "head",
+      };
+      let writes = 0;
+      const upsertRequest = requests.upsert.bind(requests);
+      const upsertJob = jobs.upsert.bind(jobs);
+      const replaceJob = jobs.replace.bind(jobs);
+      const requestSpy = vi
+        .spyOn(requests, "upsert")
+        .mockImplementation(async (record) => {
+          await upsertRequest(record);
+          writes++;
+          if (
+            (point === "stage" && writes === 1) ||
+            (point === "link" && writes === 2) ||
+            (point === "finish" && writes === 3)
+          )
+            throw new Error("interrupted");
+        });
+      const jobSpy = vi
+        .spyOn(jobs, "upsert")
+        .mockImplementation(async (job) => {
+          await upsertJob(job);
+          if (point === "job") throw new Error("interrupted");
+        });
+      const deadlineSpy = vi
+        .spyOn(jobs, "replace")
+        .mockImplementation(async (job) => {
+          await replaceJob(job);
+          if (point === "deadline") throw new Error("interrupted");
+        });
+      await expect(
+        store.admitInteractionTrigger({ request, now: at, debounceMs: 15000 }),
+      ).rejects.toThrow("interrupted");
+      requestSpy.mockRestore();
+      jobSpy.mockRestore();
+      deadlineSpy.mockRestore();
+      const replay = await store.admitInteractionTrigger({
+        request,
+        now: "2026-06-01T00:00:20.000Z",
+        debounceMs: 15000,
+      });
+      expect(replay.outcome).toBe("duplicate");
+      expect(jobs.all()).toHaveLength(1);
+      expect(requests.all()).toHaveLength(1);
+      expect(replay.job.availableAt).toBe("2026-06-01T00:00:15.000Z");
+      expect(replay.request.payloadJson).toBe(request.payloadJson);
+      expect(replay.request.admittedAt).not.toBeNull();
+    },
+  );
+
+  it("serializes concurrent deliveries, keeps one batch, and does not append after claim", async () => {
+    const { store, requests } = makeStores();
+    const request = {
+      tenantId: "tenant-1",
+      codeReviewId: 7,
+      commentId: 1,
+      dedupeKey: "event-1",
+      triggerJson: "{}",
+      payloadJson: "{}",
+      headSha: "head",
+    };
+    const input = {
+      request,
+      now: "2026-06-01T00:00:00.000Z",
+      debounceMs: 15000,
+    };
+    const [first, second] = await Promise.all([
+      store.admitInteractionTrigger(input),
+      store.admitInteractionTrigger({
+        ...input,
+        request: { ...request, commentId: 2, dedupeKey: "event-2" },
+      }),
+    ]);
+    expect(first.job.id).toBe(second.job.id);
+    expect(requests.all()).toHaveLength(2);
+    await store.claimNext({
+      now: "2026-06-01T00:01:00.000Z",
+      queuedAfter: "2020-01-01T00:00:00.000Z",
+      claimExpiresAt: "2026-06-01T02:00:00.000Z",
+      claimToken: "token",
+      workerId: "worker",
+      maxJobRetries: 3,
+    });
+    const next = await store.admitInteractionTrigger({
+      ...input,
+      now: "2026-06-01T00:01:01.000Z",
+      request: { ...request, dedupeKey: "event-3" },
+    });
+    expect(next.job.id).not.toBe(first.job.id);
   });
 });

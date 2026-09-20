@@ -21,13 +21,13 @@ Use the bot username discovered from the GitLab access token. The first run is a
 
 ## Force a full re-scan
 
-To ignore prior incremental context and rescan more broadly:
+To reassess all changed files while retaining existing findings:
 
 ```text
 @reviewphin full review
 ```
 
-Other accepted phrasings: `full rescan`, `fresh full review`, `full review from scratch`, `rescan everything`.
+The routing model interprets the request, so you can also ask to `review everything afresh`. Negations and later corrections matter: “do not run a full review; check the latest changes” requests an incremental pass.
 
 ## Ask about an image
 

@@ -6,6 +6,7 @@ const {
   ensureV003CtdsExistMock,
   ensureV004CtdsExistMock,
   ensureV005CtdsExistMock,
+  ensureV007CtdsExistMock,
   ensureV006CtdsExistMock,
   listMigrationsMock,
   createMigrationMock,
@@ -15,6 +16,7 @@ const {
   ensureV003CtdsExistMock: vi.fn(),
   ensureV004CtdsExistMock: vi.fn(),
   ensureV005CtdsExistMock: vi.fn(),
+  ensureV007CtdsExistMock: vi.fn(),
   ensureV006CtdsExistMock: vi.fn(),
   listMigrationsMock: vi.fn(),
   createMigrationMock: vi.fn(),
@@ -57,6 +59,10 @@ vi.mock("../src/storage/adapters/flotiq/migrations/v006.js", () => ({
   default: ensureV006CtdsExistMock,
 }));
 
+vi.mock("../src/storage/adapters/flotiq/migrations/v007.js", () => ({
+  default: ensureV007CtdsExistMock,
+}));
+
 import { createStorageProvider } from "../src/storage/adapters/flotiq/entrypoint.js";
 
 describe("Flotiq storage provider logging", () => {
@@ -65,6 +71,7 @@ describe("Flotiq storage provider logging", () => {
     ensureV003CtdsExistMock.mockReset();
     ensureV004CtdsExistMock.mockReset();
     ensureV005CtdsExistMock.mockReset();
+    ensureV007CtdsExistMock.mockReset();
     ensureV006CtdsExistMock.mockReset();
     listMigrationsMock.mockReset();
     createMigrationMock.mockReset();
@@ -126,7 +133,7 @@ describe("Flotiq storage provider logging", () => {
     });
 
     await expect(provider.prepare()).resolves.toMatchObject({
-      appliedMigrationIds: ["v002", "v003", "v004", "v005", "v006"],
+      appliedMigrationIds: ["v002", "v003", "v004", "v005", "v006", "v007"],
     });
   });
 

@@ -115,6 +115,11 @@ export type PlatformSetupHandler = (input: {
 }) => Promise<void> | void;
 
 export interface PlatformReviewRuntime {
+  getCurrentHead?(job: InteractionJobRecord): Promise<string>;
+  refreshProjectMemory?(
+    job: InteractionJobRecord,
+    context: PlatformReviewRoutingContext,
+  ): Promise<PlatformReviewRoutingContext>;
   loadRoutingContext(
     job: InteractionJobRecord,
   ): Promise<PlatformReviewRoutingContext>;
@@ -138,6 +143,8 @@ export interface PlatformReviewRuntime {
     commentId: number;
   }): TriggerCommentReference;
   buildPromptContext(input: {
+    requests?: ReviewContext["requests"];
+    reviewScope?: "none" | "incremental" | "full" | undefined;
     attachments: ReviewContext["attachments"];
     attachmentIssues: ReviewContext["attachmentIssues"];
     interactionRunId: string;
@@ -168,6 +175,7 @@ export interface PlatformReviewRuntime {
     triggerJson?: string | undefined;
   }): Promise<TriggerCommentReference>;
   materializeAttachments(input: {
+    triggers?: ReviewContext["trigger"][];
     context: PlatformReviewRoutingContext;
     trigger: ReviewContext["trigger"];
     runArtifacts: InteractionRunArtifacts;

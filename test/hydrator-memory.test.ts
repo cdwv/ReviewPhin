@@ -64,6 +64,7 @@ describe("CodeReviewContextHydrator project memory", () => {
         claimedBy: null,
         claimExpiresAt: null,
         latestInteractionRunId: null,
+        batchKind: null,
         tenantId: "tenant_1",
         dedupeKey: "dedupe",
         codeReviewId: 7,

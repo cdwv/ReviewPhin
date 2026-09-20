@@ -34,9 +34,32 @@ import {
 type StringWithAutocomplete<T> = T | (string & Record<never, never>);
 
 declare module "@flotiq/flotiq-api-sdk" {
+  export interface InteractionRequest extends BaseObject<"interaction_request"> {
+    tenantId: string;
+    codeReviewId: number;
+    dedupeKey: string;
+    interactionJobId?: string;
+    commentId?: number | null;
+    triggerJson: string;
+    payloadJson: string;
+    headSha: string;
+    receivedAt: string;
+    admittedAt?: string;
+    debounceMs: number;
+  }
+  export interface FlotiqObjectAPI {
+    interaction_request: ApiRequest<
+      InteractionRequest,
+      InteractionRequest,
+      InteractionRequest,
+      keyof InteractionRequest & string
+    >;
+  }
+
   export type AnySpaceCTD =
     | CodeReviewSnapshot
     | DiscussionMapping
+    | InteractionRequest
     | InteractionJob
     | InteractionRun
     | InteractionRunMetrics

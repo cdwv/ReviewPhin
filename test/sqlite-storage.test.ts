@@ -126,6 +126,10 @@ describe("SqliteStorage review findings", () => {
         adapter_name: "sqlite",
         migration_id: "sqlite:0012_v6_session_metrics",
       },
+      {
+        adapter_name: "sqlite",
+        migration_id: "sqlite:0013_v7_interaction_batches",
+      },
     ]);
     expect(columnNames.has("anchor_json")).toBe(true);
     expect(columnNames.has("interaction_run_id")).toBe(true);
@@ -394,7 +398,7 @@ describe("SqliteStorage review findings", () => {
         "updated_at",
       ]),
     );
-    expect(migrations.count).toBe(12);
+    expect(migrations.count).toBe(13);
     await storage.close();
   });
 
@@ -735,6 +739,7 @@ describe("SqliteStorage review findings", () => {
       { migration_id: "sqlite:0010_v4_project_memories" },
       { migration_id: "sqlite:0011_v5_job_claims_and_reasoning_effort" },
       { migration_id: "sqlite:0012_v6_session_metrics" },
+      { migration_id: "sqlite:0013_v7_interaction_batches" },
     ]);
     verifiedDb.close();
   });
@@ -924,6 +929,7 @@ describe("SqliteStorage review findings", () => {
       { migration_id: "sqlite:0010_v4_project_memories" },
       { migration_id: "sqlite:0011_v5_job_claims_and_reasoning_effort" },
       { migration_id: "sqlite:0012_v6_session_metrics" },
+      { migration_id: "sqlite:0013_v7_interaction_batches" },
     ]);
   });
 

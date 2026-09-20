@@ -30,13 +30,16 @@ COPILOT_GITHUB_TOKEN=github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 The token owner needs GitHub Copilot access. If Copilot access comes through an organization or enterprise, Copilot CLI must also be enabled by policy. For local interactive runs, `copilot auth login` can be used instead of a PAT.
 
-Create a native Copilot profile when you want to pin a model while keeping Copilot's own backend:
+Create a native Copilot profile when you want to pin models while keeping Copilot's own backend. Our default examples use `gpt-5.6-terra` with `high` reasoning for reviews, `claude-sonnet-4.6` for chatter, and `gpt-5.6-luna` with `low` reasoning for routing. These are suggested profile settings; they do not change the fallback when no profile is active.
 
 ```bash
 reviewphin model-profile add \
-  --name copilot-gpt5.4 \
-  --review-model gpt-5.4 \
-  --text-generation-model gpt-5.4-mini \
+  --name copilot-default \
+  --review-model gpt-5.6-terra \
+  --review-reasoning-effort high \
+  --text-generation-model claude-sonnet-4.6 \
+  --routing-model gpt-5.6-luna \
+  --routing-reasoning-effort low \
   --default
 ```
 
@@ -123,51 +126,74 @@ Use `--wire-api completions` only for compatibility endpoints that do not suppor
 
 ## Review and text models
 
-For cost efficiency, configure a stronger review model and a lighter text-generation model:
+Use separate models for review, chatter, and routing:
 
 ```bash
 reviewphin model-profile add \
   --name production \
-  --base-url https://api.openai.com/v1 \
-  --provider-type openai \
-  --auth-token sk-xxx \
-  --review-model gpt-5.4 \
-  --text-generation-model gpt-5.4-mini \
-  --ignore-missing-model \
+  --review-model gpt-5.6-terra \
+  --review-reasoning-effort high \
+  --text-generation-model claude-sonnet-4.6 \
+  --routing-model gpt-5.6-luna \
+  --routing-reasoning-effort low \
   --default
 ```
 
-When `--text-generation-model` is omitted, ReviewPhin uses the review model for all model-backed tasks. The text-generation model is used for lighter work such as memory coalescing and reply text.
+When `--text-generation-model` is omitted, ReviewPhin uses the review model for text generation. The text-generation model is used for lighter work such as memory coalescing and reply text.
 
-## Reasoning effort
+## Routing collected requests
 
-Set reasoning effort independently for each role with `--review-reasoning-effort` and `--text-generation-reasoning-effort`. Accepted values are `low`, `medium`, `high`, and `xhigh`.
+Every comment request is classified by a model before ReviewPhin chooses review, memory work, replies, or a combination. The router reads the collected comments together and returns a decision for each one, including whether review should be incremental or full. It respects later corrections and cancellations. ReviewPhin upgrades incremental requests to full when there is no previous review. Discussion references identify concerns to reassess within that scope. The router has no tools or subagents.
+
+Our Copilot examples use `gpt-5.6-luna` with `low` reasoning for routing. Add it to an existing profile:
 
 ```bash
 reviewphin model-profile add \
-  --name gpt56-review \
-  --review-model gpt-5.6 \
+  --name production \
+  --routing-model gpt-5.6-luna \
+  --routing-reasoning-effort low
+```
+
+The router uses the profile's provider and credentials. Check `model-profile available-models` with those credentials before selecting a model. Custom endpoints and Azure deployments must supply a model they actually serve; they can inherit the chatter settings instead.
+
+When `routing-model` is unset, the router uses the chatter (text-generation) model. When `routing-reasoning-effort` is unset, it uses the chatter reasoning setting. These defaults are independent: you can select a routing model and inherit chatter reasoning, or override reasoning while using the chatter model. If chatter itself has no explicit model, its existing review-model or harness default also applies to routing. The review reasoning setting is not inherited.
+
+If the selected router fails, ReviewPhin tries the chatter model and its reasoning setting, provided that would be a different model or setting. If that also fails, the job is retried under the normal retry policy. ReviewPhin never substitutes keyword rules for a model decision. Each model attempt has a 20-second response budget shared across output correction attempts; startup and cleanup can add time. Input above 48,000 characters fails visibly without dropping requests. Successful routing and any reason for switching models are recorded in the run's `orchestration/routing.json` artifact.
+
+Clearing `routing-model` with `--clear-routing-model` also clears its reasoning override and restores chatter defaults. Use `--clear-routing-reasoning-effort` to restore only chatter reasoning. Explicit model IDs are checked when saving a profile.
+
+Existing profiles retain their stored model settings during migration. The new routing fields start empty, so those profiles automatically route with their chatter model and reasoning.
+
+## Reasoning effort
+
+Set reasoning effort with `--review-reasoning-effort`, `--text-generation-reasoning-effort`, and `--routing-reasoning-effort`. Accepted values are `low`, `medium`, `high`, and `xhigh`.
+
+```bash
+reviewphin model-profile add \
+  --name production \
+  --review-model gpt-5.6-terra \
   --review-reasoning-effort high \
-  --text-generation-model gpt-5.6-mini \
-  --text-generation-reasoning-effort low \
+  --text-generation-model claude-sonnet-4.6 \
+  --routing-model gpt-5.6-luna \
+  --routing-reasoning-effort low \
   --default
 ```
 
-The two roles are independent — the text-generation effort does not inherit the review effort, even when the text-generation model falls back to the review model.
+Chatter reasoning does not inherit review reasoning, even when chatter uses the review model. Routing reasoning inherits chatter reasoning unless explicitly overridden.
 
-When an effort is left unset (or cleared), ReviewPhin omits `reasoningEffort` from the model session entirely and the underlying harness keeps its own default. It does not substitute another value.
+When review or chatter effort is left unset (or cleared), the harness keeps its own default. Unset routing effort inherits chatter effort; if both are unset, the router also uses the harness default.
 
 Clear a previously set effort with the matching clear flag:
 
 ```bash
-reviewphin model-profile add --name gpt56-review --clear-review-reasoning-effort
-reviewphin model-profile add --name gpt56-review --clear-text-generation-reasoning-effort
+reviewphin model-profile add --name production --clear-review-reasoning-effort
+reviewphin model-profile add --name production --clear-text-generation-reasoning-effort
 ```
 
-If a model and effort combination is not supported by the provider, ReviewPhin passes it through and surfaces the provider/CLI error unchanged rather than hiding it.
+If a review or chatter model does not support the chosen reasoning effort, ReviewPhin reports the provider error. Routing first tries the chatter model and reasoning setting, as described above; if that also fails, the job retries.
 
 :::note[Model availability]
-GPT-5.6 models are shown as examples. Availability depends on the account or organization entitlement of the token or key backing the profile — not every account can use every model or effort.
+The suggested models are examples. Availability depends on the account or organization entitlement of the token or key backing the profile — not every account can use every model or effort. Provider-specific examples use models or deployment names for that endpoint; all models in a profile use the same provider and credentials.
 :::
 
 ## Save-time model validation

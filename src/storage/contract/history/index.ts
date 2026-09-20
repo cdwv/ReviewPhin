@@ -110,6 +110,23 @@ export const STORAGE_CONTRACT_HISTORY = [
       "Existing metrics rows retain their counters, receive deterministic legacy session identity, and allocate legacy usage to the unknown model; provider-managed update timestamps may advance during migration.",
     ],
   },
+  {
+    id: "storage-v007",
+    summary:
+      "Durable interaction batches, reply recovery, and routing-model overrides.",
+    changeKind: "breaking",
+    affectedSurfaces: [
+      "interaction-jobs",
+      "interaction-requests",
+      "interaction-runs",
+      "model-profiles",
+    ],
+    providerNotes: [
+      "Backfill one request per existing job without rewriting original inputs or history.",
+      "Admission, revision selection, and reply checkpoints require claim-safe storage operations.",
+      "Nullable routing overrides preserve existing profiles and inherit chatter model and reasoning settings.",
+    ],
+  },
 ] as const satisfies readonly StorageContractRevisionMetadata[];
 
 export type StorageContractRevisionId =

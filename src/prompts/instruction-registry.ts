@@ -7,12 +7,12 @@ import {
 } from "./instruction-helpers.js";
 
 const promptFragments = {
+  "routing/classify.md": definePromptFragment(),
   "review/main.md": definePromptFragment(),
   "review/context-analyst.md": definePromptFragment(),
   "review/review-author.md": definePromptFragment(),
   "review/first-pass-full.md": definePromptFragment(),
   "review/incremental-rereview.md": definePromptFragment(),
-  "review/follow-up-discussion.md": definePromptFragment(),
   "review/summary-follow-up.md": definePromptFragment(),
   "reply/chatter.md": definePromptFragment(),
   "reply/direct-mention.md": definePromptFragment(),
@@ -35,6 +35,9 @@ const promptFragments = {
 } as const;
 
 export const instructionTemplates = {
+  "routing.classify": buildStaticPromptTemplate(promptFragments, [
+    "routing/classify.md",
+  ] as const),
   "review.first-pass-full": buildStaticPromptTemplate(promptFragments, [
     "review/main.md",
     "review/first-pass-full.md",
@@ -59,10 +62,6 @@ export const instructionTemplates = {
       "review/summary-follow-up.md",
     ] as const,
   ),
-  "review.follow-up-discussion": buildStaticPromptTemplate(promptFragments, [
-    "review/main.md",
-    "review/follow-up-discussion.md",
-  ] as const),
   "subagent.context-analyst": buildStaticPromptTemplate(promptFragments, [
     "review/context-analyst.md",
   ] as const),

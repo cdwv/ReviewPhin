@@ -138,6 +138,8 @@ export interface ModelProfileCliResult {
   readonly textGenerationModel: string | null;
   readonly reviewReasoningEffort: string | null;
   readonly textGenerationReasoningEffort: string | null;
+  readonly routingModel: string | null;
+  readonly routingReasoningEffort: string | null;
   readonly isDefault: boolean;
   readonly authToken: string | null;
 }
@@ -178,6 +180,8 @@ const modelProfileSchema = z.object({
   authToken: z.string().min(1).optional(),
   reviewModel: z.string().min(1).optional(),
   textGenerationModel: z.string().min(1).optional(),
+  routingModel: z.string().min(1).optional(),
+  routingReasoningEffort: z.enum(["low", "medium", "high", "xhigh"]).optional(),
   reviewReasoningEffort: z.enum(["low", "medium", "high", "xhigh"]).optional(),
   textGenerationReasoningEffort: z
     .enum(["low", "medium", "high", "xhigh"])
@@ -193,6 +197,8 @@ const clearableModelProfileFields = [
   "auth-token",
   "review-model",
   "text-generation-model",
+  "routing-model",
+  "routing-reasoning-effort",
   "review-reasoning-effort",
   "text-generation-reasoning-effort",
 ] as const;
@@ -487,6 +493,16 @@ const storageMigrationSteps: readonly StorageMigrationStep[] = [
         {
           order: ascendingOrder("id"),
         },
+      ),
+  },
+  {
+    label: "interactionRequests",
+    run: (source, target) =>
+      migrateEntityStore(
+        source.interactionRequests,
+        target.interactionRequests,
+        "interactionRequests",
+        { order: ascendingOrder("id") },
       ),
   },
   {
@@ -1241,6 +1257,8 @@ async function runCliCommand(
       reviewReasoningEffort: options["review-reasoning-effort"],
       textGenerationReasoningEffort:
         options["text-generation-reasoning-effort"],
+      routingModel: options["routing-model"],
+      routingReasoningEffort: options["routing-reasoning-effort"],
       isDefault:
         "default" in options
           ? options.default === true || options.default === "true"
@@ -1697,7 +1715,7 @@ function printHelp(
     "tenant set-profile (--tenant-id <id> | --key <key>) --model-profile <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "tenant clear-profile (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "tenant remove (--tenant-id <id> | --key <key>) [--sqlite-database-path <path>] [--storage-provider-module <module>] [--workspace-root <path>] [--run-log-dir <path>] [--yes]",
-    "model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--review-reasoning-effort <low|medium|high|xhigh>] [--clear-review-reasoning-effort] [--text-generation-reasoning-effort <low|medium|high|xhigh>] [--clear-text-generation-reasoning-effort] [--default] [--ignore-missing-model] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
+    "model-profile add --name <name> [--base-url <url>] [--clear-base-url] [--provider-type <type>] [--clear-provider-type] [--wire-api <mode>] [--clear-wire-api] [--auth-token <token>] [--clear-auth-token] [--review-model <name>] [--clear-review-model] [--text-generation-model <name>] [--clear-text-generation-model] [--review-reasoning-effort <low|medium|high|xhigh>] [--clear-review-reasoning-effort] [--text-generation-reasoning-effort <low|medium|high|xhigh>] [--clear-text-generation-reasoning-effort] [--routing-model <name>] [--clear-routing-model] [--routing-reasoning-effort <low|medium|high|xhigh>] [--clear-routing-reasoning-effort] [--default] [--ignore-missing-model] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile available-models [--model-profile <name> | --auth-token <token>] [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile list [--sqlite-database-path <path>] [--storage-provider-module <module>]",
     "model-profile remove --name <name> [--sqlite-database-path <path>] [--storage-provider-module <module>]",
@@ -3458,6 +3476,18 @@ function buildModelProfileUpsertInput(
             profile.textGenerationReasoningEffort ?? null,
         }
       : {}),
+    ...(isTrueOption(options["clear-routing-model"])
+      ? { routingModel: null, routingReasoningEffort: null }
+      : {}),
+    ...("routing-model" in options
+      ? { routingModel: profile.routingModel ?? null }
+      : {}),
+    ...(isTrueOption(options["clear-routing-reasoning-effort"])
+      ? { routingReasoningEffort: null }
+      : {}),
+    ...("routing-reasoning-effort" in options
+      ? { routingReasoningEffort: profile.routingReasoningEffort ?? null }
+      : {}),
     ...("default" in options ? { isDefault: profile.isDefault ?? false } : {}),
   };
 }
@@ -3475,6 +3505,8 @@ interface ModelProfileOutput {
   textGenerationModel: string | null;
   reviewReasoningEffort: string | null;
   textGenerationReasoningEffort: string | null;
+  routingModel: string | null;
+  routingReasoningEffort: string | null;
   isDefault: boolean;
   authToken: string | null;
 }
@@ -3493,6 +3525,8 @@ function summarizeModelProfile(
     textGenerationModel: profile.textGenerationModel,
     reviewReasoningEffort: profile.reviewReasoningEffort,
     textGenerationReasoningEffort: profile.textGenerationReasoningEffort,
+    routingModel: profile.routingModel,
+    routingReasoningEffort: profile.routingReasoningEffort,
     isDefault: profile.isDefault,
     authToken: maskSecret(profile.authToken),
   };
@@ -3517,6 +3551,11 @@ function formatModelProfileValues(
     [
       "wireApi",
       profile.providerBaseUrl ? (profile.wireApi ?? "responses") : "native",
+    ],
+    ["routingModel", profile.routingModel ?? "inherit chatter model"],
+    [
+      "routingReasoningEffort",
+      profile.routingReasoningEffort ?? "inherit chatter reasoning",
     ],
     ["reviewModel", profile.reviewModel ?? "default"],
     ["textGenerationModel", profile.textGenerationModel ?? "default"],

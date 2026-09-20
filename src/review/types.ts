@@ -141,6 +141,12 @@ export const chatterMemoryOutcomeSchema = z.discriminatedUnion("status", [
 ]);
 
 export const chatterReplySchema = z.object({
+  coveredRequestIds: z
+    .array(z.string().min(1))
+    .optional()
+    .describe(
+      "For a collected batch, identify every request answered by this reply",
+    ),
   target: z
     .object({
       kind: responseTargetSchema.shape.kind,
@@ -183,8 +189,7 @@ export type ReviewResult = z.infer<typeof reviewResultSchema>;
 export type ChatterMemoryOutcome = z.infer<typeof chatterMemoryOutcomeSchema>;
 export type ChatterReply = z.infer<typeof chatterReplySchema>;
 export type ChatterBatchResult = z.infer<typeof chatterBatchResultSchema>;
-export type ReviewMode =
-  "first-pass-full" | "incremental-rereview" | "follow-up-discussion";
+export type ReviewMode = "first-pass-full" | "incremental-rereview";
 export type ReplyStyle =
   | "none"
   | "direct-answer"
@@ -376,6 +381,7 @@ export interface PlannedResponseAction {
 }
 
 export interface InteractionPlan {
+  reviewScope: "none" | "incremental" | "full";
   initiatingTrigger: ReviewTriggerContext;
   responseTargets: ResponseTarget[];
   plannedResponses: PlannedResponseAction[];
@@ -412,7 +418,13 @@ export interface ReviewScopeContext {
   deltaSincePreviousReview: ReviewDeltaContext | null;
 }
 
+export interface InteractionRequestContext {
+  id: string;
+  trigger: CommentReviewTriggerContext;
+}
+
 export interface ReviewContext {
+  requests?: InteractionRequestContext[];
   attachments: ReviewAttachment[];
   attachmentIssues: ReviewAttachmentIssue[];
   workspacePath: string;

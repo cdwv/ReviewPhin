@@ -389,6 +389,7 @@ All variables are optional unless noted. For local Docker from source, put them 
 | `WORKSPACE_ROOT`                                     | `./tmp/review-workspaces`        | Scratch directory for hydrated repositories                                        |
 | `MAX_JOB_RETRIES`                                    | `3`                              | Retry attempts for failed review jobs                                              |
 | `RETRY_BACKOFF_MS`                                   | `5000`                           | Delay (ms) between retries; preserved across restarts by the persisted queue       |
+| `REVIEWPHIN_JOB_DEBOUNCE` | `15000` | Comment collection quiet period in milliseconds (0–60000). Set 0 to process comments separately. Batches close after at most 60 seconds, 32 requests, or 256 KiB of trigger and payload data. |
 | `REVIEWPHIN_JOB_POLL_INTERVAL_MS`                    | `2000`                           | How often the runner polls storage for a claimable job (positive integer)          |
 | `REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS`                   | `21600000`                       | Max age from original enqueue before a queued job is expired (positive integer)    |
 | `REVIEWPHIN_JOB_LEASE_MS`                            | `120000`                         | Claim lease; heartbeat renews at one third of it (minimum `1000`)                  |

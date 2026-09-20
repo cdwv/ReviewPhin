@@ -110,10 +110,7 @@ export class HarnessReviewProvider implements ReviewProvider {
   }
 
   private assertCompleteFallbackFits(context: ReviewContext): void {
-    if (
-      context.gitInspection ||
-      context.scope.mode === "follow-up-discussion"
-    ) {
+    if (context.gitInspection) {
       return;
     }
 

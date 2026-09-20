@@ -25,7 +25,7 @@ Check the edited scope for concrete, actionable unused code introduced or left b
 
 For standalone unused-code cleanup findings, follow instruction precedence from lowest to highest: these instructions, `projectMemory`, code-review-level user comments, then the current `reviewTrigger`. If the same evidence shows a separate correctness, security, or performance issue, assess that independently.
 
-`reviewTrigger` is the latest explicit user request. Follow its instruction when it is compatible with the code and review evidence.
+`reviewTrigger` identifies a representative user request. When `requests` contains a collected batch, consider every request in order and respect later corrections or cancellations. Use the selected `reviewScope.mode` for this pass; a superseded request must not widen it. Follow the remaining user instructions when they are compatible with the code and review evidence.
 
 Use `overview` to describe the current overall state of the entire code review, assess merge readiness with confidence, and include concise highlights when useful. It must stand alone, regardless of this pass's inspection scope, and not summarize only the latest pass.
 

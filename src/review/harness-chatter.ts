@@ -1,3 +1,4 @@
+import { validateReplyCoverage } from "./interaction-router.js";
 import { buildChatterPrompt } from "../prompts/prompt-builders.js";
 import type { ProjectMemoryContext } from "../memory/types.js";
 import type { HarnessSessionRuntime } from "../harness/session.js";
@@ -8,6 +9,7 @@ import type {
   HarnessTenantContext,
 } from "../harness/types.js";
 import type {
+  InteractionRequestContext,
   ChatterBatchResult,
   CommentReviewTriggerContext,
   ReplyStyle,
@@ -19,6 +21,7 @@ import type {
 import { chatterBatchResultSchema } from "./types.js";
 
 export interface ChatterRunContext {
+  requests?: InteractionRequestContext[];
   attachments?: HarnessRunAttachments | undefined;
   trigger: CommentReviewTriggerContext;
   responseTargets: ResponseTarget[];
@@ -95,7 +98,20 @@ export class HarnessChatterRunner {
         workspacePath: context.reviewContext?.workspacePath ?? null,
       },
       responseFormat: {
-        schema: chatterBatchResultSchema,
+        schema: chatterBatchResultSchema.superRefine((result, ctx) => {
+          if (context.phase !== "reply" || !context.requests) return;
+          try {
+            validateReplyCoverage(context.requests, result);
+          } catch (error) {
+            ctx.addIssue({
+              code: "custom",
+              message:
+                (error instanceof Error ? error.message : String(error)) +
+                ". Required request IDs: " +
+                context.requests.map((r) => r.id).join(", "),
+            });
+          }
+        }),
         looksLike: isChatterBatchResultLike,
       },
     });

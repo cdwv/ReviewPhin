@@ -4,7 +4,6 @@ import type { ChatterRunContext } from "../review/harness-chatter.js";
 import {
   chatterBatchResultSchema,
   reviewResultSchema,
-  type ReviewAnchor,
   type ReviewContext,
 } from "../review/types.js";
 import { truncate } from "../utils/text.js";
@@ -74,10 +73,6 @@ export function buildChatterPrompt(context: ChatterRunContext): string {
 function getPromptTemplateId(
   context: ReviewContext,
 ): Extract<PromptTemplateId, `review.${string}`> {
-  if (context.scope.mode === "follow-up-discussion") {
-    return "review.follow-up-discussion";
-  }
-
   if (context.scope.mode === "incremental-rereview") {
     return context.trigger.kind === "summary-follow-up"
       ? "review.incremental-rereview.summary-follow-up"
@@ -170,6 +165,7 @@ export function buildCompactReviewContext(
         })),
       deltaSincePreviousReview: context.scope.deltaSincePreviousReview,
     },
+    requests: context.requests,
     reviewTrigger: buildCompactTrigger(context.trigger),
     codeReview: {
       id: context.codeReview.id,
@@ -196,9 +192,7 @@ export function buildCompactReviewContext(
       : {
           available: false,
           guidance:
-            context.scope.mode === "follow-up-discussion"
-              ? "The target discussion hunk is included inline because trusted Git inspection was unavailable."
-              : "The complete platform diff is included inline because trusted Git inspection was unavailable.",
+            "The complete platform diff is included inline because trusted Git inspection was unavailable.",
         },
     changedFiles: context.scope.allChangedFiles,
     inlineDiffs: buildInlineDiffs(context),
@@ -296,6 +290,7 @@ function buildCompactChatterContext(
   const compactTrigger = buildCompactTrigger(context.trigger);
 
   return {
+    requests: context.requests,
     phase: context.phase,
     replyStyle: context.replyStyle,
     attachments: sharedReviewContext?.attachments ?? [],
@@ -353,51 +348,8 @@ function buildInlineDiffs(context: ReviewContext) {
     newFile: change.newFile,
     renamedFile: change.renamedFile,
     deletedFile: change.deletedFile,
-    diff:
-      context.scope.mode === "follow-up-discussion"
-        ? extractTargetHunk(
-            change.diff ?? "",
-            context.scope.targetDiscussion?.anchor ?? null,
-          )
-        : (change.diff ?? ""),
+    diff: change.diff ?? "",
   }));
-}
-
-function extractTargetHunk(diff: string, anchor: ReviewAnchor | null): string {
-  if (!anchor || diff.length === 0) {
-    return diff;
-  }
-
-  const lines = diff.split("\n");
-  const hunkStarts: number[] = [];
-  for (const [index, line] of lines.entries()) {
-    if (line.startsWith("@@ ")) {
-      hunkStarts.push(index);
-    }
-  }
-
-  for (const [hunkIndex, start] of hunkStarts.entries()) {
-    const header = lines[start] ?? "";
-    const parsed = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(header);
-    if (!parsed) {
-      continue;
-    }
-    const oldStart = Number(parsed[1]);
-    const oldCount = Number(parsed[2] ?? 1);
-    const newStart = Number(parsed[3]);
-    const newCount = Number(parsed[4] ?? 1);
-    const rangeStart = anchor.side === "old" ? oldStart : newStart;
-    const rangeCount = anchor.side === "old" ? oldCount : newCount;
-    if (
-      rangeCount > 0 &&
-      anchor.startLine >= rangeStart &&
-      anchor.startLine <= rangeStart + rangeCount - 1
-    ) {
-      const end = hunkStarts[hunkIndex + 1] ?? lines.length;
-      return lines.slice(start, end).join("\n");
-    }
-  }
-  return diff;
 }
 
 function buildCompactTrigger(trigger: ReviewContext["trigger"]) {

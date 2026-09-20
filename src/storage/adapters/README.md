@@ -17,7 +17,7 @@ The app loads the module from `STORAGE_PROVIDER_MODULE` when set, otherwise it u
 ## Compatibility rules
 
 - Your adapter must report an exact storage contract revision match.
-- The current required revision is `storage-v006`.
+- The current required revision is `storage-v007`.
 - Adapters must expose `platformConnections`; every tenant requires
   `platformConnectionId`.
 - Connection names are globally unique. SQLite migration
@@ -40,14 +40,15 @@ The app loads the module from `STORAGE_PROVIDER_MODULE` when set, otherwise it u
   `false`/`null` on lease loss, and ordinary `EntityStore` mutations of an
   existing `in_progress` job must be rejected so fencing cannot be bypassed.
   `"atomic"` adapters (SQLite, via `BEGIN IMMEDIATE`) guarantee global
-  single-review execution; `"single-worker"` adapters (Flotiq) require a single
-  runner process while other replicas run with `REVIEWPHIN_JOB_RUNNER_ENABLED=false`.
+  single-review execution; `"single-worker"` adapters (Flotiq) require one
+  running copy of ReviewPhin to receive comment webhooks and execute jobs.
   A reusable single-worker queue helper is available for adapters that declare
   that topology. The v005 migration adds `availableAt` (backfilled from
   `enqueuedAt`), claim fields, `latestInteractionRunId`, the `"expired"` status,
   nullable reasoning-effort fields on model profiles and runs, the run claim-token
   snapshot, and nullable `interactionRunId` on code-review snapshots; stop all
   v004 processes before migrating.
+- `storage-v007` (breaking) adds `interactionRequests`, `InteractionJobRecord.batchKind`, `InteractionRunRecord.repliesJson`, and routing profile fields. Implement `admitInteractionTrigger`, `setInteractionJobHeadForClaim`, and `saveInteractionRunRepliesForClaim`. Admission and claims must serialize. Deduplicate by tenant and provider event, retain every original request, and freeze membership before execution. The single-worker helper stages and recovers remote admissions using `admittedAt`; its queue protects only one running copy of ReviewPhin receiving comment webhooks and executing jobs. Backfill one closed request per existing job. SQLite migration 0013 is transactional; Flotiq v007 is additive and restartable. Saved `repliesJson` checkpoints include routing, phase completion, model output, and published reply markers; `resultJson` remains review output.
 - `storage-v006` (breaking) stores one metrics record per harness session.
   Session identity is the interaction run, open-string harness name, and stable
   harness session key. `sessionType` and `usageUnit` remain open strings so
@@ -78,6 +79,8 @@ Your provider owns:
 
 Required interface methods beyond the lifecycle: `getProviderId()` (string) and `getSupportedStorageContract()` (string).
 
+The Flotiq adapter uses the shared `single-worker-interaction-job-store.ts` helper to finish one admission or claim operation before starting another. This queue exists only inside that adapter instance; it cannot coordinate two running copies of ReviewPhin. SQLite implements the same contract with database transactions. Keep this coordination inside the adapters, and call their common methods from the worker.
+
 The core app owns:
 
 - cross-entity read models
@@ -88,7 +91,7 @@ The core app owns:
 
 - Keep stores CRUD/store-shaped around one persisted entity at a time.
 - Keep provider-specific transport and schema details out of the app.
-- Expose only the standard store contract (`get`, `getMany`, `find`, `list`, `upsert`, `upsertMany`, `replace`, `replaceMany`, `update`, `updateMany`, `patch`, `patchMany`, `delete`, `deleteMany`). The interaction-job store additionally extends this contract with the `storage-v005` claim-aware operations described above.
+- Expose only the standard store contract (`get`, `getMany`, `find`, `list`, `upsert`, `upsertMany`, `replace`, `replaceMany`, `update`, `updateMany`, `patch`, `patchMany`, `delete`, `deleteMany`). The interaction-job store additionally extends this contract with the claim-aware and batch-admission operations described above.
 - If the app needs a query the filters/order contract cannot express efficiently, extend the shared filter/order types explicitly rather than adding provider-specific methods.
 
 ## Migrations
