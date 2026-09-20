@@ -3,6 +3,22 @@
 Reviewphin uses [Happy Changelog](https://happy-changelog.github.io/happy-changelog-website/) for changelog automation. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## v1.12.0 - 2026-09-20
+### Added
+- Related comments can be collected into one review while each question
+still receives an answer.
+- Administrators can configure a separate routing model and reasoning
+effort for deciding which work comments require.
+
+### Changed
+- Comment intent and full-versus-incremental review scope are determined
+by a model, with chatter used when routing settings are omitted or the
+configured router fails.
+- Claims that fixes or suggestions were applied now imply an incremental
+review without requiring an explicit review request.
+- Finding follow-ups retain the other existing findings and complete
+change context while focusing on the referenced concerns.
+
 ## v1.11.0 - 2026-09-12
 ### Added
 - Support committed ReviewPhin-specific instructions and native review
