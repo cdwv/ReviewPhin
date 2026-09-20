@@ -89,7 +89,9 @@ The worker passes the selected scope through the platform adapter into review-co
 
 Discussion references tell the Reviewer which concerns to reassess; they are not a separate review type. Every requested discussion remains available, including resolved threads. The full ordered batch remains in review context, and the reply task identifies each request that needs an answer.
 
-The worker saves routing and completed model output in a claim-scoped batch checkpoint, so publication retries can resume without another model call. Checkpoint version 2 stores the review scope. Version 1 checkpoints are upgraded when read: `false` becomes `none`, and `true` becomes `full` because the old record did not retain scope intent. Completed model results and publication progress are preserved. This payload upgrade applies to both storage adapters and does not change the storage contract or database columns.
+The worker saves routing and completed model output in a claim-scoped batch checkpoint, so publication retries can resume without another model call. Request batching requires storage-v007 and its accompanying SQLite or Flotiq migrations; custom adapters must implement that contract too.
+
+Within storage-v007, checkpoint version 2 stores the review scope. Version 1 checkpoints are upgraded when read: `false` becomes `none`, and `true` becomes `full` because the old record did not retain scope intent. Completed model results and publication progress are preserved. This version 1-to-2 payload upgrade applies to both storage adapters without an additional storage-contract revision or database-column change.
 
 ## 5. Publish
 
