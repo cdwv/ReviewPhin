@@ -558,9 +558,10 @@ function summarizeDiff(diff: string | undefined): {
   let deletions = 0;
   const changedLineRanges: ReviewChangeSummary["changedLineRanges"] = [];
   for (const line of diff.split("\n")) {
-    if (line.startsWith("+") && !line.startsWith("+++")) {
+    // Platform diffs carry no ---/+++ file headers; "----" is a removed line.
+    if (line.startsWith("+")) {
       additions += 1;
-    } else if (line.startsWith("-") && !line.startsWith("---")) {
+    } else if (line.startsWith("-")) {
       deletions += 1;
     }
 

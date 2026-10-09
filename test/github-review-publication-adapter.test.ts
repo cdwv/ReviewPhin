@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   GitHubApiError,
   type GitHubPendingReviewComment,
+  type GitHubPullRequestFile,
   type GitHubIssueComment,
   type GitHubPullRequestReview,
   type GitHubReviewComment,
@@ -266,6 +267,49 @@ describe("GitHubReviewPublicationAdapter", () => {
     expect(state.client.createIssueComment.mock.calls[0]?.[0].body).toContain(
       "<!-- reviewphin-finding:",
     );
+  });
+
+  it("does not count hunk lines starting with ++ or -- as file headers", async () => {
+    const state = createState();
+    const adapter = createAdapter(state, [
+      createFile(
+        "docs/guide.md",
+        "@@ -1,4 +1,4 @@\n # Guide\n----\n Intro\n+Added\n Outro",
+      ),
+      createFile(
+        "src/counter.c",
+        "@@ -1,2 +1,3 @@\n start();\n+++counter;\n end();",
+      ),
+    ]);
+
+    await adapter.publishFindings({
+      publicationKey: "job-dash-lines",
+      existingDiscussionIds: new Set(),
+      findings: [
+        createAnchoredFinding("visible-new", "docs/guide.md", 4, "new"),
+        createAnchoredFinding("past-hunk-new", "docs/guide.md", 5, "new"),
+        createAnchoredFinding("visible-old", "src/counter.c", 2, "old"),
+        createAnchoredFinding("past-hunk-old", "src/counter.c", 3, "old"),
+      ],
+    });
+
+    expect(state.client.createPullRequestReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        comments: [
+          expect.objectContaining({
+            path: "docs/guide.md",
+            line: 4,
+            side: "RIGHT",
+          }),
+          expect.objectContaining({
+            path: "src/counter.c",
+            line: 2,
+            side: "LEFT",
+          }),
+        ],
+      }),
+    );
+    expect(state.client.createIssueComment).toHaveBeenCalledTimes(2);
   });
 
   it("continues fallback findings with linked issue comments", async () => {
@@ -804,34 +848,62 @@ describe("GitHubReviewPublicationAdapter", () => {
   });
 });
 
-function createAdapter(state: ReturnType<typeof createState>) {
+function createAdapter(
+  state: ReturnType<typeof createState>,
+  files = [
+    createFile(
+      "src/index.ts",
+      "@@ -1,2 +1,3 @@\n-const obsolete = true;\n const value = compute();\n+value;\n+consume(value);",
+    ),
+  ],
+) {
   return new GitHubReviewPublicationAdapter({
     client: state.client as never,
     repositoryFullName: "octo/repo",
     pullRequestNumber: 7,
     headSha: "head-sha",
-    files: [
-      {
-        sha: "blob",
-        filename: "src/index.ts",
-        status: "modified",
-        additions: 2,
-        deletions: 1,
-        changes: 3,
-        blob_url: "https://github.com/octo/repo/blob/head/src/index.ts",
-        raw_url: "https://github.com/octo/repo/raw/head/src/index.ts",
-        contents_url:
-          "https://api.github.com/repos/octo/repo/contents/src/index.ts",
-        patch:
-          "@@ -1,2 +1,3 @@\n-const obsolete = true;\n const value = compute();\n+value;\n+consume(value);",
-      },
-    ],
+    files,
     issueComments: state.issueComments,
     reviews: state.reviews,
     reviewComments: state.reviewComments,
     reviewThreads: state.reviewThreads,
     botLogin: "reviewphin[bot]",
   });
+}
+
+function createFile(filename: string, patch: string): GitHubPullRequestFile {
+  return {
+    sha: "blob",
+    filename,
+    status: "modified",
+    additions: 2,
+    deletions: 1,
+    changes: 3,
+    blob_url: `https://github.com/octo/repo/blob/head/${filename}`,
+    raw_url: `https://github.com/octo/repo/raw/head/${filename}`,
+    contents_url: `https://api.github.com/repos/octo/repo/contents/${filename}`,
+    patch,
+  };
+}
+
+function createAnchoredFinding(
+  identityKey: string,
+  path: string,
+  line: number,
+  side: "new" | "old",
+) {
+  return {
+    identityKey,
+    fingerprint: `${identityKey}-fingerprint`,
+    marker: `github:job-dash-lines:${identityKey}`,
+    finding: {
+      title: `Finding ${identityKey}`,
+      body: "Anchored finding.",
+      severity: "low" as const,
+      category: "maintainability" as const,
+      anchor: { path, startLine: line, endLine: line, side },
+    },
+  };
 }
 
 function createState() {
