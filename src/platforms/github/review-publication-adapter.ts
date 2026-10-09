@@ -671,14 +671,16 @@ function diffContainsRange(
       newLine = Number(header[2]);
       continue;
     }
-    if (line.startsWith("+") && !line.startsWith("+++")) {
+    // GitHub file patches carry no ---/+++ file headers, so a hunk line
+    // like "----" (a removed Markdown rule) is a real removal.
+    if (line.startsWith("+")) {
       if (anchor.side === "new") {
         available.add(newLine);
       }
       newLine += 1;
       continue;
     }
-    if (line.startsWith("-") && !line.startsWith("---")) {
+    if (line.startsWith("-")) {
       if (anchor.side === "old") {
         available.add(oldLine);
       }

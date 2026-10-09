@@ -78,6 +78,37 @@ describe("buildScopedReviewContext", () => {
     );
   });
 
+  it("counts hunk lines starting with ++ or -- as additions and deletions", () => {
+    const scoped = buildScopedReviewContext({
+      workspacePath: repoPath(),
+      codeReview,
+      changes: [
+        createChange(
+          "docs/guide.md",
+          "@@ -1,3 +1,3 @@\n # Guide\n----\n Intro\n+++counter;",
+        ),
+      ],
+      comments: [],
+      discussions: [],
+      trigger: {
+        kind: "manual-review",
+        provider: "github",
+        source: "check-run-requested-action",
+        instruction: null,
+        metadata: {
+          checkRunId: 1357,
+          actionIdentifier: "run_review",
+        },
+      },
+      priorDiscussions: [],
+      previousReview: null,
+    });
+
+    expect(scoped.scope.allChangedFiles[0]).toEqual(
+      expect.objectContaining({ additions: 1, deletions: 1 }),
+    );
+  });
+
   it("includes a local manual instruction in first-pass scope text", () => {
     const scoped = buildScopedReviewContext({
       workspacePath: repoPath(),
