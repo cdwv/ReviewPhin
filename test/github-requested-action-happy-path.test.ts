@@ -32,13 +32,13 @@ describe("GitHub requested-action happy path", () => {
     );
   });
 
-  it("publishes findings and summary before completing the Check Run with links", async () => {
+  it.each([false, true])("publishes a review (fork: %s)", async (fork) => {
     const root = await mkdtemp(join(tmpdir(), "reviewphin-github-e2e-"));
     tempRoots.push(root);
     const tenant = createTenant();
     const connection = createConnection();
     const job = createJob();
-    const github = createGitHubApiState();
+    const github = createGitHubApiState(fork);
     const storage = createStorage(job);
     const logger = createLogger("silent");
     const platform = new GitHubPlatform({
@@ -412,7 +412,7 @@ function createRoutingContext(input: {
   };
 }
 
-function createGitHubApiState() {
+function createGitHubApiState(fork: boolean) {
   const reviews: Array<Record<string, unknown>> = [];
   const reviewComments: Array<Record<string, unknown>> = [];
   const reviewThreads: Array<Record<string, unknown>> = [];
@@ -449,7 +449,10 @@ function createGitHubApiState() {
             id: 1357,
             head_sha: "head-sha",
             app: { id: 123 },
-            pull_requests: [{ number: 42, head: { sha: "head-sha" } }],
+            external_id: "reviewphin:pull-request:42",
+            pull_requests: fork
+              ? []
+              : [{ number: 42, head: { sha: "head-sha" } }],
           },
         };
       }

@@ -92,6 +92,7 @@ const repositorySchema = z.object({
 const checkRunSchema = z.object({
   id: z.number().int().positive(),
   head_sha: z.string().min(1),
+  external_id: z.string().nullable().optional(),
   app: z.object({
     id: z.number().int().positive(),
   }),
@@ -1114,13 +1115,20 @@ export class GitHubClient {
         `Check Run ${input.checkRunId} belongs to GitHub App ${checkRun.app.id}, expected ${input.expectedAppId}`,
       );
     }
-    if (checkRun.pull_requests.length !== 1) {
+    // GitHub omits PR associations for fork branches. Our provisioned Check
+    // Run still identifies the PR through its app-owned external ID.
+    const pullRequestNumber =
+      checkRun.pull_requests.length === 0
+        ? parsePullRequestCheckRunExternalId(checkRun.external_id)
+        : checkRun.pull_requests.length === 1
+          ? checkRun.pull_requests[0]?.number
+          : null;
+    if (pullRequestNumber == null) {
       throw new Error(
         `Check Run ${input.checkRunId} must reference exactly one pull request; found ${checkRun.pull_requests.length}`,
       );
     }
 
-    const pullRequestNumber = checkRun.pull_requests[0]!.number;
     const pullRequestResponse = await installationOctokit.request(
       "GET /repos/{owner}/{repo}/pulls/{pull_number}",
       {
@@ -1135,7 +1143,7 @@ export class GitHubClient {
         `Check Run ${input.checkRunId} head ${checkRun.head_sha} does not match pull request ${pullRequestNumber} head ${pullRequest.head.sha}`,
       );
     }
-    const referencedHeadSha = checkRun.pull_requests[0]!.head?.sha;
+    const referencedHeadSha = checkRun.pull_requests[0]?.head?.sha;
     if (referencedHeadSha && referencedHeadSha !== checkRun.head_sha) {
       throw new Error(
         `Check Run ${input.checkRunId} pull request reference has a mismatched head SHA`,
@@ -1491,6 +1499,17 @@ function getCheckRunTitle(state: GitHubCheckRunState): string {
 
 function buildPullRequestCheckRunExternalId(pullRequestNumber: number): string {
   return `reviewphin:pull-request:${pullRequestNumber}`;
+}
+
+function parsePullRequestCheckRunExternalId(
+  externalId: string | null | undefined,
+): number | null {
+  const match = /^reviewphin:pull-request:([1-9]\d*)$/.exec(externalId ?? "");
+  if (!match || match[0] !== externalId) {
+    return null;
+  }
+  const pullRequestNumber = Number(match[1]);
+  return Number.isSafeInteger(pullRequestNumber) ? pullRequestNumber : null;
 }
 
 function createRunReviewAction() {

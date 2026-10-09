@@ -630,6 +630,74 @@ describe("GitHubClient", () => {
     });
   });
 
+  it("resolves a fork pull request from the app-owned Check Run external ID", async () => {
+    const request = vi.fn(async (route: string) => ({
+      data: route.includes("check-runs")
+        ? {
+            id: 1357,
+            head_sha: "abc123",
+            app: { id: 123 },
+            external_id: "reviewphin:pull-request:42",
+            pull_requests: [],
+          }
+        : { number: 42, head: { sha: "abc123" } },
+    }));
+    const client = createClientWithInstallationRequest(request);
+
+    await expect(
+      client.resolveCheckRunPullRequest({
+        repositoryFullName: "octo-org/reviewphin",
+        checkRunId: 1357,
+        expectedAppId: 123,
+      }),
+    ).resolves.toEqual({
+      checkRunId: 1357,
+      headSha: "abc123",
+      pullRequestNumber: 42,
+    });
+    expect(request).toHaveBeenLastCalledWith(
+      "GET /repos/{owner}/{repo}/pulls/{pull_number}",
+      { owner: "octo-org", repo: "reviewphin", pull_number: 42 },
+    );
+  });
+
+  it.each([
+    undefined,
+    null,
+    "",
+    "other:pull-request:42",
+    "reviewphin:pull-request:0",
+    "reviewphin:pull-request:-42",
+    "reviewphin:pull-request:4.2",
+    "reviewphin:pull-request:042",
+    "reviewphin:pull-request:42-extra",
+    "reviewphin:pull-request:42\n",
+    "reviewphin:pull-request:9007199254740992",
+  ])(
+    "rejects an empty PR association with invalid external ID %s",
+    async (externalId) => {
+      const request = vi.fn(async () => ({
+        data: {
+          id: 1357,
+          head_sha: "abc123",
+          app: { id: 123 },
+          external_id: externalId,
+          pull_requests: [],
+        },
+      }));
+      const client = createClientWithInstallationRequest(request);
+
+      await expect(
+        client.resolveCheckRunPullRequest({
+          repositoryFullName: "octo-org/reviewphin",
+          checkRunId: 1357,
+          expectedAppId: 123,
+        }),
+      ).rejects.toThrow("must reference exactly one pull request");
+      expect(request).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("rejects foreign, missing, ambiguous, and stale Check Run pull requests", async () => {
     const createClient = (checkRun: Record<string, unknown>, head = "abc123") =>
       createClientWithInstallationRequest(
@@ -678,6 +746,39 @@ describe("GitHubClient", () => {
         expectedAppId: 123,
       }),
     ).rejects.toThrow("does not match pull request 42 head");
+
+    const forkCheckRun = {
+      ...base,
+      external_id: "reviewphin:pull-request:42",
+      pull_requests: [],
+    };
+    await expect(
+      createClient({
+        ...forkCheckRun,
+        app: { id: 999 },
+      }).resolveCheckRunPullRequest({
+        repositoryFullName: "octo-org/reviewphin",
+        checkRunId: 1357,
+        expectedAppId: 123,
+      }),
+    ).rejects.toThrow("belongs to GitHub App 999");
+    await expect(
+      createClient(forkCheckRun, "new-head").resolveCheckRunPullRequest({
+        repositoryFullName: "octo-org/reviewphin",
+        checkRunId: 1357,
+        expectedAppId: 123,
+      }),
+    ).rejects.toThrow("does not match pull request 42 head");
+    await expect(
+      createClient({
+        ...forkCheckRun,
+        pull_requests: [{ number: 41 }, { number: 42 }],
+      }).resolveCheckRunPullRequest({
+        repositoryFullName: "octo-org/reviewphin",
+        checkRunId: 1357,
+        expectedAppId: 123,
+      }),
+    ).rejects.toThrow("must reference exactly one pull request");
   });
 
   it("updates Check Run progress and preserves the action on terminal states", async () => {
