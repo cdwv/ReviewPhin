@@ -5,9 +5,11 @@ description: Configure Copilot CLI, OpenAI-compatible endpoints, Azure OpenAI, a
 
 ReviewPhin selects models through named profiles stored in the database. When no profile is active, it uses the bundled GitHub Copilot CLI.
 
-A model profile changes how the Copilot CLI harness talks to a backend. Today ReviewPhin has one supported harness: the GitHub Copilot CLI wrapper. OpenAI-compatible, Azure OpenAI, and Anthropic profiles configure that harness with different provider settings; they do not switch to a different runtime.
+A model profile changes how the Copilot CLI harness talks to a backend. By default ReviewPhin uses the GitHub Copilot CLI wrapper; setting `REVIEWPHIN_HARNESS=codex` selects the Codex CLI app server instead. OpenAI-compatible, Azure OpenAI, and Anthropic profiles configure the Copilot harness and cannot be used with the Codex harness. A profile without a provider endpoint can specify Codex model names and reasoning levels.
 
 Examples use `reviewphin` for readability — see [running the CLI](../#running-the-cli).
+
+When using the Codex harness, Copilot model catalog discovery is unavailable for Codex models. Use `--ignore-missing-model` when creating a profile with explicit Codex model names; the model must still be available to the logged-in Codex account.
 
 ## Resolution order
 

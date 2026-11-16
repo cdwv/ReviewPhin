@@ -33,6 +33,7 @@ RUN pnpm install --frozen-lockfile \
 FROM node:26-bookworm-slim AS runtime
 
 ARG COPILOT_CLI_VERSION=1.0.83
+ARG CODEX_CLI_VERSION=0.169.0
 
 ENV NODE_ENV=production \
   HOST=0.0.0.0 \
@@ -43,11 +44,12 @@ ENV NODE_ENV=production \
   MAX_JOB_RETRIES=3 \
   RETRY_BACKOFF_MS=5000 \
   COPILOT_TIMEOUT_MS=180000 \
-  COPILOT_CLI_PATH=/usr/local/bin/copilot
+  COPILOT_CLI_PATH=/usr/local/bin/copilot \
+  CODEX_HOME=/app/data/codex
 
 RUN apt-get update \
-  && apt-get install --yes --no-install-recommends ca-certificates git \
-  && npm install --global @github/copilot@${COPILOT_CLI_VERSION} \
+  && apt-get install --yes --no-install-recommends ca-certificates git ripgrep \
+  && npm install --global @github/copilot@${COPILOT_CLI_VERSION} @openai/codex@${CODEX_CLI_VERSION} \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -58,7 +60,7 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/prompts ./prompts
 COPY --from=build /app/public ./public
 
-RUN mkdir -p /app/data /app/tmp \
+RUN mkdir -p /app/data/codex /app/tmp \
   && printf '#!/bin/sh\nREVIEWPHIN_CLI_COMMAND=reviewphin exec node /app/dist/cli.js "$@"\n' > /usr/local/bin/reviewphin \
   && chmod +x /usr/local/bin/reviewphin
 

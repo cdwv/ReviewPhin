@@ -18,7 +18,7 @@ Run on your own infrastructure. Bring your own model. Use your own agent subscri
 
 ReviewPhin listens for GitLab and GitHub code review events, runs a multi-agent AI review, and publishes findings through each provider's native review model while only modifying content it created itself.
 
-All model calls go through a configured harness (currently Copilot CLI, but more may come) so you can plug in either a subscription model or an [OpenAI-compatible API](https://reviewphin.com/docs/management/model-profiles/).
+Model calls use either the default Copilot CLI harness or the Codex CLI harness, selected with `REVIEWPHIN_HARNESS`. Copilot can use a subscription model or an [OpenAI-compatible API](https://reviewphin.com/docs/management/model-profiles/).
 
 Internally, code-review operations flow through a platform adapter layer with built-in GitLab and GitHub implementations.
 
@@ -146,6 +146,19 @@ helm upgrade --install reviewphin "${REVIEWPHIN_CHART}" \
 ```
 
 ---
+
+### Use Codex CLI instead of Copilot
+
+Set `REVIEWPHIN_HARNESS=codex` in `.env.docker`, build the image, and sign in using a ChatGPT account:
+
+```sh
+docker compose build
+mkdir -p ./data/codex
+docker compose run --rm worker codex login --device-auth
+docker compose up -d
+```
+
+The container stores Codex credentials in `/app/data/codex`, under the existing persistent `./data` volume. Restrict access to this directory. Monitor the login and usage limits; a login may need renewal. Use native Codex model names in ReviewPhin model profiles; Copilot BYOK provider profiles are not supported by the Codex harness. The Codex app-server protocol is experimental. Repository inspection uses read-only tools and the existing Git and memory services. The Codex harness performs context analysis and review in one agent session and uses read-only repository tools. Keep `CODEX_HOME` dedicated to ReviewPhin and do not configure external MCP servers in it. The Copilot harness remains the default.
 
 ## Adding tenants
 

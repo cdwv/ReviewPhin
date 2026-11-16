@@ -52,6 +52,8 @@ const envSchema = z.object({
     .default(21_600_000),
   REVIEWPHIN_JOB_LEASE_MS: z.coerce.number().int().min(1_000).default(120_000),
   REVIEWPHIN_JOB_RUNNER_ENABLED: z.enum(["true", "false"]).default("true"),
+  REVIEWPHIN_HARNESS: z.enum(["copilot", "codex"]).default("copilot"),
+  CODEX_CLI_PATH: z.string().min(1).default("codex"),
   COPILOT_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
   REVIEWPHIN_MEMORY_ENABLED: z.enum(["true", "false"]).default("true"),
   REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS: z.coerce
@@ -91,6 +93,8 @@ export interface AppConfig {
   maxQueuedJobAgeMs: number;
   jobLeaseMs: number;
   jobRunnerEnabled: boolean;
+  harness: "copilot" | "codex";
+  codexCliPath: string;
   copilotTimeoutMs: number;
   memoryEnabled: boolean;
   maxPromptMemoryChars: number;
@@ -119,6 +123,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     REVIEWPHIN_JOB_LEASE_MS: env.REVIEWPHIN_JOB_LEASE_MS,
     REVIEWPHIN_JOB_RUNNER_ENABLED:
       env.REVIEWPHIN_JOB_RUNNER_ENABLED?.toLowerCase(),
+    REVIEWPHIN_HARNESS: env.REVIEWPHIN_HARNESS,
+    CODEX_CLI_PATH: env.CODEX_CLI_PATH,
     COPILOT_TIMEOUT_MS: env.COPILOT_TIMEOUT_MS,
     REVIEWPHIN_MEMORY_ENABLED: env.REVIEWPHIN_MEMORY_ENABLED?.toLowerCase(),
     REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS: env.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,
@@ -148,6 +154,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     maxQueuedJobAgeMs: parsedEnv.REVIEWPHIN_MAX_QUEUED_JOB_AGE_MS,
     jobLeaseMs: parsedEnv.REVIEWPHIN_JOB_LEASE_MS,
     jobRunnerEnabled: parsedEnv.REVIEWPHIN_JOB_RUNNER_ENABLED === "true",
+    harness: parsedEnv.REVIEWPHIN_HARNESS,
+    codexCliPath: parsedEnv.CODEX_CLI_PATH,
     copilotTimeoutMs: parsedEnv.COPILOT_TIMEOUT_MS,
     memoryEnabled: parsedEnv.REVIEWPHIN_MEMORY_ENABLED === "true",
     maxPromptMemoryChars: parsedEnv.REVIEWPHIN_MAX_PROMPT_MEMORY_CHARS,

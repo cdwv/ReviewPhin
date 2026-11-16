@@ -50,6 +50,9 @@ Persisted interaction jobs are the queue source of truth. Enabled runner process
 | Variable                                             | Default                             | Purpose                                                                        |
 | ---------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------ |
 | `GH_TOKEN` / `GITHUB_TOKEN` / `COPILOT_GITHUB_TOKEN` | required for Copilot mode           | GitHub PAT with **Copilot Requests** permission, used by the Copilot CLI path. |
+| `REVIEWPHIN_HARNESS` | `copilot` | Select the `copilot` or `codex` execution harness. |
+| `CODEX_CLI_PATH` | `codex` | Path to the Codex CLI executable. |
+| `CODEX_HOME` | image sets `/app/data/codex` | Codex configuration and login directory; protect this directory as a credential. |
 | `COPILOT_TIMEOUT_MS`                                 | `180000`                            | Model session timeout in milliseconds.                                         |
 | `COPILOT_SDK_LOG_LEVEL`                              | unset                               | SDK log verbosity: `none`, `error`, `warning`, `info`, `debug`, or `all`.      |
 | `COPILOT_CLI_PATH`                                   | image sets `/usr/local/bin/copilot` | Path to the Copilot CLI binary.                                                |
