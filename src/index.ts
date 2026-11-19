@@ -36,6 +36,8 @@ async function main(): Promise<void> {
 
   const harnessRuntime = new HarnessSessionRuntime({
     logger,
+    harness: config.harness,
+    codexCliPath: config.codexCliPath,
     runLogDir: config.runLogDir,
     timeoutMs: config.copilotTimeoutMs,
     maxPromptMemoryChars: config.maxPromptMemoryChars,

@@ -10,6 +10,7 @@ import {
 } from "@github/copilot-sdk";
 import type { Logger } from "pino";
 
+import { CodexRuntime } from "./codex-runtime.js";
 import { ProjectMemoryConsolidator } from "../memory/consolidator.js";
 import { ProjectMemoryService } from "../memory/service.js";
 import { createId } from "../utils/ids.js";
@@ -48,6 +49,8 @@ export class HarnessStructuredOutputError extends Error {
 }
 
 interface HarnessSessionRuntimeOptions {
+  harness?: "copilot" | "codex" | undefined;
+  codexCliPath?: string | undefined;
   logger: Logger;
   runLogDir: string;
   timeoutMs: number;
@@ -59,6 +62,7 @@ interface HarnessSessionRuntimeOptions {
 
 export class HarnessSessionRuntime {
   private readonly logger: Logger;
+  private readonly codexRuntime: CodexRuntime | null;
   private readonly runLogDir: string;
   private readonly timeoutMs: number;
   private readonly maxPromptMemoryChars: number;
@@ -68,6 +72,29 @@ export class HarnessSessionRuntime {
 
   public constructor(options: HarnessSessionRuntimeOptions) {
     this.logger = options.logger;
+    this.codexRuntime =
+      options.harness === "codex"
+        ? new CodexRuntime({
+            command: options.codexCliPath ?? "codex",
+            args: [
+              "app-server",
+              "--disable",
+              "shell_tool",
+              "--disable",
+              "hooks",
+              "--disable",
+              "plugins",
+              "--disable",
+              "apps",
+              "--disable",
+              "multi_agent_v2",
+            ],
+            timeoutMs: options.timeoutMs,
+            logger: options.logger,
+            runLogDir: options.runLogDir,
+            memoryService: (spec) => this.resolveMemoryService(spec),
+          })
+        : null;
     this.runLogDir = options.runLogDir;
     this.timeoutMs = options.timeoutMs;
     this.maxPromptMemoryChars = options.maxPromptMemoryChars;
@@ -81,6 +108,7 @@ export class HarnessSessionRuntime {
   public async run<TParsed = unknown>(
     spec: HarnessRunSpec<TParsed>,
   ): Promise<HarnessRunResult<TParsed>> {
+    if (this.codexRuntime) return this.codexRuntime.run(spec);
     const client = new CopilotClient({
       ...(!spec.modelConfig.provider && spec.modelConfig.authToken
         ? { gitHubToken: spec.modelConfig.authToken }
